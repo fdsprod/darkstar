@@ -10,6 +10,7 @@ The project is currently in the contract and walking-skeleton phase. The reposit
 - [Product specification](docs/product/product-specification.md)
 - [Default software-delivery workflow](docs/product/default-workflow.md)
 - [Workflow execution semantics](docs/architecture/workflow/execution-semantics.md)
+- [Crash recovery and idempotency model](docs/architecture/recovery/RECOVERY_MODEL.md)
 - [MVP backlog](docs/planning/mvp-backlog.md)
 
 ## Repository layout
@@ -29,6 +30,8 @@ From the repository root:
 
 ```powershell
 node --test tests/workflow-reference.test.mjs
+node scripts/recovery-reference.mjs examples/recovery/recovery-scenarios.json
+node --test tests/recovery-reference.test.mjs
 ./probes/codex-host/Test-CodexHostFixtures.ps1
 ```
 

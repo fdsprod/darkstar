@@ -1,0 +1,291 @@
+{
+  "apiVersion": "darkstar.local/v1alpha1",
+  "kind": "RecoveryScenarioSuite",
+  "metadata": {
+    "name": "darkstar/ds-003-recovery",
+    "version": "1.0.0"
+  },
+  "scenarios": [
+    {
+      "id": "attempt_commit_response_lost",
+      "operation": "attempt_record",
+      "crashAt": "after_record",
+      "observation": "committed",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "context_blob_exact_before_binding",
+      "operation": "context_manifest",
+      "crashAt": "after_dispatch",
+      "observation": "exact",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "context_blob_missing",
+      "operation": "context_manifest",
+      "crashAt": "after_intent",
+      "observation": "absent",
+      "expectedDecision": "retry"
+    },
+    {
+      "id": "lease_current_holder_after_restart",
+      "operation": "lease_acquire",
+      "crashAt": "after_record",
+      "observation": "held_current",
+      "expectedDecision": "resume"
+    },
+    {
+      "id": "lease_expired_writer_dead",
+      "operation": "lease_acquire",
+      "crashAt": "after_record",
+      "observation": "expired_dead",
+      "expectedDecision": "retry"
+    },
+    {
+      "id": "lease_expired_writer_live",
+      "operation": "lease_acquire",
+      "crashAt": "after_record",
+      "observation": "expired_live",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "lease_liveness_unknown",
+      "operation": "lease_acquire",
+      "crashAt": "after_record",
+      "observation": "uncertain",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "provider_process_live_after_daemon_crash",
+      "operation": "provider_process",
+      "crashAt": "after_record",
+      "observation": "live_owned",
+      "expectedDecision": "resume"
+    },
+    {
+      "id": "provider_process_result_survived",
+      "operation": "provider_process",
+      "crashAt": "after_dispatch",
+      "observation": "terminal_result",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "provider_process_died_without_result",
+      "operation": "provider_process",
+      "crashAt": "after_dispatch",
+      "observation": "terminated_no_result",
+      "expectedDecision": "interrupt"
+    },
+    {
+      "id": "provider_spawn_identity_unknown",
+      "operation": "provider_process",
+      "crashAt": "after_dispatch",
+      "observation": "unknown_identity",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "provider_turn_resumable",
+      "operation": "provider_turn",
+      "crashAt": "after_record",
+      "observation": "resumable_active",
+      "expectedDecision": "resume"
+    },
+    {
+      "id": "provider_turn_terminal_before_result_binding",
+      "operation": "provider_turn",
+      "crashAt": "after_dispatch",
+      "observation": "terminal_result",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "provider_turn_proven_absent",
+      "operation": "provider_turn",
+      "crashAt": "after_dispatch",
+      "observation": "absent_proven",
+      "expectedDecision": "interrupt"
+    },
+    {
+      "id": "provider_turn_active_writer_unknown",
+      "operation": "provider_turn",
+      "crashAt": "after_dispatch",
+      "observation": "active_writer_unknown",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "candidate_blob_exact_before_binding",
+      "operation": "candidate_blob",
+      "crashAt": "after_dispatch",
+      "observation": "exact",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "candidate_blob_hash_mismatch",
+      "operation": "candidate_blob",
+      "crashAt": "after_observation",
+      "observation": "mismatch",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "artifact_content_missing_before_registration",
+      "operation": "artifact_registration",
+      "crashAt": "after_intent",
+      "observation": "absent",
+      "expectedDecision": "retry"
+    },
+    {
+      "id": "checkpoint_action_not_committed",
+      "operation": "checkpoint_action",
+      "crashAt": "after_intent",
+      "observation": "absent",
+      "expectedDecision": "retry"
+    },
+    {
+      "id": "checkpoint_action_response_lost",
+      "operation": "checkpoint_action",
+      "crashAt": "after_record",
+      "observation": "committed",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "visit_success_key_conflict",
+      "operation": "visit_success",
+      "crashAt": "after_intent",
+      "observation": "conflict",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "visit_success_response_lost",
+      "operation": "visit_success",
+      "crashAt": "after_record",
+      "observation": "committed",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "transition_token_before_enqueue",
+      "operation": "transition_token",
+      "crashAt": "after_record",
+      "observation": "committed",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "branch_ref_exact_before_ack",
+      "operation": "branch_create",
+      "crashAt": "after_dispatch",
+      "observation": "exact",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "branch_ref_absent_after_intent",
+      "operation": "branch_create",
+      "crashAt": "after_intent",
+      "observation": "absent",
+      "expectedDecision": "retry"
+    },
+    {
+      "id": "branch_ref_unowned_collision",
+      "operation": "branch_create",
+      "crashAt": "after_observation",
+      "observation": "conflict",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "worktree_attached_before_ack",
+      "operation": "worktree_attach",
+      "crashAt": "after_dispatch",
+      "observation": "exact",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "candidate_accept_response_lost",
+      "operation": "candidate_accept",
+      "crashAt": "after_record",
+      "observation": "committed",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "commit_ref_advanced_before_ack",
+      "operation": "commit_create",
+      "crashAt": "after_dispatch",
+      "observation": "exact_trailer_parent_tree",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "commit_command_failed_before_ref_update",
+      "operation": "commit_create",
+      "crashAt": "after_dispatch",
+      "observation": "absent_head_unchanged",
+      "expectedDecision": "retry"
+    },
+    {
+      "id": "commit_operation_mismatch",
+      "operation": "commit_create",
+      "crashAt": "after_observation",
+      "observation": "mismatch_or_multiple",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "push_remote_equal_after_timeout",
+      "operation": "push",
+      "crashAt": "after_dispatch",
+      "observation": "equal",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "push_remote_ancestor_after_timeout",
+      "operation": "push",
+      "crashAt": "after_dispatch",
+      "observation": "absent_or_ancestor",
+      "expectedDecision": "retry"
+    },
+    {
+      "id": "push_remote_diverged",
+      "operation": "push",
+      "crashAt": "after_observation",
+      "observation": "diverged",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "pr_created_before_id_commit",
+      "operation": "pr_create",
+      "crashAt": "after_dispatch",
+      "observation": "unique_owned_exact",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "pr_absent_after_create_timeout",
+      "operation": "pr_create",
+      "crashAt": "after_dispatch",
+      "observation": "absent",
+      "expectedDecision": "retry"
+    },
+    {
+      "id": "pr_unowned_or_multiple_match",
+      "operation": "pr_create",
+      "crashAt": "after_observation",
+      "observation": "unowned_or_multiple",
+      "expectedDecision": "reconcile_required"
+    },
+    {
+      "id": "pr_body_update_response_lost",
+      "operation": "pr_update",
+      "crashAt": "after_dispatch",
+      "observation": "desired_owned_revision",
+      "expectedDecision": "adopt"
+    },
+    {
+      "id": "pr_body_still_older_revision",
+      "operation": "pr_update",
+      "crashAt": "after_dispatch",
+      "observation": "older_owned_revision",
+      "expectedDecision": "retry"
+    },
+    {
+      "id": "pr_marker_or_coordinates_changed",
+      "operation": "pr_update",
+      "crashAt": "after_observation",
+      "observation": "marker_or_coordinate_conflict",
+      "expectedDecision": "reconcile_required"
+    }
+  ]
+}
+
