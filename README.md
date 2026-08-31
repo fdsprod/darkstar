@@ -13,6 +13,7 @@ The project is currently in the contract and walking-skeleton phase. The reposit
 - [Crash recovery and idempotency model](docs/architecture/recovery/RECOVERY_MODEL.md)
 - [Approval and permission model](docs/architecture/security/APPROVAL_AND_PERMISSION_MODEL.md)
 - [Artifact and context contract](docs/architecture/artifacts/ARTIFACT_AND_CONTEXT_CONTRACT.md)
+- [Windows platform contract](docs/architecture/platform/WINDOWS_PLATFORM_CONTRACT.md)
 - [MVP backlog](docs/planning/mvp-backlog.md)
 
 ## Repository layout
@@ -38,6 +39,7 @@ node scripts/approval-reference.mjs examples/approvals/approval-scenarios.json
 node --test tests/approval-reference.test.mjs
 node scripts/artifact-reference.mjs examples/artifacts/golden-corpus.json
 node --test tests/artifact-reference.test.mjs
+./probes/windows-process-control/Test-WindowsProcessProbe.ps1
 ./probes/codex-host/Test-CodexHostFixtures.ps1
 ```
 
