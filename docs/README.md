@@ -12,6 +12,7 @@ This directory separates documentation by the kind of decision or work it repres
 ### Workflow runtime
 
 - [Workflow execution semantics](architecture/workflow/execution-semantics.md) — normative graph, binding, gate, transition, join, retry, checkpoint, and error behavior.
+- [Artifact and context contract](architecture/artifacts/ARTIFACT_AND_CONTEXT_CONTRACT.md) — immutable ingest, support matrix, representations, binding, selection budgets, and safe degradation.
 - [MVP work and Git model](architecture/work/WORK_AND_GIT_MODEL.md) — normative work identity, delivery topology, mutation ownership, revision, and recovery behavior.
 - [Crash recovery and idempotency model](architecture/recovery/RECOVERY_MODEL.md) — normative leases, process identity, interruption matrix, commit points, reconciliation, and failure-injection contract.
 
@@ -43,6 +44,7 @@ Some project knowledge belongs beside executable material rather than in `docs/`
 - [`tests/`](../tests/) verifies deterministic behavior.
 - [`examples/recovery/`](../examples/recovery/) and [`scripts/recovery-reference.mjs`](../scripts/recovery-reference.mjs) make crash-window decisions and catalog coverage executable.
 - [`examples/approvals/`](../examples/approvals/) and [`scripts/approval-reference.mjs`](../scripts/approval-reference.mjs) make approval separation, negative cases, and idempotency executable.
+- [`examples/artifacts/`](../examples/artifacts/) and [`scripts/artifact-reference.mjs`](../scripts/artifact-reference.mjs) provide the golden artifact corpus and deterministic context selector.
 - [`probes/codex-host/`](../probes/codex-host/) contains the Codex host probe harness and versioned compatibility evidence.
 
 Those directories may include local README files explaining how to run or extend their contents.
