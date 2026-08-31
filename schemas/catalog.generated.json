@@ -13,7 +13,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/artifact-v1alpha1.schema.json",
       "name": "artifact-v1alpha1",
-      "sha256": "7ba37d0c47df1fcb688ccc970cde22d83da905e2f44732d9bba974096de9fb24",
+      "sha256": "c376c8563807ea7e0cea86bb7613a369142857ba5364bcf2a6b7156ee2ff62d7",
       "version": "v1alpha1"
     },
     {
@@ -21,7 +21,7 @@
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "ca8b98dfe801371be2874abffc0af612b88201e19c6ea7d452f2b28af323d1ec",
+      "sha256": "f51020bb57e7d9193ebbbd33fc158a52b7686846356e4689f2b68525f3f08864",
       "version": "v1alpha1"
     },
     {
@@ -45,7 +45,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/runtime-event-v1alpha1.schema.json",
       "name": "runtime-event-v1alpha1",
-      "sha256": "7680d89a008ad8b43205fe0a5264384a362df7c30a60c120cb0ce3f159a188db",
+      "sha256": "8775471a0e6850c0a8956914e9d54f374e04c4913ce3c99ae340818ec9cccfcb",
       "version": "v1alpha1"
     },
     {

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const ENVELOPE_FIELDS = new Set(["schemaVersion","id","globalPosition","streamId","streamSequence","aggregateType","aggregateId","aggregateRevision","kind","occurredAt","recordedAt","correlationId","causationId","commandId","actor","data","metadata"]);
+const ENVELOPE_FIELDS = new Set(["schemaVersion","id","globalPosition","aggregateType","aggregateId","aggregateRevision","kind","occurredAt","recordedAt","correlationId","causationId","commandId","actor","data","metadata"]);
 const FORBIDDEN_FIELDS = new Set(["providerThreadId","providerTurnId","providerItemId","uiState","dashboardState","component","rawProviderEvent"]);
 const EVENT_ID = /^event_[0-9A-HJKMNP-TV-Z]{26}$/;
 const RESOURCE_ID = /^(project|work|run|visit|attempt|artifact|approval|operation)_[0-9A-HJKMNP-TV-Z]{26}$/;
@@ -18,22 +18,17 @@ function findForbidden(value, path = "$") {
 
 export function validateTrace(trace) {
   const failures = [];
-  const streamSequence = new Map();
   const aggregateRevision = new Map();
   const eventIds = new Set();
   trace.events.forEach((event, index) => {
     const position = index + 1;
     if (event.schemaVersion !== 1) failures.push(`event ${position}: schemaVersion`);
-    if (!EVENT_ID.test(event.id) || !RESOURCE_ID.test(event.streamId) || !RESOURCE_ID.test(event.aggregateId)) failures.push(`event ${position}: id`);
+    if (!EVENT_ID.test(event.id) || !RESOURCE_ID.test(event.aggregateId)) failures.push(`event ${position}: id`);
     if (event.globalPosition !== position) failures.push(`event ${position}: globalPosition`);
     if ([...Object.keys(event)].some((key) => !ENVELOPE_FIELDS.has(key))) failures.push(`event ${position}: envelope field`);
-    const nextSequence = (streamSequence.get(event.streamId) ?? 0) + 1;
-    if (event.streamSequence !== nextSequence) failures.push(`event ${position}: streamSequence`);
-    streamSequence.set(event.streamId, event.streamSequence);
     const nextRevision = (aggregateRevision.get(event.aggregateId) ?? 0) + 1;
     if (event.aggregateRevision !== nextRevision) failures.push(`event ${position}: aggregateRevision`);
     aggregateRevision.set(event.aggregateId, event.aggregateRevision);
-    if (event.aggregateId !== event.streamId || event.aggregateRevision !== event.streamSequence) failures.push(`event ${position}: MVP stream mapping`);
     if (event.causationId && !eventIds.has(event.causationId)) failures.push(`event ${position}: causation`);
     failures.push(...findForbidden(event.data, `event[${position}].data`));
     failures.push(...findForbidden(event.metadata, `event[${position}].metadata`));

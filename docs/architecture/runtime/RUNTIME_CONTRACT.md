@@ -79,8 +79,6 @@ Required fields are:
   "schemaVersion": 1,
   "id": "event_01K3Z1C1Y7A8V6R2W4M5N9Q0ST",
   "globalPosition": 42,
-  "streamId": "run_01K3Z1C2AAAAAAAAAAAAAAAAAA",
-  "streamSequence": 7,
   "aggregateType": "run",
   "aggregateId": "run_01K3Z1C2AAAAAAAAAAAAAAAAAA",
   "aggregateRevision": 7,
@@ -96,9 +94,10 @@ Required fields are:
 }
 ```
 
-`globalPosition` is a gap-free committed integer on one database. Stream sequence
-and aggregate revision start at 1 and increase by exactly one. The MVP maps one
-aggregate to one stream, so the two counters are equal. `occurredAt` describes the
+`globalPosition` is a gap-free committed integer on one database. Aggregate
+revision starts at 1 and increases by exactly one within each aggregate. The
+aggregate identity is also the event stream identity; a second stream identifier
+or sequence is not stored. `occurredAt` describes the
 fact; `recordedAt` is authoritative for persistence. `correlationId` follows the
 run or originating request. `causationId` names the prior event, command, or null
 root. Actor types are `user`, `system`, `provider`, and `external`; provider actor
@@ -164,7 +163,8 @@ Collections use keyset pagination with `limit` (default 50, maximum 200) and an
 opaque authenticated `after` cursor. The cursor freezes endpoint, filters,
 ordering, last sort key/ID, and schema version. Default ordering is `(createdAt,
 id)` ascending unless documented otherwise. A response has `items` and
-`pageInfo:{nextCursor,hasNextPage}`. Inserts before the cursor do not duplicate
+`pageInfo:{nextCursor}`; a non-null cursor means another page is available.
+Inserts before the cursor do not duplicate
 items; retention or filter mismatch returns `CURSOR_INVALID`, never silently
 restarts at page one.
 

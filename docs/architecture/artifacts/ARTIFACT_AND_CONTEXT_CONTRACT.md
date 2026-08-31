@@ -125,6 +125,12 @@ deterministic for `(binding set, policy version, provider capabilities, budget)`
 6. add optional representations in order while they fit; and
 7. record every selection, truncation, descriptor substitution, and omission.
 
+The manifest `entries` array is the canonical selected order; entries do not
+repeat that position in a mutable `order` field. Artifact provenance is one of
+two explicit origins: an attempt origin requires run, node, and attempt identity,
+while an operation origin carries none of those fields. Both origins retain the
+operation ID and may identify a source artifact for derived content.
+
 Token estimates are conservative and provider-specific when available. Selection
 does not summarize content on the fly: summaries are durable representations
 with processor versions and digests. A descriptor for unsupported or withheld

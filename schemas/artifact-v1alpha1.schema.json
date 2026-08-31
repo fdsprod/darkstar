@@ -31,19 +31,35 @@
         "creator": {"type": "string", "minLength": 1},
         "status": {"enum": ["stored", "stored_uninspectable", "quarantined"]},
         "createdAt": {"type": "string", "format": "date-time"},
-        "provenance": {
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "provenance": {
+      "oneOf": [
+        {
           "type": "object",
           "additionalProperties": false,
-          "required": ["runId", "nodeId", "attemptId", "operationId"],
+          "required": ["origin", "runId", "nodeId", "attemptId", "operationId"],
           "properties": {
-            "runId": {"type": ["string", "null"]},
-            "nodeId": {"type": ["string", "null"]},
-            "attemptId": {"type": ["string", "null"]},
+            "origin": {"const": "attempt"},
+            "runId": {"$ref": "#/$defs/identifier"},
+            "nodeId": {"$ref": "#/$defs/identifier"},
+            "attemptId": {"$ref": "#/$defs/identifier"},
             "operationId": {"$ref": "#/$defs/identifier"},
-            "sourceArtifactId": {"type": ["string", "null"]}
+            "sourceArtifactId": {"$ref": "#/$defs/identifier"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["origin", "operationId"],
+          "properties": {
+            "origin": {"const": "operation"},
+            "operationId": {"$ref": "#/$defs/identifier"},
+            "sourceArtifactId": {"$ref": "#/$defs/identifier"}
           }
         }
-      }
+      ]
     },
     "representation": {
       "type": "object",
@@ -92,13 +108,12 @@
     "contextEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["representationId", "artifactId", "digest", "required", "order", "tokenEstimate"],
+      "required": ["representationId", "artifactId", "digest", "required", "tokenEstimate"],
       "properties": {
         "representationId": {"$ref": "#/$defs/identifier"},
         "artifactId": {"$ref": "#/$defs/identifier"},
         "digest": {"$ref": "#/$defs/digest"},
         "required": {"type": "boolean"},
-        "order": {"type": "integer", "minimum": 0},
         "tokenEstimate": {"type": "integer", "minimum": 0}
       }
     },

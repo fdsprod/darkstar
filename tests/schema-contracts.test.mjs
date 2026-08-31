@@ -36,6 +36,13 @@ test("provider state combinations are encoded as tagged variants", () => {
   assert.equal(schema.$defs.attemptResult.oneOf.length, 3);
 });
 
+test("artifact provenance and context order have one source of truth", () => {
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha1.schema.json"), "utf8"));
+  assert.deepEqual(schema.$defs.provenance.oneOf.map((variant) => variant.properties.origin.const), ["attempt", "operation"]);
+  assert.equal(schema.$defs.contextEntry.properties.order, undefined);
+  assert.equal(schema.$defs.contextEntry.required.includes("order"), false);
+});
+
 test("compatibility permits additive optional fields", () => {
   const before = { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", additionalProperties: false, properties: { id: { type: "string" } } };
   const after = structuredClone(before);

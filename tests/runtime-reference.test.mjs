@@ -34,6 +34,8 @@ test("initial OpenAPI surface is versioned and references shared errors", () => 
   assert.ok(Object.keys(api.paths).every((path) => path.startsWith("/api/v1/")));
   assert.equal(api.components.schemas.ApiError.$ref, "./api-error-v1alpha1.schema.json");
   assert.ok(api.paths["/api/v1/events"].get.responses["410"]);
+  assert.equal(api.components.schemas.RunPage.properties.pageInfo.properties.hasNextPage, undefined);
+  assert.ok(api.paths["/api/v1/approvals/{approvalId}/decisions"].post.requestBody.content["application/json"].schema.properties.action.enum.includes("allow_once"));
 });
 
 test("event and error schemas are strict", () => {
@@ -42,6 +44,9 @@ test("event and error schemas are strict", () => {
     assert.equal(schema.additionalProperties, false, name);
     assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
   }
+  const eventSchema = JSON.parse(readFileSync(resolve(root, "schemas", "runtime-event-v1alpha1.schema.json"), "utf8"));
+  assert.equal(eventSchema.properties.streamId, undefined);
+  assert.equal(eventSchema.properties.streamSequence, undefined);
 });
 
 test("SQLite logical model contains append, idempotency, outbox, and projection boundaries", () => {
