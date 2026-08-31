@@ -1,0 +1,23 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "image-skill",
+  "status": "passed",
+  "failure": null,
+  "startedAt": "2026-08-30T17:42:53.8415882+00:00",
+  "completedAt": "2026-08-30T17:43:18.4917799+00:00",
+  "platform": "windows",
+  "codexVersion": "0.151.0-alpha.7.2",
+  "codexExecutable": "C:\\Users\\<user>\\AppData\\Local\\OpenAI\\Codex\\bin\\b99306303521e97e\\codex.exe",
+  "workspace": "C:\\Users\\<user>\\source\\repos\\Software Factory",
+  "transport": "stdio-jsonrpc-jsonl",
+  "threadId": "01a053c4-6102-7a03-8b18-417451cb4fce",
+  "turnId": "01a053c4-616a-7610-b044-37c784f7a029",
+  "resumedFromThreadId": null,
+  "approvalRequestCount": 0,
+  "networkApprovalRequestCount": 0,
+  "userInputRequestCount": 0,
+  "handledServerRequestMethods": [],
+  "unsubscribeStatus": "unsubscribed",
+  "fixture": "app-server-image-skill.jsonl",
+  "stderr": "app-server-image-skill.stderr.log"
+}

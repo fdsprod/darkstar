@@ -1,0 +1,24 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "read-only",
+  "status": "passed",
+  "startedAt": "2026-08-30T17:46:29.0930951+00:00",
+  "completedAt": "2026-08-30T17:46:39.6893812+00:00",
+  "platform": "windows",
+  "codexVersion": "0.151.0-alpha.7.2",
+  "codexExecutable": "C:\\Users\\<user>\\AppData\\Local\\OpenAI\\Codex\\bin\\b99306303521e97e\\codex.exe",
+  "workspace": "C:\\Users\\<user>\\source\\repos\\Software Factory",
+  "transport": "exec-jsonl",
+  "exitCode": 0,
+  "sessionId": "01a053c7-a9c5-7032-bb84-d9051d72076d",
+  "resumedFromSessionId": null,
+  "eventTypes": [
+    "thread.started",
+    "turn.started",
+    "item.completed",
+    "item.started",
+    "turn.completed"
+  ],
+  "fixture": "exec-read-only.jsonl",
+  "stderr": "exec-read-only.stderr.log"
+}

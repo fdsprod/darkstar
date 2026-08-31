@@ -1,0 +1,17 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "handshake",
+  "status": "passed",
+  "failure": null,
+  "startedAt": "2026-08-30T04:01:46.0054294+00:00",
+  "completedAt": "2026-08-30T04:01:46.1537185+00:00",
+  "platform": "windows",
+  "codexVersion": "0.151.0-alpha.7.1",
+  "codexExecutable": "C:\\Users\\<user>\\AppData\\Local\\OpenAI\\Codex\\bin\\6ca77c4a9caa4eed\\codex.exe",
+  "workspace": "C:\\Users\\<user>\\source\\repos\\Software Factory",
+  "transport": "stdio-jsonrpc-jsonl",
+  "threadId": null,
+  "turnId": null,
+  "fixture": "app-server-handshake.jsonl",
+  "stderr": "app-server-handshake.stderr.log"
+}

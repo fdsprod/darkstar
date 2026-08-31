@@ -1,0 +1,23 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "resume",
+  "status": "passed",
+  "failure": null,
+  "startedAt": "2026-08-30T17:41:40.6729116+00:00",
+  "completedAt": "2026-08-30T17:41:44.1889688+00:00",
+  "platform": "windows",
+  "codexVersion": "0.151.0-alpha.7.2",
+  "codexExecutable": "C:\\Users\\<user>\\AppData\\Local\\OpenAI\\Codex\\bin\\b99306303521e97e\\codex.exe",
+  "workspace": "C:\\Users\\<user>\\source\\repos\\Software Factory",
+  "transport": "stdio-jsonrpc-jsonl",
+  "threadId": "01a053c2-e039-7ae0-9236-8f2701564f6b",
+  "turnId": "01a053c3-43ba-7bb3-8fa5-84a5469e62dd",
+  "resumedFromThreadId": "01a053c2-e039-7ae0-9236-8f2701564f6b",
+  "approvalRequestCount": 0,
+  "networkApprovalRequestCount": 0,
+  "userInputRequestCount": 0,
+  "handledServerRequestMethods": [],
+  "unsubscribeStatus": "unsubscribed",
+  "fixture": "app-server-resume-interrupted.jsonl",
+  "stderr": "app-server-resume-interrupted.stderr.log"
+}

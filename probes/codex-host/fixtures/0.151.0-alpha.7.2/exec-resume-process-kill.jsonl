@@ -1,0 +1,4 @@
+{"fixtureSchemaVersion":1,"sequence":1,"direction":"provider-to-host","message":{"type":"thread.started","thread_id":"01a053c8-d1ba-7e12-85d7-9d0920033821"}}
+{"fixtureSchemaVersion":1,"sequence":2,"direction":"provider-to-host","message":{"type":"turn.started"}}
+{"fixtureSchemaVersion":1,"sequence":3,"direction":"provider-to-host","message":{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"{\"probe\":\"exec-resume\",\"success\":true,\"detail\":\"resumed-session\"}"}}}
+{"fixtureSchemaVersion":1,"sequence":4,"direction":"provider-to-host","message":{"type":"turn.completed","usage":{"input_tokens":14285,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":27,"reasoning_output_tokens":0}}}

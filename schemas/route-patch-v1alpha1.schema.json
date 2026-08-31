@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/route-patch-v1alpha1.schema.json",
+  "title": "DARKSTAR route patch v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {"const": "darkstar.local/v1alpha1"},
+    "kind": {"const": "RoutePatch"},
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1}
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "expectedRouteRevision", "reason", "operations"],
+      "properties": {
+        "runId": {"type": "string", "minLength": 1},
+        "expectedRouteRevision": {"type": "integer", "minimum": 0},
+        "reason": {"type": "string", "minLength": 1},
+        "approvalId": {"type": "string", "minLength": 1},
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["op", "transitionId"],
+                "properties": {
+                  "op": {"const": "enableTransition"},
+                  "transitionId": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"}
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["op", "transitionId"],
+                "properties": {
+                  "op": {"const": "disableTransition"},
+                  "transitionId": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"}
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["op", "nodes"],
+                "properties": {
+                  "op": {"const": "setTerminals"},
+                  "nodes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"}
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

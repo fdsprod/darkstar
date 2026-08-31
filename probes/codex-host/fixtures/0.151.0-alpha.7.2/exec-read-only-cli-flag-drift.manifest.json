@@ -1,0 +1,13 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "exec-read-only-cli-flag-drift",
+  "status": "failed-as-expected",
+  "platform": "windows",
+  "codexVersion": "0.151.0-alpha.7.2",
+  "transport": "exec-jsonl",
+  "exitCode": 2,
+  "failureClass": "cli-compatibility-drift",
+  "detail": "The --ask-for-approval option exposed by 0.151.0-alpha.7.1 was rejected by 0.151.0-alpha.7.2.",
+  "fixture": "exec-read-only-cli-flag-drift.jsonl",
+  "stderr": "exec-read-only-cli-flag-drift.stderr.log"
+}

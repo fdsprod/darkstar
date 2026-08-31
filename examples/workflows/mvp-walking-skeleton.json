@@ -1,0 +1,41 @@
+{
+  "apiVersion": "darkstar.local/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "darkstar/mvp-walking-skeleton",
+    "version": "1.0.0",
+    "displayName": "MVP technical-design walking skeleton"
+  },
+  "spec": {
+    "inputs": {
+      "work_item": {"type": "object"},
+      "repository": {"type": "string"}
+    },
+    "routeDefaults": {
+      "entry": "technical_design",
+      "terminals": ["technical_design"]
+    },
+    "nodes": {
+      "technical_design": {
+        "displayName": "Technical design",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"}
+        },
+        "outputs": {
+          "technical_design": {"type": "object"}
+        },
+        "reasoning": {
+          "agent": "technical-designer",
+          "skills": ["darkstar:technical-design"],
+          "tools": ["darkstar:repository-search", "darkstar:artifact-store"]
+        },
+        "checkpoint": {"mode": "approve", "maxRevisions": 5},
+        "transitions": []
+      }
+    }
+  }
+}

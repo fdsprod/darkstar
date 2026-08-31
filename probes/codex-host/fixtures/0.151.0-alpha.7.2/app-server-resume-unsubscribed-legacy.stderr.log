@@ -1,0 +1,5 @@
+{"timestamp":"2026-08-30T17:52:43.752484Z","level":"WARN","fields":{"message":"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/"},"target":"codex_skills::interface"}
+{"timestamp":"2026-08-30T17:52:43.752545Z","level":"WARN","fields":{"message":"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/"},"target":"codex_skills::interface"}
+{"timestamp":"2026-08-30T17:52:43.759157Z","level":"ERROR","fields":{"message":"failed to initialize thread persistence: thread-store conflict: thread 01a050d5-15d4-77d1-b9d6-5be8bc4144b4 already has an active writer"},"target":"codex_core::session::session"}
+{"timestamp":"2026-08-30T17:52:43.759230Z","level":"ERROR","fields":{"message":"Failed to create session: thread-store conflict: thread 01a050d5-15d4-77d1-b9d6-5be8bc4144b4 already has an active writer"},"target":"codex_core::session"}
+

@@ -1,0 +1,30 @@
+{
+  "runInputs": {
+    "work_item": {
+      "title": "Produce a technical design and stop",
+      "acceptanceCriteria": ["A revision can be requested before approval"]
+    },
+    "repository": "C:/work/darkstar"
+  },
+  "results": {
+    "technical_design": [
+      {
+        "technical_design": {
+          "artifactId": "artifact:tdd:1",
+          "revision": 1,
+          "status": "candidate"
+        }
+      },
+      {
+        "technical_design": {
+          "artifactId": "artifact:tdd:2",
+          "revision": 2,
+          "status": "candidate"
+        }
+      }
+    ]
+  },
+  "checkpoints": {
+    "technical_design": ["request_changes", "approve"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "apiVersion": "darkstar.local/v1alpha1",
+  "kind": "RoutePatch",
+  "metadata": {"id": "patch:insert-peer-review:1"},
+  "spec": {
+    "runId": "run:example:1",
+    "expectedRouteRevision": 0,
+    "reason": "A cross-team interface was discovered during functional design.",
+    "approvalId": "approval:route-change:1",
+    "operations": [
+      {"op": "disableTransition", "transitionId": "functional_to_technical"},
+      {"op": "enableTransition", "transitionId": "functional_to_review"},
+      {"op": "enableTransition", "transitionId": "review_to_technical"}
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "write-approval",
+  "status": "passed",
+  "failure": null,
+  "startedAt": "2026-08-30T17:42:07.3816813+00:00",
+  "completedAt": "2026-08-30T17:42:38.4026079+00:00",
+  "platform": "windows",
+  "codexVersion": "0.151.0-alpha.7.2",
+  "codexExecutable": "C:\\Users\\<user>\\AppData\\Local\\OpenAI\\Codex\\bin\\b99306303521e97e\\codex.exe",
+  "workspace": "C:\\Users\\<user>\\source\\repos\\Software Factory\\probes\\codex-host\\workspaces\\write-probe",
+  "transport": "stdio-jsonrpc-jsonl",
+  "threadId": "01a053c3-ab88-7d72-bf09-4fec69091268",
+  "turnId": "01a053c3-ac25-7d20-95d6-130c1963b075",
+  "resumedFromThreadId": null,
+  "approvalRequestCount": 2,
+  "networkApprovalRequestCount": 1,
+  "userInputRequestCount": 0,
+  "handledServerRequestMethods": [
+    "item/commandExecution/requestApproval",
+    "item/commandExecution/requestApproval"
+  ],
+  "unsubscribeStatus": "unsubscribed",
+  "fixture": "app-server-write-approval.jsonl",
+  "stderr": "app-server-write-approval.stderr.log"
+}

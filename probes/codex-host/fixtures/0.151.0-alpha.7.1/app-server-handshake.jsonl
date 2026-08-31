@@ -1,0 +1,6 @@
+{"fixtureSchemaVersion":1,"sequence":1,"direction":"client-to-server","message":{"id":1,"method":"initialize","params":{"clientInfo":{"name":"darkstar-codex-host-probe","title":"DARKSTAR Codex host probe","version":"0.1.0"},"capabilities":{"experimentalApi":true}}}}
+{"fixtureSchemaVersion":1,"sequence":2,"direction":"server-to-client","message":{"id":1,"result":{"userAgent":"Codex Desktop/0.151.0-alpha.7.1 (Windows 10.0.26200; x86_64) dumb (darkstar-codex-host-probe; 0.1.0)","codexHome":"C:\\Users\\<user>\\.codex","platformFamily":"windows","platformOs":"windows"}}}
+{"fixtureSchemaVersion":1,"sequence":3,"direction":"client-to-server","message":{"method":"initialized","params":{}}}
+{"fixtureSchemaVersion":1,"sequence":4,"direction":"client-to-server","message":{"id":2,"method":"account/read","params":{"refreshToken":false}}}
+{"fixtureSchemaVersion":1,"sequence":5,"direction":"server-to-client","message":{"method":"remoteControl/status/changed","params":{"status":"disabled","serverName":"<redacted-device>","installationId":"<redacted-installation-id>","environmentId":null},"emittedAtMs":1788062506092}}
+{"fixtureSchemaVersion":1,"sequence":6,"direction":"server-to-client","message":{"id":2,"result":{"account":{"type":"chatgpt","email":"<redacted-email>","planType":"plus"},"requiresOpenaiAuth":true}}}

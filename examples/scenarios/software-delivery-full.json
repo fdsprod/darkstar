@@ -1,0 +1,49 @@
+{
+  "runInputs": {
+    "work_item": {"title": "Deliver a small internal feature"},
+    "repository": "C:/work/darkstar",
+    "needs_poc": false,
+    "needs_experience_design": false,
+    "needs_technical_research": false,
+    "needs_clarification": false,
+    "needs_story_research": false,
+    "needs_story_design": false,
+    "route_readiness_threshold": 0.75
+  },
+  "results": {
+    "p0_intake": [{"normalized_work_item": {"kind": "feature"}}],
+    "p1_route_assessment": [{"route_proposal": {"profile": "idea-to-production"}, "readiness": {"score": 0.92, "level": "information", "evidence": ["work item has an explicit outcome"]}}],
+    "p2_product_discovery": [{"product_brief": {"artifactId": "artifact:brief:1"}}],
+    "p4_requirements": [{"prd": {"artifactId": "artifact:prd:1"}}],
+    "p6_product_readiness": [{"product_readiness": {"approved": true}}],
+    "p8_technical_design": [{"technical_design": {"artifactId": "artifact:tdd:1"}}],
+    "p9_decomposition": [{"delivery_plan": {"artifactId": "artifact:plan:1"}, "story_set": [{"id": "story-1"}]}],
+    "p10_delivery_readiness": [{"delivery_readiness": {"approved": true}}],
+    "p12_integrated_validation": [{"passed": true, "validation_report": {"checks": "passed"}}],
+    "p13_pull_request": [{"pull_request": {"number": 42}}],
+    "p14_review_ci": [{"review_ci": {"passed": true}}],
+    "p15_release_readiness": [{"release_readiness": {"approved": true}}],
+    "p16_release": [{"deployment": {"environment": "production"}}],
+    "p17_verification": [{"production_verification": {"healthy": true}}]
+  },
+  "checkpoints": {
+    "p2_product_discovery": ["approve"],
+    "p4_requirements": ["approve"],
+    "p8_technical_design": ["approve"],
+    "p9_decomposition": ["approve"],
+    "p15_release_readiness": ["approve"]
+  },
+  "subworkflows": {
+    "p11_story_execution": {
+      "results": {
+        "s0_readiness": [{"readiness": {"level": "information"}}],
+        "s4_plan": [{"implementation_plan": {"points": ["point-1"]}}],
+        "s5_implementation": [{"changeset": {"commit": "abcdef1"}, "progress": {"completed_points": 1, "remaining_points": 0}}],
+        "s6_validation": [{"validation": {"passed": true, "acceptanceCovered": true}}]
+      },
+      "checkpoints": {
+        "s4_plan": ["approve"]
+      }
+    }
+  }
+}

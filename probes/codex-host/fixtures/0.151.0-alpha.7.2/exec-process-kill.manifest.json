@@ -1,0 +1,22 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "process-kill",
+  "status": "passed",
+  "startedAt": "2026-08-30T17:47:44.8616564+00:00",
+  "completedAt": "2026-08-30T17:47:45.1697007+00:00",
+  "platform": "windows",
+  "codexVersion": "0.151.0-alpha.7.2",
+  "codexExecutable": "C:\\Users\\<user>\\AppData\\Local\\OpenAI\\Codex\\bin\\b99306303521e97e\\codex.exe",
+  "workspace": "C:\\Users\\<user>\\source\\repos\\Software Factory",
+  "transport": "exec-jsonl",
+  "exitCode": -1,
+  "processKilled": true,
+  "sessionId": "01a053c8-d1ba-7e12-85d7-9d0920033821",
+  "resumedFromSessionId": null,
+  "eventTypes": [
+    "thread.started",
+    "turn.started"
+  ],
+  "fixture": "exec-process-kill.jsonl",
+  "stderr": "exec-process-kill.stderr.log"
+}

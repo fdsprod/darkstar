@@ -1,0 +1,88 @@
+{
+  "apiVersion": "darkstar.local/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "example/split-design",
+    "version": "1.0.0",
+    "displayName": "Custom split functional and technical design"
+  },
+  "spec": {
+    "inputs": {
+      "work_item": {"type": "object"},
+      "repository": {"type": "string"}
+    },
+    "routeDefaults": {
+      "entry": "discovery",
+      "terminals": ["technical_design"]
+    },
+    "nodes": {
+      "discovery": {
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"}
+        },
+        "outputs": {
+          "findings": {"type": "object"}
+        },
+        "reasoning": {"agent": "product-researcher"},
+        "checkpoint": "approve",
+        "transitions": [
+          {"id": "discovery_to_functional", "to": "functional_design"}
+        ]
+      },
+      "functional_design": {
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "findings": {"from": "node.discovery.output.findings", "type": "object", "required": false}
+        },
+        "outputs": {
+          "functional_design": {"type": "object"}
+        },
+        "reasoning": {"agent": "functional-designer"},
+        "checkpoint": "approve",
+        "transitions": [
+          {"id": "functional_to_technical", "to": "technical_design"},
+          {"id": "functional_to_review", "to": "peer_review", "enabledByDefault": false}
+        ]
+      },
+      "peer_review": {
+        "type": "approval",
+        "entry": false,
+        "terminal": true,
+        "inputs": {
+          "functional_design": {"from": "node.functional_design.output.functional_design", "type": "object"}
+        },
+        "outputs": {
+          "review": {"type": "object"}
+        },
+        "approval": {"actor": "architecture-peer"},
+        "transitions": [
+          {"id": "review_to_technical", "to": "technical_design", "enabledByDefault": false}
+        ]
+      },
+      "technical_design": {
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "join": {"mode": "one", "from": ["functional_to_technical", "review_to_technical"]},
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "functional_design": {"from": "node.functional_design.output.functional_design", "type": "object", "required": false},
+          "review": {"from": "node.peer_review.output.review", "type": "object", "required": false}
+        },
+        "outputs": {
+          "technical_design": {"type": "object"}
+        },
+        "reasoning": {"agent": "technical-designer"},
+        "checkpoint": "approve",
+        "transitions": []
+      }
+    }
+  }
+}

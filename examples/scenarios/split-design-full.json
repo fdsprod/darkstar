@@ -1,0 +1,16 @@
+{
+  "runInputs": {
+    "work_item": {"title": "Design tenant-aware rate limits"},
+    "repository": "C:/work/example"
+  },
+  "results": {
+    "discovery": [{"findings": {"tenantScope": "organization"}}],
+    "functional_design": [{"functional_design": {"artifactId": "artifact:frd:1"}}],
+    "technical_design": [{"technical_design": {"artifactId": "artifact:tdd:1"}}]
+  },
+  "checkpoints": {
+    "discovery": ["approve"],
+    "functional_design": ["approve"],
+    "technical_design": ["approve"]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "runInputs": {
+    "work_item": {"title": "Write a technical design and stop"},
+    "repository": "C:/work/darkstar"
+  },
+  "results": {
+    "p8_technical_design": [{"technical_design": {"artifactId": "artifact:tdd:1"}}]
+  },
+  "checkpoints": {
+    "p8_technical_design": ["approve"]
+  }
+}

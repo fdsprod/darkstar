@@ -1,0 +1,338 @@
+{
+  "apiVersion": "darkstar.local/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "darkstar/software-delivery",
+    "version": "1.0.0",
+    "displayName": "DARKSTAR default software delivery workflow"
+  },
+  "spec": {
+    "inputs": {
+      "work_item": {"type": "object"},
+      "repository": {"type": "string"},
+      "needs_poc": {"type": "boolean"},
+      "needs_experience_design": {"type": "boolean"},
+      "needs_technical_research": {"type": "boolean"},
+      "needs_clarification": {"type": "boolean"},
+      "needs_story_research": {"type": "boolean"},
+      "needs_story_design": {"type": "boolean"},
+      "route_readiness_threshold": {"type": "number"}
+    },
+    "routeDefaults": {"entry": "p0_intake", "terminals": ["p17_verification"]},
+    "nodes": {
+      "p0_intake": {
+        "displayName": "P0 — Intake and desired outcome",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {"work_item": {"from": "run.input.work_item", "type": "object"}},
+        "outputs": {"normalized_work_item": {"type": "object"}},
+        "reasoning": {"agent": "intake-normalizer"},
+        "transitions": [{"id": "p0_to_p1", "to": "p1_route_assessment"}]
+      },
+      "p1_route_assessment": {
+        "displayName": "P1 — Route and readiness assessment",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "normalized_work_item": {"from": "node.p0_intake.output.normalized_work_item", "type": "object", "required": false}
+        },
+        "outputs": {"route_proposal": {"type": "object"}, "readiness": {"type": "object"}},
+        "reasoning": {"agent": "route-assessor", "skills": ["darkstar:route-assessment", "darkstar:readiness"]},
+        "transitions": [{"id": "p1_to_gate", "to": "p1_route_gate"}]
+      },
+      "p1_route_gate": {
+        "displayName": "P1 — Deterministic route-readiness gate",
+        "type": "gate",
+        "entry": false,
+        "terminal": false,
+        "inputs": {
+          "readiness": {"from": "node.p1_route_assessment.output.readiness", "type": "object"}
+        },
+        "outputs": {
+          "passed": {"type": "boolean"},
+          "gate_evidence": {"type": "object"}
+        },
+        "gate": {
+          "policy": "darkstar/route-readiness-v1",
+          "condition": {
+            "op": "gte",
+            "args": [
+              {"ref": "input.readiness.score"},
+              {"ref": "run.input.route_readiness_threshold"}
+            ]
+          }
+        },
+        "transitions": [
+          {"id": "p1_gate_to_p2", "to": "p2_product_discovery", "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": true}]}},
+          {"id": "p1_gate_to_review", "to": "p1_route_review", "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": false}]}}
+        ]
+      },
+      "p1_route_review": {
+        "displayName": "P1 — Route-readiness exception review",
+        "type": "approval",
+        "entry": false,
+        "terminal": true,
+        "inputs": {
+          "readiness": {"from": "node.p1_route_assessment.output.readiness", "type": "object"},
+          "gate_evidence": {"from": "node.p1_route_gate.output.gate_evidence", "type": "object"}
+        },
+        "outputs": {"route_decision": {"type": "object"}},
+        "approval": {"actor": "work-item-owner"},
+        "transitions": [{"id": "p1_review_to_p2", "to": "p2_product_discovery"}]
+      },
+      "p2_product_discovery": {
+        "displayName": "P2 — Product discovery and shaping",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "join": {"mode": "one", "from": ["p1_gate_to_p2", "p1_review_to_p2"]},
+        "inputs": {"work_item": {"from": "run.input.work_item", "type": "object"}},
+        "outputs": {"product_brief": {"type": "object"}},
+        "reasoning": {"agent": "product-designer", "skills": ["darkstar:product-discovery"]},
+        "checkpoint": "approve",
+        "transitions": [
+          {"id": "p2_to_p3", "to": "p3_poc", "when": {"op": "eq", "args": [{"ref": "run.input.needs_poc"}, {"literal": true}]}},
+          {"id": "p2_to_p4", "to": "p4_requirements", "when": {"op": "eq", "args": [{"ref": "run.input.needs_poc"}, {"literal": false}]}}
+        ]
+      },
+      "p3_poc": {
+        "displayName": "P3 — Feasibility / proof of concept",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "product_brief": {"from": "node.p2_product_discovery.output.product_brief", "type": "object", "required": false}
+        },
+        "outputs": {"poc_findings": {"type": "object"}},
+        "reasoning": {"agent": "feasibility-researcher", "skills": ["darkstar:learning-tests"]},
+        "checkpoint": "approve",
+        "transitions": [{"id": "p3_to_p4", "to": "p4_requirements"}]
+      },
+      "p4_requirements": {
+        "displayName": "P4 — Product requirements",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "join": {"mode": "one", "from": ["p2_to_p4", "p3_to_p4"]},
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "product_brief": {"from": "node.p2_product_discovery.output.product_brief", "type": "object", "required": false},
+          "poc_findings": {"from": "node.p3_poc.output.poc_findings", "type": "object", "required": false}
+        },
+        "outputs": {"prd": {"type": "object"}},
+        "reasoning": {"agent": "product-requirements", "skills": ["darkstar:prd"]},
+        "checkpoint": "approve",
+        "transitions": [
+          {"id": "p4_to_p5", "to": "p5_experience_design", "when": {"op": "eq", "args": [{"ref": "run.input.needs_experience_design"}, {"literal": true}]}},
+          {"id": "p4_to_p6", "to": "p6_product_readiness", "when": {"op": "eq", "args": [{"ref": "run.input.needs_experience_design"}, {"literal": false}]}}
+        ]
+      },
+      "p5_experience_design": {
+        "displayName": "P5 — Experience design",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "prd": {"from": "node.p4_requirements.output.prd", "type": "object", "required": false}
+        },
+        "outputs": {"experience_design": {"type": "object"}},
+        "reasoning": {"agent": "experience-designer"},
+        "checkpoint": "approve",
+        "transitions": [{"id": "p5_to_p6", "to": "p6_product_readiness"}]
+      },
+      "p6_product_readiness": {
+        "displayName": "P6 — Product alignment and readiness",
+        "type": "approval",
+        "entry": false,
+        "terminal": false,
+        "join": {"mode": "one", "from": ["p4_to_p6", "p5_to_p6"]},
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "prd": {"from": "node.p4_requirements.output.prd", "type": "object", "required": false},
+          "experience_design": {"from": "node.p5_experience_design.output.experience_design", "type": "object", "required": false}
+        },
+        "outputs": {"product_readiness": {"type": "object"}},
+        "approval": {"actor": "product-owner"},
+        "transitions": [
+          {"id": "p6_to_p7", "to": "p7_technical_research", "when": {"op": "eq", "args": [{"ref": "run.input.needs_technical_research"}, {"literal": true}]}},
+          {"id": "p6_to_p8", "to": "p8_technical_design", "when": {"op": "eq", "args": [{"ref": "run.input.needs_technical_research"}, {"literal": false}]}}
+        ]
+      },
+      "p7_technical_research": {
+        "displayName": "P7 — Technical discovery",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"}
+        },
+        "outputs": {"technical_research": {"type": "object"}},
+        "reasoning": {"agent": "technical-researcher", "skills": ["darkstar:evidence-research"]},
+        "checkpoint": "approve",
+        "transitions": [{"id": "p7_to_p8", "to": "p8_technical_design"}]
+      },
+      "p8_technical_design": {
+        "displayName": "P8 — Technical design",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "join": {"mode": "one", "from": ["p6_to_p8", "p7_to_p8"]},
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "technical_research": {"from": "node.p7_technical_research.output.technical_research", "type": "object", "required": false}
+        },
+        "outputs": {"technical_design": {"type": "object"}},
+        "reasoning": {"agent": "technical-designer", "skills": ["darkstar:technical-design"]},
+        "checkpoint": "approve",
+        "transitions": [{"id": "p8_to_p9", "to": "p9_decomposition"}]
+      },
+      "p9_decomposition": {
+        "displayName": "P9 — Delivery decomposition",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "technical_design": {"from": "node.p8_technical_design.output.technical_design", "type": "object", "required": false}
+        },
+        "outputs": {"delivery_plan": {"type": "object"}, "story_set": {"type": "array"}},
+        "reasoning": {"agent": "delivery-planner", "skills": ["darkstar:story-decomposition"]},
+        "checkpoint": "approve",
+        "transitions": [{"id": "p9_to_p10", "to": "p10_delivery_readiness"}]
+      },
+      "p10_delivery_readiness": {
+        "displayName": "P10 — Delivery readiness",
+        "type": "approval",
+        "entry": false,
+        "terminal": false,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "story_set": {"from": "node.p9_decomposition.output.story_set", "type": "array", "required": false}
+        },
+        "outputs": {"delivery_readiness": {"type": "object"}},
+        "approval": {"actor": "delivery-owner"},
+        "transitions": [{"id": "p10_to_p11", "to": "p11_story_execution"}]
+      },
+      "p11_story_execution": {
+        "displayName": "P11 — Story execution",
+        "type": "subworkflow",
+        "entry": true,
+        "terminal": false,
+        "join": {"mode": "one", "from": ["p10_to_p11", "p12_repair_story"]},
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "needs_clarification": {"from": "run.input.needs_clarification", "type": "boolean"},
+          "needs_research": {"from": "run.input.needs_story_research", "type": "boolean"},
+          "needs_design": {"from": "run.input.needs_story_design", "type": "boolean"}
+        },
+        "outputs": {"story_validation": {"type": "object"}},
+        "call": {
+          "workflow": {"name": "darkstar/story-execution", "version": "1.0.0", "path": "story-execution.json"},
+          "entry": "s0_readiness",
+          "terminals": ["s6_validation"],
+          "inputs": {
+            "work_item": "work_item",
+            "repository": "repository",
+            "needs_clarification": "needs_clarification",
+            "needs_research": "needs_research",
+            "needs_design": "needs_design"
+          },
+          "outputs": {"story_validation": "node.s6_validation.output.validation"}
+        },
+        "transitions": [{"id": "p11_to_p12", "to": "p12_integrated_validation"}]
+      },
+      "p12_integrated_validation": {
+        "displayName": "P12 — Integrated validation",
+        "type": "command",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "story_validation": {"from": "node.p11_story_execution.output.story_validation", "type": "object", "required": false}
+        },
+        "outputs": {"passed": {"type": "boolean"}, "validation_report": {"type": "object"}},
+        "command": {"argv": ["darkstar-project", "validate", "--json"], "timeoutSeconds": 3600},
+        "transitions": [
+          {
+            "id": "p12_repair_story",
+            "to": "p11_story_execution",
+            "kind": "bounded",
+            "maxTraversals": 2,
+            "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": false}]}
+          },
+          {"id": "p12_to_p13", "to": "p13_pull_request", "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": true}]}}
+        ]
+      },
+      "p13_pull_request": {
+        "displayName": "P13 — Pull request creation or finalization",
+        "type": "command",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "validation_report": {"from": "node.p12_integrated_validation.output.validation_report", "type": "object", "required": false}
+        },
+        "outputs": {"pull_request": {"type": "object"}},
+        "command": {"argv": ["darkstar-delivery", "pull-request", "create", "--json"]},
+        "transitions": [{"id": "p13_to_p14", "to": "p14_review_ci"}]
+      },
+      "p14_review_ci": {
+        "displayName": "P14 — Review and CI",
+        "type": "approval",
+        "entry": false,
+        "terminal": false,
+        "inputs": {"pull_request": {"from": "node.p13_pull_request.output.pull_request", "type": "object", "required": false}},
+        "outputs": {"review_ci": {"type": "object"}},
+        "approval": {"actor": "external", "externalCondition": "required reviews and checks pass"},
+        "transitions": [{"id": "p14_to_p15", "to": "p15_release_readiness"}]
+      },
+      "p15_release_readiness": {
+        "displayName": "P15 — Release readiness",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"}
+        },
+        "outputs": {"release_readiness": {"type": "object"}},
+        "reasoning": {"agent": "release-owner", "skills": ["darkstar:release-readiness"]},
+        "checkpoint": "approve",
+        "transitions": [{"id": "p15_to_p16", "to": "p16_release"}]
+      },
+      "p16_release": {
+        "displayName": "P16 — Merge, release, and deploy",
+        "type": "approval",
+        "entry": false,
+        "terminal": false,
+        "inputs": {"release_readiness": {"from": "node.p15_release_readiness.output.release_readiness", "type": "object", "required": false}},
+        "outputs": {"deployment": {"type": "object"}},
+        "approval": {"actor": "external", "externalCondition": "merge, release, and deployment complete"},
+        "transitions": [{"id": "p16_to_p17", "to": "p17_verification"}]
+      },
+      "p17_verification": {
+        "displayName": "P17 — Production verification and learning",
+        "type": "command",
+        "entry": false,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "deployment": {"from": "node.p16_release.output.deployment", "type": "object", "required": false}
+        },
+        "outputs": {"production_verification": {"type": "object"}},
+        "command": {"argv": ["darkstar-project", "verify-production", "--json"]},
+        "transitions": []
+      }
+    }
+  }
+}

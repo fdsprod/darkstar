@@ -1,0 +1,243 @@
+{
+  "apiVersion": "darkstar.local/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "darkstar/story-execution",
+    "version": "1.0.0",
+    "displayName": "Default story execution sub-workflow"
+  },
+  "spec": {
+    "inputs": {
+      "work_item": {"type": "object"},
+      "repository": {"type": "string"},
+      "needs_clarification": {"type": "boolean"},
+      "needs_research": {"type": "boolean"},
+      "needs_design": {"type": "boolean"}
+    },
+    "routeDefaults": {
+      "entry": "s0_readiness",
+      "terminals": ["s6_validation"]
+    },
+    "nodes": {
+      "s0_readiness": {
+        "displayName": "S0 — Story intake and readiness",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"}
+        },
+        "outputs": {"readiness": {"type": "object"}},
+        "reasoning": {"agent": "story-readiness", "skills": ["darkstar:readiness"]},
+        "transitions": [
+          {
+            "id": "s0_to_s1",
+            "to": "s1_clarification",
+            "when": {"op": "eq", "args": [{"ref": "run.input.needs_clarification"}, {"literal": true}]}
+          },
+          {
+            "id": "s0_to_s2",
+            "to": "s2_research",
+            "when": {
+              "op": "all",
+              "args": [
+                {"op": "eq", "args": [{"ref": "run.input.needs_clarification"}, {"literal": false}]},
+                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": true}]}
+              ]
+            }
+          },
+          {
+            "id": "s0_to_s3",
+            "to": "s3_design",
+            "when": {
+              "op": "all",
+              "args": [
+                {"op": "eq", "args": [{"ref": "run.input.needs_clarification"}, {"literal": false}]},
+                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": false}]},
+                {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": true}]}
+              ]
+            }
+          },
+          {
+            "id": "s0_to_s4",
+            "to": "s4_plan",
+            "when": {
+              "op": "all",
+              "args": [
+                {"op": "eq", "args": [{"ref": "run.input.needs_clarification"}, {"literal": false}]},
+                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": false}]},
+                {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": false}]}
+              ]
+            }
+          }
+        ]
+      },
+      "s1_clarification": {
+        "displayName": "S1 — Clarification",
+        "type": "approval",
+        "entry": true,
+        "terminal": true,
+        "inputs": {"work_item": {"from": "run.input.work_item", "type": "object"}},
+        "outputs": {"answers": {"type": "object"}},
+        "approval": {"actor": "work-item-owner"},
+        "transitions": [
+          {
+            "id": "s1_to_s2",
+            "to": "s2_research",
+            "when": {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": true}]}
+          },
+          {
+            "id": "s1_to_s3",
+            "to": "s3_design",
+            "when": {
+              "op": "all",
+              "args": [
+                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": false}]},
+                {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": true}]}
+              ]
+            }
+          },
+          {
+            "id": "s1_to_s4",
+            "to": "s4_plan",
+            "when": {
+              "op": "all",
+              "args": [
+                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": false}]},
+                {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": false}]}
+              ]
+            }
+          }
+        ]
+      },
+      "s2_research": {
+        "displayName": "S2 — Focused developer research",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "join": {"mode": "one", "from": ["s0_to_s2", "s1_to_s2"]},
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "answers": {"from": "node.s1_clarification.output.answers", "type": "object", "required": false}
+        },
+        "outputs": {"research": {"type": "object"}},
+        "reasoning": {"agent": "story-researcher", "skills": ["darkstar:evidence-research"]},
+        "checkpoint": "approve",
+        "transitions": [
+          {
+            "id": "s2_to_s3",
+            "to": "s3_design",
+            "when": {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": true}]}
+          },
+          {
+            "id": "s2_to_s4",
+            "to": "s4_plan",
+            "when": {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": false}]}
+          }
+        ]
+      },
+      "s3_design": {
+        "displayName": "S3 — Story-level design",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "join": {"mode": "one", "from": ["s0_to_s3", "s1_to_s3", "s2_to_s3"]},
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "research": {"from": "node.s2_research.output.research", "type": "object", "required": false}
+        },
+        "outputs": {"design": {"type": "object"}},
+        "reasoning": {"agent": "story-designer", "skills": ["darkstar:technical-design"]},
+        "checkpoint": "approve",
+        "transitions": [{"id": "s3_to_s4", "to": "s4_plan"}]
+      },
+      "s4_plan": {
+        "displayName": "S4 — Implementation plan",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "join": {"mode": "one", "from": ["s0_to_s4", "s1_to_s4", "s2_to_s4", "s3_to_s4"]},
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "design": {"from": "node.s3_design.output.design", "type": "object", "required": false}
+        },
+        "outputs": {"implementation_plan": {"type": "object"}},
+        "reasoning": {"agent": "implementation-planner", "skills": ["darkstar:tracer-bullets"]},
+        "checkpoint": "approve",
+        "transitions": [{"id": "s4_to_s5", "to": "s5_implementation"}]
+      },
+      "s5_implementation": {
+        "displayName": "S5 — Implementation-point loop",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": false,
+        "join": {"mode": "one", "from": ["s4_to_s5", "s5_more_points"]},
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "implementation_plan": {"from": "node.s4_plan.output.implementation_plan", "type": "object", "required": false},
+          "prior_changeset": {"from": "node.s5_implementation.output.changeset", "type": "object", "required": false}
+        },
+        "outputs": {
+          "changeset": {"type": "object"},
+          "progress": {"type": "object"}
+        },
+        "reasoning": {"agent": "implementer", "tools": ["darkstar:repository-write", "darkstar:validation"]},
+        "permissions": ["workspace.write", "process.run"],
+        "transitions": [{"id": "s5_to_progress_gate", "to": "s5_progress_gate"}]
+      },
+      "s5_progress_gate": {
+        "displayName": "S5 — Deterministic implementation-progress gate",
+        "type": "gate",
+        "entry": false,
+        "terminal": false,
+        "inputs": {
+          "progress": {"from": "node.s5_implementation.output.progress", "type": "object"}
+        },
+        "outputs": {
+          "passed": {"type": "boolean"},
+          "gate_evidence": {"type": "object"}
+        },
+        "gate": {
+          "policy": "darkstar/implementation-points-complete-v1",
+          "condition": {
+            "op": "eq",
+            "args": [{"ref": "input.progress.remaining_points"}, {"literal": 0}]
+          }
+        },
+        "transitions": [
+          {
+            "id": "s5_more_points",
+            "to": "s5_implementation",
+            "kind": "bounded",
+            "maxTraversals": 20,
+            "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": false}]}
+          },
+          {
+            "id": "s5_to_s6",
+            "to": "s6_validation",
+            "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": true}]}
+          }
+        ]
+      },
+      "s6_validation": {
+        "displayName": "S6 — Story validation and acceptance coverage",
+        "type": "command",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "repository": {"from": "run.input.repository", "type": "string"},
+          "changeset": {"from": "node.s5_implementation.output.changeset", "type": "object", "required": false}
+        },
+        "outputs": {"validation": {"type": "object"}},
+        "command": {"argv": ["darkstar-project", "validate", "--json"], "timeoutSeconds": 1800},
+        "transitions": []
+      }
+    }
+  }
+}

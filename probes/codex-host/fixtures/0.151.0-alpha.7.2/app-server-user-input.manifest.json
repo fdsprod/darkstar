@@ -1,0 +1,25 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "user-input",
+  "status": "passed",
+  "failure": null,
+  "startedAt": "2026-08-30T17:43:30.3564932+00:00",
+  "completedAt": "2026-08-30T17:43:36.9799701+00:00",
+  "platform": "windows",
+  "codexVersion": "0.151.0-alpha.7.2",
+  "codexExecutable": "C:\\Users\\<user>\\AppData\\Local\\OpenAI\\Codex\\bin\\b99306303521e97e\\codex.exe",
+  "workspace": "C:\\Users\\<user>\\source\\repos\\Software Factory",
+  "transport": "stdio-jsonrpc-jsonl",
+  "threadId": "01a053c4-efaa-7c11-b9c7-f868207c86c0",
+  "turnId": "01a053c4-f00e-7801-b9a4-4e806b4625ae",
+  "resumedFromThreadId": null,
+  "approvalRequestCount": 0,
+  "networkApprovalRequestCount": 0,
+  "userInputRequestCount": 1,
+  "handledServerRequestMethods": [
+    "item/tool/requestUserInput"
+  ],
+  "unsubscribeStatus": "unsubscribed",
+  "fixture": "app-server-user-input.jsonl",
+  "stderr": "app-server-user-input.stderr.log"
+}

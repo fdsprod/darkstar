@@ -1,0 +1,26 @@
+{
+  "runInputs": {
+    "work_item": {"title": "Implement tenant-aware rate limits"},
+    "repository": "C:/work/example",
+    "needs_clarification": true,
+    "needs_research": true,
+    "needs_design": true
+  },
+  "results": {
+    "s0_readiness": [{"readiness": {"level": "recommendation"}}],
+    "s1_clarification": [{"answers": {"scope": "organization"}}],
+    "s2_research": [{"research": {"pattern": "token-bucket"}}],
+    "s3_design": [{"design": {"artifactId": "artifact:story-design:1"}}],
+    "s4_plan": [{"implementation_plan": {"points": ["storage", "api"]}}],
+    "s5_implementation": [
+      {"changeset": {"point": "storage", "commit": "1111111"}, "progress": {"completed_points": 1, "remaining_points": 1}},
+      {"changeset": {"point": "api", "commit": "2222222"}, "progress": {"completed_points": 2, "remaining_points": 0}}
+    ],
+    "s6_validation": [{"validation": {"passed": true, "acceptanceCovered": true}}]
+  },
+  "checkpoints": {
+    "s2_research": ["approve"],
+    "s3_design": ["approve"],
+    "s4_plan": ["approve"]
+  }
+}
