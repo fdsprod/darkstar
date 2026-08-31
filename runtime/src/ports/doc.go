@@ -1,5 +1,7 @@
-// Package ports contains runtime interfaces implemented by infrastructure adapters.
+// Package ports contains shared, application-owned vocabulary for runtime ports.
 //
-// The concrete port contracts are defined by DS-021. This package reserves their
-// dependency direction without prematurely choosing those interfaces.
+// Individual interfaces live in focused child packages: provider, artifactstore,
+// delivery, contentprocessor, platform, and executor. Those packages may depend
+// only on the standard library and this package. They must not expose concrete
+// adapter, transport, provider SDK, database, or operating-system types.
 package ports

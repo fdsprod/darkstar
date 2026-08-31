@@ -17,6 +17,7 @@ This directory separates documentation by the kind of decision or work it repres
 - [Crash recovery and idempotency model](architecture/recovery/RECOVERY_MODEL.md) — normative leases, process identity, interruption matrix, commit points, reconciliation, and failure-injection contract.
 - [Windows platform contract](architecture/platform/WINDOWS_PLATFORM_CONTRACT.md) — paths, locks, endpoint discovery, atomic state, Job Object ownership, shutdown, ConPTY, and support matrix.
 - [Runtime contract](architecture/runtime/RUNTIME_CONTRACT.md) — stable resources and events, command transactions, SQLite model, projections, API, SSE replay, pagination, and CLI errors.
+- [Core ports and adapter package rules](architecture/runtime/PORTS_AND_ADAPTERS.md) — provider-neutral interfaces, concrete implementation layout, and enforced dependency direction.
 
 ### Security and authorization
 

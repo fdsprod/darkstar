@@ -20,6 +20,9 @@ independent from dashboard build tooling.
 At a high level, deterministic behavior belongs in `core`, external contracts in
 `ports`, and concrete side effects in `adapters` or `platform`.
 
+See the normative [core ports and adapter package rules](../../docs/architecture/runtime/PORTS_AND_ADAPTERS.md)
+for the six port families and the dependency checks enforced by `go test`.
+
 ## Validate independently
 
 From the repository root:

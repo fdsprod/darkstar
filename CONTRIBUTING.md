@@ -39,7 +39,8 @@ For a shorter edit loop, run the phases independently:
 
 - Keep deterministic domain behavior in `runtime/src/core`.
 - Put interfaces owned by the application in `runtime/src/ports` and concrete
-  side-effect implementations in `runtime/src/adapters` or `runtime/src/platform`.
+  side-effect implementations in `runtime/src/adapters/<port>/<implementation>`
+  or `runtime/src/platform/<os>`.
 - Keep transport behavior in `runtime/src/cli`, the future local API package, or
   `dashboard/src`; transports do not own orchestration decisions.
 - Add or update tests with behavior changes.
