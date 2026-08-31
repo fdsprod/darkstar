@@ -15,6 +15,7 @@ The project is currently in the contract and walking-skeleton phase. The reposit
 - [Artifact and context contract](docs/architecture/artifacts/ARTIFACT_AND_CONTEXT_CONTRACT.md)
 - [Windows platform contract](docs/architecture/platform/WINDOWS_PLATFORM_CONTRACT.md)
 - [Runtime event, API, and persistence contract](docs/architecture/runtime/RUNTIME_CONTRACT.md)
+- [Skills and tool capability registry contract](docs/architecture/capabilities/CAPABILITY_REGISTRY_CONTRACT.md)
 - [MVP backlog](docs/planning/mvp-backlog.md)
 
 ## Repository layout
@@ -43,6 +44,8 @@ node --test tests/artifact-reference.test.mjs
 ./probes/windows-process-control/Test-WindowsProcessProbe.ps1
 node scripts/runtime-reference.mjs examples/runtime/fake-run.json
 node --test tests/runtime-reference.test.mjs
+node scripts/capability-reference.mjs examples/capabilities/capability-scenarios.json
+node --test tests/capability-reference.test.mjs
 ./probes/codex-host/Test-CodexHostFixtures.ps1
 ```
 

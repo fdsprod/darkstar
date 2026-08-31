@@ -26,6 +26,7 @@ This directory separates documentation by the kind of decision or work it repres
 
 - [Codex adapter contract](architecture/providers/codex/adapter-contract.md) — normalized provider boundary used by DARKSTAR core.
 - [Codex compatibility policy](architecture/providers/codex/compatibility-policy.md) — executable selection, supported versions, capability negotiation, and fixture policy.
+- [Capability registry contract](architecture/capabilities/CAPABILITY_REGISTRY_CONTRACT.md) — guaranteed, registered, inherited, and unsupported capabilities; skill/tool fingerprints; policy; fallback; and audit.
 
 ## Decisions
 
@@ -48,6 +49,7 @@ Some project knowledge belongs beside executable material rather than in `docs/`
 - [`examples/approvals/`](../examples/approvals/) and [`scripts/approval-reference.mjs`](../scripts/approval-reference.mjs) make approval separation, negative cases, and idempotency executable.
 - [`examples/artifacts/`](../examples/artifacts/) and [`scripts/artifact-reference.mjs`](../scripts/artifact-reference.mjs) provide the golden artifact corpus and deterministic context selector.
 - [`examples/runtime/`](../examples/runtime/) and [`scripts/runtime-reference.mjs`](../scripts/runtime-reference.mjs) validate the fake end-to-end event trace and projections.
+- [`examples/capabilities/`](../examples/capabilities/) and [`scripts/capability-reference.mjs`](../scripts/capability-reference.mjs) make capability classification, resolution, and fallback executable.
 - [`probes/codex-host/`](../probes/codex-host/) contains the Codex host probe harness and versioned compatibility evidence.
 - [`probes/windows-process-control/`](../probes/windows-process-control/) proves the DS-009 Windows lifecycle and owned process-tree boundary.
 

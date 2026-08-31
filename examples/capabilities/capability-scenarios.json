@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "hostFingerprint": "codex:0.151.0-alpha.7.2/windows-x64",
+  "registry": [
+    {"id":"cap:darkstar-artifact-read","name":"darkstar:artifact.read","kind":"tool","class":"guaranteed","version":"1.0.0","fingerprint":"sha256:ds-artifact-v1","availability":"available","policy":"allow","dependencies":[]},
+    {"id":"cap:project-review","name":"project:review-guidance","kind":"skill","class":"registered","version":"1.2.0","fingerprint":"sha256:review-skill-v1","availability":"available","policy":"allow","dependencies":[]},
+    {"id":"cap:mcp-docs-search","name":"mcp:docs/search","kind":"tool","class":"registered","version":"2.0.0","fingerprint":"sha256:docs-search-v2","availability":"available","policy":"allow","dependencies":[]},
+    {"id":"cap:mcp-docs-search-inherited","name":"mcp:docs/search","kind":"tool","class":"inherited","version":null,"fingerprint":"sha256:docs-search-observed","availability":"available","policy":"allow","dependencies":[]},
+    {"id":"cap:inherited-lint","name":"codex-inherited:repo/lint","kind":"skill","class":"inherited","version":null,"fingerprint":"sha256:lint-observed","availability":"available","policy":"allow","dependencies":[]},
+    {"id":"cap:denied-deploy","name":"mcp:delivery/deploy","kind":"tool","class":"registered","version":"1.0.0","fingerprint":"sha256:deploy-v1","availability":"available","policy":"deny","dependencies":[]},
+    {"id":"cap:broken-render","name":"mcp:design/render","kind":"tool","class":"registered","version":"1.0.0","fingerprint":"sha256:render-v1","availability":"unavailable","policy":"allow","dependencies":[]},
+    {"id":"cap:project-report","name":"project:report","kind":"skill","class":"registered","version":"1.0.0","fingerprint":"sha256:report-v1","availability":"available","policy":"allow","dependencies":["mcp:missing/data"]}
+  ],
+  "cases": [
+    {"id":"guaranteed-required","requirements":[{"name":"darkstar:artifact.read","kind":"tool","required":true}],"expected":{"code":"OK","selected":["cap:darkstar-artifact-read"],"omitted":[],"degraded":false},"covers":["guaranteed","required"]},
+    {"id":"registered-skill-required","requirements":[{"name":"project:review-guidance","kind":"skill","required":true,"version":"1.2.0"}],"expected":{"code":"OK","selected":["cap:project-review"],"omitted":[],"degraded":false},"covers":["registered","skill","version"]},
+    {"id":"registered-precedes-inherited","requirements":[{"name":"mcp:docs/search","kind":"tool","required":true}],"expected":{"code":"OK","selected":["cap:mcp-docs-search"],"omitted":[],"degraded":false},"covers":["tool","precedence","namespace"]},
+    {"id":"inherited-required-denied-by-default","requirements":[{"name":"codex-inherited:repo/lint","kind":"skill","required":true}],"expected":{"code":"CAPABILITY_INHERITED_NOT_ALLOWED","selected":[],"omitted":[],"degraded":false},"covers":["inherited","missing"]},
+    {"id":"inherited-explicit-opt-in","requirements":[{"name":"codex-inherited:repo/lint","kind":"skill","required":true,"acceptInherited":true}],"expected":{"code":"OK","selected":["cap:inherited-lint"],"omitted":[],"degraded":true},"covers":["inherited","explicit_opt_in"]},
+    {"id":"deny-wins","requirements":[{"name":"mcp:delivery/deploy","kind":"tool","required":true}],"expected":{"code":"CAPABILITY_POLICY_DENIED","selected":[],"omitted":[],"degraded":false},"covers":["policy_deny","tool"]},
+    {"id":"declared-fallback","requirements":[{"name":"mcp:design/render","kind":"tool","required":true,"fallbacks":["darkstar:artifact.read"]}],"expected":{"code":"OK","selected":["cap:darkstar-artifact-read"],"omitted":[],"degraded":true},"covers":["fallback","unavailable"]},
+    {"id":"optional-missing-visible","requirements":[{"name":"mcp:optional/missing","kind":"tool","required":false}],"expected":{"code":"OK","selected":[],"omitted":[{"name":"mcp:optional/missing","reason":"missing"}],"degraded":true},"covers":["optional","missing"]},
+    {"id":"dependency-missing","requirements":[{"name":"project:report","kind":"skill","required":true}],"expected":{"code":"CAPABILITY_DEPENDENCY_MISSING","selected":[],"omitted":[],"degraded":false},"covers":["dependency","skill"]},
+    {"id":"version-mismatch","requirements":[{"name":"mcp:docs/search","kind":"tool","required":true,"version":"3.0.0"}],"expected":{"code":"CAPABILITY_VERSION_MISMATCH","selected":[],"omitted":[],"degraded":false},"covers":["version","missing"]}
+  ],
+  "postInvocation": [
+    {"id":"read-only-failure-with-declared-fallback","sideEffect":"none","outcome":"failed","fallbackDeclared":true,"expected":"fallback_allowed"},
+    {"id":"write-timeout-never-falls-through","sideEffect":"write","outcome":"ambiguous","fallbackDeclared":true,"expected":"reconcile_required"},
+    {"id":"permission-denial-never-falls-through","sideEffect":"none","outcome":"permission_denied","fallbackDeclared":true,"expected":"stop_denied"}
+  ]
+}
