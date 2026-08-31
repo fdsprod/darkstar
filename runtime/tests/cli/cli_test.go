@@ -20,8 +20,26 @@ func TestRunHelp(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Usage:") {
 		t.Fatalf("Run(help) stdout = %q, want usage", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "daemon status --json") {
+		t.Fatalf("Run(help) stdout = %q, want daemon commands", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("Run(help) stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunDaemonRequiresValidSubcommand(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{{"daemon"}, {"daemon", "unknown"}, {"daemon", "status", "--yaml"}} {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		if code := cli.Run(args, &stdout, &stderr); code != 2 {
+			t.Errorf("Run(%q) code = %d, want 2", args, code)
+		}
+		if stderr.Len() == 0 {
+			t.Errorf("Run(%q) stderr is empty", args)
+		}
 	}
 }
 

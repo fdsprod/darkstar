@@ -27,6 +27,9 @@ for the six port families and the dependency checks enforced by `go test`.
 See [runtime configuration](configuration.md) for layer precedence, source
 attribution, file locations, and Windows application-data roots.
 
+See [daemon lifecycle](daemon-lifecycle.md) for foreground/background commands,
+identity verification, stale-state handling, and shutdown escalation.
+
 ## Validate independently
 
 From the repository root:
