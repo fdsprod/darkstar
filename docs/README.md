@@ -16,6 +16,7 @@ This directory separates documentation by the kind of decision or work it repres
 - [MVP work and Git model](architecture/work/WORK_AND_GIT_MODEL.md) — normative work identity, delivery topology, mutation ownership, revision, and recovery behavior.
 - [Crash recovery and idempotency model](architecture/recovery/RECOVERY_MODEL.md) — normative leases, process identity, interruption matrix, commit points, reconciliation, and failure-injection contract.
 - [Windows platform contract](architecture/platform/WINDOWS_PLATFORM_CONTRACT.md) — paths, locks, endpoint discovery, atomic state, Job Object ownership, shutdown, ConPTY, and support matrix.
+- [Runtime contract](architecture/runtime/RUNTIME_CONTRACT.md) — stable resources and events, command transactions, SQLite model, projections, API, SSE replay, pagination, and CLI errors.
 
 ### Security and authorization
 
@@ -46,6 +47,7 @@ Some project knowledge belongs beside executable material rather than in `docs/`
 - [`examples/recovery/`](../examples/recovery/) and [`scripts/recovery-reference.mjs`](../scripts/recovery-reference.mjs) make crash-window decisions and catalog coverage executable.
 - [`examples/approvals/`](../examples/approvals/) and [`scripts/approval-reference.mjs`](../scripts/approval-reference.mjs) make approval separation, negative cases, and idempotency executable.
 - [`examples/artifacts/`](../examples/artifacts/) and [`scripts/artifact-reference.mjs`](../scripts/artifact-reference.mjs) provide the golden artifact corpus and deterministic context selector.
+- [`examples/runtime/`](../examples/runtime/) and [`scripts/runtime-reference.mjs`](../scripts/runtime-reference.mjs) validate the fake end-to-end event trace and projections.
 - [`probes/codex-host/`](../probes/codex-host/) contains the Codex host probe harness and versioned compatibility evidence.
 - [`probes/windows-process-control/`](../probes/windows-process-control/) proves the DS-009 Windows lifecycle and owned process-tree boundary.
 

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/api-error-v1alpha1.schema.json",
+  "title": "DARKSTAR API error v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion","code","message","requestId","retryable"],
+  "properties": {
+    "schemaVersion": {"const":1},
+    "code": {"type":"string","pattern":"^[A-Z][A-Z0-9_]+$"},
+    "message": {"type":"string","minLength":1,"maxLength":1024},
+    "requestId": {"type":"string","minLength":1,"maxLength":128},
+    "retryable": {"type":"boolean"},
+    "resourceVersion": {"type":"integer","minimum":0},
+    "details": {"type":"array","maxItems":100,"items":{"type":"object","additionalProperties":false,"required":["field","code"],"properties":{"field":{"type":"string"},"code":{"type":"string"},"message":{"type":"string"}}}}
+  }
+}
