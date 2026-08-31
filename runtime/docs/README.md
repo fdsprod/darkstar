@@ -24,6 +24,9 @@ At a high level, deterministic behavior belongs in `core`, external contracts in
 See the normative [core ports and adapter package rules](../../docs/architecture/runtime/PORTS_AND_ADAPTERS.md)
 for the six port families and the dependency checks enforced by `go test`.
 
+See [runtime configuration](configuration.md) for layer precedence, source
+attribution, file locations, and Windows application-data roots.
+
 ## Validate independently
 
 From the repository root:

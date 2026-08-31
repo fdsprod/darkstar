@@ -8,10 +8,16 @@ import (
 	"time"
 )
 
+// PathResolver owns application-data path semantics independently of the other
+// operating-system capabilities.
+type PathResolver interface {
+	ResolvePaths(context.Context, PathRequest) (Paths, error)
+}
+
 // Strategy groups the OS capabilities whose implementations must agree on path,
 // file, process-ownership, and executable-identity semantics.
 type Strategy interface {
-	ResolvePaths(context.Context, PathRequest) (Paths, error)
+	PathResolver
 	AcquireDaemonLock(context.Context, LockRequest) (DaemonLock, error)
 	PublishEndpoint(context.Context, EndpointRequest) error
 	InspectProcess(context.Context, ProcessIdentity) (ProcessObservation, error)
