@@ -37,15 +37,15 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read schema version: %v", err)
 	}
-	if version != 2 {
-		t.Fatalf("schema version = %d, want 2", version)
+	if version != 3 {
+		t.Fatalf("schema version = %d, want 3", version)
 	}
 	history, err := database.AppliedMigrations(ctx)
 	if err != nil {
 		t.Fatalf("read migration history: %v", err)
 	}
-	if len(history) != 2 || history[0].Version != 1 || history[0].Name != "initial" || history[1].Version != 2 || history[1].Name != "constrain_state" {
-		t.Fatalf("migration history = %#v, want initial and constrain_state migrations", history)
+	if len(history) != 3 || history[0].Version != 1 || history[0].Name != "initial" || history[1].Version != 2 || history[1].Name != "constrain_state" || history[2].Version != 3 || history[2].Name != "append_only_events" {
+		t.Fatalf("migration history = %#v, want initial, constrain_state, and append_only_events migrations", history)
 	}
 	for _, item := range history {
 		if len(item.Checksum) != 64 {
@@ -75,8 +75,8 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	if err := database.SQL().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrationCount != 2 {
-		t.Errorf("migration count = %d, want 2", migrationCount)
+	if migrationCount != 3 {
+		t.Errorf("migration count = %d, want 3", migrationCount)
 	}
 	if err := database.SQL().QueryRowContext(ctx,
 		`SELECT last_position FROM global_positions WHERE singleton = 1`).Scan(&initialPosition); err != nil {
@@ -114,8 +114,8 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err := second.SQL().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 2 {
-		t.Fatalf("migration count after reopen = %d, want 2", count)
+	if count != 3 {
+		t.Fatalf("migration count after reopen = %d, want 3", count)
 	}
 }
 

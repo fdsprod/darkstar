@@ -51,6 +51,18 @@ CREATE TABLE events (
 CREATE INDEX events_correlation ON events(correlation_id, global_position);
 CREATE INDEX events_kind_position ON events(kind, global_position);
 
+CREATE TRIGGER events_reject_update
+BEFORE UPDATE ON events
+BEGIN
+  SELECT RAISE(ABORT, 'events are append-only');
+END;
+
+CREATE TRIGGER events_reject_delete
+BEFORE DELETE ON events
+BEGIN
+  SELECT RAISE(ABORT, 'events are append-only');
+END;
+
 CREATE TABLE commands (
   scope TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,

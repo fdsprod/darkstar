@@ -26,6 +26,7 @@ type Options struct {
 // Database is a migrated DARKSTAR SQLite database.
 type Database struct {
 	sql *sql.DB
+	now func() time.Time
 }
 
 // Open opens path, applies every pending migration, and returns only after the
@@ -45,7 +46,7 @@ func Open(ctx context.Context, path string, options Options) (*Database, error) 
 		return nil, fmt.Errorf("migrate SQLite database: %w", err)
 	}
 
-	return &Database{sql: db}, nil
+	return &Database{sql: db, now: time.Now}, nil
 }
 
 // SQL returns the configured database/sql handle. The handle is intentionally
