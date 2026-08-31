@@ -14,6 +14,7 @@ independent from dashboard build tooling.
 | `src/core` | Deterministic domain and workflow behavior. |
 | `src/ports` | Application-owned interfaces for external effects. |
 | `src/adapters` | Infrastructure implementations of runtime ports. |
+| `src/adapters/provider/fake` | Deterministic provider scenarios for stream, interaction, recovery, failure, and cancellation tests. |
 | `src/platform` | Operating-system strategy implementations. |
 | `tests` | Black-box and cross-package runtime tests. |
 
