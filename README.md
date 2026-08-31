@@ -16,6 +16,7 @@ The project is currently in the contract and walking-skeleton phase. The reposit
 - [Windows platform contract](docs/architecture/platform/WINDOWS_PLATFORM_CONTRACT.md)
 - [Runtime event, API, and persistence contract](docs/architecture/runtime/RUNTIME_CONTRACT.md)
 - [Skills and tool capability registry contract](docs/architecture/capabilities/CAPABILITY_REGISTRY_CONTRACT.md)
+- [MVP threat model](docs/architecture/security/THREAT_MODEL.md)
 - [MVP backlog](docs/planning/mvp-backlog.md)
 
 ## Repository layout
@@ -46,6 +47,8 @@ node scripts/runtime-reference.mjs examples/runtime/fake-run.json
 node --test tests/runtime-reference.test.mjs
 node scripts/capability-reference.mjs examples/capabilities/capability-scenarios.json
 node --test tests/capability-reference.test.mjs
+node scripts/threat-model-reference.mjs examples/security/threat-negative-tests.json
+node --test tests/threat-model-reference.test.mjs
 ./probes/codex-host/Test-CodexHostFixtures.ps1
 ```
 

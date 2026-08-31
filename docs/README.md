@@ -21,6 +21,7 @@ This directory separates documentation by the kind of decision or work it repres
 ### Security and authorization
 
 - [Approval and permission model](architecture/security/APPROVAL_AND_PERMISSION_MODEL.md) — normative approval classes, scope, actors, expiry, session grants, offline behavior, audit, and idempotent decision API.
+- [MVP threat model](architecture/security/THREAT_MODEL.md) — trust boundaries, high-risk threats, owned backlog controls, priorities, negative tests, and residual risk.
 
 ### Provider integration
 
@@ -50,6 +51,7 @@ Some project knowledge belongs beside executable material rather than in `docs/`
 - [`examples/artifacts/`](../examples/artifacts/) and [`scripts/artifact-reference.mjs`](../scripts/artifact-reference.mjs) provide the golden artifact corpus and deterministic context selector.
 - [`examples/runtime/`](../examples/runtime/) and [`scripts/runtime-reference.mjs`](../scripts/runtime-reference.mjs) validate the fake end-to-end event trace and projections.
 - [`examples/capabilities/`](../examples/capabilities/) and [`scripts/capability-reference.mjs`](../scripts/capability-reference.mjs) make capability classification, resolution, and fallback executable.
+- [`examples/security/`](../examples/security/) and [`scripts/threat-model-reference.mjs`](../scripts/threat-model-reference.mjs) enforce owned control and negative-test coverage for every high-risk trust boundary.
 - [`probes/codex-host/`](../probes/codex-host/) contains the Codex host probe harness and versioned compatibility evidence.
 - [`probes/windows-process-control/`](../probes/windows-process-control/) proves the DS-009 Windows lifecycle and owned process-tree boundary.
 
