@@ -33,7 +33,7 @@ type Call struct {
 	IdempotencyKey    string
 	AfterSequence     uint64
 	ProviderRequestID string
-	Decision          provider.InteractionDecision
+	Decision          string
 }
 
 // Option configures a Fake.
@@ -196,34 +196,38 @@ func (fake *Fake) Respond(ctx context.Context, response provider.InteractionResp
 	if err := contextFailure(ctx); err != nil {
 		return provider.InteractionReceipt{}, err
 	}
+	interaction, decision, err := responseDetails(response)
+	if err != nil {
+		return provider.InteractionReceipt{}, err
+	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	fake.calls = append(fake.calls, Call{
 		Kind:              CallRespond,
-		AttemptID:         response.AttemptID,
-		IdempotencyKey:    response.IdempotencyKey,
-		ProviderRequestID: response.ProviderRequestID,
-		Decision:          response.Decision,
+		AttemptID:         interaction.AttemptID,
+		IdempotencyKey:    interaction.IdempotencyKey,
+		ProviderRequestID: interaction.ProviderRequestID,
+		Decision:          decision,
 	})
-	state, ok := fake.attempts[response.AttemptID]
+	state, ok := fake.attempts[interaction.AttemptID]
 	if !ok {
 		return provider.InteractionReceipt{}, failure(ports.FailureNotFound, "attempt scenario not found", false)
 	}
-	if !awaitsRequest(state.scenario.Steps, response.ProviderRequestID) {
+	if !awaitsRequest(state.scenario.Steps, interaction.ProviderRequestID) {
 		return provider.InteractionReceipt{}, failure(ports.FailureNotFound, "provider request is not scripted", false)
 	}
-	if existing, ok := state.responses[response.ProviderRequestID]; ok {
-		if existing.key == response.IdempotencyKey {
+	if existing, ok := state.responses[interaction.ProviderRequestID]; ok {
+		if existing.key == interaction.IdempotencyKey {
 			return existing.receipt, nil
 		}
 		return provider.InteractionReceipt{}, failure(ports.FailureConflict, "provider request already answered", false)
 	}
 	receipt := provider.InteractionReceipt{
-		ProviderRequestID: response.ProviderRequestID,
+		ProviderRequestID: interaction.ProviderRequestID,
 		Recorded:          true,
 		RecordedAt:        fake.clock.Now(),
 	}
-	state.responses[response.ProviderRequestID] = responseRecord{key: response.IdempotencyKey, receipt: receipt}
+	state.responses[interaction.ProviderRequestID] = responseRecord{key: interaction.IdempotencyKey, receipt: receipt}
 	close(state.responseChanged)
 	state.responseChanged = make(chan struct{})
 	return receipt, nil
@@ -255,21 +259,23 @@ func (fake *Fake) CancelAttempt(ctx context.Context, request provider.CancelRequ
 
 func (fake *Fake) GetResult(ctx context.Context, request provider.ResultRequest) (provider.AttemptResult, error) {
 	if err := contextFailure(ctx); err != nil {
-		return provider.AttemptResult{}, err
+		return nil, err
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	fake.calls = append(fake.calls, Call{Kind: CallGetResult, AttemptID: request.Handle.AttemptID})
 	state, ok := fake.attempts[request.Handle.AttemptID]
 	if !ok {
-		return provider.AttemptResult{}, failure(ports.FailureNotFound, "attempt scenario not found", false)
+		return nil, failure(ports.FailureNotFound, "attempt scenario not found", false)
 	}
 	result := cloneResult(state.scenario.Result)
+	metadata := resultMetadata(result)
 	if state.cancelled {
-		result.Status = provider.AttemptCancelled
+		result = provider.CancelledResult{AttemptResultMetadata: metadata}
 	}
-	if state.lastSequence > result.Recovery.LastSequence {
-		result.Recovery.LastSequence = state.lastSequence
+	if state.lastSequence > metadata.Recovery.LastSequence {
+		metadata.Recovery.LastSequence = state.lastSequence
+		result = withResultMetadata(result, metadata)
 	}
 	return result, nil
 }
@@ -435,9 +441,78 @@ func cloneEvent(source provider.Event) provider.Event {
 }
 
 func cloneResult(source provider.AttemptResult) provider.AttemptResult {
-	clone := source
-	clone.StructuredOutput = append(json.RawMessage(nil), source.StructuredOutput...)
-	clone.ValidationFailure = cloneFailure(source.ValidationFailure)
-	clone.WorkspaceEvidence = append([]provider.Evidence(nil), source.WorkspaceEvidence...)
-	return clone
+	metadata := cloneResultMetadata(resultMetadata(source))
+	switch result := source.(type) {
+	case provider.SucceededResult:
+		return provider.SucceededResult{AttemptResultMetadata: metadata, StructuredOutput: append(json.RawMessage(nil), result.StructuredOutput...)}
+	case provider.FailedResult:
+		return provider.FailedResult{AttemptResultMetadata: metadata, Failure: cloneFailureValue(result.Failure)}
+	case provider.InterruptedResult:
+		return provider.InterruptedResult{AttemptResultMetadata: metadata, Failure: cloneFailureValue(result.Failure)}
+	case provider.CancelledResult:
+		return provider.CancelledResult{AttemptResultMetadata: metadata}
+	case provider.UnknownResult:
+		return provider.UnknownResult{AttemptResultMetadata: metadata, Failure: cloneFailureValue(result.Failure)}
+	default:
+		panic(fmt.Sprintf("unsupported attempt result %T", source))
+	}
+}
+
+func responseDetails(response provider.InteractionResponse) (provider.InteractionContext, string, error) {
+	switch response := response.(type) {
+	case provider.PermissionResponse:
+		return response.InteractionContext, string(response.Decision), nil
+	case provider.AnswerResponse:
+		return response.InteractionContext, "answer", nil
+	default:
+		return provider.InteractionContext{}, "", failure(ports.FailureInvalidRequest, fmt.Sprintf("unsupported interaction response %T", response), false)
+	}
+}
+
+func resultMetadata(result provider.AttemptResult) provider.AttemptResultMetadata {
+	switch result := result.(type) {
+	case provider.SucceededResult:
+		return result.AttemptResultMetadata
+	case provider.FailedResult:
+		return result.AttemptResultMetadata
+	case provider.InterruptedResult:
+		return result.AttemptResultMetadata
+	case provider.CancelledResult:
+		return result.AttemptResultMetadata
+	case provider.UnknownResult:
+		return result.AttemptResultMetadata
+	default:
+		panic(fmt.Sprintf("unsupported attempt result %T", result))
+	}
+}
+
+func withResultMetadata(result provider.AttemptResult, metadata provider.AttemptResultMetadata) provider.AttemptResult {
+	switch result := result.(type) {
+	case provider.SucceededResult:
+		result.AttemptResultMetadata = metadata
+		return result
+	case provider.FailedResult:
+		result.AttemptResultMetadata = metadata
+		return result
+	case provider.InterruptedResult:
+		result.AttemptResultMetadata = metadata
+		return result
+	case provider.CancelledResult:
+		result.AttemptResultMetadata = metadata
+		return result
+	case provider.UnknownResult:
+		result.AttemptResultMetadata = metadata
+		return result
+	default:
+		panic(fmt.Sprintf("unsupported attempt result %T", result))
+	}
+}
+
+func cloneResultMetadata(source provider.AttemptResultMetadata) provider.AttemptResultMetadata {
+	source.WorkspaceEvidence = append([]provider.Evidence(nil), source.WorkspaceEvidence...)
+	return source
+}
+
+func cloneFailureValue(source ports.Failure) ports.Failure {
+	return *cloneFailure(&source)
 }

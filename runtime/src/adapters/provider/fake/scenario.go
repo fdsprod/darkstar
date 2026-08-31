@@ -77,7 +77,6 @@ func normalizeScenario(scenario Scenario) (Scenario, error) {
 			State:           provider.HealthAvailable,
 			Provider:        "fake",
 			ProviderVersion: "scenario-v1",
-			Authenticated:   true,
 		}
 	}
 	if scenario.Capabilities.Provider == "" {
@@ -100,6 +99,9 @@ func normalizeScenario(scenario Scenario) (Scenario, error) {
 		seen[attempt.AttemptID] = struct{}{}
 
 		normalizeAttempt(attempt, scenario.Health)
+		if err := validateResult(attempt.AttemptID, attempt.Result); err != nil {
+			return Scenario{}, err
+		}
 		if err := validateSteps(*attempt); err != nil {
 			return Scenario{}, err
 		}
@@ -123,18 +125,20 @@ func normalizeAttempt(attempt *AttemptScenario, health provider.Health) {
 	if attempt.Handle.ProcessOwnerID == "" {
 		attempt.Handle.ProcessOwnerID = "fake-owner-" + attempt.AttemptID
 	}
-	if attempt.Result.Status == "" {
-		attempt.Result.Status = provider.AttemptSucceeded
+	if attempt.Result == nil {
+		attempt.Result = provider.SucceededResult{}
 	}
-	if attempt.Result.Recovery.ProviderThreadID == "" {
-		attempt.Result.Recovery.ProviderThreadID = attempt.Handle.ProviderThreadID
+	metadata := resultMetadata(attempt.Result)
+	if metadata.Recovery.ProviderThreadID == "" {
+		metadata.Recovery.ProviderThreadID = attempt.Handle.ProviderThreadID
 	}
-	if attempt.Result.Recovery.ProviderTurnID == "" {
-		attempt.Result.Recovery.ProviderTurnID = attempt.Handle.ProviderTurnID
+	if metadata.Recovery.ProviderTurnID == "" {
+		metadata.Recovery.ProviderTurnID = attempt.Handle.ProviderTurnID
 	}
-	if attempt.Result.Recovery.ProcessOwnerID == "" {
-		attempt.Result.Recovery.ProcessOwnerID = attempt.Handle.ProcessOwnerID
+	if metadata.Recovery.ProcessOwnerID == "" {
+		metadata.Recovery.ProcessOwnerID = attempt.Handle.ProcessOwnerID
 	}
+	attempt.Result = withResultMetadata(attempt.Result, metadata)
 	if attempt.CancelResult.Disposition == "" {
 		attempt.CancelResult.Disposition = provider.CancelGraceful
 	}
@@ -163,6 +167,28 @@ func normalizeAttempt(attempt *AttemptScenario, health provider.Health) {
 			step.Event.ProviderTurnID = attempt.Handle.ProviderTurnID
 		}
 	}
+}
+
+func validateResult(attemptID string, result provider.AttemptResult) error {
+	switch result := result.(type) {
+	case provider.SucceededResult, provider.CancelledResult:
+		return nil
+	case provider.FailedResult:
+		if result.Failure.Code == "" {
+			return fmt.Errorf("attempt %q failed result has no classified failure", attemptID)
+		}
+	case provider.InterruptedResult:
+		if result.Failure.Code == "" {
+			return fmt.Errorf("attempt %q interrupted result has no classified failure", attemptID)
+		}
+	case provider.UnknownResult:
+		if result.Failure.Code == "" {
+			return fmt.Errorf("attempt %q unknown result has no classified failure", attemptID)
+		}
+	default:
+		return fmt.Errorf("attempt %q has unsupported result %T", attemptID, result)
+	}
+	return nil
 }
 
 func validateSteps(attempt AttemptScenario) error {

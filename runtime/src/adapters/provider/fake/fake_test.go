@@ -29,8 +29,7 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 			fake.AwaitResponse("approval-1"),
 			fake.Emit(event(4, "turn.completed", `{}`)),
 		},
-		Result: provider.AttemptResult{
-			Status:           provider.AttemptSucceeded,
+		Result: provider.SucceededResult{
 			StructuredOutput: json.RawMessage(`{"summary":"done"}`),
 		},
 	}}}, fake.WithClock(clock))
@@ -59,7 +58,7 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 
 	approvalEvent := receiveAsync(stream)
 	assertBlocked(t, approvalEvent)
-	respond(t, adapter, handle, "tool-1", "tool-response-1", provider.InteractionAnswered)
+	respondAnswer(t, adapter, handle, "tool-1", "tool-response-1", json.RawMessage(`{"value":"inspected"}`))
 	waitFor(t, func() bool { return clock.Pending() == 1 }, "scripted delay to become pending")
 	clock.Advance(5 * time.Minute)
 	third := awaitEvent(t, approvalEvent)
@@ -72,7 +71,7 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 
 	completedEvent := receiveAsync(stream)
 	assertBlocked(t, completedEvent)
-	respond(t, adapter, handle, "approval-1", "approval-response-1", provider.InteractionAllowOnce)
+	respondPermission(t, adapter, handle, "approval-1", "approval-response-1", provider.PermissionAllowOnce)
 	if got := awaitEvent(t, completedEvent); got.Kind != "turn.completed" {
 		t.Fatalf("event kind = %q, want turn.completed", got.Kind)
 	}
@@ -90,9 +89,12 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 			t.Errorf("Calls()[%d].Kind = %q, want %q", index, calls[index].Kind, want)
 		}
 	}
+	if calls[2].Decision != "answer" || calls[3].Decision != string(provider.PermissionAllowOnce) {
+		t.Fatalf("response decisions = %q, %q, want answer, allow_once", calls[2].Decision, calls[3].Decision)
+	}
 }
 
-func TestScenarioPreservesMalformedOutputAndInjectsFailure(t *testing.T) {
+func TestScenarioPreservesMalformedEventAndInjectsFailure(t *testing.T) {
 	t.Parallel()
 
 	adapter := newProvider(t, fake.Scenario{Attempts: []fake.AttemptScenario{{
@@ -101,9 +103,8 @@ func TestScenarioPreservesMalformedOutputAndInjectsFailure(t *testing.T) {
 			fake.Emit(event(1, "provider.unknown", `{`)),
 			fake.Fail(&ports.Failure{Code: ports.FailureProtocolDrift, Message: "malformed provider frame"}),
 		},
-		Result: provider.AttemptResult{
-			Status:           provider.AttemptFailed,
-			StructuredOutput: json.RawMessage(`{"unterminated":`),
+		Result: provider.FailedResult{
+			Failure: ports.Failure{Code: ports.FailureProtocolDrift, Message: "malformed provider result"},
 		},
 	}}})
 
@@ -123,8 +124,9 @@ func TestScenarioPreservesMalformedOutputAndInjectsFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetResult() error = %v", err)
 	}
-	if json.Valid(result.StructuredOutput) {
-		t.Fatalf("structured output = %q, want deliberately malformed JSON", result.StructuredOutput)
+	failed, ok := result.(provider.FailedResult)
+	if !ok || failed.Failure.Code != ports.FailureProtocolDrift {
+		t.Fatalf("result = %#v, want classified failed result", result)
 	}
 }
 
@@ -217,8 +219,8 @@ func TestCancellationInterruptsAControlledDelay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetResult() error = %v", err)
 	}
-	if attemptResult.Status != provider.AttemptCancelled {
-		t.Fatalf("result status = %q, want cancelled", attemptResult.Status)
+	if _, ok := attemptResult.(provider.CancelledResult); !ok {
+		t.Fatalf("result = %T, want provider.CancelledResult", attemptResult)
 	}
 }
 
@@ -260,6 +262,14 @@ func TestNewRejectsAmbiguousScenarios(t *testing.T) {
 	}}})
 	if err == nil {
 		t.Fatal("New() error = nil, want sequence validation failure")
+	}
+
+	_, err = fake.New(fake.Scenario{Attempts: []fake.AttemptScenario{{
+		AttemptID: "unclassified-result",
+		Result:    provider.FailedResult{},
+	}}})
+	if err == nil {
+		t.Fatal("New() error = nil, want classified-result validation failure")
 	}
 }
 
@@ -351,14 +361,31 @@ func waitFor(t *testing.T, condition func() bool, description string) {
 	}
 }
 
-func respond(t *testing.T, adapter *fake.Fake, handle provider.AttemptHandle, requestID, key string, decision provider.InteractionDecision) {
-	t.Helper()
-	_, err := adapter.Respond(context.Background(), provider.InteractionResponse{
+func interactionContext(handle provider.AttemptHandle, requestID, key string) provider.InteractionContext {
+	return provider.InteractionContext{
 		AttemptID:         handle.AttemptID,
 		ProviderThreadID:  handle.ProviderThreadID,
 		ProviderRequestID: requestID,
 		IdempotencyKey:    key,
-		Decision:          decision,
+	}
+}
+
+func respondAnswer(t *testing.T, adapter *fake.Fake, handle provider.AttemptHandle, requestID, key string, answer json.RawMessage) {
+	t.Helper()
+	_, err := adapter.Respond(context.Background(), provider.AnswerResponse{
+		InteractionContext: interactionContext(handle, requestID, key),
+		Answer:             answer,
+	})
+	if err != nil {
+		t.Fatalf("Respond() error = %v", err)
+	}
+}
+
+func respondPermission(t *testing.T, adapter *fake.Fake, handle provider.AttemptHandle, requestID, key string, decision provider.PermissionDecision) {
+	t.Helper()
+	_, err := adapter.Respond(context.Background(), provider.PermissionResponse{
+		InteractionContext: interactionContext(handle, requestID, key),
+		Decision:           decision,
 	})
 	if err != nil {
 		t.Fatalf("Respond() error = %v", err)
