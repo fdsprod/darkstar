@@ -24,6 +24,7 @@ export function validateTrace(trace) {
     const position = index + 1;
     if (event.schemaVersion !== 1) failures.push(`event ${position}: schemaVersion`);
     if (!EVENT_ID.test(event.id) || !RESOURCE_ID.test(event.aggregateId)) failures.push(`event ${position}: id`);
+    if (!event.aggregateId.startsWith(`${event.aggregateType}_`)) failures.push(`event ${position}: aggregate type`);
     if (event.globalPosition !== position) failures.push(`event ${position}: globalPosition`);
     if ([...Object.keys(event)].some((key) => !ENVELOPE_FIELDS.has(key))) failures.push(`event ${position}: envelope field`);
     const nextRevision = (aggregateRevision.get(event.aggregateId) ?? 0) + 1;

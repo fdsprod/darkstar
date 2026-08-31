@@ -12,6 +12,12 @@ test("fake run preserves event ordering, revisions, causation, and boundaries", 
   assert.deepEqual(validateTrace(trace), []);
 });
 
+test("event aggregate type must match its tagged identity", () => {
+  const invalid = structuredClone(trace);
+  invalid.events[0].aggregateType = "work";
+  assert.ok(validateTrace(invalid).includes("event 1: aggregate type"));
+});
+
 test("fake run reconstructs the documented final projection", () => {
   assert.deepEqual(projectTrace(trace), trace.expectedProjection);
 });
@@ -53,12 +59,15 @@ test("SQLite logical model contains append, idempotency, outbox, and projection 
   const sql = readFileSync(resolve(root, "schemas/sqlite-v1alpha1.sql"), "utf8");
   for (const table of ["events","commands","outbox","run_projection","approval_projection","external_refs","projection_checkpoints"])
     assert.match(sql, new RegExp(`CREATE TABLE ${table} \\(`));
-  assert.match(sql, /UNIQUE\(stream_id, stream_sequence\)/);
+  assert.doesNotMatch(sql, /stream_id|stream_sequence|aggregate_type TEXT NOT NULL REFERENCES/);
+  assert.match(sql, /UNIQUE\(aggregate_id, aggregate_revision\)/);
   assert.match(sql, /PRIMARY KEY\(scope, idempotency_key\)/);
 });
 
-test("SQLite logical model matches the executable initial migration", () => {
+test("SQLite logical model is advanced by a forward state-constraint migration", () => {
   const logical = readFileSync(resolve(root, "schemas/sqlite-v1alpha1.sql"), "utf8").replaceAll("\r\n", "\n");
-  const executable = readFileSync(resolve(root, "runtime/src/adapters/statestore/sqlite/migrations/0001_initial.sql"), "utf8").replaceAll("\r\n", "\n");
-  assert.equal(executable, logical);
+  const migration = readFileSync(resolve(root, "runtime/src/adapters/statestore/sqlite/migrations/0002_constrain_state.sql"), "utf8").replaceAll("\r\n", "\n");
+  for (const state of ["pending", "completed", "prepared", "leased", "committed", "reconcile_required"])
+    assert.match(`${logical}\n${migration}`, new RegExp(`'${state}'`));
+  assert.match(migration, /DROP TABLE events/);
 });

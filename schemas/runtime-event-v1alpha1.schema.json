@@ -24,5 +24,15 @@
     },
     "data": {"type":"object"},
     "metadata": {"type":"object"}
-  }
+  },
+  "oneOf": [
+    {"properties":{"aggregateType":{"const":"project"},"aggregateId":{"type":"string","pattern":"^project_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
+    {"properties":{"aggregateType":{"const":"work"},"aggregateId":{"type":"string","pattern":"^work_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
+    {"properties":{"aggregateType":{"const":"run"},"aggregateId":{"type":"string","pattern":"^run_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
+    {"properties":{"aggregateType":{"const":"visit"},"aggregateId":{"type":"string","pattern":"^visit_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
+    {"properties":{"aggregateType":{"const":"attempt"},"aggregateId":{"type":"string","pattern":"^attempt_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
+    {"properties":{"aggregateType":{"const":"artifact"},"aggregateId":{"type":"string","pattern":"^artifact_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
+    {"properties":{"aggregateType":{"const":"approval"},"aggregateId":{"type":"string","pattern":"^approval_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
+    {"properties":{"aggregateType":{"const":"operation"},"aggregateId":{"type":"string","pattern":"^operation_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]}
+  ]
 }

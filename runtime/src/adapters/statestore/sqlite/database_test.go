@@ -37,18 +37,23 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read schema version: %v", err)
 	}
-	if version != 1 {
-		t.Fatalf("schema version = %d, want 1", version)
+	if version != 2 {
+		t.Fatalf("schema version = %d, want 2", version)
 	}
 	history, err := database.AppliedMigrations(ctx)
 	if err != nil {
 		t.Fatalf("read migration history: %v", err)
 	}
-	if len(history) != 1 || history[0].Version != 1 || history[0].Name != "initial" || len(history[0].Checksum) != 64 {
-		t.Fatalf("migration history = %#v, want one checksummed initial migration", history)
+	if len(history) != 2 || history[0].Version != 1 || history[0].Name != "initial" || history[1].Version != 2 || history[1].Name != "constrain_state" {
+		t.Fatalf("migration history = %#v, want initial and constrain_state migrations", history)
 	}
-	if _, err := time.Parse(time.RFC3339Nano, history[0].AppliedAt); err != nil {
-		t.Errorf("migration applied_at %q is not RFC 3339: %v", history[0].AppliedAt, err)
+	for _, item := range history {
+		if len(item.Checksum) != 64 {
+			t.Errorf("migration %d checksum length = %d, want 64", item.Version, len(item.Checksum))
+		}
+		if _, err := time.Parse(time.RFC3339Nano, item.AppliedAt); err != nil {
+			t.Errorf("migration %d applied_at %q is not RFC 3339: %v", item.Version, item.AppliedAt, err)
+		}
 	}
 
 	wantTables := []string{
@@ -70,8 +75,8 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	if err := database.SQL().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrationCount != 1 {
-		t.Errorf("migration count = %d, want 1", migrationCount)
+	if migrationCount != 2 {
+		t.Errorf("migration count = %d, want 2", migrationCount)
 	}
 	if err := database.SQL().QueryRowContext(ctx,
 		`SELECT last_position FROM global_positions WHERE singleton = 1`).Scan(&initialPosition); err != nil {
@@ -109,9 +114,102 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err := second.SQL().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("migration count after reopen = %d, want 1", count)
+	if count != 2 {
+		t.Fatalf("migration count after reopen = %d, want 2", count)
 	}
+}
+
+func TestStateConstraintMigrationPreservesValidData(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := openSQLite(filepath.Join(t.TempDir(), "upgrade-state.db"), Options{})
+	if err != nil {
+		t.Fatalf("open SQLite: %v", err)
+	}
+	defer db.Close()
+	migrations, err := embeddedMigrationSet()
+	if err != nil {
+		t.Fatalf("read migrations: %v", err)
+	}
+	if err := migrate(ctx, db, migrations[:1], fixedNow); err != nil {
+		t.Fatalf("apply initial migration: %v", err)
+	}
+
+	statements := []string{
+		`INSERT INTO aggregates VALUES ('run_01UPGRADE', 'run', 1, 'created', 'updated')`,
+		`INSERT INTO events VALUES (1, 'event_01UPGRADE', 1, 'run_01UPGRADE', 1, 'run', 'run_01UPGRADE', 1, 'run.created', 'occurred', 'recorded', 'run_01UPGRADE', NULL, 'command', '{}', '{}', '{}')`,
+		`INSERT INTO commands(scope, idempotency_key, request_digest, status, created_at) VALUES ('run_01UPGRADE', 'pending-key', 'digest', 'pending', 'created')`,
+		`INSERT INTO outbox(operation_id, operation_kind, aggregate_id, request_json, state, available_at, created_at, updated_at) VALUES ('operation_01UPGRADE', 'publish', 'run_01UPGRADE', '{}', 'prepared', 'available', 'created', 'updated')`,
+		`INSERT INTO run_projection VALUES ('run_01UPGRADE', 'work_01UPGRADE', 'workflow', '1.0.0', 'running', 1, 1, 'created', 'updated')`,
+		`INSERT INTO approval_projection VALUES ('approval_01UPGRADE', 'run_01UPGRADE', 'workflow_checkpoint', 'pending', 'scope', 'policy', 1, 1, 'created', 'updated')`,
+		`INSERT INTO external_refs VALUES ('run_01UPGRADE', 'adapter', 'thread', X'00', 'created')`,
+	}
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatalf("seed initial schema with %q: %v", statement, err)
+		}
+	}
+
+	if err := migrate(ctx, db, migrations, fixedNow); err != nil {
+		t.Fatalf("apply state constraint migration: %v", err)
+	}
+	for _, table := range []string{"aggregates", "events", "commands", "outbox", "run_projection", "approval_projection", "external_refs"} {
+		var count int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil {
+			t.Fatalf("count %s after migration: %v", table, err)
+		}
+		if count != 1 {
+			t.Errorf("%s rows after migration = %d, want 1", table, count)
+		}
+	}
+	rows, err := db.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	if err != nil {
+		t.Fatalf("check foreign keys: %v", err)
+	}
+	defer rows.Close()
+	if rows.Next() {
+		t.Fatal("state constraint migration left a foreign key violation")
+	}
+}
+
+func TestFinalSchemaRejectsContradictoryStates(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "constraints.db"), Options{})
+	if err != nil {
+		t.Fatalf("open constrained database: %v", err)
+	}
+	defer database.Close()
+	db := database.SQL()
+
+	expectConstraint(t, db, `INSERT INTO aggregates VALUES ('run_01TEST', 'work', 0, 'now', 'now')`)
+	if _, err := db.ExecContext(ctx, `INSERT INTO aggregates VALUES ('run_01TEST', 'run', 0, 'now', 'now')`); err != nil {
+		t.Fatalf("insert valid aggregate: %v", err)
+	}
+
+	var removedColumns int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('events') WHERE name IN ('stream_id', 'stream_sequence', 'aggregate_type')`).Scan(&removedColumns); err != nil {
+		t.Fatalf("inspect event columns: %v", err)
+	}
+	if removedColumns != 0 {
+		t.Fatalf("events retains %d duplicated stream columns", removedColumns)
+	}
+
+	expectConstraint(t, db, `INSERT INTO commands(scope, idempotency_key, request_digest, status, completed_at, created_at) VALUES ('run', 'bad-pending', 'digest', 'pending', 'now', 'now')`)
+	if _, err := db.ExecContext(ctx, `INSERT INTO commands(scope, idempotency_key, request_digest, status, created_at) VALUES ('run', 'pending-ok', 'digest', 'pending', 'now')`); err != nil {
+		t.Fatalf("insert valid pending command: %v", err)
+	}
+	expectConstraint(t, db, `INSERT INTO commands(scope, idempotency_key, request_digest, status, created_at, completed_at) VALUES ('run', 'bad-complete', 'digest', 'completed', 'now', 'now')`)
+
+	expectConstraint(t, db, `INSERT INTO outbox(operation_id, operation_kind, aggregate_id, request_json, state, available_at, created_at, updated_at) VALUES ('operation_bad', 'publish', 'run_01TEST', '{}', 'leased', 'now', 'now', 'now')`)
+	if _, err := db.ExecContext(ctx, `INSERT INTO outbox(operation_id, operation_kind, aggregate_id, request_json, state, available_at, lease_owner, lease_expires_at, created_at, updated_at) VALUES ('operation_ok', 'publish', 'run_01TEST', '{}', 'leased', 'now', 'daemon', 'later', 'now', 'now')`); err != nil {
+		t.Fatalf("insert valid leased operation: %v", err)
+	}
+
+	expectConstraint(t, db, `INSERT INTO run_projection VALUES ('run_bad', 'work', 'workflow', '1.0.0', 'nonsense', 1, 0, 'now', 'now')`)
+	expectConstraint(t, db, `INSERT INTO approval_projection VALUES ('approval_bad', 'run_01TEST', 'nonsense', 'pending', 'scope', 'policy', 1, 0, 'now', 'now')`)
 }
 
 func TestMigrateUpgradesInOrder(t *testing.T) {
@@ -248,6 +346,13 @@ func assertPragma(t *testing.T, database *Database, name, want string) {
 	}
 	if got != want {
 		t.Errorf("PRAGMA %s = %q, want %q", name, got, want)
+	}
+}
+
+func expectConstraint(t *testing.T, db *sql.DB, statement string) {
+	t.Helper()
+	if _, err := db.ExecContext(context.Background(), statement); err == nil {
+		t.Fatalf("statement unexpectedly bypassed a schema constraint: %s", statement)
 	}
 }
 

@@ -128,6 +128,14 @@ an existing aggregate also supply `If-Match`. Within `BEGIN IMMEDIATE`, the daem
 7. inserts outbox intents; and
 8. stores the canonical command response before commit.
 
+Command rows have two shapes: `pending` carries no response, event range, or
+completion time; `completed` carries a canonical response and completion time,
+with either both event-range endpoints or neither. Outbox rows likewise use
+state-specific tuples: `prepared` has no lease or observation, `leased` has the
+complete lease pair and no observation, and `committed` or
+`reconcile_required` has an observation and no lease. SQLite constraints reject
+partial or cross-state tuples.
+
 No network, process, filesystem, Git, or provider mutation occurs inside the
 transaction. An outbox worker claims operations with a lease, records intent
 before the external effect, and appends observation/result events in a later

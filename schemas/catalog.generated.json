@@ -45,7 +45,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/runtime-event-v1alpha1.schema.json",
       "name": "runtime-event-v1alpha1",
-      "sha256": "8775471a0e6850c0a8956914e9d54f374e04c4913ce3c99ae340818ec9cccfcb",
+      "sha256": "20ee7b4ccb94e9501dd95f473ded20e1dc470d5888b66b67221bcf93c7901534",
       "version": "v1alpha1"
     },
     {

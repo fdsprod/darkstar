@@ -1,18 +1,6 @@
-CREATE TABLE schema_migrations (
-  version INTEGER PRIMARY KEY CHECK (version > 0),
-  name TEXT NOT NULL UNIQUE,
-  checksum TEXT NOT NULL CHECK (length(checksum) = 64),
-  applied_at TEXT NOT NULL
-) STRICT;
+PRAGMA defer_foreign_keys = ON;
 
-CREATE TABLE global_positions (
-  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-  last_position INTEGER NOT NULL CHECK (last_position >= 0)
-) STRICT;
-
-INSERT INTO global_positions(singleton, last_position) VALUES (1, 0);
-
-CREATE TABLE aggregates (
+CREATE TABLE aggregates_v2 (
   aggregate_id TEXT PRIMARY KEY,
   aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('project', 'work', 'run', 'visit', 'attempt', 'artifact', 'approval', 'operation')),
   revision INTEGER NOT NULL CHECK (revision >= 0),
@@ -30,11 +18,14 @@ CREATE TABLE aggregates (
   )
 ) STRICT;
 
-CREATE TABLE events (
+INSERT INTO aggregates_v2(aggregate_id, aggregate_type, revision, created_at, updated_at)
+SELECT aggregate_id, aggregate_type, revision, created_at, updated_at FROM aggregates;
+
+CREATE TABLE events_v2 (
   global_position INTEGER PRIMARY KEY CHECK (global_position > 0),
   event_id TEXT NOT NULL UNIQUE,
   schema_version INTEGER NOT NULL CHECK (schema_version > 0),
-  aggregate_id TEXT NOT NULL REFERENCES aggregates(aggregate_id),
+  aggregate_id TEXT NOT NULL REFERENCES aggregates_v2(aggregate_id),
   aggregate_revision INTEGER NOT NULL CHECK (aggregate_revision > 0),
   kind TEXT NOT NULL,
   occurred_at TEXT NOT NULL,
@@ -48,10 +39,18 @@ CREATE TABLE events (
   UNIQUE(aggregate_id, aggregate_revision)
 ) STRICT;
 
-CREATE INDEX events_correlation ON events(correlation_id, global_position);
-CREATE INDEX events_kind_position ON events(kind, global_position);
+INSERT INTO events_v2(
+  global_position, event_id, schema_version, aggregate_id, aggregate_revision,
+  kind, occurred_at, recorded_at, correlation_id, causation_id, command_id,
+  actor_json, data_json, metadata_json
+)
+SELECT
+  global_position, event_id, schema_version, aggregate_id, aggregate_revision,
+  kind, occurred_at, recorded_at, correlation_id, causation_id, command_id,
+  actor_json, data_json, metadata_json
+FROM events;
 
-CREATE TABLE commands (
+CREATE TABLE commands_v2 (
   scope TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
   request_digest TEXT NOT NULL,
@@ -71,10 +70,13 @@ CREATE TABLE commands (
   PRIMARY KEY(scope, idempotency_key)
 ) STRICT;
 
-CREATE TABLE outbox (
+INSERT INTO commands_v2
+SELECT * FROM commands;
+
+CREATE TABLE outbox_v2 (
   operation_id TEXT PRIMARY KEY,
   operation_kind TEXT NOT NULL,
-  aggregate_id TEXT NOT NULL REFERENCES aggregates(aggregate_id),
+  aggregate_id TEXT NOT NULL REFERENCES aggregates_v2(aggregate_id),
   request_json TEXT NOT NULL CHECK (json_valid(request_json)),
   state TEXT NOT NULL CHECK (state IN ('prepared', 'leased', 'committed', 'reconcile_required')),
   available_at TEXT NOT NULL,
@@ -91,7 +93,10 @@ CREATE TABLE outbox (
   )
 ) STRICT;
 
-CREATE TABLE run_projection (
+INSERT INTO outbox_v2
+SELECT * FROM outbox;
+
+CREATE TABLE run_projection_v2 (
   run_id TEXT PRIMARY KEY,
   work_item_id TEXT NOT NULL,
   workflow_id TEXT NOT NULL,
@@ -103,7 +108,10 @@ CREATE TABLE run_projection (
   updated_at TEXT NOT NULL
 ) STRICT;
 
-CREATE TABLE approval_projection (
+INSERT INTO run_projection_v2
+SELECT * FROM run_projection;
+
+CREATE TABLE approval_projection_v2 (
   approval_id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL,
   class TEXT NOT NULL CHECK (class IN ('workflow_checkpoint', 'workflow_control', 'provider_permission', 'external_delivery')),
@@ -116,8 +124,11 @@ CREATE TABLE approval_projection (
   updated_at TEXT NOT NULL
 ) STRICT;
 
-CREATE TABLE external_refs (
-  owner_id TEXT NOT NULL REFERENCES aggregates(aggregate_id),
+INSERT INTO approval_projection_v2
+SELECT * FROM approval_projection;
+
+CREATE TABLE external_refs_v2 (
+  owner_id TEXT NOT NULL REFERENCES aggregates_v2(aggregate_id),
   adapter_key TEXT NOT NULL,
   ref_kind TEXT NOT NULL,
   opaque_ref_ciphertext BLOB NOT NULL,
@@ -125,9 +136,24 @@ CREATE TABLE external_refs (
   PRIMARY KEY(owner_id, adapter_key, ref_kind)
 ) STRICT;
 
-CREATE TABLE projection_checkpoints (
-  projection_name TEXT PRIMARY KEY,
-  last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
-  reducer_version TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-) STRICT;
+INSERT INTO external_refs_v2
+SELECT * FROM external_refs;
+
+DROP TABLE events;
+DROP TABLE commands;
+DROP TABLE outbox;
+DROP TABLE run_projection;
+DROP TABLE approval_projection;
+DROP TABLE external_refs;
+DROP TABLE aggregates;
+
+ALTER TABLE aggregates_v2 RENAME TO aggregates;
+ALTER TABLE events_v2 RENAME TO events;
+ALTER TABLE commands_v2 RENAME TO commands;
+ALTER TABLE outbox_v2 RENAME TO outbox;
+ALTER TABLE run_projection_v2 RENAME TO run_projection;
+ALTER TABLE approval_projection_v2 RENAME TO approval_projection;
+ALTER TABLE external_refs_v2 RENAME TO external_refs;
+
+CREATE INDEX events_correlation ON events(correlation_id, global_position);
+CREATE INDEX events_kind_position ON events(kind, global_position);
