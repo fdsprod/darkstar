@@ -17,11 +17,19 @@
       "version": "v1alpha1"
     },
     {
+      "file": "endpoint-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/endpoint-v1alpha1.schema.json",
+      "name": "endpoint-v1alpha1",
+      "sha256": "2747c39e2225574cb9d1785c6183c2f37d18552c6587fea81cdaa0db2baa2f88",
+      "version": "v1alpha1"
+    },
+    {
       "file": "openapi-v1alpha1.json",
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "f51020bb57e7d9193ebbbd33fc158a52b7686846356e4689f2b68525f3f08864",
+      "sha256": "890858757c7954742d4feb07077b9421f812b0b99a7625125a7c027ef1d4da82",
       "version": "v1alpha1"
     },
     {

@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 
+	localapi "github.com/fdsprod/darkstar/runtime/src/api"
 	"github.com/fdsprod/darkstar/runtime/src/daemon"
 	"github.com/fdsprod/darkstar/runtime/src/platform/windows"
 	platformport "github.com/fdsprod/darkstar/runtime/src/ports/platform"
@@ -78,7 +79,12 @@ func runDaemon(args []string, stdout, stderr io.Writer) int {
 	case "run":
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer cancel()
-		err := manager.Run(ctx, func(state daemon.State) {
+		server, serverErr := localapi.NewServer(manager.RuntimeDirectory())
+		if serverErr != nil {
+			fmt.Fprintf(stderr, "darkstar daemon run: %v\n", serverErr)
+			return 8
+		}
+		err := manager.RunWithService(ctx, daemonAPIService{server: server}, func(state daemon.State) {
 			fmt.Fprintf(stdout, "Daemon running in foreground (pid %d).\n", state.Process.PID)
 		})
 		if errors.Is(err, daemon.ErrAlreadyRunning) {
@@ -106,6 +112,14 @@ func runDaemon(args []string, stdout, stderr io.Writer) int {
 		panic("validDaemonArguments accepted an unknown command")
 	}
 }
+
+type daemonAPIService struct{ server *localapi.Server }
+
+func (service daemonAPIService) Start(ctx context.Context, identity daemon.ProcessIdentity) error {
+	return service.server.Start(ctx, identity.PID, identity.StartedAt)
+}
+
+func (service daemonAPIService) Close() error { return service.server.Close() }
 
 func validDaemonArguments(args []string) bool {
 	switch args[0] {

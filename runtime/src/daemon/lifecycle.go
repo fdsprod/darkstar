@@ -89,6 +89,13 @@ type StopEvent interface {
 	Close() error
 }
 
+// RuntimeService is an independently testable transport or worker that must be
+// ready before daemon state becomes discoverable. The daemon owns its lifetime.
+type RuntimeService interface {
+	Start(context.Context, ProcessIdentity) error
+	Close() error
+}
+
 // DetachedRequest describes the background daemon process. Arguments exclude
 // the executable itself.
 type DetachedRequest struct {
@@ -202,9 +209,16 @@ func (m *Manager) Inspect() (Inspection, error) {
 	}
 }
 
-// Run owns the foreground daemon lifetime. ready is called only after the lock,
-// stop event, and durable state are all ready for other commands.
+// Run owns the foreground daemon lifetime without an attached runtime service.
 func (m *Manager) Run(ctx context.Context, ready func(State)) (err error) {
+	return m.RunWithService(ctx, nil, ready)
+}
+
+// RunWithService owns the foreground daemon and service lifetime. ready is
+// called only after the lock, stop event, service, and durable state are ready.
+// Service startup precedes daemon.json publication so detached starts cannot
+// observe a running daemon whose public API is not yet accepting requests.
+func (m *Manager) RunWithService(ctx context.Context, service RuntimeService, ready func(State)) (err error) {
 	if err := os.MkdirAll(m.runtimeDirectory, 0o700); err != nil {
 		return fmt.Errorf("create daemon runtime directory: %w", err)
 	}
@@ -242,10 +256,28 @@ func (m *Manager) Run(ctx context.Context, ready func(State)) (err error) {
 	if err := validateState(state); err != nil {
 		return fmt.Errorf("validate current daemon state: %w", err)
 	}
+	serviceStarted := false
+	stateWritten := false
+	defer func() {
+		if serviceStarted {
+			if closeErr := service.Close(); err == nil && closeErr != nil {
+				err = fmt.Errorf("close daemon runtime service: %w", closeErr)
+			}
+		}
+		if stateWritten {
+			m.removeStateIfOwned(state.InstanceID)
+		}
+	}()
+	if service != nil {
+		if err := service.Start(ctx, identity); err != nil {
+			return fmt.Errorf("start daemon runtime service: %w", err)
+		}
+		serviceStarted = true
+	}
 	if err := m.writeState(state); err != nil {
 		return err
 	}
-	defer m.removeStateIfOwned(state.InstanceID)
+	stateWritten = true
 	if ready != nil {
 		ready(state)
 	}

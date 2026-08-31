@@ -65,6 +65,39 @@ func TestRunReplacesStaleStateAndCleansOwnedState(t *testing.T) {
 	}
 }
 
+func TestRunWithServicePublishesStateOnlyAfterServiceIsReady(t *testing.T) {
+	t.Parallel()
+
+	manager, host := newTestManager(t)
+	host.current = testState(202).Process
+	service := &fakeRuntimeService{start: func(identity ProcessIdentity) error {
+		if identity != host.current {
+			t.Fatalf("service identity = %#v, want %#v", identity, host.current)
+		}
+		if _, err := os.Stat(manager.statePath()); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("daemon state during service start = %v, want absent", err)
+		}
+		return nil
+	}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	err := manager.RunWithService(ctx, service, func(State) {
+		if _, err := os.Stat(manager.statePath()); err != nil {
+			t.Fatalf("daemon state at ready callback: %v", err)
+		}
+		cancel()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.startCalls != 1 || service.closeCalls != 1 {
+		t.Fatalf("service start/close calls = %d/%d, want 1/1", service.startCalls, service.closeCalls)
+	}
+	if _, err := os.Stat(manager.statePath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("daemon state after shutdown = %v, want absent", err)
+	}
+}
+
 func TestStartIsIdempotentForRunningDaemon(t *testing.T) {
 	t.Parallel()
 
@@ -276,3 +309,19 @@ func (fakeStopEvent) Wait(ctx context.Context) error {
 }
 
 func (fakeStopEvent) Close() error { return nil }
+
+type fakeRuntimeService struct {
+	startCalls int
+	closeCalls int
+	start      func(ProcessIdentity) error
+}
+
+func (service *fakeRuntimeService) Start(_ context.Context, identity ProcessIdentity) error {
+	service.startCalls++
+	return service.start(identity)
+}
+
+func (service *fakeRuntimeService) Close() error {
+	service.closeCalls++
+	return nil
+}

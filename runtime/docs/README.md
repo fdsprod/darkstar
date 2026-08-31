@@ -10,6 +10,7 @@ independent from dashboard build tooling.
 |---|---|
 | `src/cmd/darkstar` | Executable composition root. |
 | `src/cli` | Terminal commands, output, and exit-code mapping. |
+| `src/api` | Authenticated, versioned loopback HTTP transport and endpoint discovery. |
 | `src/daemon` | Daemon lifecycle and application coordination. |
 | `src/core` | Deterministic domain and workflow behavior. |
 | `src/ports` | Application-owned interfaces for external effects. |
@@ -29,6 +30,9 @@ attribution, file locations, and Windows application-data roots.
 
 See [daemon lifecycle](daemon-lifecycle.md) for foreground/background commands,
 identity verification, stale-state handling, and shutdown escalation.
+
+See [authenticated loopback API](loopback-api.md) for endpoint discovery, bearer
+token rotation, version negotiation, and stable HTTP errors.
 
 ## Validate independently
 
