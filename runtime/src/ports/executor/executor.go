@@ -90,9 +90,16 @@ type CancelRequest struct {
 	GracePeriod    time.Duration
 }
 
+type CancelDisposition string
+
+const (
+	CancelGraceful        CancelDisposition = "graceful"
+	CancelForced          CancelDisposition = "forced"
+	CancelAlreadyTerminal CancelDisposition = "already_terminal"
+	CancelUncertain       CancelDisposition = "uncertain"
+)
+
 type CancelResult struct {
-	Terminal    bool
-	Forced      bool
-	Uncertain   bool
+	Disposition CancelDisposition
 	EvidenceRef string
 }

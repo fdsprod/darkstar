@@ -88,3 +88,10 @@ observation; core owns the state transition.
 `runtime/src`, verifies all six port packages exist, rejects forbidden core/port
 dependencies, and reserves concrete package roots. Normal `go test ./...` and
 the repository verification script run this check.
+
+Stateful observations use explicit outcome variants. Provider results separate
+success, failure, interruption, cancellation, and uncertainty; process and
+branch observations carry exit codes or commit SHAs only in the matching exited
+or found variant; and cancellation exposes one disposition instead of
+independent booleans. Health states are authoritative observations rather than
+summaries duplicated by `authenticated`, `canRead`, or `canPublish` flags.

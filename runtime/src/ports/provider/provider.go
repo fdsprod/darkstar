@@ -39,7 +39,6 @@ type Health struct {
 	ProviderVersion    string
 	ExecutableIdentity string
 	Platform           string
-	Authenticated      bool
 	Diagnostics        []string
 }
 
@@ -51,11 +50,20 @@ type CapabilityManifest struct {
 	ObservedAt  time.Time
 }
 
-type Capability struct {
-	Available bool
-	Version   string
-	Metadata  map[string]string
+type Capability interface{ isCapability() }
+
+type AvailableCapability struct {
+	Version  string
+	Metadata map[string]string
 }
+
+func (AvailableCapability) isCapability() {}
+
+type UnavailableCapability struct {
+	Reason string
+}
+
+func (UnavailableCapability) isCapability() {}
 
 type AccessClass string
 
@@ -176,26 +184,39 @@ type Event struct {
 	RawEvidenceRef   string
 }
 
-type InteractionDecision string
+type PermissionDecision string
 
 const (
-	InteractionAllowOnce       InteractionDecision = "allow_once"
-	InteractionAllowForSession InteractionDecision = "allow_for_session"
-	InteractionDenied          InteractionDecision = "deny"
-	InteractionCancelled       InteractionDecision = "cancel"
-	InteractionExpired         InteractionDecision = "expire"
-	InteractionAnswered        InteractionDecision = "answer"
+	PermissionAllowOnce       PermissionDecision = "allow_once"
+	PermissionAllowForSession PermissionDecision = "allow_for_session"
+	PermissionDenied          PermissionDecision = "deny"
+	PermissionCancelled       PermissionDecision = "cancel"
+	PermissionExpired         PermissionDecision = "expire"
 )
 
-type InteractionResponse struct {
+type InteractionContext struct {
 	AttemptID         string
 	ProviderThreadID  string
 	ProviderRequestID string
 	IdempotencyKey    string
-	Decision          InteractionDecision
-	Answer            json.RawMessage
 	ScopeDigest       string
 }
+
+type InteractionResponse interface{ isInteractionResponse() }
+
+type PermissionResponse struct {
+	InteractionContext
+	Decision PermissionDecision
+}
+
+func (PermissionResponse) isInteractionResponse() {}
+
+type AnswerResponse struct {
+	InteractionContext
+	Answer json.RawMessage
+}
+
+func (AnswerResponse) isInteractionResponse() {}
 
 type InteractionReceipt struct {
 	ProviderRequestID string
@@ -227,24 +248,45 @@ type ResultRequest struct {
 	Handle AttemptHandle
 }
 
-type AttemptStatus string
-
-const (
-	AttemptSucceeded   AttemptStatus = "succeeded"
-	AttemptFailed      AttemptStatus = "failed"
-	AttemptInterrupted AttemptStatus = "interrupted"
-	AttemptCancelled   AttemptStatus = "cancelled"
-	AttemptUnknown     AttemptStatus = "unknown"
-)
-
-type AttemptResult struct {
-	Status            AttemptStatus
-	StructuredOutput  json.RawMessage
-	ValidationFailure *ports.Failure
+type AttemptResultMetadata struct {
 	Usage             Usage
 	WorkspaceEvidence []Evidence
 	Recovery          RecoveryMetadata
 }
+
+type AttemptResult interface{ isAttemptResult() }
+
+type SucceededResult struct {
+	AttemptResultMetadata
+	StructuredOutput json.RawMessage
+}
+
+func (SucceededResult) isAttemptResult() {}
+
+type FailedResult struct {
+	AttemptResultMetadata
+	Failure ports.Failure
+}
+
+func (FailedResult) isAttemptResult() {}
+
+type InterruptedResult struct {
+	AttemptResultMetadata
+	Failure ports.Failure
+}
+
+func (InterruptedResult) isAttemptResult() {}
+
+type CancelledResult struct{ AttemptResultMetadata }
+
+func (CancelledResult) isAttemptResult() {}
+
+type UnknownResult struct {
+	AttemptResultMetadata
+	Failure ports.Failure
+}
+
+func (UnknownResult) isAttemptResult() {}
 
 type Usage struct {
 	InputTokens  int64

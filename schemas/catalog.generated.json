@@ -29,7 +29,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/provider-v1alpha1.schema.json",
       "name": "provider-v1alpha1",
-      "sha256": "2250f1469fc97d76146f2eb867a744768fb68cfd6612221ea7e958fc8a278341",
+      "sha256": "108c67b0a24b815fe605f03f4b6dd9e484c6d6379534873f6370577fab88c2f0",
       "version": "v1alpha1"
     },
     {

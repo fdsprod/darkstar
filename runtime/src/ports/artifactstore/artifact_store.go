@@ -23,7 +23,7 @@ type PutRequest struct {
 	IdempotencyKey string
 	Content        io.Reader
 	ExpectedDigest string
-	ExpectedSize   int64
+	ExpectedSize   *int64
 	MediaType      string
 }
 

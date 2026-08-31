@@ -40,12 +40,11 @@ const (
 )
 
 type Health struct {
-	State       HealthState
-	Provider    string
-	Account     string
-	CanRead     bool
-	CanPublish  bool
-	Diagnostics []string
+	Provider     string
+	Account      string
+	ReadState    HealthState
+	PublishState HealthState
+	Diagnostics  []string
 }
 
 type BranchRef struct {
@@ -57,9 +56,18 @@ type ObserveBranchRequest struct {
 	Branch BranchRef
 }
 
+type BranchOutcome interface{ isBranchOutcome() }
+
+type BranchFound struct{ CommitSHA string }
+
+func (BranchFound) isBranchOutcome() {}
+
+type BranchMissing struct{}
+
+func (BranchMissing) isBranchOutcome() {}
+
 type BranchObservation struct {
-	Exists      bool
-	CommitSHA   string
+	Outcome     BranchOutcome
 	ObservedAt  time.Time
 	EvidenceRef string
 }

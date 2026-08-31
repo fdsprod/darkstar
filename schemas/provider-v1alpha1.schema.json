@@ -20,7 +20,7 @@
     "health": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "schemaVersion", "state", "provider", "providerVersion", "executableIdentity", "platform", "authenticated", "diagnostics"],
+      "required": ["kind", "schemaVersion", "state", "provider", "providerVersion", "executableIdentity", "platform", "diagnostics"],
       "properties": {
         "kind": {"const": "health"},
         "schemaVersion": {"const": 1},
@@ -29,19 +29,31 @@
         "providerVersion": {"type": "string"},
         "executableIdentity": {"type": "string"},
         "platform": {"type": "string"},
-        "authenticated": {"type": "boolean"},
         "diagnostics": {"type": "array", "items": {"type": "string"}}
       }
     },
     "capability": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["available", "version", "metadata"],
-      "properties": {
-        "available": {"type": "boolean"},
-        "version": {"type": "string"},
-        "metadata": {"type": "object", "additionalProperties": {"type": "string"}}
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "version", "metadata"],
+          "properties": {
+            "state": {"const": "available"},
+            "version": {"type": "string"},
+            "metadata": {"type": "object", "additionalProperties": {"type": "string"}}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "reason"],
+          "properties": {
+            "state": {"const": "unavailable"},
+            "reason": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
     },
     "capabilityManifest": {
       "type": "object",
@@ -173,7 +185,17 @@
         "decision": {"enum": ["allow_once", "allow_for_session", "deny", "cancel", "expire", "answer"]},
         "answer": {},
         "scopeDigest": {"$ref": "#/$defs/digest"}
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {"decision": {"const": "answer"}, "answer": {}},
+          "required": ["answer"]
+        },
+        {
+          "properties": {"decision": {"enum": ["allow_once", "allow_for_session", "deny", "cancel", "expire"]}},
+          "not": {"required": ["answer"]}
+        }
+      ]
     },
     "cancelRequest": {
       "type": "object",
@@ -201,13 +223,13 @@
     "attemptResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "schemaVersion", "status", "structuredOutput", "usage", "workspaceEvidence", "recovery"],
+      "required": ["kind", "schemaVersion", "status", "usage", "workspaceEvidence", "recovery"],
       "properties": {
         "kind": {"const": "attempt_result"},
         "schemaVersion": {"const": 1},
         "status": {"enum": ["succeeded", "failed", "interrupted", "cancelled", "unknown"]},
         "structuredOutput": {},
-        "validationFailure": {"type": ["object", "null"]},
+        "failure": {"$ref": "#/$defs/failure"},
         "usage": {
           "type": "object",
           "additionalProperties": false,
@@ -241,6 +263,36 @@
             "evidenceRef": {"type": "string"}
           }
         }
+      },
+      "oneOf": [
+        {
+          "properties": {"status": {"const": "succeeded"}, "structuredOutput": {}},
+          "required": ["structuredOutput"],
+          "not": {"required": ["failure"]}
+        },
+        {
+          "properties": {
+            "status": {"enum": ["failed", "interrupted", "unknown"]},
+            "failure": {"$ref": "#/$defs/failure"}
+          },
+          "required": ["failure"],
+          "not": {"required": ["structuredOutput"]}
+        },
+        {
+          "properties": {"status": {"const": "cancelled"}},
+          "not": {"anyOf": [{"required": ["structuredOutput"]}, {"required": ["failure"]}]}
+        }
+      ]
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable", "details"],
+      "properties": {
+        "code": {"enum": ["unavailable", "unauthenticated", "invalid_request", "permission_denied", "conflict", "not_found", "unsupported", "resource_exhausted", "timeout", "interrupted", "cancelled", "protocol_drift", "uncertain", "internal"]},
+        "message": {"type": "string"},
+        "retryable": {"type": "boolean"},
+        "details": {"type": "object", "additionalProperties": {"type": "string"}}
       }
     }
   }

@@ -75,19 +75,27 @@ type ProcessIdentity struct {
 	AttemptID        string
 }
 
-type ProcessState string
+type ProcessOutcome interface{ isProcessOutcome() }
 
-const (
-	ProcessRunning   ProcessState = "running"
-	ProcessExited    ProcessState = "exited"
-	ProcessAbsent    ProcessState = "absent"
-	ProcessUncertain ProcessState = "uncertain"
-)
+type ProcessRunning struct{}
+
+func (ProcessRunning) isProcessOutcome() {}
+
+type ProcessExited struct{ ExitCode int }
+
+func (ProcessExited) isProcessOutcome() {}
+
+type ProcessAbsent struct{}
+
+func (ProcessAbsent) isProcessOutcome() {}
+
+type ProcessUncertain struct{}
+
+func (ProcessUncertain) isProcessOutcome() {}
 
 type ProcessObservation struct {
-	State       ProcessState
+	Outcome     ProcessOutcome
 	Identity    ProcessIdentity
-	ExitCode    *int
 	ObservedAt  time.Time
 	EvidenceRef string
 }
@@ -122,9 +130,17 @@ type TerminateRequest struct {
 	Reason   string
 }
 
+type StopDisposition string
+
+const (
+	StopNotRequested StopDisposition = "not_requested"
+	StopRequested    StopDisposition = "requested"
+	StopTerminated   StopDisposition = "terminated"
+	StopUncertain    StopDisposition = "uncertain"
+)
+
 type StopObservation struct {
-	Requested   bool
-	Terminated  bool
+	Disposition StopDisposition
 	Observation ProcessObservation
 }
 

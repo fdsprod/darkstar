@@ -27,6 +27,15 @@ test("provider and artifact boundaries are published as strict schemas", () => {
   }
 });
 
+test("provider state combinations are encoded as tagged variants", () => {
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "provider-v1alpha1.schema.json"), "utf8"));
+  assert.equal(schema.$defs.health.properties.authenticated, undefined);
+  assert.equal(schema.$defs.capability.oneOf.length, 2);
+  assert.deepEqual(schema.$defs.capability.oneOf.map((variant) => variant.properties.state.const), ["available", "unavailable"]);
+  assert.equal(schema.$defs.interactionResponse.oneOf.length, 2);
+  assert.equal(schema.$defs.attemptResult.oneOf.length, 3);
+});
+
 test("compatibility permits additive optional fields", () => {
   const before = { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", additionalProperties: false, properties: { id: { type: "string" } } };
   const after = structuredClone(before);
