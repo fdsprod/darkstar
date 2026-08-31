@@ -1,12 +1,14 @@
 # DARKSTAR
 
+> [Documentation index](../README.md)
+
 ## Product and Technical Specification
 
 **Status:** Decision-aligned product specification  
 **Name:** DARKSTAR — **D**eterministic **A**utomation **R**untime **K**ernel for **S**oftware **T**asking, **A**ssurance, and **R**ecovery  
 **CLI name:** `darkstar`  
 **Primary objective:** Build the smallest local, CLI-first software factory that can reliably use itself to implement its next feature.
-**MVP implementation backlog:** [DARKSTAR_MVP_BACKLOG.md](DARKSTAR_MVP_BACKLOG.md)
+**MVP implementation backlog:** [MVP backlog](../planning/mvp-backlog.md)
 
 ---
 
@@ -247,9 +249,9 @@ The artifact root can point to any folder, including one inside a separate Git r
 
 ### 6.2 Workflow definitions
 
-DARKSTAR ships the versioned `darkstar/software-delivery` workflow as its default. It combines a product-level route from intake through production verification with a reusable story-execution sub-workflow. POCs, experience design, developer research, story-level design, and other activities are conditional; readiness guidance can recommend them without overriding an explicit human route. Its normative behavior is defined in [DARKSTAR_DEFAULT_WORKFLOW.md](DARKSTAR_DEFAULT_WORKFLOW.md).
+DARKSTAR ships the versioned `darkstar/software-delivery` workflow as its default. It combines a product-level route from intake through production verification with a reusable story-execution sub-workflow. POCs, experience design, developer research, story-level design, and other activities are conditional; readiness guidance can recommend them without overriding an explicit human route. Its normative behavior is defined in the [default workflow specification](default-workflow.md).
 
-The normative `v1alpha1` execution model, normalized schema, stable errors, and executable examples are defined in [WORKFLOW_SEMANTICS.md](WORKFLOW_SEMANTICS.md). In particular, `terminal: true` means terminal-capable for route selection; it does not require the node to be a graph sink.
+The normative `v1alpha1` execution model, normalized schema, stable errors, and executable examples are defined in the [workflow execution semantics](../architecture/workflow/execution-semantics.md). In particular, `terminal: true` means terminal-capable for route selection; it does not require the node to be a graph sink.
 
 Each workflow node shall declare:
 
@@ -397,7 +399,7 @@ spec:
           draft: false
 ```
 
-This compact YAML remains explanatory rather than schema-conforming. The normalized form uses named input bindings and data-only predicate trees instead of string expressions; see [WORKFLOW_SEMANTICS.md](WORKFLOW_SEMANTICS.md) and [`examples/workflows/`](examples/workflows/). Its intent remains: typed nodes, validated edges, explicit bounded loops, flexible entry/terminal nodes, and deterministic transition evaluation.
+This compact YAML remains explanatory rather than schema-conforming. The normalized form uses named input bindings and data-only predicate trees instead of string expressions; see the [workflow execution semantics](../architecture/workflow/execution-semantics.md) and [`examples/workflows/`](../../examples/workflows/). Its intent remains: typed nodes, validated edges, explicit bounded loops, flexible entry/terminal nodes, and deterministic transition evaluation.
 
 ### 6.3 Route selection
 
@@ -500,7 +502,7 @@ DARKSTAR supplies provider-neutral built-in skills and tools for route/readiness
 
 Provider adapters also expose eligible skills, plugins, MCP servers, commands, and tools already configured in the user's CLI environment when the provider offers a supported discovery/invocation mechanism. Project and user capabilities are registered in the same namespaced catalog without pretending different providers use the same extension format.
 
-Capability resolution is explicit and auditable: workflow pin → project binding → user binding → provider-environment capability → declared built-in fallback. Discovery never grants permission. Unavailable required capabilities block or select a declared fallback; unavailable preferred capabilities produce an audit event. The resolved identifier, version/hash when available, source scope, and permissions are included in every attempt manifest. Detailed default behavior is defined in [DARKSTAR_DEFAULT_WORKFLOW.md](DARKSTAR_DEFAULT_WORKFLOW.md#8-skills-and-tools).
+Capability resolution is explicit and auditable: workflow pin → project binding → user binding → provider-environment capability → declared built-in fallback. Discovery never grants permission. Unavailable required capabilities block or select a declared fallback; unavailable preferred capabilities produce an audit event. The resolved identifier, version/hash when available, source scope, and permissions are included in every attempt manifest. Detailed default behavior is defined in the [default workflow specification](default-workflow.md#8-skills-and-tools).
 
 ### 6.7 Artifacts, lineage, and revision
 

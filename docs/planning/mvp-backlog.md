@@ -1,7 +1,9 @@
 # DARKSTAR MVP Backlog
 
+> [Documentation index](../README.md)
+
 **Status:** Linear-ready planning backlog; not pushed to Linear  
-**Source specifications:** `DARKSTAR_SPEC.md` and `DARKSTAR_DEFAULT_WORKFLOW.md`  
+**Source specifications:** [Product specification](../product/product-specification.md) and [default workflow](../product/default-workflow.md)  
 **Scope boundary:** Windows-first, Codex-first, local daemon, complete CLI, thin dashboard, configurable workflow, folder artifact store, GitHub pull-request delivery, and self-hosting proof
 
 ---
@@ -125,7 +127,7 @@ These issues should be written up before their dependent implementation closes. 
 - **Type/Priority/Size:** Spike / P0 / L
 - **Question:** Should the MVP use Codex App Server, `codex exec --json`, or a hybrid?
 - **Work:** Build Windows probes for authentication, thread start/resume, structured output, streaming, command/file/network approval, user input, skills, images, cancellation, usage limits, and process interruption.
-- **Deliverables:** `CODEX_ADAPTER_CONTRACT.md`, captured versioned event fixtures, compatibility policy, and a recommendation.
+- **Deliverables:** [Codex adapter contract](../architecture/providers/codex/adapter-contract.md), captured versioned event fixtures, [compatibility policy](../architecture/providers/codex/compatibility-policy.md), and an [architecture recommendation](../decisions/DS-001-codex-host-recommendation.md).
 - **Done when:** One approach has passed a full read-only and write-capable attempt on Windows, recovery limitations are documented, and DS-090–DS-100 reflect the decision.
 
 ### DS-002 — Formalize workflow execution semantics
@@ -133,16 +135,16 @@ These issues should be written up before their dependent implementation closes. 
 - **Type/Priority/Size:** Spike / P0 / L
 - **Question:** What is the smallest workflow language that supports flexible entry/exit, optional nodes, bounded repair loops, sub-workflows, and route patches without becoming a general programming language?
 - **Work:** Define node contracts, edge evaluation, input binding, joins, terminal behavior, checkpoint interaction, route changes, workflow versioning, and deterministic errors.
-- **Deliverables:** `WORKFLOW_SEMANTICS.md`, example schemas, transition tables, and a tiny executable/reference interpreter.
+- **Deliverables:** [Workflow execution semantics](../architecture/workflow/execution-semantics.md), example schemas, transition tables, and a tiny executable/reference interpreter.
 - **Done when:** All default and MVP workflows validate under the proposed semantics and ambiguous cases have deterministic outcomes.
 
 **Spike outcome:** Adopt immutable typed graph snapshots, explicit bindings, data-only predicate trees, first-class deterministic gates over persisted reasoning scores, exclusive-or-explicit-fanout transitions, logical-closure joins, budgeted cycle edges, non-recursive pinned sub-workflows, and route patches limited to predeclared transitions and terminal boundaries. The executable evidence is:
 
-- [WORKFLOW_SEMANTICS.md](WORKFLOW_SEMANTICS.md);
-- [`schemas/workflow-v1alpha1.schema.json`](schemas/workflow-v1alpha1.schema.json) and [`schemas/route-patch-v1alpha1.schema.json`](schemas/route-patch-v1alpha1.schema.json);
-- [`examples/workflows/`](examples/workflows/), [`examples/scenarios/`](examples/scenarios/), and [`examples/route-patches/`](examples/route-patches/);
-- [`scripts/workflow-reference.mjs`](scripts/workflow-reference.mjs); and
-- [`tests/workflow-reference.test.mjs`](tests/workflow-reference.test.mjs).
+- [Workflow execution semantics](../architecture/workflow/execution-semantics.md);
+- [`schemas/workflow-v1alpha1.schema.json`](../../schemas/workflow-v1alpha1.schema.json) and [`schemas/route-patch-v1alpha1.schema.json`](../../schemas/route-patch-v1alpha1.schema.json);
+- [`examples/workflows/`](../../examples/workflows/), [`examples/scenarios/`](../../examples/scenarios/), and [`examples/route-patches/`](../../examples/route-patches/);
+- [`scripts/workflow-reference.mjs`](../../scripts/workflow-reference.mjs); and
+- [`tests/workflow-reference.test.mjs`](../../tests/workflow-reference.test.mjs).
 
 ### DS-003 — Define crash recovery and idempotency
 

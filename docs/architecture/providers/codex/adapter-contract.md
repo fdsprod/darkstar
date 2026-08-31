@@ -1,5 +1,7 @@
 # Codex adapter contract
 
+> [Documentation index](../../../README.md)
+
 Status: decision-ready contract for DAR-5 / DS-001.
 
 ## Decision boundary

@@ -1,10 +1,12 @@
 # DARKSTAR Default Software Delivery Workflow
 
+> [Documentation index](../README.md)
+
 **Status:** Normative default-workflow specification  
 **Workflow ID:** `darkstar/software-delivery`  
 **Purpose:** Provide a strong, enterprise-friendly path from an initial product idea through production verification without making that path mandatory for every work item.
 
-The executable `v1alpha1` encoding is [`examples/workflows/software-delivery.json`](examples/workflows/software-delivery.json), with the reusable child graph in [`examples/workflows/story-execution.json`](examples/workflows/story-execution.json). Runtime meaning and deterministic error behavior are defined in [WORKFLOW_SEMANTICS.md](WORKFLOW_SEMANTICS.md).
+The executable `v1alpha1` encoding is [`software-delivery.json`](../../examples/workflows/software-delivery.json), with the reusable child graph in [`story-execution.json`](../../examples/workflows/story-execution.json). Runtime meaning and deterministic error behavior are defined in the [workflow execution semantics](../architecture/workflow/execution-semantics.md).
 
 ---
 

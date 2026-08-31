@@ -1,5 +1,7 @@
 # Codex compatibility policy
 
+> [Documentation index](../../../README.md)
+
 Status: decision-ready policy for DAR-5 / DS-001.
 
 ## Executable selection

@@ -1,5 +1,7 @@
 # DARKSTAR Workflow Execution Semantics
 
+> [Documentation index](../../README.md)
+
 **Status:** Proposed normative contract for `darkstar.local/v1alpha1`  
 **Decision:** DS-002  
 **Scope:** Workflow validation, route freezing, node execution, transitions, joins, bounded loops, checkpoints, sub-workflows, route patches, versioning, and stable errors
@@ -46,7 +48,7 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 ## 3. Installed form and identity
 
 Authoring files MAY be YAML or JSON. Installation parses them to the data model in
-[`schemas/workflow-v1alpha1.schema.json`](schemas/workflow-v1alpha1.schema.json),
+[`schemas/workflow-v1alpha1.schema.json`](../../../schemas/workflow-v1alpha1.schema.json),
 rejects duplicate YAML keys and non-JSON values, and serializes canonical JSON:
 
 - UTF-8;
@@ -383,7 +385,7 @@ binding or route is a validation error.
 
 ## 14. Route patches
 
-The schema is [`schemas/route-patch-v1alpha1.schema.json`](schemas/route-patch-v1alpha1.schema.json).
+The schema is [`schemas/route-patch-v1alpha1.schema.json`](../../../schemas/route-patch-v1alpha1.schema.json).
 A patch carries the run ID, expected route revision, rationale, and an ordered list
 of these operations:
 
@@ -550,7 +552,7 @@ bytes and installed dependencies.
 ## 19. Executable reference
 
 The standard-library-only reference interpreter is
-[`scripts/workflow-reference.mjs`](scripts/workflow-reference.mjs). It validates the
+[`scripts/workflow-reference.mjs`](../../../scripts/workflow-reference.mjs). It validates the
 semantic rules, freezes an entry/terminal route, evaluates fixture-backed nodes,
 executes joins and bounded edges, and invokes pinned local sub-workflow examples.
 It is an executable specification, not production daemon code.

@@ -1,5 +1,7 @@
 # Codex host recommendation
 
+> [Documentation index](../README.md)
+
 Status: accepted recommendation for DAR-5 / DS-001.
 
 ## Decision
