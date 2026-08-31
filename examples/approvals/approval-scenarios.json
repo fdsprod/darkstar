@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "checkpoint-approve-exact-candidate",
+      "kind": "decision",
+      "covers": ["workflow_checkpoint"],
+      "request": {"class":"workflow_checkpoint","status":"pending","scopeDigest":"scope:artifact-v2","policyDigest":"policy:a","eligibleActors":["user:reviewer"],"allowedActions":["approve","request_changes","reject","cancel"],"expiresAt":"2026-09-01T00:00:00Z","aggregateRevision":4},
+      "action": {"action":"approve","actionKey":"act:1","actor":"user:reviewer","scopeDigest":"scope:artifact-v2","policyDigest":"policy:a","expectedRevision":4,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"OK","state":"approved","effect":"checkpoint.commit_candidate"}
+    },
+    {
+      "id": "checkpoint-request-changes-creates-revision-only",
+      "kind": "decision",
+      "covers": ["workflow_checkpoint"],
+      "request": {"class":"workflow_checkpoint","status":"pending","scopeDigest":"scope:point-r1","policyDigest":"policy:a","eligibleActors":["user:reviewer"],"allowedActions":["approve","request_changes","reject","cancel"],"expiresAt":null,"aggregateRevision":9},
+      "action": {"action":"request_changes","actionKey":"act:2","actor":"user:reviewer","scopeDigest":"scope:point-r1","policyDigest":"policy:a","expectedRevision":9,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"OK","state":"changes_requested","effect":"checkpoint.create_revision"}
+    },
+    {
+      "id": "workflow-control-authorizes-only-frozen-patch",
+      "kind": "decision",
+      "covers": ["workflow_control"],
+      "request": {"class":"workflow_control","status":"pending","scopeDigest":"scope:route-patch-7","policyDigest":"policy:a","eligibleActors":["role:run-controller"],"allowedActions":["approve","deny","cancel"],"expiresAt":null,"aggregateRevision":12},
+      "action": {"action":"approve","actionKey":"act:3","actor":"role:run-controller","scopeDigest":"scope:route-patch-7","policyDigest":"policy:a","expectedRevision":12,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"OK","state":"approved","effect":"workflow.authorize_control"}
+    },
+    {
+      "id": "provider-allow-once-responds-only-to-provider",
+      "kind": "decision",
+      "covers": ["provider_permission"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:1","providerThreadId":"thread:1"},"scopeDigest":"scope:command-git-status","policyDigest":"policy:a","eligibleActors":["user:operator"],"allowedActions":["allow_once","allow_for_session","deny","cancel"],"expiresAt":"2026-09-01T00:00:00Z","grantCeilingExpiresAt":"2026-09-01T00:00:00Z","aggregateRevision":2},
+      "action": {"action":"allow_once","actionKey":"act:4","actor":"user:operator","scopeDigest":"scope:command-git-status","policyDigest":"policy:a","expectedRevision":2,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"OK","state":"approved","effect":"provider.respond_once"}
+    },
+    {
+      "id": "delivery-approval-authorizes-but-does-not-complete",
+      "kind": "decision",
+      "covers": ["external_delivery"],
+      "request": {"class":"external_delivery","status":"pending","scopeDigest":"scope:push-tip-abc","policyDigest":"policy:a","eligibleActors":["role:release-manager"],"allowedActions":["approve","deny","cancel"],"expiresAt":null,"aggregateRevision":5},
+      "action": {"action":"approve","actionKey":"act:5","actor":"role:release-manager","scopeDigest":"scope:push-tip-abc","policyDigest":"policy:a","expectedRevision":5,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"OK","state":"approved","effect":"delivery.authorize_operation"}
+    },
+    {
+      "id": "provider-action-cannot-approve-checkpoint",
+      "kind": "decision",
+      "covers": ["cross_class_negative"],
+      "request": {"class":"workflow_checkpoint","status":"pending","scopeDigest":"scope:artifact-v2","policyDigest":"policy:a","eligibleActors":["user:reviewer"],"allowedActions":["approve","request_changes","reject","cancel"],"expiresAt":null,"aggregateRevision":4},
+      "action": {"action":"allow_once","actionKey":"act:6","actor":"user:reviewer","scopeDigest":"scope:artifact-v2","policyDigest":"policy:a","expectedRevision":4,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_CLASS_INVALID","state":"pending","effect":"none"}
+    },
+    {
+      "id": "checkpoint-action-cannot-answer-provider",
+      "kind": "decision",
+      "covers": ["cross_class_negative"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:1","providerThreadId":"thread:1"},"scopeDigest":"scope:network-api","policyDigest":"policy:a","eligibleActors":["user:operator"],"allowedActions":["allow_once","deny","cancel"],"expiresAt":null,"grantCeilingExpiresAt":"2026-09-01T00:00:00Z","aggregateRevision":3},
+      "action": {"action":"approve","actionKey":"act:7","actor":"user:operator","scopeDigest":"scope:network-api","policyDigest":"policy:a","expectedRevision":3,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_CLASS_INVALID","state":"pending","effect":"none"}
+    },
+    {
+      "id": "provider-action-cannot-authorize-delivery",
+      "kind": "decision",
+      "covers": ["cross_class_negative"],
+      "request": {"class":"external_delivery","status":"pending","scopeDigest":"scope:pr-create","policyDigest":"policy:a","eligibleActors":["role:release-manager"],"allowedActions":["approve","deny","cancel"],"expiresAt":null,"aggregateRevision":1},
+      "action": {"action":"allow_for_session","actionKey":"act:8","actor":"role:release-manager","scopeDigest":"scope:pr-create","policyDigest":"policy:a","expectedRevision":1,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_CLASS_INVALID","state":"pending","effect":"none"}
+    },
+    {
+      "id": "ineligible-actor-denied",
+      "kind": "decision",
+      "covers": ["actor_negative"],
+      "request": {"class":"external_delivery","status":"pending","scopeDigest":"scope:push","policyDigest":"policy:a","eligibleActors":["role:release-manager"],"allowedActions":["approve","deny","cancel"],"expiresAt":null,"aggregateRevision":1},
+      "action": {"action":"approve","actionKey":"act:9","actor":"user:viewer","scopeDigest":"scope:push","policyDigest":"policy:a","expectedRevision":1,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_ACTOR_FORBIDDEN","state":"pending","effect":"none"}
+    },
+    {
+      "id": "changed-candidate-scope-denied",
+      "kind": "decision",
+      "covers": ["scope_negative"],
+      "request": {"class":"workflow_checkpoint","status":"pending","scopeDigest":"scope:artifact-v2","policyDigest":"policy:a","eligibleActors":["user:reviewer"],"allowedActions":["approve","request_changes","reject","cancel"],"expiresAt":null,"aggregateRevision":4},
+      "action": {"action":"approve","actionKey":"act:10","actor":"user:reviewer","scopeDigest":"scope:artifact-v3","policyDigest":"policy:a","expectedRevision":4,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_SCOPE_MISMATCH","state":"pending","effect":"none"}
+    },
+    {
+      "id": "broader-provider-target-denied",
+      "kind": "decision",
+      "covers": ["scope_negative"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:1","providerThreadId":"thread:1"},"scopeDigest":"scope:file-one","policyDigest":"policy:a","eligibleActors":["user:operator"],"allowedActions":["allow_once","deny","cancel"],"expiresAt":null,"grantCeilingExpiresAt":"2026-09-01T00:00:00Z","aggregateRevision":3},
+      "action": {"action":"allow_once","actionKey":"act:11","actor":"user:operator","scopeDigest":"scope:workspace-wildcard","policyDigest":"policy:a","expectedRevision":3,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_SCOPE_MISMATCH","state":"pending","effect":"none"}
+    },
+    {
+      "id": "stale-policy-denied",
+      "kind": "decision",
+      "covers": ["policy_negative"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:1","providerThreadId":"thread:1"},"scopeDigest":"scope:command","policyDigest":"policy:new","eligibleActors":["user:operator"],"allowedActions":["allow_once","deny","cancel"],"expiresAt":null,"grantCeilingExpiresAt":"2026-09-01T00:00:00Z","aggregateRevision":3},
+      "action": {"action":"allow_once","actionKey":"act:12","actor":"user:operator","scopeDigest":"scope:command","policyDigest":"policy:old","expectedRevision":3,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_POLICY_STALE","state":"pending","effect":"none"}
+    },
+    {
+      "id": "stale-aggregate-revision-denied",
+      "kind": "decision",
+      "covers": ["revision_negative"],
+      "request": {"class":"workflow_control","status":"pending","scopeDigest":"scope:patch","policyDigest":"policy:a","eligibleActors":["role:run-controller"],"allowedActions":["approve","deny","cancel"],"expiresAt":null,"aggregateRevision":8},
+      "action": {"action":"approve","actionKey":"act:13","actor":"role:run-controller","scopeDigest":"scope:patch","policyDigest":"policy:a","expectedRevision":7,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_REVISION_CONFLICT","state":"pending","effect":"none"}
+    },
+    {
+      "id": "expired-request-fails-closed",
+      "kind": "decision",
+      "covers": ["expiry"],
+      "request": {"class":"external_delivery","status":"pending","scopeDigest":"scope:push","policyDigest":"policy:a","eligibleActors":["role:release-manager"],"allowedActions":["approve","deny","cancel"],"expiresAt":"2026-08-31T00:00:00Z","aggregateRevision":1},
+      "action": {"action":"approve","actionKey":"act:14","actor":"role:release-manager","scopeDigest":"scope:push","policyDigest":"policy:a","expectedRevision":1,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_EXPIRED","state":"expired","effect":"none"}
+    },
+    {
+      "id": "offline-request-remains-pending",
+      "kind": "offline",
+      "covers": ["offline"],
+      "request": {"class":"workflow_checkpoint","status":"pending","expiresAt":"2026-09-01T00:00:00Z"},
+      "at": "2026-08-31T00:00:00Z",
+      "expected": {"code":"WAITING_FOR_DECISION","state":"pending","effect":"none"}
+    },
+    {
+      "id": "offline-expiry-requires-system-transition-not-approval",
+      "kind": "offline",
+      "covers": ["offline", "expiry"],
+      "request": {"class":"provider_permission","status":"pending","expiresAt":"2026-08-31T00:00:00Z"},
+      "at": "2026-08-31T00:00:01Z",
+      "expected": {"code":"EXPIRE_REQUIRED","state":"pending","effect":"none"}
+    },
+    {
+      "id": "exact-duplicate-replays-original-result",
+      "kind": "decision",
+      "covers": ["idempotent_replay"],
+      "request": {"class":"provider_permission","status":"approved","subject":{"attemptId":"attempt:1","providerThreadId":"thread:1"},"scopeDigest":"scope:command","policyDigest":"policy:a","eligibleActors":["user:operator"],"allowedActions":["allow_once","deny","cancel"],"expiresAt":null,"grantCeilingExpiresAt":"2026-09-01T00:00:00Z","aggregateRevision":4},
+      "action": {"action":"allow_once","actionKey":"act:duplicate","actor":"user:operator","scopeDigest":"scope:command","policyDigest":"policy:a","expectedRevision":3,"at":"2026-08-31T00:00:00Z"},
+      "priorDecision": {"actionKey":"act:duplicate","canonicalAction":"{\"action\":\"allow_once\",\"scopeDigest\":\"scope:command\",\"policyDigest\":\"policy:a\",\"sessionGrant\":null}","result":{"code":"OK","state":"approved","effect":"provider.respond_once"}},
+      "expected": {"code":"OK","state":"approved","effect":"none","replayed":true}
+    },
+    {
+      "id": "duplicate-key-different-payload-conflicts",
+      "kind": "decision",
+      "covers": ["idempotency_conflict"],
+      "request": {"class":"workflow_checkpoint","status":"approved","scopeDigest":"scope:artifact","policyDigest":"policy:a","eligibleActors":["user:reviewer"],"allowedActions":["approve","request_changes","reject","cancel"],"expiresAt":null,"aggregateRevision":5},
+      "action": {"action":"reject","actionKey":"act:duplicate-2","actor":"user:reviewer","scopeDigest":"scope:artifact","policyDigest":"policy:a","expectedRevision":4,"at":"2026-08-31T00:00:00Z"},
+      "priorDecision": {"actionKey":"act:duplicate-2","canonicalAction":"{\"action\":\"approve\",\"scopeDigest\":\"scope:artifact\",\"policyDigest\":\"policy:a\",\"sessionGrant\":null}","result":{"code":"OK","state":"approved","effect":"checkpoint.commit_candidate"}},
+      "expected": {"code":"APPROVAL_IDEMPOTENCY_CONFLICT","state":"approved","effect":"none"}
+    },
+    {
+      "id": "new-key-against-resolved-request-conflicts",
+      "kind": "decision",
+      "covers": ["resolved_negative"],
+      "request": {"class":"external_delivery","status":"approved","scopeDigest":"scope:push","policyDigest":"policy:a","eligibleActors":["role:release-manager"],"allowedActions":["approve","deny","cancel"],"expiresAt":null,"aggregateRevision":2},
+      "action": {"action":"approve","actionKey":"act:new","actor":"role:release-manager","scopeDigest":"scope:push","policyDigest":"policy:a","expectedRevision":2,"at":"2026-08-31T00:00:00Z"},
+      "expected": {"code":"APPROVAL_ALREADY_RESOLVED","state":"approved","effect":"none"}
+    },
+    {
+      "id": "bounded-session-grant-created",
+      "kind": "decision",
+      "covers": ["provider_permission", "session_grant"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:1","providerThreadId":"thread:1"},"scopeDigest":"scope:network-api","policyDigest":"policy:a","eligibleActors":["user:operator"],"allowedActions":["allow_once","allow_for_session","deny","cancel"],"expiresAt":"2026-09-01T00:00:00Z","grantCeilingExpiresAt":"2026-09-01T00:00:00Z","aggregateRevision":3},
+      "action": {"action":"allow_for_session","actionKey":"act:grant","actor":"user:operator","scopeDigest":"scope:network-api","policyDigest":"policy:a","expectedRevision":3,"at":"2026-08-31T00:00:00Z","sessionGrant":{"attemptId":"attempt:1","providerThreadId":"thread:1","scopeDigest":"scope:network-api","policyDigest":"policy:a","expiresAt":"2026-08-31T01:00:00Z","wildcard":false}},
+      "expected": {"code":"OK","state":"approved","effect":"provider.respond_once_and_create_grant"}
+    },
+    {
+      "id": "session-grant-cannot-cross-attempt",
+      "kind": "decision",
+      "covers": ["session_grant", "scope_negative"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:2","providerThreadId":"thread:1"},"scopeDigest":"scope:network-api","policyDigest":"policy:a","eligibleActors":["user:operator"],"allowedActions":["allow_once","allow_for_session","deny","cancel"],"expiresAt":"2026-09-01T00:00:00Z","grantCeilingExpiresAt":"2026-09-01T00:00:00Z","aggregateRevision":3},
+      "action": {"action":"allow_for_session","actionKey":"act:grant-cross","actor":"user:operator","scopeDigest":"scope:network-api","policyDigest":"policy:a","expectedRevision":3,"at":"2026-08-31T00:00:00Z","sessionGrant":{"attemptId":"attempt:1","providerThreadId":"thread:1","scopeDigest":"scope:network-api","policyDigest":"policy:a","expiresAt":"2026-08-31T01:00:00Z","wildcard":false}},
+      "expected": {"code":"APPROVAL_SESSION_GRANT_INVALID","state":"pending","effect":"none"}
+    },
+    {
+      "id": "wildcard-session-grant-denied",
+      "kind": "decision",
+      "covers": ["session_grant", "scope_negative"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:1","providerThreadId":"thread:1"},"scopeDigest":"scope:network-api","policyDigest":"policy:a","eligibleActors":["user:operator"],"allowedActions":["allow_once","allow_for_session","deny","cancel"],"expiresAt":"2026-09-01T00:00:00Z","grantCeilingExpiresAt":"2026-09-01T00:00:00Z","aggregateRevision":3},
+      "action": {"action":"allow_for_session","actionKey":"act:grant-wild","actor":"user:operator","scopeDigest":"scope:network-api","policyDigest":"policy:a","expectedRevision":3,"at":"2026-08-31T00:00:00Z","sessionGrant":{"attemptId":"attempt:1","providerThreadId":"thread:1","scopeDigest":"scope:network-api","policyDigest":"policy:a","expiresAt":"2026-08-31T01:00:00Z","wildcard":true}},
+      "expected": {"code":"APPROVAL_SESSION_GRANT_INVALID","state":"pending","effect":"none"}
+    },
+    {
+      "id": "restart-reuses-exact-unexpired-grant",
+      "kind": "reuse_session_grant",
+      "covers": ["session_grant", "restart_reconciliation"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:1","providerThreadId":"thread:1"},"scopeDigest":"scope:network-api","policyDigest":"policy:a","capabilityFingerprint":"caps:1"},
+      "grant": {"attemptId":"attempt:1","providerThreadId":"thread:1","scopeDigest":"scope:network-api","policyDigest":"policy:a","capabilityFingerprint":"caps:1","expiresAt":"2026-08-31T01:00:00Z","revoked":false,"wildcard":false},
+      "at": "2026-08-31T00:00:00Z",
+      "expected": {"code":"OK","state":"pending","effect":"provider.create_grant_authored_allow_once"}
+    },
+    {
+      "id": "restart-does-not-reuse-grant-on-other-thread",
+      "kind": "reuse_session_grant",
+      "covers": ["session_grant", "restart_reconciliation", "scope_negative"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:1","providerThreadId":"thread:2"},"scopeDigest":"scope:network-api","policyDigest":"policy:a","capabilityFingerprint":"caps:1"},
+      "grant": {"attemptId":"attempt:1","providerThreadId":"thread:1","scopeDigest":"scope:network-api","policyDigest":"policy:a","capabilityFingerprint":"caps:1","expiresAt":"2026-08-31T01:00:00Z","revoked":false,"wildcard":false},
+      "at": "2026-08-31T00:00:00Z",
+      "expected": {"code":"APPROVAL_SESSION_GRANT_INVALID","state":"pending","effect":"none"}
+    },
+    {
+      "id": "restart-does-not-reuse-expired-grant",
+      "kind": "reuse_session_grant",
+      "covers": ["session_grant", "restart_reconciliation", "expiry"],
+      "request": {"class":"provider_permission","status":"pending","subject":{"attemptId":"attempt:1","providerThreadId":"thread:1"},"scopeDigest":"scope:network-api","policyDigest":"policy:a","capabilityFingerprint":"caps:1"},
+      "grant": {"attemptId":"attempt:1","providerThreadId":"thread:1","scopeDigest":"scope:network-api","policyDigest":"policy:a","capabilityFingerprint":"caps:1","expiresAt":"2026-08-31T00:00:00Z","revoked":false,"wildcard":false},
+      "at": "2026-08-31T00:00:01Z",
+      "expected": {"code":"APPROVAL_SESSION_GRANT_INVALID","state":"pending","effect":"none"}
+    }
+  ]
+}

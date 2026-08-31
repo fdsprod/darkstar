@@ -52,7 +52,7 @@ test("exact durable effects are adopted and uncertain or divergent effects never
 });
 
 test("only proven absence or a safely behind authority permits retry", () => {
-  assert.equal(decide("checkpoint_action", "absent"), "retry");
+  assert.equal(decide("approval_decision", "absent"), "retry");
   assert.equal(decide("branch_create", "absent"), "retry");
   assert.equal(decide("commit_create", "absent_head_unchanged"), "retry");
   assert.equal(decide("push", "absent_or_ancestor"), "retry");

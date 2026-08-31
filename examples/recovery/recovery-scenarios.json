@@ -133,15 +133,15 @@
       "expectedDecision": "retry"
     },
     {
-      "id": "checkpoint_action_not_committed",
-      "operation": "checkpoint_action",
+      "id": "approval_decision_not_committed",
+      "operation": "approval_decision",
       "crashAt": "after_intent",
       "observation": "absent",
       "expectedDecision": "retry"
     },
     {
-      "id": "checkpoint_action_response_lost",
-      "operation": "checkpoint_action",
+      "id": "approval_decision_response_lost",
+      "operation": "approval_decision",
       "crashAt": "after_record",
       "observation": "committed",
       "expectedDecision": "adopt"
@@ -288,4 +288,3 @@
     }
   ]
 }
-

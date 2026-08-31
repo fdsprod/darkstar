@@ -72,7 +72,7 @@ export const SIDE_EFFECTS = Object.freeze({
   provider_turn: { strategy: "provider_turn", owner: "attempt", commitPoint: "terminal_result_binding" },
   candidate_blob: { strategy: "content_addressed", owner: "attempt_result_revision", commitPoint: "blob_and_binding" },
   artifact_registration: { strategy: "content_addressed", owner: "artifact_version", commitPoint: "artifact_transaction" },
-  checkpoint_action: { strategy: "transactional", owner: "checkpoint", commitPoint: "checkpoint_transaction" },
+  approval_decision: { strategy: "transactional", owner: "typed_approval_request", commitPoint: "approval_decision_transaction" },
   visit_success: { strategy: "transactional", owner: "node_visit", commitPoint: "visit_transaction" },
   transition_token: { strategy: "transactional", owner: "source_visit_join_epoch", commitPoint: "token_transaction" },
   branch_create: { strategy: "exact_external", owner: "delivery_line", commitPoint: "observed_git_ref" },
@@ -220,4 +220,3 @@ export function main(argv = process.argv.slice(2)) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) process.exitCode = main();
-

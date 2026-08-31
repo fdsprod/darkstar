@@ -314,6 +314,8 @@ Checkpoint modes are `none`, `acknowledge`, `approve`, `approve_on_change`, and
 
 Provider command/file/network permission is never a checkpoint action. A provider
 approval cannot commit node outputs or satisfy workflow policy.
+The typed request classes, actor/scope rules, and one idempotent decision API are
+defined by the [approval and permission model](../security/APPROVAL_AND_PERMISSION_MODEL.md).
 
 If a route terminates at a checkpointed node, the run completes only after that
 checkpoint commits. Moving the terminal while a checkpoint is open requires an

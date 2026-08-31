@@ -15,6 +15,10 @@ This directory separates documentation by the kind of decision or work it repres
 - [MVP work and Git model](architecture/work/WORK_AND_GIT_MODEL.md) — normative work identity, delivery topology, mutation ownership, revision, and recovery behavior.
 - [Crash recovery and idempotency model](architecture/recovery/RECOVERY_MODEL.md) — normative leases, process identity, interruption matrix, commit points, reconciliation, and failure-injection contract.
 
+### Security and authorization
+
+- [Approval and permission model](architecture/security/APPROVAL_AND_PERMISSION_MODEL.md) — normative approval classes, scope, actors, expiry, session grants, offline behavior, audit, and idempotent decision API.
+
 ### Provider integration
 
 - [Codex adapter contract](architecture/providers/codex/adapter-contract.md) — normalized provider boundary used by DARKSTAR core.
@@ -38,6 +42,7 @@ Some project knowledge belongs beside executable material rather than in `docs/`
 - [`examples/`](../examples/) contains workflow and scenario examples.
 - [`tests/`](../tests/) verifies deterministic behavior.
 - [`examples/recovery/`](../examples/recovery/) and [`scripts/recovery-reference.mjs`](../scripts/recovery-reference.mjs) make crash-window decisions and catalog coverage executable.
+- [`examples/approvals/`](../examples/approvals/) and [`scripts/approval-reference.mjs`](../scripts/approval-reference.mjs) make approval separation, negative cases, and idempotency executable.
 - [`probes/codex-host/`](../probes/codex-host/) contains the Codex host probe harness and versioned compatibility evidence.
 
 Those directories may include local README files explaining how to run or extend their contents.

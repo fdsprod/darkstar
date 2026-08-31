@@ -43,7 +43,7 @@ The words **must**, **must not**, **should**, and **may** are normative.
    until process/session and workspace reconciliation proves exclusive ownership.
 6. Fencing tokens increase monotonically. A stale holder cannot use daemon-owned
    mutation APIs after a newer token commits.
-7. Completed visits, checkpoint actions, transition tokens, accepted revisions,
+7. Completed visits, approval decisions, transition tokens, accepted revisions,
    commits, publications, and pull requests are adopted rather than recreated.
 8. Compensation moves forward and preserves evidence. DARKSTAR does not erase an
    accepted commit, force-push, delete an ambiguous PR, or discard an unproven
@@ -171,7 +171,7 @@ names, timestamps, generated prose, or content that may be revised.
 | Provider turn | `attempt_id`; a replacement after proven interruption has a new attempt ID. |
 | Candidate/result | `(attempt_id, result_revision)` plus content digest. |
 | Artifact content/version | SHA-256 content key; `(artifact_id, version)` registration key. |
-| Checkpoint action | `(checkpoint_id, client_action_key)`. |
+| Approval decision | `(approval_request_id, client_action_key)`; the checkpoint ID, provider request ID, control operation, or delivery operation is the typed request subject. |
 | Visit success | `visit_id`. |
 | Transition token | `(source_visit_id, transition_id, join_epoch)`. |
 | Branch/worktree/commit | Stored `operation_id`; commits embed it in `Darkstar-Operation`. |
@@ -193,7 +193,7 @@ The operation IDs in this table are also the executable scenario catalog in
 | `provider_turn` | Attempt | Provider terminal result is captured and bound to the attempt | `attempt_id`, recorded thread/session ID, adapter read-back; resume exact active or adopt exact terminal result | Proven absence/death interrupts; active-writer ambiguity blocks. Cost is never “undone.” |
 | `candidate_blob` | Attempt result revision | Immutable bytes fsync/close successfully under their content hash, then exact binding transaction | Hash and size; adopt identical content, retry absent binding | Mismatched bytes quarantine and block. |
 | `artifact_registration` | Artifact version produced by attempt | Artifact version, provenance, dependencies, content hash, and event commit together | Unique `(artifact_id, version)` and content hash | Orphan content is GC-eligible; a registration conflict blocks. |
-| `checkpoint_action` | Checkpoint | Action, actor, action key, candidate revision, resulting state, and event commit together | Unique `(checkpoint_id, client_action_key)` returns prior result | A different action under the same key is a conflict; no transition is emitted twice. |
+| `approval_decision` | Typed approval request | Class-specific action, actor, action key, immutable scope/policy digests, resulting state, and event commit together | Unique `(approval_request_id, client_action_key)` returns prior result | A different action under the same key is a conflict; no downstream provider, workflow, transition, or delivery effect is emitted twice. |
 | `visit_success` | Node visit | Validated output snapshot, successful visit state, and event commit together | Unique `visit_id`; exact output digest is adopted | Different output for successful visit is invariant violation. |
 | `transition_token` | Source visit and join epoch | Token, bounded-edge counter when applicable, target activation fact, and events commit together | Unique `(source_visit_id, transition_id, join_epoch)` | Duplicate returns prior token; conflicting epoch blocks. |
 | `branch_create` | Delivery line | Git ref exists at frozen base and exact observation is recorded | Stored operation ID, ref name, expected SHA, repository identity | Unowned collision or unexpected SHA blocks; never delete/reset it automatically. |
@@ -225,8 +225,8 @@ discarding the current state.
 | Provider returns before result commits | Terminal session result, output log, or exact response evidence exists | Fetch/adopt exact result; otherwise preserve workspace and pause/interrupt as provable | Never report success from exit code alone. |
 | Candidate bytes close before candidate binding | Exact content hash exists | Adopt and bind | Orphan bytes are safe and immutable. |
 | Artifact registration response is lost | Exact version row exists | Return existing artifact handle | No second artifact version. |
-| Checkpoint request arrives before action commits | No action key row | Client retries same key | Different action under key conflicts. |
-| Checkpoint commits before response | Exact action/result exists | Return prior result | Visit/transition commit remains separate and idempotent. |
+| Approval request arrives before decision commits | No action key row | Client retries same key | Different action under key conflicts. |
+| Approval decision commits before response | Exact action/result exists | Return prior result | Provider response, visit/transition, workflow control, and delivery dispatch remain separate and idempotent. |
 | Visit success commits before transition | Successful visit, no token | Deterministically evaluate committed outputs and insert token | Successful executor is not rerun. |
 | Token commits before target enqueue | Exact token/activation exists | Rebuild ready queue | Unique key prevents duplicate join input. |
 | Branch ref created before operation result commits | Exact owned ref at base exists | Adopt | Unexpected ref is preserved and blocks. |

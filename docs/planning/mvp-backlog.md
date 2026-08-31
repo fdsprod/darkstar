@@ -169,7 +169,7 @@ These issues should be written up before their dependent implementation closes. 
 - **Depends on:** DS-001, DS-002
 - **Question:** How do artifact checkpoints, implementation approvals, Codex command/file/network approvals, and external delivery approvals coexist?
 - **Work:** Define approval classes, actors, scope, expiration, session grants, offline behavior, denial/cancel behavior, dashboard presentation, and audit records.
-- **Deliverables:** `APPROVAL_AND_PERMISSION_MODEL.md`.
+- **Deliverables:** [Approval and permission model](../architecture/security/APPROVAL_AND_PERMISSION_MODEL.md), approval transition tables, and executable negative/idempotency scenarios.
 - **Done when:** No provider approval can accidentally satisfy a workflow checkpoint or broaden DARKSTAR policy, and every approval has one idempotent API transition.
 
 ### DS-006 — Freeze the MVP artifact and context contract

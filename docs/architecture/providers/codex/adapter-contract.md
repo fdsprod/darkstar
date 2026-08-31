@@ -95,6 +95,9 @@ DARKSTAR idempotency key and accepts at most one recorded response.
 Denial, expiry, cancellation, and host disconnection are distinct outcomes.
 Session-scoped grants must be explicit, bounded to the owning attempt/thread,
 audited, and never reconstructed from free-form text.
+The provider bridge implements the `provider_permission` class and session-grant
+rules in the [approval and permission model](../../security/APPROVAL_AND_PERMISSION_MODEL.md);
+it must not call workflow or delivery approval reducers.
 
 ## Completion and recovery
 
