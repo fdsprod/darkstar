@@ -5,9 +5,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+$previousGoToolchain = [Environment]::GetEnvironmentVariable("GOTOOLCHAIN", "Process")
+
+& (Join-Path $PSScriptRoot "Assert-Toolchain.ps1")
 
 Push-Location $repositoryRoot
 try {
+    $env:GOTOOLCHAIN = "local"
+
     $goFiles = Get-ChildItem -Path "runtime/src", "runtime/tests" -Recurse -Filter "*.go" |
         ForEach-Object { $_.FullName }
     $unformatted = & gofmt -l @goFiles
@@ -18,12 +23,12 @@ try {
         throw "The following Go files require gofmt:`n$($unformatted -join "`n")"
     }
 
-    & go -C runtime vet ./...
+    & go -C runtime vet -mod=readonly ./...
     if ($LASTEXITCODE -ne 0) {
         throw "go vet failed with exit code $LASTEXITCODE."
     }
 
-    & go -C runtime test ./...
+    & go -C runtime test -mod=readonly ./...
     if ($LASTEXITCODE -ne 0) {
         throw "Go tests failed with exit code $LASTEXITCODE."
     }
@@ -43,4 +48,5 @@ try {
 }
 finally {
     Pop-Location
+    [Environment]::SetEnvironmentVariable("GOTOOLCHAIN", $previousGoToolchain, "Process")
 }

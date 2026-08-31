@@ -3,12 +3,15 @@
 DARKSTAR is Windows-first. Run all commands below from a PowerShell prompt at
 the repository root.
 
-## Prerequisites
+## Pinned toolchain
 
-- Go 1.24 or newer
-- Node.js 22.12 or newer
-- npm 10 or newer
+- Go 1.24.0 (see `.go-version`)
+- Node.js 22.12.0 (see `.node-version`)
+- npm 10.9.0, bundled with Node.js 22.12.0 (see `.npm-version`)
 - Git for Windows
+
+The PowerShell entry points reject other tool versions so local and CI builds
+use the same compilers and package manager.
 
 ## Clean-checkout setup
 
@@ -27,6 +30,21 @@ static assets:
 
 The binary is written to `out/darkstar.exe`; dashboard assets are written to
 `dashboard/dist/`. Both directories are ignored by Git.
+
+Create the deterministic Windows ZIP and its SHA-256 sidecar:
+
+```powershell
+./scripts/Package.ps1 -Version dev
+```
+
+Prove that two clean binary/package builds are byte-for-byte identical:
+
+```powershell
+./scripts/Verify-ReproducibleBuild.ps1 -Version dev
+```
+
+GitHub Actions runs these commands on a `windows-2025` runner for every
+push and pull request. Third-party actions are pinned to immutable commit SHAs.
 
 For a shorter edit loop, run the phases independently:
 

@@ -56,7 +56,8 @@ node --test tests/threat-model-reference.test.mjs
 
 ## Build the walking-skeleton foundation
 
-Install Go 1.24+, Node.js 22.12+, and npm 10+, then run from PowerShell:
+Install the exact versions in `.go-version`, `.node-version`, and
+`.npm-version`, then run from PowerShell:
 
 ```powershell
 ./scripts/Bootstrap.ps1

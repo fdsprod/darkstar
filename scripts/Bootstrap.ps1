@@ -6,17 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 
-function Assert-Command {
-    param([Parameter(Mandatory)][string]$Name)
-
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "Required command '$Name' was not found on PATH."
-    }
-}
-
-Assert-Command go
-Assert-Command node
-Assert-Command npm
+& (Join-Path $PSScriptRoot "Assert-Toolchain.ps1")
 
 Push-Location $repositoryRoot
 try {
