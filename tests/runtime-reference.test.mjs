@@ -51,3 +51,9 @@ test("SQLite logical model contains append, idempotency, outbox, and projection 
   assert.match(sql, /UNIQUE\(stream_id, stream_sequence\)/);
   assert.match(sql, /PRIMARY KEY\(scope, idempotency_key\)/);
 });
+
+test("SQLite logical model matches the executable initial migration", () => {
+  const logical = readFileSync(resolve(root, "schemas/sqlite-v1alpha1.sql"), "utf8").replaceAll("\r\n", "\n");
+  const executable = readFileSync(resolve(root, "runtime/src/adapters/statestore/sqlite/migrations/0001_initial.sql"), "utf8").replaceAll("\r\n", "\n");
+  assert.equal(executable, logical);
+});
