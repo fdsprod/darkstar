@@ -10,6 +10,7 @@ import { pathToFileURL } from "node:url";
 
 const ID_RE = /^[a-z][a-z0-9_]{0,63}$/;
 const NODE_TYPES = new Set(["reasoning", "gate", "command", "approval", "subworkflow"]);
+const EXECUTOR_FIELDS = Object.freeze(["reasoning", "gate", "command", "approval", "call"]);
 const VALUE_TYPES = new Set(["null", "boolean", "integer", "number", "string", "array", "object"]);
 const MISSING = Symbol("missing");
 
@@ -239,7 +240,11 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
     }
     const requiredExecutor = { reasoning: "reasoning", gate: "gate", command: "command", approval: "approval", subworkflow: "call" }[node.type];
     if (!NODE_TYPES.has(node.type)) errors.push(fail("WF_SCHEMA_INVALID", `invalid node type '${node.type}'`, `${location}/type`));
-    else if (!Object.hasOwn(node, requiredExecutor)) errors.push(fail("WF_SCHEMA_INVALID", `node type '${node.type}' lacks executor declaration`, location));
+    else {
+      const declaredExecutors = EXECUTOR_FIELDS.filter((field) => Object.hasOwn(node, field));
+      if (!Object.hasOwn(node, requiredExecutor)) errors.push(fail("WF_SCHEMA_INVALID", `node type '${node.type}' lacks executor declaration`, location));
+      if (declaredExecutors.some((field) => field !== requiredExecutor)) errors.push(fail("WF_SCHEMA_INVALID", `node type '${node.type}' declares incompatible executor fields`, location));
+    }
     if (node.entry === true) entries.add(nodeId);
     else if (node.entry !== false) errors.push(fail("WF_SCHEMA_INVALID", "entry must be boolean", `${location}/entry`));
     if (node.terminal === true) terminals.add(nodeId);
@@ -291,10 +296,31 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
         if (predicateReferences(node.gate.condition, "output.")) errors.push(fail("WF_GATE_INVALID", `gate '${nodeId}' condition cannot reference output`, `${location}/gate/condition`));
       }
     }
-    if (node.checkpoint && typeof node.checkpoint === "object" && node.checkpoint.when) {
-      errors.push(...checkPredicate(node.checkpoint.when, new Set(Object.keys(node.outputs)), new Set(Object.keys(runInputs)), `${location}/checkpoint/when`));
-      if (node.type === "reasoning" && predicateReferences(node.checkpoint.when, "output.")) {
-        errors.push(fail("WF_REASONING_EDGE_INVALID", `reasoning node '${nodeId}' cannot gate a checkpoint directly on its own output`, `${location}/checkpoint/when`));
+    if (node.type === "approval" && node.approval && typeof node.approval === "object") {
+      const isExternal = node.approval.actor === "external";
+      const hasExternalCondition = Object.hasOwn(node.approval, "externalCondition");
+      if (isExternal !== hasExternalCondition) errors.push(fail("WF_SCHEMA_INVALID", "external approval actor and condition must be declared together", `${location}/approval`));
+    }
+    if (node.checkpoint && typeof node.checkpoint === "object") {
+      const allowedFields = {
+        none: new Set(["mode"]),
+        acknowledge: new Set(["mode"]),
+        approve: new Set(["mode", "maxRevisions"]),
+        approve_on_change: new Set(["mode", "when", "maxRevisions"]),
+        external: new Set(["mode", "externalCondition"]),
+      }[node.checkpoint.mode];
+      if (!allowedFields || Object.keys(node.checkpoint).some((field) => !allowedFields.has(field))) {
+        errors.push(fail("WF_SCHEMA_INVALID", "checkpoint fields do not match its mode", `${location}/checkpoint`));
+      } else if (node.checkpoint.mode === "approve_on_change" && !Object.hasOwn(node.checkpoint, "when")) {
+        errors.push(fail("WF_SCHEMA_INVALID", "approve_on_change checkpoint requires when", `${location}/checkpoint/when`));
+      } else if (node.checkpoint.mode === "external" && typeof node.checkpoint.externalCondition !== "string") {
+        errors.push(fail("WF_SCHEMA_INVALID", "external checkpoint requires externalCondition", `${location}/checkpoint/externalCondition`));
+      }
+      if (node.checkpoint.when) {
+        errors.push(...checkPredicate(node.checkpoint.when, new Set(Object.keys(node.outputs)), new Set(Object.keys(runInputs)), `${location}/checkpoint/when`));
+        if (node.type === "reasoning" && predicateReferences(node.checkpoint.when, "output.")) {
+          errors.push(fail("WF_REASONING_EDGE_INVALID", `reasoning node '${nodeId}' cannot gate a checkpoint directly on its own output`, `${location}/checkpoint/when`));
+        }
       }
     }
   }
@@ -319,7 +345,8 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
       else if (parts.length === 4 && parts[0] === "node" && parts[2] === "output") sourceType = nodes[parts[1]]?.outputs?.[parts[3]]?.type ?? null;
       if (!sourceType) errors.push(fail("WF_REFERENCE_MISSING", `unknown binding source '${source}'`, `${location}/from`));
       else if (!binding.pointer && sourceType !== targetType && !(sourceType === "integer" && targetType === "number")) errors.push(fail("WF_BINDING_INCOMPATIBLE", `binding '${bindingName}' expects ${targetType} from ${sourceType}`, location));
-      if (Object.hasOwn(binding, "default") && !matchesType(binding.default, targetType)) errors.push(fail("WF_BINDING_INCOMPATIBLE", `default for '${bindingName}' has wrong type`, `${location}/default`));
+      if (Object.hasOwn(binding, "default") && (binding.required ?? true)) errors.push(fail("WF_SCHEMA_INVALID", `default for '${bindingName}' requires required=false`, `${location}/default`));
+      else if (Object.hasOwn(binding, "default") && !matchesType(binding.default, targetType)) errors.push(fail("WF_BINDING_INCOMPATIBLE", `default for '${bindingName}' has wrong type`, `${location}/default`));
     }
     const authoredIncoming = new Set(incoming[nodeId] ?? []);
     if (authoredIncoming.size > 1) {

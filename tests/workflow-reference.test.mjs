@@ -35,6 +35,29 @@ test("all shipped default, MVP, sub-workflow, and custom examples validate", () 
   }
 });
 
+test("invalid workflow state combinations are rejected", () => {
+  const path = workflowPath("mvp-walking-skeleton.json");
+  const original = loadJson(path);
+
+  const mixedExecutor = structuredClone(original);
+  mixedExecutor.spec.nodes.technical_design.command = { argv: ["fixture"] };
+  assert.ok(validateWorkflow(mixedExecutor, path).some((error) => error.code === "WF_SCHEMA_INVALID"));
+
+  const requiredDefault = structuredClone(original);
+  requiredDefault.spec.nodes.technical_design.inputs.work_item.default = {};
+  assert.ok(validateWorkflow(requiredDefault, path).some((error) => error.message.includes("requires required=false")));
+
+  for (const checkpoint of [
+    { mode: "none", externalCondition: "impossible sibling" },
+    { mode: "approve_on_change" },
+    { mode: "external" },
+  ]) {
+    const invalidCheckpoint = structuredClone(original);
+    invalidCheckpoint.spec.nodes.technical_design.checkpoint = checkpoint;
+    assert.ok(validateWorkflow(invalidCheckpoint, path).some((error) => error.code === "WF_SCHEMA_INVALID"));
+  }
+});
+
 test("MVP checkpoint revisions preserve the final approved candidate", () => {
   const result = runExample("mvp-walking-skeleton.json", "mvp-walking-skeleton.json");
   assert.equal(result.status, "completed");

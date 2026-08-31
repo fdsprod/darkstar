@@ -96,7 +96,16 @@
         "required": {"type": "boolean", "default": true},
         "default": true,
         "description": {"type": "string"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"required": {"const": false}},
+            "required": ["required"]
+          },
+          "else": {"not": {"required": ["default"]}}
+        }
+      ]
     },
     "outputDeclaration": {
       "type": "object",
@@ -138,10 +147,39 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["mode"],
+          "properties": {"mode": {"const": "none"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {"mode": {"const": "acknowledge"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
           "properties": {
-            "mode": {"enum": ["none", "acknowledge", "approve", "approve_on_change", "external"]},
-            "maxRevisions": {"type": "integer", "minimum": 0, "maximum": 100},
+            "mode": {"const": "approve"},
+            "maxRevisions": {"type": "integer", "minimum": 0, "maximum": 100}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "when"],
+          "properties": {
+            "mode": {"const": "approve_on_change"},
             "when": {"$ref": "#/$defs/predicate"},
+            "maxRevisions": {"type": "integer", "minimum": 0, "maximum": 100}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "externalCondition"],
+          "properties": {
+            "mode": {"const": "external"},
             "externalCondition": {"type": "string", "minLength": 1}
           }
         }
@@ -201,7 +239,14 @@
       "properties": {
         "actor": {"type": "string", "minLength": 1},
         "externalCondition": {"type": "string", "minLength": 1}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"actor": {"const": "external"}}, "required": ["actor"]},
+          "then": {"required": ["externalCondition"]},
+          "else": {"not": {"required": ["externalCondition"]}}
+        }
+      ]
     },
     "workflowRef": {
       "type": "object",
@@ -299,12 +344,47 @@
           "default": []
         }
       },
-      "allOf": [
-        {"if": {"properties": {"type": {"const": "reasoning"}}}, "then": {"required": ["reasoning"]}},
-        {"if": {"properties": {"type": {"const": "gate"}}}, "then": {"required": ["gate"]}},
-        {"if": {"properties": {"type": {"const": "command"}}}, "then": {"required": ["command"]}},
-        {"if": {"properties": {"type": {"const": "approval"}}}, "then": {"required": ["approval"]}},
-        {"if": {"properties": {"type": {"const": "subworkflow"}}}, "then": {"required": ["call"]}}
+      "oneOf": [
+        {
+          "properties": {
+            "type": {"const": "reasoning"},
+            "reasoning": {"$ref": "#/$defs/reasoningExecutor"}
+          },
+          "required": ["reasoning"],
+          "not": {"anyOf": [{"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}]}
+        },
+        {
+          "properties": {
+            "type": {"const": "gate"},
+            "gate": {"$ref": "#/$defs/gateExecutor"}
+          },
+          "required": ["gate"],
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}]}
+        },
+        {
+          "properties": {
+            "type": {"const": "command"},
+            "command": {"$ref": "#/$defs/commandExecutor"}
+          },
+          "required": ["command"],
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["approval"]}, {"required": ["call"]}]}
+        },
+        {
+          "properties": {
+            "type": {"const": "approval"},
+            "approval": {"$ref": "#/$defs/approvalExecutor"}
+          },
+          "required": ["approval"],
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["call"]}]}
+        },
+        {
+          "properties": {
+            "type": {"const": "subworkflow"},
+            "call": {"$ref": "#/$defs/subworkflowCall"}
+          },
+          "required": ["call"],
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}]}
+        }
       ]
     },
     "transition": {

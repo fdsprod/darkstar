@@ -123,7 +123,8 @@ Binding rules:
 2. A required missing source produces `RUN_INPUT_REQUIRED`; it is never coerced to
    `null`, `false`, or an empty value.
 3. A missing optional source is absent from the input snapshot. If `default` is
-   declared, that literal is used and type-checked.
+   declared, that literal is used and type-checked. A default is valid only when
+   the binding explicitly declares `required: false`.
 4. Source and target types MUST be statically compatible. Runtime values MUST also
    match their declaration. There is no numeric or string coercion.
 5. Each visit stores an immutable input snapshot. A retry reuses it. A checkpoint
@@ -304,6 +305,10 @@ first attempt.
 
 Checkpoint modes are `none`, `acknowledge`, `approve`, `approve_on_change`, and
 `external`. A checkpoint occurs after validators pass and before the visit succeeds.
+Checkpoint configuration is a tagged shape: only `approve` and
+`approve_on_change` accept `maxRevisions`; `approve_on_change` requires `when`;
+and `external` requires `externalCondition`. Other mode/field combinations are
+invalid rather than ignored.
 
 | Action | Effect |
 |---|---|
