@@ -258,7 +258,7 @@ The artifact may be a TDD, one or more ADRs, an API specification, or another pr
 
 **Purpose:** Execute the story sub-workflow for each ready story, respecting dependencies and configured concurrency.
 
-**Behavior:** A single story can invoke the sub-workflow directly. Multi-story initiatives schedule only dependency-ready stories. Write-capable attempts use separate branches/worktrees unless the integration strategy explicitly serializes them on one delivery branch.
+**Behavior:** A single story can invoke the sub-workflow directly. Multi-story initiatives schedule only dependency-ready stories. Under the [MVP work and Git model](../architecture/work/WORK_AND_GIT_MODEL.md), read-only story work may run concurrently, but all write-capable story points execute sequentially in the work item's one delivery branch and attached worktree.
 
 **Outputs:** Validated story changesets, atomic implementation-point commits, evidence, and story completion records.
 

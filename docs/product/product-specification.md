@@ -561,6 +561,9 @@ Checkpoint actions are idempotent and attributable. Rejecting or requesting chan
 
 ### 6.9 Implementation points, validation, commits, and pull requests
 
+A plan's work hierarchy and all Git ownership, revision, publication, and recovery
+behavior follow the [MVP work and Git model](../architecture/work/WORK_AND_GIT_MODEL.md).
+
 A plan may declare ordered or dependency-linked **implementation points**. Tracer bullets are one planning strategy that produces implementation points, but the runtime does not hard-code tracer-bullet terminology. Each point has a stable identifier, intended outcome, input artifact versions, affected area, completion evidence, and validation profile.
 
 The implementation policy shall independently configure:
@@ -573,7 +576,7 @@ The implementation policy shall independently configure:
 
 When per-point approval is enabled, DARKSTAR completes and validates one point, records its diff and evidence, and pauses before scheduling the next. Requesting changes reopens only that point unless artifact lineage proves later points are affected. When approval is disabled, the scheduler advances through all ready points automatically.
 
-When atomic commits are enabled, each implementation point produces exactly one successful commit after its required validation. A failed or rejected point is not published as successful. If a draft PR is configured at the start, DARKSTAR creates it after the worktree/branch is ready and updates the same branch after every successful point. The PR description includes a live checklist of points, validation evidence, and current artifact references. Final validation can mark the PR ready for review when policy allows.
+When atomic commits are enabled, each accepted implementation-point revision produces exactly one successful commit after its required validation and checkpoint. A failed or rejected candidate produces no successful commit. A later correction creates a superseding point revision and appends a commit; it never rewrites published history. If a draft PR is configured at the start, DARKSTAR creates it after the worktree/branch is ready and updates the same branch after every successful point revision. The PR description includes a live checklist of points, validation evidence, and current artifact references. Final validation can mark the PR ready for review when policy allows.
 
 The shipped default is:
 

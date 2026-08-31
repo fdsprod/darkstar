@@ -12,6 +12,7 @@ This directory separates documentation by the kind of decision or work it repres
 ### Workflow runtime
 
 - [Workflow execution semantics](architecture/workflow/execution-semantics.md) — normative graph, binding, gate, transition, join, retry, checkpoint, and error behavior.
+- [MVP work and Git model](architecture/work/WORK_AND_GIT_MODEL.md) — normative work identity, delivery topology, mutation ownership, revision, and recovery behavior.
 
 ### Provider integration
 
