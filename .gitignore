@@ -1,0 +1,20 @@
+# Build output
+/out/
+/dashboard/dist/
+
+# JavaScript dependencies and caches
+/node_modules/
+*.tsbuildinfo
+
+# Go test/build artifacts
+*.exe
+*.test
+*.out
+coverage.*
+
+# Local runtime and editor state
+.darkstar/
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

@@ -1,0 +1,15 @@
+{
+  "name": "darkstar",
+  "private": true,
+  "workspaces": [
+    "dashboard"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @darkstar/dashboard",
+    "check": "npm run check --workspace @darkstar/dashboard"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
+  }
+}

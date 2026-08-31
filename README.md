@@ -29,6 +29,8 @@ The project is currently in the contract and walking-skeleton phase. The reposit
 | [`scripts/`](scripts/) | Executable reference and project utilities |
 | [`tests/`](tests/) | Deterministic contract tests |
 | [`probes/`](probes/) | Provider and host compatibility probes with versioned evidence |
+| [`runtime/`](runtime/) | Go CLI/daemon project with its own source, tests, and documentation |
+| [`dashboard/`](dashboard/) | React/TypeScript project with its own source, tests, and documentation |
 
 ## Verify the current contracts
 
@@ -52,4 +54,13 @@ node --test tests/threat-model-reference.test.mjs
 ./probes/codex-host/Test-CodexHostFixtures.ps1
 ```
 
-Production daemon and CLI code begins with DS-020, the repository and module-boundary initialization item.
+## Build the walking-skeleton foundation
+
+Install Go 1.24+, Node.js 22.12+, and npm 10+, then run from PowerShell:
+
+```powershell
+./scripts/Bootstrap.ps1
+./scripts/Verify.ps1
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the individual build and test commands.
