@@ -48,6 +48,7 @@ exact event and waits five seconds. If the daemon remains alive, the command
 opens the recorded process with query and terminate rights, revalidates creation
 time and executable identity on that handle, and only then terminates it.
 
-`status --json` returns a stable `status` value and includes the recorded process
-for `running` and valid `stale` states. Status inspection is read-only; `start`,
-`stop`, and `run` perform stale cleanup at safe lock boundaries.
+`status --json` returns `schemaVersion: 1`, a stable `status` value, and the
+recorded process for `running` and valid `stale` states. Status inspection is
+read-only and never autostarts the daemon; `start`, `stop`, and `run` perform
+stale cleanup at safe lock boundaries.

@@ -39,6 +39,11 @@ the corresponding `/api/v1` base. An authenticated request for another `/api/*`
 version receives HTTP 426 with stable code `API_VERSION_UNSUPPORTED`. The API
 root at `GET /api/v1/` confirms the negotiated representation version.
 
+The CLI client performs this discovery and negotiation once per finite command.
+For missing or unreachable endpoint state it idempotently autostarts the daemon,
+then performs one fresh discovery attempt. It never replays an application
+mutation automatically.
+
 ## Stable errors
 
 All HTTP failures use the versioned API error envelope: `schemaVersion`, stable

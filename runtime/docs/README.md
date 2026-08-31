@@ -34,6 +34,9 @@ identity verification, stale-state handling, and shutdown escalation.
 See [authenticated loopback API](loopback-api.md) for endpoint discovery, bearer
 token rotation, version negotiation, and stable HTTP errors.
 
+See [CLI API client and machine output](cli.md) for daemon autostart, authenticated
+transport, versioned JSON conventions, and stable process exit classes.
+
 ## Validate independently
 
 From the repository root:

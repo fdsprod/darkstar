@@ -17,6 +17,14 @@
       "version": "v1alpha1"
     },
     {
+      "file": "cli-error-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/cli-error-v1alpha1.schema.json",
+      "name": "cli-error-v1alpha1",
+      "sha256": "4a95966db0ed2a3edf611cd7607becf4f8ee17b27878ae959486e09de145380a",
+      "version": "v1alpha1"
+    },
+    {
       "file": "endpoint-v1alpha1.schema.json",
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/endpoint-v1alpha1.schema.json",
