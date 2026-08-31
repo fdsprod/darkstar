@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/artifact-v1alpha1.schema.json",
+  "title": "DARKSTAR artifact boundary v1alpha1",
+  "oneOf": [
+    {"$ref": "#/$defs/artifact"},
+    {"$ref": "#/$defs/representation"},
+    {"$ref": "#/$defs/artifactBinding"},
+    {"$ref": "#/$defs/contextManifest"}
+  ],
+  "$defs": {
+    "identifier": {"type": "string", "minLength": 1, "maxLength": 255},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "artifactId", "sourceKind", "sourceName", "blobDigest", "size", "declaredMediaType", "detectedMediaType", "locator", "sensitivity", "trust", "creator", "status", "createdAt", "provenance"],
+      "properties": {
+        "kind": {"const": "artifact"},
+        "schemaVersion": {"const": 1},
+        "artifactId": {"$ref": "#/$defs/identifier"},
+        "sourceKind": {"enum": ["file", "paste", "stdin", "generated", "external"]},
+        "sourceName": {"type": "string"},
+        "blobDigest": {"$ref": "#/$defs/digest"},
+        "size": {"type": "integer", "minimum": 0},
+        "declaredMediaType": {"type": "string", "minLength": 1},
+        "detectedMediaType": {"type": "string", "minLength": 1},
+        "locator": {"type": "string", "minLength": 1},
+        "sensitivity": {"enum": ["unknown", "public", "internal", "sensitive", "secret"]},
+        "trust": {"const": "untrusted"},
+        "creator": {"type": "string", "minLength": 1},
+        "status": {"enum": ["stored", "stored_uninspectable", "quarantined"]},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runId", "nodeId", "attemptId", "operationId"],
+          "properties": {
+            "runId": {"type": ["string", "null"]},
+            "nodeId": {"type": ["string", "null"]},
+            "attemptId": {"type": ["string", "null"]},
+            "operationId": {"$ref": "#/$defs/identifier"},
+            "sourceArtifactId": {"type": ["string", "null"]}
+          }
+        }
+      }
+    },
+    "representation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "representationId", "artifactId", "representationKind", "processorName", "processorVersion", "mediaType", "locator", "digest", "size", "tokenEstimate", "truncated", "disclosure", "diagnostics", "createdAt"],
+      "properties": {
+        "kind": {"const": "representation"},
+        "schemaVersion": {"const": 1},
+        "representationId": {"$ref": "#/$defs/identifier"},
+        "artifactId": {"$ref": "#/$defs/identifier"},
+        "representationKind": {"enum": ["text", "structured", "table", "image", "preview", "descriptor"]},
+        "processorName": {"type": "string", "minLength": 1},
+        "processorVersion": {"type": "string", "minLength": 1},
+        "mediaType": {"type": "string", "minLength": 1},
+        "locator": {"type": "string", "minLength": 1},
+        "digest": {"$ref": "#/$defs/digest"},
+        "size": {"type": "integer", "minimum": 0},
+        "tokenEstimate": {"type": "integer", "minimum": 0},
+        "truncated": {"type": "boolean"},
+        "disclosure": {"enum": ["raw", "redacted", "withheld"]},
+        "diagnostics": {"type": "array", "items": {"type": "string"}},
+        "metadata": {"type": "object", "additionalProperties": {"type": "string"}},
+        "createdAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "artifactBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "bindingId", "artifactId", "representationId", "runId", "nodeId", "attemptId", "inputName", "disposition", "rank", "policyVersion", "createdAt"],
+      "properties": {
+        "kind": {"const": "artifact_binding"},
+        "schemaVersion": {"const": 1},
+        "bindingId": {"$ref": "#/$defs/identifier"},
+        "artifactId": {"$ref": "#/$defs/identifier"},
+        "representationId": {"type": ["string", "null"]},
+        "runId": {"$ref": "#/$defs/identifier"},
+        "nodeId": {"$ref": "#/$defs/identifier"},
+        "attemptId": {"type": ["string", "null"]},
+        "inputName": {"$ref": "#/$defs/identifier"},
+        "disposition": {"enum": ["required", "optional"]},
+        "rank": {"type": "integer", "minimum": 0},
+        "policyVersion": {"type": "string", "minLength": 1},
+        "createdAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "contextEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["representationId", "artifactId", "digest", "required", "order", "tokenEstimate"],
+      "properties": {
+        "representationId": {"$ref": "#/$defs/identifier"},
+        "artifactId": {"$ref": "#/$defs/identifier"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "required": {"type": "boolean"},
+        "order": {"type": "integer", "minimum": 0},
+        "tokenEstimate": {"type": "integer", "minimum": 0}
+      }
+    },
+    "contextManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "manifestId", "runId", "nodeId", "attemptId", "policyVersion", "budget", "entries", "omissions", "digest", "frozenAt"],
+      "properties": {
+        "kind": {"const": "context_manifest"},
+        "schemaVersion": {"const": 1},
+        "manifestId": {"$ref": "#/$defs/identifier"},
+        "runId": {"$ref": "#/$defs/identifier"},
+        "nodeId": {"$ref": "#/$defs/identifier"},
+        "attemptId": {"$ref": "#/$defs/identifier"},
+        "policyVersion": {"type": "string", "minLength": 1},
+        "budget": {"type": "integer", "minimum": 0},
+        "entries": {"type": "array", "items": {"$ref": "#/$defs/contextEntry"}},
+        "omissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["representationId", "reason"],
+            "properties": {"representationId": {"$ref": "#/$defs/identifier"}, "reason": {"type": "string", "minLength": 1}}
+          }
+        },
+        "digest": {"$ref": "#/$defs/digest"},
+        "frozenAt": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

@@ -28,6 +28,9 @@ They may use the Go standard library and shared `ports` values only. In
 particular, a port must not expose a Codex message, GitHub response, SQL record,
 Windows handle, CLI model, or dashboard type.
 
+The normalized provider lifecycle has a machine-readable interchange contract in
+[`provider-v1alpha1.schema.json`](../../../schemas/provider-v1alpha1.schema.json).
+
 ## Dependency direction
 
 ```text

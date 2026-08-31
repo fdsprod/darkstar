@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/provider-v1alpha1.schema.json",
+  "title": "DARKSTAR provider boundary v1alpha1",
+  "oneOf": [
+    {"$ref": "#/$defs/health"},
+    {"$ref": "#/$defs/capabilityManifest"},
+    {"$ref": "#/$defs/attemptRequest"},
+    {"$ref": "#/$defs/attemptHandle"},
+    {"$ref": "#/$defs/resumeRequest"},
+    {"$ref": "#/$defs/providerEvent"},
+    {"$ref": "#/$defs/interactionResponse"},
+    {"$ref": "#/$defs/cancelRequest"},
+    {"$ref": "#/$defs/cancelResult"},
+    {"$ref": "#/$defs/attemptResult"}
+  ],
+  "$defs": {
+    "identifier": {"type": "string", "minLength": 1, "maxLength": 255},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "state", "provider", "providerVersion", "executableIdentity", "platform", "authenticated", "diagnostics"],
+      "properties": {
+        "kind": {"const": "health"},
+        "schemaVersion": {"const": 1},
+        "state": {"enum": ["available", "unavailable", "unauthenticated", "degraded"]},
+        "provider": {"type": "string", "minLength": 1},
+        "providerVersion": {"type": "string"},
+        "executableIdentity": {"type": "string"},
+        "platform": {"type": "string"},
+        "authenticated": {"type": "boolean"},
+        "diagnostics": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "version", "metadata"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "version": {"type": "string"},
+        "metadata": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "capabilityManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "provider", "fingerprint", "features", "observedAt"],
+      "properties": {
+        "kind": {"const": "capability_manifest"},
+        "schemaVersion": {"const": 1},
+        "provider": {"type": "string", "minLength": 1},
+        "fingerprint": {"$ref": "#/$defs/digest"},
+        "features": {"type": "object", "additionalProperties": {"$ref": "#/$defs/capability"}},
+        "observedAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "mediaType", "locator", "digest"],
+      "properties": {
+        "kind": {"enum": ["text", "image", "skill", "artifact"]},
+        "name": {"$ref": "#/$defs/identifier"},
+        "mediaType": {"type": "string", "minLength": 1},
+        "locator": {"type": "string"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "text": {"type": "string"},
+        "metadata": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "usageLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputTokens", "outputTokens", "costUnits"],
+      "properties": {
+        "inputTokens": {"type": "integer", "minimum": 0},
+        "outputTokens": {"type": "integer", "minimum": 0},
+        "costUnits": {"type": "integer", "minimum": 0}
+      }
+    },
+    "attemptRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "attemptId", "runId", "nodeId", "idempotencyKey", "workspace", "access", "network", "commandPolicy", "filePolicy", "toolPolicy", "prompt", "inputs", "outputSchema", "timeoutMilliseconds", "cancellationGraceMilliseconds", "usageLimits", "capabilityFingerprint"],
+      "properties": {
+        "kind": {"const": "attempt_request"},
+        "schemaVersion": {"const": 1},
+        "attemptId": {"$ref": "#/$defs/identifier"},
+        "runId": {"$ref": "#/$defs/identifier"},
+        "nodeId": {"$ref": "#/$defs/identifier"},
+        "idempotencyKey": {"$ref": "#/$defs/identifier"},
+        "workspace": {"type": "string", "minLength": 1},
+        "additionalRoots": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "access": {"enum": ["read_only", "workspace_write"]},
+        "network": {"enum": ["denied", "restricted", "allowed"]},
+        "commandPolicy": {"enum": ["deny", "ask", "allow"]},
+        "filePolicy": {"enum": ["deny", "ask", "allow"]},
+        "toolPolicy": {"enum": ["deny", "ask", "allow"]},
+        "modelHint": {"type": "string"},
+        "reasoningHint": {"type": "string"},
+        "prompt": {"type": "string"},
+        "inputs": {"type": "array", "items": {"$ref": "#/$defs/input"}},
+        "outputSchema": {"type": ["object", "null"]},
+        "timeoutMilliseconds": {"type": "integer", "minimum": 1},
+        "cancellationGraceMilliseconds": {"type": "integer", "minimum": 0},
+        "usageLimits": {"$ref": "#/$defs/usageLimits"},
+        "capabilityFingerprint": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "attemptHandle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "attemptId", "provider", "providerThreadId", "providerTurnId", "processOwnerId"],
+      "properties": {
+        "kind": {"const": "attempt_handle"},
+        "schemaVersion": {"const": 1},
+        "attemptId": {"$ref": "#/$defs/identifier"},
+        "provider": {"type": "string", "minLength": 1},
+        "providerThreadId": {"type": "string"},
+        "providerTurnId": {"type": "string"},
+        "processOwnerId": {"type": "string"}
+      }
+    },
+    "resumeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "attemptId", "idempotencyKey", "providerThreadId", "providerTurnId", "lastSequence", "contextDigest", "workspaceDigest"],
+      "properties": {
+        "kind": {"const": "resume_request"},
+        "schemaVersion": {"const": 1},
+        "attemptId": {"$ref": "#/$defs/identifier"},
+        "idempotencyKey": {"$ref": "#/$defs/identifier"},
+        "providerThreadId": {"type": "string"},
+        "providerTurnId": {"type": "string"},
+        "lastSequence": {"type": "integer", "minimum": 0},
+        "contextDigest": {"$ref": "#/$defs/digest"},
+        "workspaceDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "providerEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "attemptId", "sequence", "occurredAt", "eventKind", "provider", "providerVersion", "payload"],
+      "properties": {
+        "kind": {"const": "provider_event"},
+        "schemaVersion": {"const": 1},
+        "attemptId": {"$ref": "#/$defs/identifier"},
+        "sequence": {"type": "integer", "minimum": 1},
+        "occurredAt": {"type": "string", "format": "date-time"},
+        "eventKind": {"type": "string", "minLength": 1},
+        "provider": {"type": "string", "minLength": 1},
+        "providerVersion": {"type": "string"},
+        "providerThreadId": {"type": "string"},
+        "providerTurnId": {"type": "string"},
+        "providerItemId": {"type": "string"},
+        "payload": {},
+        "rawEvidenceRef": {"type": "string"}
+      }
+    },
+    "interactionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "attemptId", "providerThreadId", "providerRequestId", "idempotencyKey", "decision", "scopeDigest"],
+      "properties": {
+        "kind": {"const": "interaction_response"},
+        "schemaVersion": {"const": 1},
+        "attemptId": {"$ref": "#/$defs/identifier"},
+        "providerThreadId": {"$ref": "#/$defs/identifier"},
+        "providerRequestId": {"$ref": "#/$defs/identifier"},
+        "idempotencyKey": {"$ref": "#/$defs/identifier"},
+        "decision": {"enum": ["allow_once", "allow_for_session", "deny", "cancel", "expire", "answer"]},
+        "answer": {},
+        "scopeDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "cancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "handle", "idempotencyKey", "gracePeriodMilliseconds"],
+      "properties": {
+        "kind": {"const": "cancel_request"},
+        "schemaVersion": {"const": 1},
+        "handle": {"$ref": "#/$defs/attemptHandle"},
+        "idempotencyKey": {"$ref": "#/$defs/identifier"},
+        "gracePeriodMilliseconds": {"type": "integer", "minimum": 0}
+      }
+    },
+    "cancelResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "disposition", "evidenceRef"],
+      "properties": {
+        "kind": {"const": "cancel_result"},
+        "schemaVersion": {"const": 1},
+        "disposition": {"enum": ["graceful", "forced", "already_terminal", "uncertain"]},
+        "evidenceRef": {"type": "string"}
+      }
+    },
+    "attemptResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "status", "structuredOutput", "usage", "workspaceEvidence", "recovery"],
+      "properties": {
+        "kind": {"const": "attempt_result"},
+        "schemaVersion": {"const": 1},
+        "status": {"enum": ["succeeded", "failed", "interrupted", "cancelled", "unknown"]},
+        "structuredOutput": {},
+        "validationFailure": {"type": ["object", "null"]},
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputTokens", "cachedTokens", "outputTokens", "costUnits"],
+          "properties": {
+            "inputTokens": {"type": "integer", "minimum": 0},
+            "cachedTokens": {"type": "integer", "minimum": 0},
+            "outputTokens": {"type": "integer", "minimum": 0},
+            "costUnits": {"type": "integer", "minimum": 0}
+          }
+        },
+        "workspaceEvidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "ref", "digest"],
+            "properties": {"kind": {"type": "string"}, "ref": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}}
+          }
+        },
+        "recovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["providerThreadId", "providerTurnId", "lastSequence", "processOwnerId", "resumable", "evidenceRef"],
+          "properties": {
+            "providerThreadId": {"type": "string"},
+            "providerTurnId": {"type": "string"},
+            "lastSequence": {"type": "integer", "minimum": 0},
+            "processOwnerId": {"type": "string"},
+            "resumable": {"type": "boolean"},
+            "evidenceRef": {"type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

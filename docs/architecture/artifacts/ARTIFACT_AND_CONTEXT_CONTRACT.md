@@ -6,6 +6,9 @@
 **Decision:** DS-006  
 **Scope:** Artifact ingestion, immutable storage, representations, binding, context selection, limits, and safe degradation
 
+The machine-readable record boundary is
+[`artifact-v1alpha1.schema.json`](../../../schemas/artifact-v1alpha1.schema.json).
+
 ## 1. Decision
 
 DARKSTAR treats every supplied file, paste, and generated output as immutable,

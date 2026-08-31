@@ -24,7 +24,7 @@ The project is currently in the contract and walking-skeleton phase. The reposit
 | Path | Purpose |
 |---|---|
 | [`docs/`](docs/) | Product, architecture, decisions, and planning documentation |
-| [`schemas/`](schemas/) | Machine-readable workflow and route-patch contracts |
+| [`schemas/`](schemas/) | Versioned workflow, API, event, provider, and artifact contracts plus their generated catalog |
 | [`examples/`](examples/) | Valid workflows, route patches, and execution scenarios |
 | [`scripts/`](scripts/) | Executable reference and project utilities |
 | [`tests/`](tests/) | Deterministic contract tests |
@@ -37,6 +37,7 @@ The project is currently in the contract and walking-skeleton phase. The reposit
 From the repository root:
 
 ```powershell
+node scripts/schema-tool.mjs check
 node --test tests/workflow-reference.test.mjs
 node scripts/recovery-reference.mjs examples/recovery/recovery-scenarios.json
 node --test tests/recovery-reference.test.mjs
@@ -53,6 +54,12 @@ node scripts/threat-model-reference.mjs examples/security/threat-negative-tests.
 node --test tests/threat-model-reference.test.mjs
 ./probes/codex-host/Test-CodexHostFixtures.ps1
 ```
+
+After changing a contract, regenerate the deterministic catalog with
+`node scripts/schema-tool.mjs generate`. Pull-request CI compares the current
+versioned contracts with the base commit and rejects removals or narrowing
+changes. Publish a new versioned file for a breaking contract revision and keep
+the old version available.
 
 ## Build the walking-skeleton foundation
 

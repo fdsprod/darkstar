@@ -1,0 +1,73 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkCatalog, compareContracts, loadContracts, validateContracts } from "../scripts/schema-tool.mjs";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+function contracts(documents) {
+  return new Map(Object.entries(documents).map(([name, document]) => [name, { name, document, text: JSON.stringify(document) }]));
+}
+
+test("all versioned contracts are structurally valid and references resolve", () => {
+  assert.deepEqual(validateContracts(loadContracts(resolve(root, "schemas"))), []);
+});
+
+test("generated schema catalog is deterministic and current", () => {
+  assert.equal(checkCatalog(loadContracts(resolve(root, "schemas"))).matches, true);
+});
+
+test("provider and artifact boundaries are published as strict schemas", () => {
+  for (const name of ["provider-v1alpha1.schema.json", "artifact-v1alpha1.schema.json"]) {
+    const schema = JSON.parse(readFileSync(resolve(root, "schemas", name), "utf8"));
+    assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
+    assert.ok(Object.values(schema.$defs).filter((definition) => definition.type === "object").every((definition) => definition.additionalProperties === false));
+  }
+});
+
+test("compatibility permits additive optional fields", () => {
+  const before = { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", additionalProperties: false, properties: { id: { type: "string" } } };
+  const after = structuredClone(before);
+  after.properties.label = { type: "string" };
+  assert.deepEqual(compareContracts(contracts({ "sample-v1.schema.json": before }), contracts({ "sample-v1.schema.json": after })), []);
+});
+
+test("compatibility rejects removal, narrowing, and new requirements", () => {
+  const before = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    additionalProperties: false,
+    required: ["state"],
+    properties: { state: { enum: ["ready", "waiting"] }, note: { type: ["string", "null"] } }
+  };
+  const after = structuredClone(before);
+  after.required.push("note");
+  after.properties.state.enum = ["ready"];
+  after.properties.note.type = "string";
+  after.properties.note.minLength = 1;
+  const issues = compareContracts(contracts({ "sample-v1.schema.json": before }), contracts({ "sample-v1.schema.json": after }));
+  assert.ok(issues.some((issue) => issue.includes("required property/properties added: note")));
+  assert.ok(issues.some((issue) => issue.includes("enum value(s) removed")));
+  assert.ok(issues.some((issue) => issue.includes("accepted type(s) removed: null")));
+  assert.ok(issues.some((issue) => issue.includes("minLength became more restrictive")));
+});
+
+test("compatibility rejects newly introduced constraints", () => {
+  const before = { $schema: "https://json-schema.org/draft/2020-12/schema" };
+  const after = { ...before, type: "string", pattern: "^[a-z]+$", minLength: 1 };
+  const issues = compareContracts(contracts({ "sample-v1.schema.json": before }), contracts({ "sample-v1.schema.json": after }));
+  assert.ok(issues.some((issue) => issue.includes("type constraint was added")));
+  assert.ok(issues.some((issue) => issue.includes("pattern constraint was added")));
+  assert.ok(issues.some((issue) => issue.includes("minLength became more restrictive")));
+});
+
+test("compatibility rejects removing a versioned contract or API operation", () => {
+  const schema = { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object" };
+  assert.match(compareContracts(contracts({ "sample-v1.schema.json": schema }), contracts({}))[0], /versioned contract file was removed/);
+
+  const beforeApi = { openapi: "3.1.0", paths: { "/api/v1/items": { get: { operationId: "listItems", responses: { "200": { description: "ok" } } } } }, components: { schemas: {} } };
+  const afterApi = { ...beforeApi, paths: {} };
+  assert.ok(compareContracts(contracts({ "openapi-v1.json": beforeApi }), contracts({ "openapi-v1.json": afterApi })).some((issue) => issue.includes("API path removed")));
+});

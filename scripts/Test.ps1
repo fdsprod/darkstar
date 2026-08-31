@@ -33,6 +33,19 @@ try {
         throw "Go tests failed with exit code $LASTEXITCODE."
     }
 
+    & node scripts/schema-tool.mjs check
+    if ($LASTEXITCODE -ne 0) {
+        throw "Schema validation or generation check failed with exit code $LASTEXITCODE."
+    }
+
+    $schemaBaseRef = [Environment]::GetEnvironmentVariable("DARKSTAR_SCHEMA_BASE_REF", "Process")
+    if ($schemaBaseRef -and $schemaBaseRef -notmatch "^0+$") {
+        & node scripts/schema-tool.mjs compatibility --base $schemaBaseRef
+        if ($LASTEXITCODE -ne 0) {
+            throw "Schema compatibility check failed with exit code $LASTEXITCODE."
+        }
+    }
+
     $contractTests = Get-ChildItem -Path "tests" -Filter "*.test.mjs" |
         Sort-Object Name |
         ForEach-Object { $_.FullName }

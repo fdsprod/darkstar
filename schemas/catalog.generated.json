@@ -1,0 +1,61 @@
+{
+  "contracts": [
+    {
+      "file": "api-error-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/api-error-v1alpha1.schema.json",
+      "name": "api-error-v1alpha1",
+      "sha256": "864a51c98f8e46a8f5f6fe73306e1f3f2e1311a666799b1a0ee4ed1b34d8f108",
+      "version": "v1alpha1"
+    },
+    {
+      "file": "artifact-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/artifact-v1alpha1.schema.json",
+      "name": "artifact-v1alpha1",
+      "sha256": "7ba37d0c47df1fcb688ccc970cde22d83da905e2f44732d9bba974096de9fb24",
+      "version": "v1alpha1"
+    },
+    {
+      "file": "openapi-v1alpha1.json",
+      "format": "openapi-3.1",
+      "id": null,
+      "name": "openapi-v1alpha1",
+      "sha256": "ca8b98dfe801371be2874abffc0af612b88201e19c6ea7d452f2b28af323d1ec",
+      "version": "v1alpha1"
+    },
+    {
+      "file": "provider-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/provider-v1alpha1.schema.json",
+      "name": "provider-v1alpha1",
+      "sha256": "2250f1469fc97d76146f2eb867a744768fb68cfd6612221ea7e958fc8a278341",
+      "version": "v1alpha1"
+    },
+    {
+      "file": "route-patch-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/route-patch-v1alpha1.schema.json",
+      "name": "route-patch-v1alpha1",
+      "sha256": "49f54a0c747912d1cf513bb5522c483617e62bca489b925cbd8ae2a06710e896",
+      "version": "v1alpha1"
+    },
+    {
+      "file": "runtime-event-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/runtime-event-v1alpha1.schema.json",
+      "name": "runtime-event-v1alpha1",
+      "sha256": "7680d89a008ad8b43205fe0a5264384a362df7c30a60c120cb0ce3f159a188db",
+      "version": "v1alpha1"
+    },
+    {
+      "file": "workflow-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/workflow-v1alpha1.schema.json",
+      "name": "workflow-v1alpha1",
+      "sha256": "cdc3b4fc49eb4ead63ad2e3eecad2c8419f804269ce7276442d0f2ef352916c6",
+      "version": "v1alpha1"
+    }
+  ],
+  "schemaVersion": 1
+}

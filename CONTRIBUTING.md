@@ -53,6 +53,34 @@ For a shorter edit loop, run the phases independently:
 ./scripts/Build.ps1
 ```
 
+## Schema contracts
+
+Workflow, local API, runtime event, provider, and artifact boundaries are
+versioned under `schemas/`. Validate every contract and its references, and
+verify that the generated catalog is current:
+
+```powershell
+node scripts/schema-tool.mjs check
+```
+
+After an additive schema edit, regenerate the catalog and rerun the check:
+
+```powershell
+node scripts/schema-tool.mjs generate
+node scripts/schema-tool.mjs check
+```
+
+To reproduce the CI compatibility gate against another Git revision:
+
+```powershell
+node scripts/schema-tool.mjs compatibility --base origin/main
+```
+
+Do not modify a published version in a way that removes an API operation,
+property, enum value, accepted type, or response; adds a new requirement; or
+tightens a validation bound. Keep the old contract and add a newly versioned
+file for those changes.
+
 ## Repository rules
 
 - Keep deterministic domain behavior in `runtime/src/core`.
