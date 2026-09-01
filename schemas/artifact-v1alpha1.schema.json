@@ -126,9 +126,29 @@
       "properties": {
         "representationId": {"$ref": "#/$defs/identifier"},
         "artifactId": {"$ref": "#/$defs/identifier"},
+        "artifactVersion": {"type": "integer", "minimum": 1},
         "digest": {"$ref": "#/$defs/digest"},
         "required": {"type": "boolean"},
         "tokenEstimate": {"type": "integer", "minimum": 0}
+      }
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "digest"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "workspaceSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "digest", "access"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "access": {"enum": ["read_only", "workspace_write"]}
       }
     },
     "contextManifest": {
@@ -144,6 +164,7 @@
         "attemptId": {"$ref": "#/$defs/identifier"},
         "policyVersion": {"type": "string", "minLength": 1},
         "budget": {"type": "integer", "minimum": 0},
+        "reservedTokens": {"type": "integer", "minimum": 0},
         "entries": {"type": "array", "items": {"$ref": "#/$defs/contextEntry"}},
         "omissions": {
           "type": "array",
@@ -154,6 +175,11 @@
             "properties": {"representationId": {"$ref": "#/$defs/identifier"}, "reason": {"type": "string", "minLength": 1}}
           }
         },
+        "instructions": {"type": "array", "items": {"$ref": "#/$defs/digestRef"}},
+        "schemas": {"type": "array", "items": {"$ref": "#/$defs/digestRef"}},
+        "permissions": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
+        "workspace": {"$ref": "#/$defs/workspaceSnapshot"},
+        "capabilities": {"type": "array", "items": {"$ref": "#/$defs/digestRef"}},
         "digest": {"$ref": "#/$defs/digest"},
         "frozenAt": {"type": "string", "format": "date-time"}
       }

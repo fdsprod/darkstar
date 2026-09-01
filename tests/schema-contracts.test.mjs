@@ -59,6 +59,9 @@ test("artifact provenance and context order have one source of truth", () => {
     assert.ok(schema.$defs.artifact.properties[field], `artifact is missing ${field}`);
   assert.equal(schema.$defs.contextEntry.properties.order, undefined);
   assert.equal(schema.$defs.contextEntry.required.includes("order"), false);
+  assert.ok(schema.$defs.contextEntry.properties.artifactVersion);
+  for (const field of ["instructions", "schemas", "permissions", "workspace", "capabilities", "reservedTokens"])
+    assert.ok(schema.$defs.contextManifest.properties[field], `context manifest is missing ${field}`);
 });
 
 test("compatibility permits additive optional fields", () => {
