@@ -13,19 +13,20 @@ Push-Location $repositoryRoot
 try {
     $env:GOTOOLCHAIN = "local"
 
-    $goFiles = Get-ChildItem -Path "runtime/src", "runtime/tests" -Recurse -Filter "*.go" |
-        ForEach-Object { $_.FullName }
-    $unformatted = & gofmt -l @goFiles
-    if ($LASTEXITCODE -ne 0) {
-        throw "gofmt failed with exit code $LASTEXITCODE."
+    $goFiles = @(& (Join-Path $PSScriptRoot "Get-TrackedGoFiles.ps1"))
+    $unformatted = foreach ($goFile in $goFiles) {
+        & gofmt -l $goFile
+        if ($LASTEXITCODE -ne 0) {
+            throw "gofmt failed for '$goFile' with exit code $LASTEXITCODE."
+        }
     }
     if ($unformatted) {
-        throw "The following Go files require gofmt:`n$($unformatted -join "`n")"
+        throw "The following tracked Go files require gofmt:`n$($unformatted -join "`n")`nRun ./scripts/Format.ps1 to fix them."
     }
 
-    & go -C runtime vet -mod=readonly ./...
+    & (Join-Path $PSScriptRoot "Lint.ps1") -SkipToolchainCheck
     if ($LASTEXITCODE -ne 0) {
-        throw "go vet failed with exit code $LASTEXITCODE."
+        throw "Go lint checks failed with exit code $LASTEXITCODE."
     }
 
     & go -C runtime test -mod=readonly ./...

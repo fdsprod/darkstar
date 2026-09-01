@@ -246,7 +246,9 @@ func (m *Manager) RunWithService(ctx context.Context, service RuntimeService, re
 	if err != nil {
 		return fmt.Errorf("create daemon stop event: %w", err)
 	}
-	defer event.Close()
+	defer func() {
+		_ = event.Close()
+	}()
 
 	identity, err := m.host.CurrentProcessIdentity()
 	if err != nil {
@@ -461,7 +463,9 @@ func (m *Manager) writeState(state State) error {
 		return fmt.Errorf("create temporary daemon state: %w", err)
 	}
 	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
+	defer func() {
+		_ = os.Remove(temporaryPath)
+	}()
 	if err := temporary.Chmod(0o600); err != nil {
 		_ = temporary.Close()
 		return fmt.Errorf("restrict temporary daemon state: %w", err)

@@ -56,21 +56,21 @@ func verifyProtectedFile(path string) error {
 		return fmt.Errorf("read Windows endpoint ACL control: %w", err)
 	}
 	if control&windows.SE_DACL_PRESENT == 0 || control&windows.SE_DACL_PROTECTED == 0 {
-		return errors.New("Windows endpoint DACL is absent or inherited")
+		return errors.New("windows endpoint DACL is absent or inherited")
 	}
 	dacl, _, err := descriptor.DACL()
 	if err != nil {
 		return fmt.Errorf("read Windows endpoint DACL: %w", err)
 	}
 	if dacl == nil || dacl.AceCount != 1 {
-		return fmt.Errorf("Windows endpoint DACL has %d entries, want 1", daclEntryCount(dacl))
+		return fmt.Errorf("windows endpoint DACL has %d entries, want 1", daclEntryCount(dacl))
 	}
 	var ace *windows.ACCESS_ALLOWED_ACE
 	if err := windows.GetAce(dacl, 0, &ace); err != nil {
 		return fmt.Errorf("read Windows endpoint access entry: %w", err)
 	}
 	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
-		return errors.New("Windows endpoint ACL entry is not an allow entry")
+		return errors.New("windows endpoint ACL entry is not an allow entry")
 	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
@@ -78,7 +78,7 @@ func verifyProtectedFile(path string) error {
 	}
 	entrySID := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
 	if !entrySID.Equals(user.User.Sid) {
-		return errors.New("Windows endpoint ACL does not belong to the current user")
+		return errors.New("windows endpoint ACL does not belong to the current user")
 	}
 	return nil
 }

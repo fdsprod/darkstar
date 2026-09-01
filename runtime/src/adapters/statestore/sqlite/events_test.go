@@ -255,7 +255,9 @@ func TestCommittedEventsAreAppendOnlyAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen database: %v", err)
 	}
-	defer reopened.Close()
+	defer func() {
+		_ = reopened.Close()
+	}()
 	events, err := reopened.EventsAfter(ctx, 0, 10)
 	if err != nil {
 		t.Fatalf("read events after restart: %v", err)

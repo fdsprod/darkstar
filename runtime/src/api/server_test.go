@@ -63,7 +63,9 @@ func TestHealthIsUnauthenticatedButAPIRootRequiresBearerToken(t *testing.T) {
 	defer closeTestServer(t, server)
 
 	health := get(t, endpoint.BaseURL()+"/api/v1/health", "")
-	defer health.Body.Close()
+	defer func() {
+		_ = health.Body.Close()
+	}()
 	if health.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/v1/health status = %d", health.StatusCode)
 	}
@@ -75,14 +77,18 @@ func TestHealthIsUnauthenticatedButAPIRootRequiresBearerToken(t *testing.T) {
 	}
 
 	missing := get(t, endpoint.BaseURL()+"/api/v1", "")
-	defer missing.Body.Close()
+	defer func() {
+		_ = missing.Body.Close()
+	}()
 	assertAPIError(t, missing, http.StatusUnauthorized, "UNAUTHENTICATED")
 	if missing.Header.Get("WWW-Authenticate") == "" {
 		t.Fatal("unauthenticated response omitted WWW-Authenticate")
 	}
 
 	authorized := get(t, endpoint.BaseURL()+"/api/v1", endpoint.AuthorizationHeader())
-	defer authorized.Body.Close()
+	defer func() {
+		_ = authorized.Body.Close()
+	}()
 	if authorized.StatusCode != http.StatusOK {
 		t.Fatalf("authorized GET /api/v1 status = %d", authorized.StatusCode)
 	}
@@ -111,7 +117,9 @@ func TestRecoveryRequiredIsObservableWithoutAdmittingScheduling(t *testing.T) {
 		t.Fatal("started server has no endpoint")
 	}
 	response := get(t, endpoint.BaseURL()+"/api/v1", endpoint.AuthorizationHeader())
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	var root apiRootResponse
 	decodeJSON(t, response, &root)
 	if root.Recovery.SchedulingAllowed() ||
@@ -130,14 +138,18 @@ func TestAuthenticatedFailuresUseStableErrorEnvelope(t *testing.T) {
 	defer closeTestServer(t, server)
 
 	unsupported := get(t, endpoint.BaseURL()+"/api/v2/runs", endpoint.AuthorizationHeader())
-	defer unsupported.Body.Close()
+	defer func() {
+		_ = unsupported.Body.Close()
+	}()
 	problem := assertAPIError(t, unsupported, http.StatusUpgradeRequired, "API_VERSION_UNSUPPORTED")
 	if len(problem.Details) != 1 || problem.Details[0].Field != "apiVersion" {
 		t.Fatalf("unsupported version details = %#v", problem.Details)
 	}
 
 	notFound := get(t, endpoint.BaseURL()+"/api/v1/does-not-exist", endpoint.AuthorizationHeader())
-	defer notFound.Body.Close()
+	defer func() {
+		_ = notFound.Body.Close()
+	}()
 	assertAPIError(t, notFound, http.StatusNotFound, "NOT_FOUND")
 }
 
@@ -161,14 +173,20 @@ func TestDoctorRequiresAuthenticationAndReturnsDetailedReport(t *testing.T) {
 	}
 
 	unauthorized := get(t, endpoint.BaseURL()+"/api/v1/doctor", "")
-	defer unauthorized.Body.Close()
+	defer func() {
+		_ = unauthorized.Body.Close()
+	}()
 	assertAPIError(t, unauthorized, http.StatusUnauthorized, "UNAUTHENTICATED")
 	invalid := get(t, endpoint.BaseURL()+"/api/v1/doctor?projectRoot=relative", endpoint.AuthorizationHeader())
-	defer invalid.Body.Close()
+	defer func() {
+		_ = invalid.Body.Close()
+	}()
 	assertAPIError(t, invalid, http.StatusBadRequest, "VALIDATION_FAILED")
 
 	response := get(t, endpoint.BaseURL()+"/api/v1/doctor", endpoint.AuthorizationHeader())
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/v1/doctor status = %d", response.StatusCode)
 	}
@@ -200,11 +218,15 @@ func TestRotationAtomicallyInvalidatesPreviousToken(t *testing.T) {
 	}
 
 	stale := get(t, original.BaseURL()+"/api/v1", original.AuthorizationHeader())
-	defer stale.Body.Close()
+	defer func() {
+		_ = stale.Body.Close()
+	}()
 	assertAPIError(t, stale, http.StatusUnauthorized, "UNAUTHENTICATED")
 
 	current := get(t, rotated.BaseURL()+"/api/v1", rotated.AuthorizationHeader())
-	defer current.Body.Close()
+	defer func() {
+		_ = current.Body.Close()
+	}()
 	if current.StatusCode != http.StatusOK {
 		t.Fatalf("request with rotated token status = %d", current.StatusCode)
 	}

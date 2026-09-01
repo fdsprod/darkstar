@@ -6,14 +6,17 @@ $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 
-& (Join-Path $PSScriptRoot "Assert-Toolchain.ps1")
-& (Join-Path $PSScriptRoot "Install-Lint.ps1")
-
 Push-Location $repositoryRoot
 try {
-    & npm ci
+    $goFiles = @(& git ls-files -- "*.go")
     if ($LASTEXITCODE -ne 0) {
-        throw "npm ci failed with exit code $LASTEXITCODE."
+        throw "git ls-files failed with exit code $LASTEXITCODE."
+    }
+
+    foreach ($goFile in $goFiles) {
+        if ($goFile) {
+            Join-Path $repositoryRoot $goFile
+        }
     }
 }
 finally {

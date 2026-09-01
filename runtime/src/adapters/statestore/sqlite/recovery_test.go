@@ -19,7 +19,9 @@ func TestPendingRecoveryAndAtomicDecisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() {
+		_ = database.Close()
+	}()
 	now := time.Date(2026, 9, 1, 2, 0, 0, 0, time.UTC)
 	database.now = func() time.Time { return now }
 
@@ -111,7 +113,9 @@ func TestReconcileRequiredFencesAmbiguousSubjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() {
+		_ = database.Close()
+	}()
 	now := time.Date(2026, 9, 1, 2, 0, 0, 0, time.UTC)
 	database.now = func() time.Time { return now }
 	_, err = database.AcquireLease(ctx, statestore.AcquireLeaseRequest{

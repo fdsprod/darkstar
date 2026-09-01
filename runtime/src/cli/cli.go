@@ -94,7 +94,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 				return writeCommandError(stdout, stderr, false, "darkstar help", "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
 			}
 		} else {
-			fmt.Fprint(stdout, usage)
+			_, _ = fmt.Fprint(stdout, usage)
 		}
 		return int(ExitSuccess)
 	}
@@ -109,7 +109,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 				return writeCommandError(stdout, stderr, false, "darkstar version", "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
 			}
 		} else {
-			fmt.Fprintf(stdout, "darkstar %s\n", Version)
+			_, _ = fmt.Fprintf(stdout, "darkstar %s\n", Version)
 		}
 		return int(ExitSuccess)
 	case "daemon":
@@ -346,7 +346,7 @@ func runDaemonForeground(manager *daemon.Manager, jsonOutput bool, stdout, stder
 				return writeCommandError(stdout, stderr, false, "darkstar daemon run", "OUTPUT_FAILED", outputErr.Error(), false, ExitInvariantViolation)
 			}
 		} else {
-			fmt.Fprintln(stdout, "Daemon is already running.")
+			_, _ = fmt.Fprintln(stdout, "Daemon is already running.")
 		}
 		return int(ExitSuccess)
 	}
@@ -358,7 +358,7 @@ func runDaemonForeground(manager *daemon.Manager, jsonOutput bool, stdout, stder
 			return writeCommandError(stdout, stderr, false, "darkstar daemon run", "OUTPUT_FAILED", outputErr.Error(), false, ExitInvariantViolation)
 		}
 	} else {
-		fmt.Fprintln(stdout, "Daemon stopped.")
+		_, _ = fmt.Fprintln(stdout, "Daemon stopped.")
 	}
 	return int(ExitSuccess)
 }
@@ -533,11 +533,11 @@ func daemonStatus(manager *daemon.Manager, jsonOutput bool, stdout, stderr io.Wr
 	}
 	switch output.Status {
 	case "running":
-		fmt.Fprintf(stdout, "Daemon is running (pid %d, started %s).\n", output.Process.PID, output.Process.StartedAt.Format(time.RFC3339Nano))
+		_, _ = fmt.Fprintf(stdout, "Daemon is running (pid %d, started %s).\n", output.Process.PID, output.Process.StartedAt.Format(time.RFC3339Nano))
 	case "stale":
-		fmt.Fprintf(stdout, "Daemon state is stale (%s).\n", output.Reason)
+		_, _ = fmt.Fprintf(stdout, "Daemon state is stale (%s).\n", output.Reason)
 	default:
-		fmt.Fprintln(stdout, "Daemon is stopped.")
+		_, _ = fmt.Fprintln(stdout, "Daemon is stopped.")
 	}
 	return int(ExitSuccess)
 }
@@ -592,9 +592,9 @@ func runAPI(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		}
 	} else {
 		if recoveryState.SchedulingAllowed() {
-			fmt.Fprintf(stdout, "Daemon API %s is ready (pid %d); startup recovery is complete.\n", output.APIVersion, output.PID)
+			_, _ = fmt.Fprintf(stdout, "Daemon API %s is ready (pid %d); startup recovery is complete.\n", output.APIVersion, output.PID)
 		} else {
-			fmt.Fprintf(stdout, "Daemon API %s is ready (pid %d); %d item(s) require reconciliation and scheduling is paused.\n", output.APIVersion, output.PID, output.ReconcileRequired)
+			_, _ = fmt.Fprintf(stdout, "Daemon API %s is ready (pid %d); %d item(s) require reconciliation and scheduling is paused.\n", output.APIVersion, output.PID, output.ReconcileRequired)
 		}
 	}
 	return int(ExitSuccess)
@@ -707,7 +707,7 @@ func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 				return true
 			}
 			if !jsonOutput {
-				fmt.Fprintf(stdout, "%d %s\n", event.GlobalPosition, event.Kind)
+				_, _ = fmt.Fprintf(stdout, "%d %s\n", event.GlobalPosition, event.Kind)
 			}
 			return event.Kind != "run.completed" && event.Kind != "run.failed" && event.Kind != "run.cancelled" && event.Kind != "run.reconcile_required"
 		})
@@ -754,7 +754,7 @@ func runExport(runID, outputPath string, jsonOutput bool, stdout, stderr io.Writ
 			return writeCommandError(stdout, stderr, false, "darkstar run export", "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
 		}
 	} else {
-		fmt.Fprintf(stdout, "Exported %s to %s (%d bytes).\n", runID, absoluteOutput, len(content))
+		_, _ = fmt.Fprintf(stdout, "Exported %s to %s (%d bytes).\n", runID, absoluteOutput, len(content))
 	}
 	return int(ExitSuccess)
 }
@@ -787,9 +787,9 @@ func writeRunView(view runexecution.View, jsonOutput bool, stdout, stderr io.Wri
 			return writeCommandError(stdout, stderr, false, command, "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
 		}
 	} else if len(view.Attempts) > 0 {
-		fmt.Fprintf(stdout, "%s %s: %s (attempt %s: %s).\n", verb, view.Run.RunID, view.Run.Status, view.Attempts[0].AttemptID, view.Attempts[0].Status)
+		_, _ = fmt.Fprintf(stdout, "%s %s: %s (attempt %s: %s).\n", verb, view.Run.RunID, view.Run.Status, view.Attempts[0].AttemptID, view.Attempts[0].Status)
 	} else {
-		fmt.Fprintf(stdout, "%s %s: %s.\n", verb, view.Run.RunID, view.Run.Status)
+		_, _ = fmt.Fprintf(stdout, "%s %s: %s.\n", verb, view.Run.RunID, view.Run.Status)
 	}
 	return int(ExitSuccess)
 }

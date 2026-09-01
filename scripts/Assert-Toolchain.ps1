@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$GoOnly
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -21,12 +23,12 @@ function Read-PinnedVersion {
 }
 
 Assert-Command go
-Assert-Command node
-Assert-Command npm
+if (-not $GoOnly) {
+    Assert-Command node
+    Assert-Command npm
+}
 
 $expectedGo = Read-PinnedVersion ".go-version"
-$expectedNode = Read-PinnedVersion ".node-version"
-$expectedNpm = Read-PinnedVersion ".npm-version"
 
 $goOutput = (& go version).Trim()
 if ($LASTEXITCODE -ne 0) {
@@ -36,6 +38,13 @@ if ($goOutput -notmatch "^go version go$([Regex]::Escape($expectedGo))\s") {
     throw "Go $expectedGo is required; found '$goOutput'."
 }
 
+if ($GoOnly) {
+    Write-Host "Go toolchain verified: Go $expectedGo"
+    return
+}
+
+$expectedNode = Read-PinnedVersion ".node-version"
+$expectedNpm = Read-PinnedVersion ".npm-version"
 $nodeOutput = (& node --version).Trim()
 if ($LASTEXITCODE -ne 0) {
     throw "node --version failed with exit code $LASTEXITCODE."

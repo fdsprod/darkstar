@@ -265,7 +265,9 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 		}
 		return
 	}
-	defer stream.Close()
+	defer func() {
+		_ = stream.Close()
+	}()
 	for {
 		event, receiveErr := stream.Receive()
 		if errors.Is(receiveErr, io.EOF) {

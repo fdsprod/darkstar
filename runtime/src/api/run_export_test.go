@@ -33,11 +33,15 @@ func TestRunExportRequiresAuthenticationAndReturnsZIP(t *testing.T) {
 	}
 
 	unauthorized := get(t, endpoint.BaseURL()+"/api/v1/runs/"+runID+"/export", "")
-	defer unauthorized.Body.Close()
+	defer func() {
+		_ = unauthorized.Body.Close()
+	}()
 	assertAPIError(t, unauthorized, http.StatusUnauthorized, "UNAUTHENTICATED")
 
 	response := get(t, endpoint.BaseURL()+"/api/v1/runs/"+runID+"/export", endpoint.AuthorizationHeader())
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	content, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatal(err)

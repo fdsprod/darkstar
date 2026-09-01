@@ -134,7 +134,9 @@ func readZipEntry(t *testing.T, archivePath, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer archive.Close()
+	defer func() {
+		_ = archive.Close()
+	}()
 	for _, file := range archive.File {
 		if file.Name != name {
 			continue

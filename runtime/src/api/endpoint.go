@@ -140,7 +140,9 @@ func ReadEndpoint(runtimeDirectory string) (Endpoint, error) {
 	if err != nil {
 		return Endpoint{}, fmt.Errorf("open API endpoint: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	decoder := json.NewDecoder(io.LimitReader(file, 16<<10))
 	decoder.DisallowUnknownFields()
@@ -211,7 +213,9 @@ func writeEndpoint(path string, endpoint Endpoint) error {
 		return fmt.Errorf("create temporary API endpoint: %w", err)
 	}
 	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
+	defer func() {
+		_ = os.Remove(temporaryPath)
+	}()
 	if err := temporary.Chmod(0o600); err != nil {
 		_ = temporary.Close()
 		return fmt.Errorf("restrict temporary API endpoint: %w", err)

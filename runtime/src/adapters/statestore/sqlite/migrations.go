@@ -182,7 +182,9 @@ func readAppliedMigrations(ctx context.Context, db *sql.DB) ([]AppliedMigration,
 	if err != nil {
 		return nil, fmt.Errorf("query schema_migrations: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var migrations []AppliedMigration
 	for rows.Next() {

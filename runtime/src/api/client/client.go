@@ -250,7 +250,9 @@ func (session *Session) DoJSON(ctx context.Context, method, resource string, req
 	if err != nil {
 		return &Failure{Kind: FailureUnavailable, Op: "call daemon API", Err: err}
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	content, err := io.ReadAll(io.LimitReader(response.Body, maxResponseSize+1))
 	if err != nil {
 		return &Failure{Kind: FailureProtocol, Op: "read daemon API response", Err: err}
@@ -291,7 +293,9 @@ func (session *Session) Download(ctx context.Context, resource string) ([]byte, 
 	if err != nil {
 		return nil, &Failure{Kind: FailureUnavailable, Op: "call daemon API", Err: err}
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	limit := int64(maxDownloadSize)
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		limit = maxResponseSize
@@ -340,7 +344,9 @@ func (session *Session) StreamEvents(ctx context.Context, after uint64, consume 
 	if err != nil {
 		return &Failure{Kind: FailureUnavailable, Op: "open daemon event stream", Err: err}
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusOK {
 		content, _ := io.ReadAll(io.LimitReader(response.Body, maxResponseSize+1))
 		var problem APIError

@@ -180,7 +180,9 @@ func (d *Database) HeartbeatLease(ctx context.Context, guard statestore.LeaseGua
 	if err != nil {
 		return statestore.Lease{}, fmt.Errorf("begin lease heartbeat: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 	lease, err := readGuardedLease(ctx, tx, guard)
 	if err != nil {
 		return statestore.Lease{}, err

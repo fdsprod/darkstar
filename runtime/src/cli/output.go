@@ -36,11 +36,11 @@ func writeCommandError(stdout, stderr io.Writer, jsonOutput bool, command, code,
 			SchemaVersion: machineSchemaVersion,
 			Error:         machineError{Code: code, Message: message, Retryable: retryable},
 		}); err != nil {
-			fmt.Fprintf(stderr, "%s: encode error output: %v\n", command, err)
+			_, _ = fmt.Fprintf(stderr, "%s: encode error output: %v\n", command, err)
 			return int(ExitInvariantViolation)
 		}
 	} else {
-		fmt.Fprintf(stderr, "%s: %s\n", command, message)
+		_, _ = fmt.Fprintf(stderr, "%s: %s\n", command, message)
 	}
 	return int(class)
 }
@@ -84,11 +84,11 @@ func writeClientError(stdout, stderr io.Writer, jsonOutput bool, command string,
 				Details:   details,
 			},
 		}); encodeErr != nil {
-			fmt.Fprintf(stderr, "%s: encode error output: %v\n", command, encodeErr)
+			_, _ = fmt.Fprintf(stderr, "%s: encode error output: %v\n", command, encodeErr)
 			return int(ExitInvariantViolation)
 		}
 	} else {
-		fmt.Fprintf(stderr, "%s: %s\n", command, message)
+		_, _ = fmt.Fprintf(stderr, "%s: %s\n", command, message)
 	}
 	return int(class)
 }

@@ -89,7 +89,9 @@ func LoadOptionalFile(scope config.Scope, path string) (config.Layer, bool, erro
 	if err != nil {
 		return config.Layer{}, false, fmt.Errorf("open %s configuration %q: %w", scope, path, err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	content, err := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
 	if err != nil {

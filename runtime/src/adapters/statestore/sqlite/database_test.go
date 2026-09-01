@@ -31,7 +31,9 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open fresh database: %v", err)
 	}
-	defer database.Close()
+	defer func() {
+		_ = database.Close()
+	}()
 
 	version, err := database.Version(ctx)
 	if err != nil {
@@ -109,7 +111,9 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second open: %v", err)
 	}
-	defer second.Close()
+	defer func() {
+		_ = second.Close()
+	}()
 
 	var count int
 	if err := second.SQL().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
@@ -128,7 +132,9 @@ func TestStateConstraintMigrationPreservesValidData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open SQLite: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 	migrations, err := embeddedMigrationSet()
 	if err != nil {
 		t.Fatalf("read migrations: %v", err)
@@ -168,7 +174,9 @@ func TestStateConstraintMigrationPreservesValidData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check foreign keys: %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	if rows.Next() {
 		t.Fatal("state constraint migration left a foreign key violation")
 	}
@@ -182,7 +190,9 @@ func TestFinalSchemaRejectsContradictoryStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open constrained database: %v", err)
 	}
-	defer database.Close()
+	defer func() {
+		_ = database.Close()
+	}()
 	db := database.SQL()
 
 	expectConstraint(t, db, `INSERT INTO aggregates VALUES ('run_01TEST', 'work', 0, 'now', 'now')`)
@@ -232,7 +242,9 @@ func TestMigrateUpgradesInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open SQLite: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	first := testMigration(1, "initial", testMigrationTable+`CREATE TABLE settings (id INTEGER PRIMARY KEY) STRICT;`)
 	second := testMigration(2, "add_value", `ALTER TABLE settings ADD COLUMN value TEXT;`)
@@ -291,7 +303,9 @@ func TestFailedMigrationRollsBackAndCanBeRetried(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen database after failed migration: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 	fixed := testMigration(2, "broken", `CREATE TABLE recovered (id INTEGER PRIMARY KEY) STRICT;`)
 	if err := migrate(ctx, db, []migration{first, fixed}, fixedNow); err != nil {
 		t.Fatalf("retry corrected migration: %v", err)
@@ -307,7 +321,9 @@ func TestMigrateRejectsChecksumMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open SQLite: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	first := testMigration(1, "initial", testMigrationTable+`CREATE TABLE original (id INTEGER PRIMARY KEY) STRICT;`)
 	if err := migrate(ctx, db, []migration{first}, fixedNow); err != nil {
@@ -331,7 +347,9 @@ func TestMigrateRejectsDatabaseNewerThanBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open SQLite: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	first := testMigration(1, "initial", testMigrationTable)
 	if err := migrate(ctx, db, []migration{first}, fixedNow); err != nil {

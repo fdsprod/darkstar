@@ -26,7 +26,9 @@ func (d *Database) CheckIntegrity(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("run SQLite quick_check: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	ok := false
 	for rows.Next() {
 		var result string
@@ -71,7 +73,9 @@ func (d *Database) pendingLeaseRecovery(ctx context.Context) ([]recovery.Subject
 	if err != nil {
 		return nil, fmt.Errorf("query recovery leases: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	var subjects []recovery.Subject
 	for rows.Next() {
 		lease, err := scanLease(rows)
@@ -118,7 +122,9 @@ func (d *Database) pendingOperationRecovery(ctx context.Context) ([]recovery.Sub
 	if err != nil {
 		return nil, fmt.Errorf("query recovery operations: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	var subjects []recovery.Subject
 	for rows.Next() {
 		var id, kind, aggregateID, request, state, availableAt string

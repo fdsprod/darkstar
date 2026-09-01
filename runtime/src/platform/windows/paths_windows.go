@@ -36,14 +36,14 @@ func (r *PathResolver) ResolvePaths(ctx context.Context, request platform.PathRe
 		return platform.Paths{}, err
 	}
 	if r == nil || r.localAppData == nil {
-		return platform.Paths{}, errors.New("Windows LocalAppData resolver is not configured")
+		return platform.Paths{}, errors.New("windows LocalAppData resolver is not configured")
 	}
 	knownFolder, err := r.localAppData()
 	if err != nil {
 		return platform.Paths{}, fmt.Errorf("resolve Windows LocalAppData known folder: %w", err)
 	}
 	if !filepath.IsAbs(knownFolder) {
-		return platform.Paths{}, fmt.Errorf("Windows LocalAppData known folder is not absolute: %q", knownFolder)
+		return platform.Paths{}, fmt.Errorf("windows LocalAppData known folder is not absolute: %q", knownFolder)
 	}
 
 	root := filepath.Clean(filepath.Join(knownFolder, request.ApplicationName))

@@ -218,7 +218,7 @@ func (exporter *Exporter) Build(ctx context.Context, runID string) ([]byte, Mani
 	archive := zip.NewWriter(&destination)
 	for _, file := range files {
 		header := &zip.FileHeader{Name: file.path, Method: zip.Deflate}
-		header.SetModTime(time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC))
+		header.Modified = time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC)
 		writer, createErr := archive.CreateHeader(header)
 		if createErr != nil {
 			return nil, Manifest{}, fmt.Errorf("create archive entry %s: %w", file.path, createErr)

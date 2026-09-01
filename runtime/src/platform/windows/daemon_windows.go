@@ -83,7 +83,9 @@ func (h *DaemonHost) InspectProcess(expected daemon.ProcessIdentity) (daemon.Pro
 	if err != nil {
 		return 0, err
 	}
-	defer windows.CloseHandle(handle)
+	defer func() {
+		_ = windows.CloseHandle(handle)
+	}()
 	return inspectHandle(handle, expected)
 }
 
@@ -100,7 +102,9 @@ func (h *DaemonHost) SignalStop(instanceID string) error {
 	if err != nil {
 		return err
 	}
-	defer windows.CloseHandle(handle)
+	defer func() {
+		_ = windows.CloseHandle(handle)
+	}()
 	return windows.SetEvent(handle)
 }
 
@@ -121,7 +125,9 @@ func (h *DaemonHost) StartDetached(ctx context.Context, request daemon.DetachedR
 	if err != nil {
 		return 0, fmt.Errorf("open daemon log: %w", err)
 	}
-	defer logFile.Close()
+	defer func() {
+		_ = logFile.Close()
+	}()
 
 	command := exec.Command(request.Executable, request.Arguments...)
 	command.Stdout = logFile
@@ -153,7 +159,9 @@ func (h *DaemonHost) TerminateProcess(expected daemon.ProcessIdentity) error {
 	if err != nil {
 		return err
 	}
-	defer windows.CloseHandle(handle)
+	defer func() {
+		_ = windows.CloseHandle(handle)
+	}()
 
 	inspection, err := inspectHandle(handle, expected)
 	if err != nil {
@@ -227,7 +235,9 @@ func processIdentity(pid int) (daemon.ProcessIdentity, error) {
 	if err != nil {
 		return daemon.ProcessIdentity{}, err
 	}
-	defer windows.CloseHandle(handle)
+	defer func() {
+		_ = windows.CloseHandle(handle)
+	}()
 	return identityFromHandle(handle, pid)
 }
 

@@ -6,6 +6,7 @@ the repository root.
 ## Pinned toolchain
 
 - Go 1.24.0 (see `.go-version`)
+- golangci-lint 2.8.0 (see `.golangci-version`)
 - Node.js 22.12.0 (see `.node-version`)
 - npm 10.9.0, bundled with Node.js 22.12.0 (see `.npm-version`)
 - Git for Windows
@@ -15,7 +16,7 @@ use the same compilers and package manager.
 
 ## Clean-checkout setup
 
-Install the pinned dashboard dependencies:
+Install the pinned linter and dashboard dependencies:
 
 ```powershell
 ./scripts/Bootstrap.ps1
@@ -49,8 +50,29 @@ push and pull request. Third-party actions are pinned to immutable commit SHAs.
 For a shorter edit loop, run the phases independently:
 
 ```powershell
+./scripts/Format.ps1
+./scripts/Lint.ps1
 ./scripts/Test.ps1
 ./scripts/Build.ps1
+```
+
+`Format.ps1` is the canonical formatting command. It runs standard `gofmt` over
+every tracked `.go` file. Run it before committing Go changes; a second run must
+produce no diff. Configure your editor to run `gofmt` on save (for VS Code with
+the Go extension, set `go.formatTool` to `gofmt` and enable
+`editor.formatOnSave` for Go files).
+
+`Lint.ps1` applies the repository's minimal `.golangci.yml` baseline to every
+tracked Go module: `govet`, `staticcheck`, `errcheck`, `ineffassign`, and
+`unused`. `Test.ps1` is the canonical local check command and fails with an
+actionable `Format.ps1` hint when any tracked Go file is not canonical. It also
+runs the same linter configuration before the Go, contract, and dashboard test
+suites. `Verify.ps1` adds the full build and is the command used by Windows CI.
+
+If only the linter is missing or its pinned version changed, install it with:
+
+```powershell
+./scripts/Install-Lint.ps1
 ```
 
 ## Schema contracts

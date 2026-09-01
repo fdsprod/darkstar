@@ -46,7 +46,9 @@ func TestEventStreamReplaysStrictlyAfterCursorAndReconnectsWithoutLoss(t *testin
 	secondContext, cancelSecond := context.WithCancel(context.Background())
 	defer cancelSecond()
 	reconnected := openEventStream(t, secondContext, endpoint, "2")
-	defer reconnected.Body.Close()
+	defer func() {
+		_ = reconnected.Body.Close()
+	}()
 	message := readSSEMessage(t, bufio.NewReader(reconnected.Body))
 	if message.ID != "3" {
 		t.Fatalf("reconnected message ID = %q, want 3", message.ID)
@@ -63,7 +65,9 @@ func TestEventStreamDeliversEventsCommittedAfterConnection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	response := openEventStream(t, ctx, endpoint, "1")
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	source.append(streamEvent(2))
 	message := readSSEMessage(t, bufio.NewReader(response.Body))
 	if message.ID != "2" {
@@ -79,18 +83,24 @@ func TestEventStreamRejectsUnavailableAndInvalidCursors(t *testing.T) {
 	defer closeTestServer(t, server)
 
 	unavailable := eventRequest(t, endpoint, "2")
-	defer unavailable.Body.Close()
+	defer func() {
+		_ = unavailable.Body.Close()
+	}()
 	problem := assertAPIError(t, unavailable, http.StatusGone, "EVENT_REPLAY_UNAVAILABLE")
 	if len(problem.Details) != 2 || problem.Details[0].Message != "5" {
 		t.Fatalf("replay problem details = %#v", problem.Details)
 	}
 
 	invalid := eventRequest(t, endpoint, "7")
-	defer invalid.Body.Close()
+	defer func() {
+		_ = invalid.Body.Close()
+	}()
 	assertAPIError(t, invalid, http.StatusBadRequest, "EVENT_CURSOR_INVALID")
 
 	malformed := eventRequest(t, endpoint, "not-a-position")
-	defer malformed.Body.Close()
+	defer func() {
+		_ = malformed.Body.Close()
+	}()
 	assertAPIError(t, malformed, http.StatusBadRequest, "VALIDATION_FAILED")
 }
 
@@ -101,7 +111,9 @@ func TestStreamingEndpointsRequireAuthenticationAndGET(t *testing.T) {
 	defer closeTestServer(t, server)
 
 	unauthorized := get(t, endpoint.BaseURL()+"/api/v1/events", "")
-	defer unauthorized.Body.Close()
+	defer func() {
+		_ = unauthorized.Body.Close()
+	}()
 	assertAPIError(t, unauthorized, http.StatusUnauthorized, "UNAUTHENTICATED")
 
 	request, err := http.NewRequest(http.MethodPost, endpoint.BaseURL()+"/api/v1/events", nil)
@@ -113,7 +125,9 @@ func TestStreamingEndpointsRequireAuthenticationAndGET(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	assertAPIError(t, response, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
 }
 
@@ -132,7 +146,9 @@ func TestLogStreamReadsBoundedChunksByOpaqueReference(t *testing.T) {
 	defer closeTestServer(t, server)
 
 	first := get(t, endpoint.BaseURL()+"/api/v1/logs/attempt_01.log?limit=5", endpoint.AuthorizationHeader())
-	defer first.Body.Close()
+	defer func() {
+		_ = first.Body.Close()
+	}()
 	if first.StatusCode != http.StatusOK {
 		t.Fatalf("first log status = %d", first.StatusCode)
 	}
@@ -145,7 +161,9 @@ func TestLogStreamReadsBoundedChunksByOpaqueReference(t *testing.T) {
 	}
 
 	second := get(t, endpoint.BaseURL()+"/api/v1/logs/attempt_01.log?after=5&limit=6", endpoint.AuthorizationHeader())
-	defer second.Body.Close()
+	defer func() {
+		_ = second.Body.Close()
+	}()
 	content, err = io.ReadAll(second.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -170,15 +188,21 @@ func TestLogStreamRejectsTraversalUnknownQueriesAndOutOfRangeCursors(t *testing.
 	defer closeTestServer(t, server)
 
 	outOfRange := get(t, endpoint.BaseURL()+"/api/v1/logs/known.log?after=5", endpoint.AuthorizationHeader())
-	defer outOfRange.Body.Close()
+	defer func() {
+		_ = outOfRange.Body.Close()
+	}()
 	assertAPIError(t, outOfRange, http.StatusRequestedRangeNotSatisfiable, "LOG_CURSOR_INVALID")
 
 	unknownQuery := get(t, endpoint.BaseURL()+"/api/v1/logs/known.log?follow=true", endpoint.AuthorizationHeader())
-	defer unknownQuery.Body.Close()
+	defer func() {
+		_ = unknownQuery.Body.Close()
+	}()
 	assertAPIError(t, unknownQuery, http.StatusBadRequest, "VALIDATION_FAILED")
 
 	missing := get(t, endpoint.BaseURL()+"/api/v1/logs/not-found.log", endpoint.AuthorizationHeader())
-	defer missing.Body.Close()
+	defer func() {
+		_ = missing.Body.Close()
+	}()
 	assertAPIError(t, missing, http.StatusNotFound, "NOT_FOUND")
 
 	if _, err := logs.ReadLog(context.Background(), "../outside.log", 0, 10); !errors.Is(err, ErrLogNotFound) {
@@ -223,7 +247,9 @@ func openEventStream(t *testing.T, ctx context.Context, endpoint Endpoint, curso
 		t.Fatal(err)
 	}
 	if response.StatusCode != http.StatusOK {
-		defer response.Body.Close()
+		defer func() {
+			_ = response.Body.Close()
+		}()
 		content, _ := io.ReadAll(response.Body)
 		t.Fatalf("event stream status = %d body=%s", response.StatusCode, content)
 	}

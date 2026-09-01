@@ -47,10 +47,10 @@ jobs:
       - name: Verify pinned toolchain
         run: ./scripts/Assert-Toolchain.ps1
 
-      - name: Install dashboard dependencies
+      - name: Install pinned lint and dashboard dependencies
         run: ./scripts/Bootstrap.ps1
 
-      - name: Format, analyze, test, and build
+      - name: Check formatting, lint, test, and build
         run: ./scripts/Verify.ps1 -Version $env:GITHUB_SHA
         env:
           DARKSTAR_SCHEMA_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}

@@ -143,7 +143,9 @@ func (d *Database) EventsAfter(ctx context.Context, position uint64, limit int) 
 	if err != nil {
 		return nil, fmt.Errorf("query events: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	return scanEvents(rows)
 }
 
@@ -197,7 +199,9 @@ func (d *Database) queryAttempts(ctx context.Context, suffix string, args ...any
 	if err != nil {
 		return nil, fmt.Errorf("query attempt projections: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	var values []statestore.AttemptProjection
 	for rows.Next() {
 		value, err := scanAttemptProjection(rows)
@@ -263,7 +267,9 @@ func readRunCommands(ctx context.Context, query *sql.Tx, runID string) ([]states
 	if err != nil {
 		return nil, fmt.Errorf("query run commands: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	commands := make([]statestore.CommandEvidence, 0)
 	for rows.Next() {

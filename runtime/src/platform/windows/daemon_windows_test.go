@@ -21,7 +21,9 @@ func TestDaemonLockIsExclusiveForHandleLifetime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer first.Close()
+	defer func() {
+		_ = first.Close()
+	}()
 
 	if _, err := host.AcquireLock(path); !errors.Is(err, daemon.ErrLockHeld) {
 		t.Fatalf("second AcquireLock() error = %v, want ErrLockHeld", err)
@@ -48,7 +50,9 @@ func TestDaemonStopEventSignalsExactInstance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer event.Close()
+	defer func() {
+		_ = event.Close()
+	}()
 	if err := host.SignalStop(instanceID); err != nil {
 		t.Fatal(err)
 	}
