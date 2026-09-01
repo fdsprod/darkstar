@@ -138,6 +138,104 @@ type ApprovalProjection struct {
 	UpdatedAt          time.Time
 }
 
+// LeaseScopeKind identifies the resource whose mutations are fenced.
+type LeaseScopeKind string
+
+const (
+	LeaseScopeAttempt    LeaseScopeKind = "attempt"
+	LeaseScopeRepository LeaseScopeKind = "repository"
+	LeaseScopeWorktree   LeaseScopeKind = "worktree"
+)
+
+// LeaseState is the explicit lifecycle of a durable lease.
+type LeaseState string
+
+const (
+	LeaseHeld              LeaseState = "held"
+	LeaseReleasing         LeaseState = "releasing"
+	LeaseReleased          LeaseState = "released"
+	LeaseReconcileRequired LeaseState = "reconcile_required"
+)
+
+const (
+	// DefaultLeaseDuration is the MVP ownership interval.
+	DefaultLeaseDuration = 30 * time.Second
+	// MaximumHeartbeatInterval is the slowest normal MVP heartbeat cadence.
+	MaximumHeartbeatInterval = 10 * time.Second
+)
+
+// LeaseGuard is the complete capability required for a fenced mutation.
+// Matching only a lease ID or fencing token is intentionally insufficient.
+type LeaseGuard struct {
+	LeaseID          string
+	HolderAttemptID  string
+	DaemonInstanceID string
+	FencingToken     uint64
+}
+
+// Lease is one durable ownership record. ReleasedAt and Evidence are populated
+// only by terminal/reconciliation transitions, as constrained by SQLite.
+type Lease struct {
+	LeaseID          string
+	ScopeKind        LeaseScopeKind
+	ScopeID          string
+	HolderAttemptID  string
+	DaemonInstanceID string
+	FencingToken     uint64
+	AcquiredAt       time.Time
+	HeartbeatAt      time.Time
+	ExpiresAt        time.Time
+	HostBootID       string
+	ProcessIdentity  json.RawMessage
+	State            LeaseState
+	Evidence         json.RawMessage
+	ReleasedAt       *time.Time
+}
+
+// AcquireLeaseRequest describes one compare-and-swap lease acquisition.
+// ExpectedFencingToken must equal the last token issued for the scope.
+type AcquireLeaseRequest struct {
+	LeaseID              string
+	ScopeKind            LeaseScopeKind
+	ScopeID              string
+	HolderAttemptID      string
+	DaemonInstanceID     string
+	HostBootID           string
+	ExpectedFencingToken uint64
+	Duration             time.Duration
+	ProcessIdentity      json.RawMessage
+}
+
+// QueueKind identifies a deterministic scheduler queue.
+type QueueKind string
+
+const (
+	QueueAttempt         QueueKind = "attempt"
+	QueueRepositoryWrite QueueKind = "repository_write"
+)
+
+// QueueEntry is a queued item. Row presence is the sole source of queue
+// membership; there is no duplicated queued state flag.
+type QueueEntry struct {
+	Kind        QueueKind
+	ScopeID     string
+	ItemID      string
+	Priority    int
+	AvailableAt time.Time
+	EnqueuedAt  time.Time
+	Payload     json.RawMessage
+}
+
+// EnqueueRequest describes one idempotent queue insertion.
+type EnqueueRequest struct {
+	Kind        QueueKind
+	ScopeID     string
+	ItemID      string
+	Priority    int
+	AvailableAt time.Time
+	Payload     json.RawMessage
+}
+
 // Store atomically appends events and maintains rebuildable current state.
 type Store interface {
 	Append(context.Context, ...PendingEvent) ([]Event, error)
@@ -145,4 +243,14 @@ type Store interface {
 	Run(context.Context, string) (RunProjection, error)
 	Approval(context.Context, string) (ApprovalProjection, error)
 	RebuildProjections(context.Context) error
+	AcquireLease(context.Context, AcquireLeaseRequest) (Lease, error)
+	HeartbeatLease(context.Context, LeaseGuard, time.Duration) (Lease, error)
+	BeginLeaseRelease(context.Context, LeaseGuard) (Lease, error)
+	CompleteLeaseRelease(context.Context, LeaseGuard, json.RawMessage) (Lease, error)
+	MarkLeaseReconcileRequired(context.Context, LeaseGuard, json.RawMessage) (Lease, error)
+	ValidateLease(context.Context, LeaseScopeKind, string, LeaseGuard) (Lease, error)
+	Enqueue(context.Context, EnqueueRequest) (QueueEntry, error)
+	QueueHead(context.Context, QueueKind, string) (QueueEntry, error)
+	RemoveQueueEntry(context.Context, QueueKind, string, string) error
+	AcquireRepositoryLock(context.Context, string, AcquireLeaseRequest) (Lease, error)
 }

@@ -37,15 +37,15 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read schema version: %v", err)
 	}
-	if version != 3 {
-		t.Fatalf("schema version = %d, want 3", version)
+	if version != 4 {
+		t.Fatalf("schema version = %d, want 4", version)
 	}
 	history, err := database.AppliedMigrations(ctx)
 	if err != nil {
 		t.Fatalf("read migration history: %v", err)
 	}
-	if len(history) != 3 || history[0].Version != 1 || history[0].Name != "initial" || history[1].Version != 2 || history[1].Name != "constrain_state" || history[2].Version != 3 || history[2].Name != "append_only_events" {
-		t.Fatalf("migration history = %#v, want initial, constrain_state, and append_only_events migrations", history)
+	if len(history) != 4 || history[0].Version != 1 || history[0].Name != "initial" || history[1].Version != 2 || history[1].Name != "constrain_state" || history[2].Version != 3 || history[2].Name != "append_only_events" || history[3].Version != 4 || history[3].Name != "leases_queues" {
+		t.Fatalf("migration history = %#v, want initial, constrain_state, append_only_events, and leases_queues migrations", history)
 	}
 	for _, item := range history {
 		if len(item.Checksum) != 64 {
@@ -58,7 +58,8 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 
 	wantTables := []string{
 		"aggregates", "approval_projection", "commands", "events", "external_refs",
-		"global_positions", "outbox", "projection_checkpoints", "run_projection", "schema_migrations",
+		"global_positions", "leases", "lease_scopes", "outbox", "projection_checkpoints",
+		"queue_entries", "run_projection", "schema_migrations",
 	}
 	for _, table := range wantTables {
 		var count int
@@ -75,8 +76,8 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	if err := database.SQL().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrationCount != 3 {
-		t.Errorf("migration count = %d, want 3", migrationCount)
+	if migrationCount != 4 {
+		t.Errorf("migration count = %d, want 4", migrationCount)
 	}
 	if err := database.SQL().QueryRowContext(ctx,
 		`SELECT last_position FROM global_positions WHERE singleton = 1`).Scan(&initialPosition); err != nil {
@@ -114,8 +115,8 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err := second.SQL().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 3 {
-		t.Fatalf("migration count after reopen = %d, want 3", count)
+	if count != 4 {
+		t.Fatalf("migration count after reopen = %d, want 4", count)
 	}
 }
 
@@ -210,6 +211,12 @@ func TestFinalSchemaRejectsContradictoryStates(t *testing.T) {
 
 	expectConstraint(t, db, `INSERT INTO run_projection VALUES ('run_bad', 'work', 'workflow', '1.0.0', 'nonsense', 1, 0, 'now', 'now')`)
 	expectConstraint(t, db, `INSERT INTO approval_projection VALUES ('approval_bad', 'run_01TEST', 'nonsense', 'pending', 'scope', 'policy', 1, 0, 'now', 'now')`)
+
+	if _, err := db.ExecContext(ctx, `INSERT INTO lease_scopes VALUES ('repository', 'repo_01TEST', 1, 'now')`); err != nil {
+		t.Fatalf("insert valid lease scope: %v", err)
+	}
+	expectConstraint(t, db, `INSERT INTO leases(lease_id, scope_kind, scope_id, holder_attempt_id, daemon_instance_id, fencing_token, acquired_at, heartbeat_at, expires_at, host_boot_id, state) VALUES ('lease_bad', 'repository', 'repo_01TEST', 'attempt', 'daemon', 1, 'now', 'now', 'later', 'boot', 'released')`)
+	expectConstraint(t, db, `INSERT INTO queue_entries VALUES ('repository_write', 'repo_01TEST', 'attempt', -1, 'now', 'now', '{}')`)
 }
 
 func TestMigrateUpgradesInOrder(t *testing.T) {

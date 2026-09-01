@@ -55,13 +55,24 @@ test("event and error schemas are strict", () => {
   assert.equal(eventSchema.properties.streamSequence, undefined);
 });
 
-test("SQLite logical model contains append, idempotency, outbox, and projection boundaries", () => {
+test("SQLite logical model contains append, idempotency, coordination, outbox, and projection boundaries", () => {
   const sql = readFileSync(resolve(root, "schemas/sqlite-v1alpha1.sql"), "utf8");
-  for (const table of ["events","commands","outbox","run_projection","approval_projection","external_refs","projection_checkpoints"])
+  for (const table of ["events","commands","outbox","run_projection","approval_projection","external_refs","projection_checkpoints","lease_scopes","leases","queue_entries"])
     assert.match(sql, new RegExp(`CREATE TABLE ${table} \\(`));
   assert.doesNotMatch(sql, /stream_id|stream_sequence|aggregate_type TEXT NOT NULL REFERENCES/);
   assert.match(sql, /UNIQUE\(aggregate_id, aggregate_revision\)/);
   assert.match(sql, /PRIMARY KEY\(scope, idempotency_key\)/);
+});
+
+test("SQLite coordination model fences one repository writer and orders its durable queue", () => {
+  const logical = readFileSync(resolve(root, "schemas/sqlite-v1alpha1.sql"), "utf8").replaceAll("\r\n", "\n");
+  const migration = readFileSync(resolve(root, "runtime/src/adapters/statestore/sqlite/migrations/0004_leases_queues.sql"), "utf8").replaceAll("\r\n", "\n");
+  for (const sql of [logical, migration]) {
+    assert.match(sql, /last_fencing_token INTEGER NOT NULL/);
+    assert.match(sql, /WHERE state <> 'released'/);
+    assert.match(sql, /priority DESC, enqueued_at, item_id/);
+    assert.match(sql, /'held'.*'releasing'.*'released'.*'reconcile_required'/s);
+  }
 });
 
 test("SQLite logical model is advanced by a forward state-constraint migration", () => {

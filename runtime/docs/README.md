@@ -37,6 +37,9 @@ token rotation, version negotiation, and stable HTTP errors.
 See [CLI API client and machine output](cli.md) for daemon autostart, authenticated
 transport, versioned JSON conventions, and stable process exit classes.
 
+See [durable coordination](coordination.md) for lease fencing, heartbeat and
+release semantics, deterministic queues, and repository writer locks.
+
 ## Validate independently
 
 From the repository root:
