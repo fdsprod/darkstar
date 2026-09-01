@@ -190,6 +190,18 @@ returns `410 EVENT_REPLAY_UNAVAILABLE` with `oldestAvailablePosition` and a
 projection resync link. The MVP retains the authoritative local event log; export
 or compaction may change online retention only under a future explicit policy.
 
+### Bounded log reads
+
+`GET /api/v1/logs/{reference}` resolves an opaque, single-segment log reference;
+clients never send or receive a filesystem path. `after` is a zero-based byte
+cursor and `limit` defaults to 65,536 bytes with a hard maximum of 1,048,576.
+Every response reports the accepted offset, exclusive next offset, observed log
+size, and whether the returned bytes reached that observed size. A following
+client repeatedly requests the reported next offset, so reconnect never guesses
+from line counts or replays an unbounded transcript. A cursor beyond the current
+append-only log size returns `416 LOG_CURSOR_INVALID`; unknown references return
+`404 NOT_FOUND`.
+
 ## 7. CLI mapping
 
 The CLI prints user output to stdout, diagnostics to stderr, and supports a stable

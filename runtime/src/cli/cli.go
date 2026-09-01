@@ -212,6 +212,17 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
+	logs, err := localapi.NewDirectoryLogs(service.paths.Logs)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.server.SetStreams(localapi.StreamServices{Events: database, Logs: logs}); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
 	if err := service.server.Start(ctx, state.Process.PID, state.Process.StartedAt); err != nil {
 		_ = database.Close()
 		service.database = nil

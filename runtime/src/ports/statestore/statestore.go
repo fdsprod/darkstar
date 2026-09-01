@@ -58,21 +58,29 @@ type PendingEvent struct {
 // Event is one immutable committed fact. GlobalPosition orders the database;
 // AggregateRevision orders its aggregate stream.
 type Event struct {
-	SchemaVersion     uint64
-	ID                string
-	GlobalPosition    uint64
-	AggregateType     AggregateType
-	AggregateID       string
-	AggregateRevision uint64
-	Kind              string
-	OccurredAt        time.Time
-	RecordedAt        time.Time
-	CorrelationID     string
-	CausationID       *string
-	CommandID         string
-	Actor             Actor
-	Data              json.RawMessage
-	Metadata          json.RawMessage
+	SchemaVersion     uint64          `json:"schemaVersion"`
+	ID                string          `json:"id"`
+	GlobalPosition    uint64          `json:"globalPosition"`
+	AggregateType     AggregateType   `json:"aggregateType"`
+	AggregateID       string          `json:"aggregateId"`
+	AggregateRevision uint64          `json:"aggregateRevision"`
+	Kind              string          `json:"kind"`
+	OccurredAt        time.Time       `json:"occurredAt"`
+	RecordedAt        time.Time       `json:"recordedAt"`
+	CorrelationID     string          `json:"correlationId"`
+	CausationID       *string         `json:"causationId"`
+	CommandID         string          `json:"commandId"`
+	Actor             Actor           `json:"actor"`
+	Data              json.RawMessage `json:"data"`
+	Metadata          json.RawMessage `json:"metadata"`
+}
+
+// EventBounds describes the retained inclusive global-position range. Zero
+// values mean that the store contains no events; otherwise both positions are
+// positive and Oldest is no greater than Latest.
+type EventBounds struct {
+	Oldest uint64
+	Latest uint64
 }
 
 // RunStatus is the closed set of persisted run states.
@@ -240,6 +248,7 @@ type EnqueueRequest struct {
 type Store interface {
 	Append(context.Context, ...PendingEvent) ([]Event, error)
 	EventsAfter(context.Context, uint64, int) ([]Event, error)
+	EventBounds(context.Context) (EventBounds, error)
 	Run(context.Context, string) (RunProjection, error)
 	Approval(context.Context, string) (ApprovalProjection, error)
 	RebuildProjections(context.Context) error

@@ -28,6 +28,9 @@
     },
     "/api/v1/events": {
       "get": {"operationId":"streamEvents","parameters":[{"name":"Last-Event-ID","in":"header","required":false,"schema":{"type":"integer","minimum":0}}],"responses":{"200":{"description":"Ordered domain events","content":{"text/event-stream":{"schema":{"type":"string"}}}},"410":{"description":"Replay position unavailable","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/logs/{reference}": {
+      "get": {"operationId":"readLog","parameters":[{"$ref":"#/components/parameters/LogReference"},{"$ref":"#/components/parameters/LogAfter"},{"$ref":"#/components/parameters/LogLimit"}],"responses":{"200":{"description":"Bounded log bytes","headers":{"X-Darkstar-Log-Offset":{"schema":{"type":"integer","minimum":0}},"X-Darkstar-Log-Next-Offset":{"schema":{"type":"integer","minimum":0}},"X-Darkstar-Log-Size":{"schema":{"type":"integer","minimum":0}},"X-Darkstar-Log-Complete":{"schema":{"type":"boolean"}}},"content":{"application/octet-stream":{"schema":{"type":"string","format":"binary"}}}},"416":{"description":"Log cursor is beyond the current size","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"}}}},"default":{"$ref":"#/components/responses/Error"}}}
     }
   },
   "components": {
@@ -36,6 +39,9 @@
       "RunId":{"name":"runId","in":"path","required":true,"schema":{"type":"string"}},
       "Limit":{"name":"limit","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":200,"default":50}},
       "After":{"name":"after","in":"query","required":false,"schema":{"type":"string"}},
+      "LogReference":{"name":"reference","in":"path","required":true,"schema":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}},
+      "LogAfter":{"name":"after","in":"query","required":false,"schema":{"type":"integer","minimum":0,"default":0}},
+      "LogLimit":{"name":"limit","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":1048576,"default":65536}},
       "IdempotencyKey":{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":128}},
       "IfMatch":{"name":"If-Match","in":"header","required":true,"schema":{"type":"string"}}
     },

@@ -234,6 +234,36 @@ func TestCommittedEventsAreAppendOnlyAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestEventBoundsDescribeEmptyAndRetainedRanges(t *testing.T) {
+	t.Parallel()
+
+	database := openEventTestDatabase(t)
+	ctx := context.Background()
+	bounds, err := database.EventBounds(ctx)
+	if err != nil {
+		t.Fatalf("read empty event bounds: %v", err)
+	}
+	if bounds != (statestore.EventBounds{}) {
+		t.Fatalf("empty event bounds = %#v", bounds)
+	}
+
+	runID := testID("run", 'V')
+	if _, err := database.Append(ctx,
+		pendingEvent(testID("event", 'V'), statestore.AggregateRun, runID, 0, "run.created",
+			`{"workItemId":"work_01K3Z1C1AAAAAAAAAAAAAAAAAA","workflowId":"delivery","workflowVersion":"1"}`),
+		pendingEvent(testID("event", 'W'), statestore.AggregateRun, runID, 1, "run.started", `{}`),
+	); err != nil {
+		t.Fatalf("append bounded events: %v", err)
+	}
+	bounds, err = database.EventBounds(ctx)
+	if err != nil {
+		t.Fatalf("read populated event bounds: %v", err)
+	}
+	if bounds != (statestore.EventBounds{Oldest: 1, Latest: 2}) {
+		t.Fatalf("event bounds = %#v, want 1..2", bounds)
+	}
+}
+
 func openEventTestDatabase(t *testing.T) *Database {
 	t.Helper()
 	database, err := Open(context.Background(), filepath.Join(t.TempDir(), "events.db"), Options{})

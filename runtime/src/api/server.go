@@ -41,6 +41,10 @@ type Server struct {
 	http     *http.Server
 	recovery RecoveryStatus
 	doctor   DoctorReporter
+	streams  *StreamServices
+
+	streamPollInterval      time.Duration
+	streamKeepaliveInterval time.Duration
 }
 
 // DoctorReporter produces the authenticated, detailed subsystem health report.
@@ -55,10 +59,12 @@ func NewServer(runtimeDirectory string) (*Server, error) {
 		return nil, err
 	}
 	return &Server{
-		endpointPath: statePath,
-		now:          time.Now,
-		state:        serverNew,
-		recovery:     RecoveryStatus{},
+		endpointPath:            statePath,
+		now:                     time.Now,
+		state:                   serverNew,
+		recovery:                RecoveryStatus{},
+		streamPollInterval:      100 * time.Millisecond,
+		streamKeepaliveInterval: 15 * time.Second,
 	}, nil
 }
 
@@ -97,6 +103,22 @@ func (s *Server) SetDoctor(reporter DoctorReporter) error {
 		return errors.New("API doctor is required")
 	}
 	s.doctor = reporter
+	return nil
+}
+
+// SetStreams installs the complete event and log streaming capability before
+// the endpoint is published. Configuring the pair atomically prevents a daemon
+// from advertising only half of the public streaming contract.
+func (s *Server) SetStreams(services StreamServices) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API streams can only be set before start")
+	}
+	if services.Events == nil || services.Logs == nil {
+		return errors.New("API event and log sources are required")
+	}
+	s.streams = &services
 	return nil
 }
 
@@ -265,6 +287,15 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 				Message: "Supported versions: v1.",
 			}},
 		})
+		return
+	}
+
+	if path.Clean(request.URL.Path) == "/api/v1/events" {
+		s.serveEvents(response, request, requestID)
+		return
+	}
+	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/logs/") {
+		s.serveLog(response, request, requestID)
 		return
 	}
 

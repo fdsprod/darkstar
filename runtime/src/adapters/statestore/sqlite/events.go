@@ -144,6 +144,17 @@ func (d *Database) EventsAfter(ctx context.Context, position uint64, limit int) 
 	return scanEvents(rows)
 }
 
+// EventBounds returns the inclusive range retained by the authoritative event
+// log. The MVP never compacts events, but exposing the range keeps replay
+// behavior explicit when retention is introduced later.
+func (d *Database) EventBounds(ctx context.Context) (statestore.EventBounds, error) {
+	var oldest, latest uint64
+	if err := d.sql.QueryRowContext(ctx, `SELECT COALESCE(MIN(global_position), 0), COALESCE(MAX(global_position), 0) FROM events`).Scan(&oldest, &latest); err != nil {
+		return statestore.EventBounds{}, fmt.Errorf("query event bounds: %w", err)
+	}
+	return statestore.EventBounds{Oldest: oldest, Latest: latest}, nil
+}
+
 // Run returns the current run projection.
 func (d *Database) Run(ctx context.Context, id string) (statestore.RunProjection, error) {
 	projection, err := readRunProjection(ctx, d.sql, id)

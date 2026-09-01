@@ -54,6 +54,19 @@ entire diagnostic. The optional absolute `projectRoot` query selects the Git and
 project-configuration context; the CLI always supplies its current directory so
 a persistent per-user daemon does not report a repository left over from startup.
 
+`GET /api/v1/events` is an authenticated Server-Sent Events feed over the
+authoritative global event sequence. Each message ID is its decimal global
+position, `Last-Event-ID` resumes strictly after that position, and live commits
+arrive on the same connection. Clients deduplicate by message ID across reconnects;
+keepalives are comments and do not advance the cursor. A position outside retained
+history fails explicitly instead of silently restarting from the beginning.
+
+`GET /api/v1/logs/{reference}` reads append-only logs through opaque references.
+The `after` byte cursor and bounded `limit` query return raw bytes plus
+`X-Darkstar-Log-Next-Offset`, `X-Darkstar-Log-Size`, and
+`X-Darkstar-Log-Complete`. Following clients request successive offsets; the API
+never accepts a filesystem path or returns an unbounded log body.
+
 The CLI client performs this discovery and negotiation once per finite command.
 For missing or unreachable endpoint state it idempotently autostarts the daemon,
 then performs one fresh discovery attempt. It never replays an application
