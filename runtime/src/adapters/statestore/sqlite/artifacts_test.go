@@ -133,6 +133,10 @@ func TestArtifactDigestDeduplicatesStorageWithoutCollapsingIdentity(t *testing.T
 	if left.BlobDigest != right.BlobDigest || left.Locator != right.Locator || left.ArtifactID == right.ArtifactID {
 		t.Fatalf("equal bytes did not retain distinct identities: left %#v right %#v", left, right)
 	}
+	duplicates, err := database.VersionsByDigest(ctx, digest)
+	if err != nil || len(duplicates) != 2 || duplicates[0].ArtifactID != left.ArtifactID || duplicates[1].ArtifactID != right.ArtifactID {
+		t.Fatalf("VersionsByDigest() = %#v, %v", duplicates, err)
+	}
 }
 
 func artifactRequest(artifactID, key, digest string) artifactregistry.RegisterRequest {

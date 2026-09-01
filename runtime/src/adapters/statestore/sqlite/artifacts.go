@@ -121,7 +121,20 @@ func (d *Database) LatestVersion(ctx context.Context, artifactID string) (artifa
 
 // Versions returns every version in deterministic ascending order.
 func (d *Database) Versions(ctx context.Context, artifactID string) ([]artifactregistry.ArtifactVersion, error) {
-	rows, err := d.sql.QueryContext(ctx, artifactVersionSelect+` WHERE artifact_id = ? ORDER BY version`, artifactID)
+	return d.queryArtifactVersions(ctx, artifactVersionSelect+` WHERE artifact_id = ? ORDER BY version`, artifactID)
+}
+
+// VersionsByDigest returns exact versions sharing immutable bytes. Digest
+// equality never collapses their independent artifact identities.
+func (d *Database) VersionsByDigest(ctx context.Context, digest string) ([]artifactregistry.ArtifactVersion, error) {
+	if !artifactDigestPattern.MatchString(digest) {
+		return nil, errors.New("artifact digest must be 64 lowercase hexadecimal characters")
+	}
+	return d.queryArtifactVersions(ctx, artifactVersionSelect+` WHERE blob_digest = ? ORDER BY created_at, artifact_id, version`, digest)
+}
+
+func (d *Database) queryArtifactVersions(ctx context.Context, statement string, args ...any) ([]artifactregistry.ArtifactVersion, error) {
+	rows, err := d.sql.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list artifact versions: %w", err)
 	}
