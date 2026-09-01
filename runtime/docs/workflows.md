@@ -28,6 +28,14 @@ frozen capability view can additionally verify each explicitly required reasonin
 skill and tool; skill and tool namespaces are separate, so one cannot silently
 satisfy the other.
 
+At execution time, predicates receive one immutable snapshot containing candidate
+outputs, bound node inputs, and frozen run inputs. The evaluator supports only the
+typed `v1alpha1` expression tree; it distinguishes missing values from present JSON
+`null`, performs exact numeric comparisons without floating-point coercion, and
+evaluates logical arguments in authored order without short-circuiting error checks.
+The first failing operand returns `RUN_PREDICATE_INVALID` at its stable workflow
+JSON Pointer.
+
 Installed workflow versions are keyed by `(metadata.name, metadata.version)` and
 cannot be updated or deleted. Reinstalling the same canonical bytes is idempotent;
 different bytes at the same key fail with a version conflict and require a new
