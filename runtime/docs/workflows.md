@@ -18,6 +18,16 @@ unknown workflow fields, and documents larger than 1 MiB. Installation converts 
 validated document to canonical JSON, sorts object keys at every depth, and uses
 the lowercase SHA-256 digest of those bytes as its content identity.
 
+Before canonicalization or installation, static validation resolves every node,
+transition, binding, validator, and predicate reference; checks binding and
+comparison types; proves entry reachability and the default terminal boundary;
+verifies join declarations and directly provable join impossibilities; and removes
+bounded transitions before checking that the remaining graph is acyclic. Validation
+returns all findings in stable JSON Pointer, code, and detail order. Callers with a
+frozen capability view can additionally verify each explicitly required reasoning
+skill and tool; skill and tool namespaces are separate, so one cannot silently
+satisfy the other.
+
 Installed workflow versions are keyed by `(metadata.name, metadata.version)` and
 cannot be updated or deleted. Reinstalling the same canonical bytes is idempotent;
 different bytes at the same key fail with a version conflict and require a new

@@ -55,6 +55,9 @@ func Canonicalize(content []byte) (Document, json.RawMessage, string, error) {
 	if err != nil {
 		return Document{}, nil, "", err
 	}
+	if validationErrors := Validate(document); len(validationErrors) != 0 {
+		return Document{}, nil, "", validationErrors
+	}
 	typedJSON, err := json.Marshal(document)
 	if err != nil {
 		return Document{}, nil, "", fmt.Errorf("canonicalize workflow: %w", err)
