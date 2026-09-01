@@ -113,6 +113,50 @@ type RunProjection struct {
 	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
+// AttemptStatus is the closed set of persisted provider-attempt states.
+type AttemptStatus string
+
+const (
+	AttemptStarting          AttemptStatus = "starting"
+	AttemptRunning           AttemptStatus = "running"
+	AttemptCompleted         AttemptStatus = "completed"
+	AttemptFailed            AttemptStatus = "failed"
+	AttemptCancelled         AttemptStatus = "cancelled"
+	AttemptInterrupted       AttemptStatus = "interrupted"
+	AttemptReconcileRequired AttemptStatus = "reconcile_required"
+)
+
+// Terminal reports whether no provider work remains for this attempt.
+func (status AttemptStatus) Terminal() bool {
+	switch status {
+	case AttemptCompleted, AttemptFailed, AttemptCancelled, AttemptInterrupted, AttemptReconcileRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// AttemptProjection is the rebuildable recovery and query representation of
+// one provider attempt. Provider identity and LastSequence are the minimum
+// durable cursor needed to resume without replaying already-recorded effects.
+type AttemptProjection struct {
+	AttemptID          string        `json:"id"`
+	RunID              string        `json:"runId"`
+	NodeID             string        `json:"nodeId"`
+	Scenario           string        `json:"scenario"`
+	Provider           string        `json:"provider"`
+	Status             AttemptStatus `json:"status"`
+	ProviderThreadID   string        `json:"providerThreadId,omitempty"`
+	ProviderTurnID     string        `json:"providerTurnId,omitempty"`
+	ProcessOwnerID     string        `json:"processOwnerId,omitempty"`
+	LastSequence       uint64        `json:"lastSequence"`
+	LogReference       string        `json:"logReference,omitempty"`
+	ResourceVersion    uint64        `json:"resourceVersion"`
+	LastGlobalPosition uint64        `json:"lastGlobalPosition"`
+	CreatedAt          time.Time     `json:"createdAt"`
+	UpdatedAt          time.Time     `json:"updatedAt"`
+}
+
 // CommandEvidence is the durable, replay-safe evidence for one command. The
 // request itself is represented by its digest; response JSON is redacted again
 // by the export boundary before it leaves the daemon.
@@ -127,6 +171,25 @@ type CommandEvidence struct {
 	LastEventPosition  *uint64         `json:"lastEventPosition,omitempty"`
 	CreatedAt          time.Time       `json:"createdAt"`
 	CompletedAt        *time.Time      `json:"completedAt,omitempty"`
+}
+
+// BeginCommandRequest identifies one replay-safe public command.
+type BeginCommandRequest struct {
+	Scope          string
+	IdempotencyKey string
+	RequestDigest  string
+	CreatedAt      time.Time
+}
+
+// CompleteCommandRequest closes one pending command with its stable response.
+type CompleteCommandRequest struct {
+	Scope              string
+	IdempotencyKey     string
+	ResponseStatus     int
+	Response           json.RawMessage
+	FirstEventPosition *uint64
+	LastEventPosition  *uint64
+	CompletedAt        time.Time
 }
 
 // RunEvidence is one transactionally consistent source snapshot for a run
@@ -279,7 +342,12 @@ type Store interface {
 	EventsAfter(context.Context, uint64, int) ([]Event, error)
 	EventBounds(context.Context) (EventBounds, error)
 	Run(context.Context, string) (RunProjection, error)
+	Attempt(context.Context, string) (AttemptProjection, error)
+	AttemptsForRun(context.Context, string) ([]AttemptProjection, error)
+	ActiveAttempts(context.Context) ([]AttemptProjection, error)
 	RunEvidence(context.Context, string) (RunEvidence, error)
+	BeginCommand(context.Context, BeginCommandRequest) (CommandEvidence, bool, error)
+	CompleteCommand(context.Context, CompleteCommandRequest) (CommandEvidence, error)
 	Approval(context.Context, string) (ApprovalProjection, error)
 	RebuildProjections(context.Context) error
 	AcquireLease(context.Context, AcquireLeaseRequest) (Lease, error)

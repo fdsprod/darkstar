@@ -3,6 +3,8 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,11 +22,13 @@ import (
 	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
 	"github.com/fdsprod/darkstar/runtime/src/core/health"
 	"github.com/fdsprod/darkstar/runtime/src/core/recovery"
+	"github.com/fdsprod/darkstar/runtime/src/core/runexecution"
 	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
 	"github.com/fdsprod/darkstar/runtime/src/daemon"
 	"github.com/fdsprod/darkstar/runtime/src/doctor"
 	"github.com/fdsprod/darkstar/runtime/src/platform/windows"
 	platformport "github.com/fdsprod/darkstar/runtime/src/ports/platform"
+	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
 )
 
 const usage = `DARKSTAR
@@ -37,13 +41,16 @@ Commands:
   daemon     Run and control the per-user daemon
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
-  run        Inspect and export runs
+  run        Start, inspect, watch, and export runs
   version    Show version information
 
 API commands:
   api status [--json]      Discover or autostart the daemon and verify its API
 
 Run commands:
+  run start --scenario <fake-success|fake-restart> [--idempotency-key <key>] [--json]
+  run show <run-id> [--json]
+  run watch <run-id> [--json]
   run export <run-id> --output <file> [--json]
 
 Daemon commands:
@@ -174,6 +181,7 @@ type daemonAPIService struct {
 	paths       platformport.Paths
 	projectRoot string
 	database    *sqlite.Database
+	executions  *runexecution.Service
 }
 
 func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) error {
@@ -233,33 +241,65 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
-	exporter, err := runexport.New(database, logs)
+	executions, err := runexecution.New(ctx, database, runexecution.ProviderFactoryFunc(newFakeRunProvider), logs)
 	if err != nil {
 		_ = database.Close()
 		service.database = nil
 		return err
 	}
-	if err := service.server.SetRunExporter(exporter); err != nil {
+	service.executions = executions
+	if err := executions.ResumeActive(ctx); err != nil {
+		_ = executions.Close()
 		_ = database.Close()
 		service.database = nil
+		service.executions = nil
+		return fmt.Errorf("resume active runs: %w", err)
+	}
+	if err := service.server.SetRuns(executions); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		service.executions = nil
+		return err
+	}
+	exporter, err := runexport.New(database, logs)
+	if err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		service.executions = nil
+		return err
+	}
+	if err := service.server.SetRunExporter(exporter); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		service.executions = nil
 		return err
 	}
 	if err := service.server.Start(ctx, state.Process.PID, state.Process.StartedAt); err != nil {
+		_ = executions.Close()
 		_ = database.Close()
 		service.database = nil
+		service.executions = nil
 		return err
 	}
 	return nil
 }
 
 func (service *daemonAPIService) Close() error {
+	var executionErr error
+	if service.executions != nil {
+		executionErr = service.executions.Close()
+		service.executions = nil
+	}
 	serverErr := service.server.Close()
 	var databaseErr error
 	if service.database != nil {
 		databaseErr = service.database.Close()
 		service.database = nil
 	}
-	return errors.Join(serverErr, databaseErr)
+	return errors.Join(executionErr, serverErr, databaseErr)
 }
 
 type daemonRunEvent struct {
@@ -331,7 +371,7 @@ func newDaemonManager(ctx context.Context) (*daemon.Manager, error) {
 	return daemon.NewManager(paths.Runtime, windows.NewDaemonHost())
 }
 
-func resolveApplicationPaths(ctx context.Context) (platformport.Paths, error) {
+var resolveApplicationPaths = func(ctx context.Context) (platformport.Paths, error) {
 	return windows.NewPathResolver().ResolvePaths(ctx, platformport.PathRequest{ApplicationName: "DARKSTAR"})
 }
 
@@ -616,10 +656,80 @@ type runExportOutput struct {
 }
 
 func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
-	if len(args) != 4 || args[0] != "export" || args[2] != "--output" || args[1] == "" || args[3] == "" {
-		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "expected 'run export <run-id> --output <file>'", false, ExitInvalidInput)
+	if len(args) == 0 {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "a run command is required (start, show, watch, export)", false, ExitInvalidInput)
 	}
-	runID, outputPath := args[1], args[3]
+	command := "darkstar run " + args[0]
+	switch args[0] {
+	case "start":
+		if (len(args) != 3 && len(args) != 5) || args[1] != "--scenario" || args[2] == "" || (len(args) == 5 && (args[3] != "--idempotency-key" || args[4] == "")) {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", "expected 'run start --scenario <fake-success|fake-restart> [--idempotency-key <key>]'", false, ExitInvalidInput)
+		}
+		key := ""
+		if len(args) == 5 {
+			key = args[4]
+		} else {
+			key = newIdempotencyKey()
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		var view runexecution.View
+		if err := session.DoJSON(context.Background(), http.MethodPost, "runs", runexecution.StartRequest{Scenario: args[2]}, &view, clientapi.WithHeader("Idempotency-Key", key)); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeRunView(view, jsonOutput, stdout, stderr, command, "Started")
+	case "show":
+		if len(args) != 2 || !runIdentityPattern.MatchString(args[1]) {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", "expected 'run show <run-id>' with a canonical run_ ULID", false, ExitInvalidInput)
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		var view runexecution.View
+		if err := session.DoJSON(context.Background(), http.MethodGet, "runs/"+args[1], nil, &view); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeRunView(view, jsonOutput, stdout, stderr, command, "Run")
+	case "watch":
+		if len(args) != 2 || !runIdentityPattern.MatchString(args[1]) {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", "expected 'run watch <run-id>' with a canonical run_ ULID", false, ExitInvalidInput)
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		runID := args[1]
+		err := session.StreamEvents(context.Background(), 0, func(event statestore.Event) bool {
+			if event.CorrelationID != runID {
+				return true
+			}
+			if !jsonOutput {
+				fmt.Fprintf(stdout, "%d %s\n", event.GlobalPosition, event.Kind)
+			}
+			return event.Kind != "run.completed" && event.Kind != "run.failed" && event.Kind != "run.cancelled" && event.Kind != "run.reconcile_required"
+		})
+		if err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		var view runexecution.View
+		if err := session.DoJSON(context.Background(), http.MethodGet, "runs/"+runID, nil, &view); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeRunView(view, jsonOutput, stdout, stderr, command, "Completed")
+	case "export":
+		if len(args) != 4 || args[2] != "--output" || args[1] == "" || args[3] == "" {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", "expected 'run export <run-id> --output <file>'", false, ExitInvalidInput)
+		}
+		return runExport(args[1], args[3], jsonOutput, stdout, stderr)
+	default:
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", fmt.Sprintf("unknown run command %q", args[0]), false, ExitInvalidInput)
+	}
+}
+
+func runExport(runID, outputPath string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if !runIdentityPattern.MatchString(runID) {
 		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run export", "ARGUMENT_INVALID", "run ID must be a canonical run_ ULID", false, ExitInvalidInput)
 	}
@@ -627,23 +737,9 @@ func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if err != nil {
 		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run export", "ARGUMENT_INVALID", "resolve output path: "+err.Error(), false, ExitInvalidInput)
 	}
-	manager, err := newDaemonManager(context.Background())
-	if err != nil {
-		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run export", "DAEMON_RUNTIME_UNAVAILABLE", err.Error(), true, ExitTransientFailure)
-	}
-	client, err := clientapi.New(clientapi.Config{
-		RuntimeDirectory: manager.RuntimeDirectory(),
-		Autostart: func(ctx context.Context) error {
-			_, startErr := startDaemonProcess(ctx, manager)
-			return startErr
-		},
-	})
-	if err != nil {
-		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run export", "INTERNAL_INVARIANT_VIOLATION", err.Error(), false, ExitInvariantViolation)
-	}
-	session, err := client.Connect(context.Background())
-	if err != nil {
-		return writeClientError(stdout, stderr, jsonOutput, "darkstar run export", err)
+	session, code := connectRunSession("darkstar run export", jsonOutput, stdout, stderr)
+	if session == nil {
+		return code
 	}
 	content, err := session.Download(context.Background(), "runs/"+runID+"/export")
 	if err != nil {
@@ -661,6 +757,49 @@ func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "Exported %s to %s (%d bytes).\n", runID, absoluteOutput, len(content))
 	}
 	return int(ExitSuccess)
+}
+
+func connectRunSession(command string, jsonOutput bool, stdout, stderr io.Writer) (*clientapi.Session, int) {
+	manager, err := newDaemonManager(context.Background())
+	if err != nil {
+		return nil, writeCommandError(stdout, stderr, jsonOutput, command, "DAEMON_RUNTIME_UNAVAILABLE", err.Error(), true, ExitTransientFailure)
+	}
+	client, err := clientapi.New(clientapi.Config{
+		RuntimeDirectory: manager.RuntimeDirectory(),
+		Autostart: func(ctx context.Context) error {
+			_, startErr := startDaemonProcess(ctx, manager)
+			return startErr
+		},
+	})
+	if err != nil {
+		return nil, writeCommandError(stdout, stderr, jsonOutput, command, "INTERNAL_INVARIANT_VIOLATION", err.Error(), false, ExitInvariantViolation)
+	}
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		return nil, writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	return session, int(ExitSuccess)
+}
+
+func writeRunView(view runexecution.View, jsonOutput bool, stdout, stderr io.Writer, command, verb string) int {
+	if jsonOutput {
+		if err := writeJSON(stdout, view); err != nil {
+			return writeCommandError(stdout, stderr, false, command, "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
+		}
+	} else if len(view.Attempts) > 0 {
+		fmt.Fprintf(stdout, "%s %s: %s (attempt %s: %s).\n", verb, view.Run.RunID, view.Run.Status, view.Attempts[0].AttemptID, view.Attempts[0].Status)
+	} else {
+		fmt.Fprintf(stdout, "%s %s: %s.\n", verb, view.Run.RunID, view.Run.Status)
+	}
+	return int(ExitSuccess)
+}
+
+func newIdempotencyKey() string {
+	value := make([]byte, 16)
+	if _, err := rand.Read(value); err != nil {
+		panic("cryptographic idempotency-key generation failed: " + err.Error())
+	}
+	return "cli-" + hex.EncodeToString(value)
 }
 
 func writeNewFileAtomically(destination string, content []byte) (err error) {

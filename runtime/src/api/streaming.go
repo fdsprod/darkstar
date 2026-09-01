@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
@@ -53,7 +54,10 @@ type LogChunk = runexport.LogChunk
 
 // DirectoryLogs maps opaque single-segment references to protected log files.
 // References never contain path separators and are not interpreted as paths.
-type DirectoryLogs struct{ root string }
+type DirectoryLogs struct {
+	root string
+	mu   sync.Mutex
+}
 
 // NewDirectoryLogs constructs a bounded log source rooted at an absolute path.
 func NewDirectoryLogs(root string) (*DirectoryLogs, error) {
@@ -61,6 +65,29 @@ func NewDirectoryLogs(root string) (*DirectoryLogs, error) {
 		return nil, fmt.Errorf("log directory must be absolute: %q", root)
 	}
 	return &DirectoryLogs{root: filepath.Clean(root)}, nil
+}
+
+// AppendLog appends evidence to one protected opaque log reference.
+func (logs *DirectoryLogs) AppendLog(ctx context.Context, reference string, content []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !logReferencePattern.MatchString(reference) {
+		return ErrLogNotFound
+	}
+	logs.mu.Lock()
+	defer logs.mu.Unlock()
+	if err := os.MkdirAll(logs.root, 0o700); err != nil {
+		return fmt.Errorf("create log directory: %w", err)
+	}
+	file, err := os.OpenFile(filepath.Join(logs.root, reference), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("open log reference for append: %w", err)
+	}
+	if _, err = file.Write(content); err == nil {
+		err = file.Sync()
+	}
+	return errors.Join(err, file.Close())
 }
 
 // ReadLog reads at most limit bytes beginning at offset.

@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,10 +14,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	localapi "github.com/fdsprod/darkstar/runtime/src/api"
+	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
 )
 
 const (
@@ -66,6 +69,14 @@ type APIError struct {
 	Retryable       bool          `json:"retryable"`
 	ResourceVersion *int64        `json:"resourceVersion,omitempty"`
 	Details         []ErrorDetail `json:"details,omitempty"`
+}
+
+// RequestOption adds non-secret request metadata required by a command.
+type RequestOption func(*http.Request)
+
+// WithHeader adds one HTTP header to a JSON request.
+func WithHeader(name, value string) RequestOption {
+	return func(request *http.Request) { request.Header.Set(name, value) }
 }
 
 func (problem *APIError) Error() string {
@@ -207,7 +218,7 @@ func autostartCandidate(err error) bool {
 
 // DoJSON sends one authenticated API request within the negotiated version.
 // Resource is relative to /api/<version>/ and cannot escape that prefix.
-func (session *Session) DoJSON(ctx context.Context, method, resource string, requestBody, responseBody any) error {
+func (session *Session) DoJSON(ctx context.Context, method, resource string, requestBody, responseBody any, options ...RequestOption) error {
 	resourceURL, err := session.resourceURL(resource)
 	if err != nil {
 		return &Failure{Kind: FailureProtocol, Op: "build API request", Err: err}
@@ -228,6 +239,11 @@ func (session *Session) DoJSON(ctx context.Context, method, resource string, req
 	request.Header.Set("Accept", "application/json")
 	if requestBody != nil {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	for _, option := range options {
+		if option != nil {
+			option(request)
+		}
 	}
 
 	response, err := session.client.http.Do(request)
@@ -299,6 +315,63 @@ func (session *Session) Download(ctx context.Context, resource string) ([]byte, 
 		return nil, &Failure{Kind: FailureProtocol, Op: "validate daemon API response", Err: fmt.Errorf("unexpected Content-Type %q", contentType)}
 	}
 	return content, nil
+}
+
+// StreamEvents replays the authenticated SSE event stream after one durable
+// position. Returning false from consume closes the stream successfully.
+func (session *Session) StreamEvents(ctx context.Context, after uint64, consume func(statestore.Event) bool) error {
+	if consume == nil {
+		return &Failure{Kind: FailureProtocol, Op: "stream daemon events", Err: errors.New("event consumer is required")}
+	}
+	resourceURL, err := session.resourceURL("events")
+	if err != nil {
+		return &Failure{Kind: FailureProtocol, Op: "build event stream request", Err: err}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
+	if err != nil {
+		return &Failure{Kind: FailureProtocol, Op: "build event stream request", Err: err}
+	}
+	request.Header.Set("Authorization", session.endpoint.AuthorizationHeader())
+	request.Header.Set("Accept", "text/event-stream")
+	request.Header.Set("Last-Event-ID", strconv.FormatUint(after, 10))
+	streamClient := *session.client.http
+	streamClient.Timeout = 0
+	response, err := streamClient.Do(request)
+	if err != nil {
+		return &Failure{Kind: FailureUnavailable, Op: "open daemon event stream", Err: err}
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		content, _ := io.ReadAll(io.LimitReader(response.Body, maxResponseSize+1))
+		var problem APIError
+		if json.Unmarshal(content, &problem) == nil && problem.SchemaVersion == 1 && problem.Code != "" {
+			problem.HTTPStatus = response.StatusCode
+			return &problem
+		}
+		return &Failure{Kind: FailureProtocol, Op: "open daemon event stream", Err: fmt.Errorf("HTTP %d returned an invalid error envelope", response.StatusCode)}
+	}
+	if !strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
+		return &Failure{Kind: FailureProtocol, Op: "validate daemon event stream", Err: fmt.Errorf("unexpected Content-Type %q", response.Header.Get("Content-Type"))}
+	}
+	scanner := bufio.NewScanner(response.Body)
+	scanner.Buffer(make([]byte, 64<<10), maxResponseSize)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var event statestore.Event
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil || event.GlobalPosition == 0 || event.Kind == "" {
+			return &Failure{Kind: FailureProtocol, Op: "decode daemon event", Err: errors.New("invalid event envelope")}
+		}
+		if !consume(event) {
+			return nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return &Failure{Kind: FailureUnavailable, Op: "read daemon event stream", Err: err}
+	}
+	return &Failure{Kind: FailureUnavailable, Op: "read daemon event stream", Err: io.ErrUnexpectedEOF}
 }
 
 func (session *Session) resourceURL(resource string) (string, error) {

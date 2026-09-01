@@ -67,6 +67,16 @@ The `after` byte cursor and bounded `limit` query return raw bytes plus
 `X-Darkstar-Log-Complete`. Following clients request successive offsets; the API
 never accepts a filesystem path or returns an unbounded log body.
 
+`POST /api/v1/runs` accepts the closed `fake-success` and `fake-restart`
+scenarios plus a required `Idempotency-Key`. It returns HTTP 202 only after the
+run and attempt creation events and command response evidence are durable;
+provider execution then belongs to the daemon lifetime. `GET
+/api/v1/runs/{runId}` returns the rebuildable run projection and its attempt
+projections. On startup, an active fake attempt is reconstructed from its
+scenario, provider identity, and last sequence and resumes strictly after the
+last durable event, so provider events and terminal transitions are not
+duplicated.
+
 `GET /api/v1/runs/{runId}/export` returns a finite `application/zip` support
 bundle. It contains `run.json`, correlated `events.jsonl`, `commands.json`, an
 `artifacts/index.json`, and every discovered log that remains locally available.

@@ -10,7 +10,7 @@ import (
 )
 
 // ReducerVersion changes whenever replay semantics change incompatibly.
-const ReducerVersion = "1"
+const ReducerVersion = "2"
 
 // UnsupportedSchemaVersionError means replay cannot safely interpret an event.
 type UnsupportedSchemaVersionError struct {
@@ -75,6 +75,94 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 		next.Status = statestore.RunCancelled
 	case "run.reconcile_required":
 		next.Status = statestore.RunReconcileRequired
+	}
+	next.ResourceVersion = event.AggregateRevision
+	next.LastGlobalPosition = event.GlobalPosition
+	next.UpdatedAt = event.RecordedAt
+	return next, true, nil
+}
+
+// ReduceAttempt applies an event to an attempt projection.
+func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event) (statestore.AttemptProjection, bool, error) {
+	if event.SchemaVersion != 1 {
+		return statestore.AttemptProjection{}, false, &UnsupportedSchemaVersionError{EventID: event.ID, Version: event.SchemaVersion}
+	}
+	if event.AggregateType != statestore.AggregateAttempt {
+		return statestore.AttemptProjection{}, false, nil
+	}
+	if current == nil {
+		if event.Kind != "attempt.created" {
+			return statestore.AttemptProjection{}, true, fmt.Errorf("attempt %s first event is %s, want attempt.created", event.AggregateID, event.Kind)
+		}
+		var data struct {
+			RunID    string `json:"runId"`
+			NodeID   string `json:"nodeId"`
+			Scenario string `json:"scenario"`
+			Provider string `json:"provider"`
+			LogRef   string `json:"logReference"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		if data.RunID == "" || data.NodeID == "" || data.Scenario == "" || data.Provider == "" || data.LogRef == "" {
+			return statestore.AttemptProjection{}, true, errors.New("attempt.created requires runId, nodeId, scenario, provider, and logReference")
+		}
+		return statestore.AttemptProjection{
+			AttemptID: event.AggregateID, RunID: data.RunID, NodeID: data.NodeID,
+			Scenario: data.Scenario, Provider: data.Provider, Status: statestore.AttemptStarting,
+			LogReference: data.LogRef, ResourceVersion: event.AggregateRevision,
+			LastGlobalPosition: event.GlobalPosition, CreatedAt: event.RecordedAt, UpdatedAt: event.RecordedAt,
+		}, true, nil
+	}
+	if current.AttemptID != event.AggregateID {
+		return statestore.AttemptProjection{}, true, fmt.Errorf("attempt projection %s cannot apply event for %s", current.AttemptID, event.AggregateID)
+	}
+	if event.AggregateRevision != current.ResourceVersion+1 {
+		return statestore.AttemptProjection{}, true, fmt.Errorf("attempt %s projection revision %d cannot apply revision %d", current.AttemptID, current.ResourceVersion, event.AggregateRevision)
+	}
+	if current.Status.Terminal() {
+		return statestore.AttemptProjection{}, true, fmt.Errorf("attempt %s is already terminal in state %s", current.AttemptID, current.Status)
+	}
+
+	next := *current
+	switch event.Kind {
+	case "attempt.started", "attempt.resumed":
+		var data struct {
+			ProviderThreadID string `json:"providerThreadId"`
+			ProviderTurnID   string `json:"providerTurnId"`
+			ProcessOwnerID   string `json:"processOwnerId"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		if data.ProviderThreadID == "" || data.ProviderTurnID == "" || data.ProcessOwnerID == "" {
+			return statestore.AttemptProjection{}, true, fmt.Errorf("%s requires complete provider recovery identity", event.Kind)
+		}
+		next.Status = statestore.AttemptRunning
+		next.ProviderThreadID, next.ProviderTurnID, next.ProcessOwnerID = data.ProviderThreadID, data.ProviderTurnID, data.ProcessOwnerID
+	case "attempt.provider_event":
+		var data struct {
+			Sequence uint64 `json:"sequence"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		if next.Status != statestore.AttemptRunning || data.Sequence <= next.LastSequence {
+			return statestore.AttemptProjection{}, true, fmt.Errorf("attempt %s provider sequence %d does not advance %d while running", current.AttemptID, data.Sequence, next.LastSequence)
+		}
+		next.LastSequence = data.Sequence
+	case "attempt.completed":
+		next.Status = statestore.AttemptCompleted
+	case "attempt.failed":
+		next.Status = statestore.AttemptFailed
+	case "attempt.cancelled":
+		next.Status = statestore.AttemptCancelled
+	case "attempt.interrupted":
+		next.Status = statestore.AttemptInterrupted
+	case "attempt.reconcile_required":
+		next.Status = statestore.AttemptReconcileRequired
+	default:
+		return statestore.AttemptProjection{}, true, fmt.Errorf("unsupported attempt event kind %q", event.Kind)
 	}
 	next.ResourceVersion = event.AggregateRevision
 	next.LastGlobalPosition = event.GlobalPosition

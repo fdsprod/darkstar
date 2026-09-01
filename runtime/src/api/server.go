@@ -43,6 +43,7 @@ type Server struct {
 	doctor   DoctorReporter
 	streams  *StreamServices
 	exporter RunExporter
+	runs     RunService
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
@@ -134,6 +135,20 @@ func (s *Server) SetRunExporter(exporter RunExporter) error {
 		return errors.New("API run exporter is required")
 	}
 	s.exporter = exporter
+	return nil
+}
+
+// SetRuns installs the persisted run command/query capability before Start.
+func (s *Server) SetRuns(runs RunService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API run service can only be set before start")
+	}
+	if runs == nil {
+		return errors.New("API run service is required")
+	}
+	s.runs = runs
 	return nil
 }
 
@@ -315,6 +330,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/runs/") && strings.HasSuffix(path.Clean(request.URL.Path), "/export") {
 		s.serveRunExport(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/runs" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/runs/") {
+		s.serveRuns(response, request, requestID)
 		return
 	}
 

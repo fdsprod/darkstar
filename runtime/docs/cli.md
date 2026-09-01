@@ -17,6 +17,15 @@ code, and required action. `--json` returns the versioned report unchanged. A
 degraded or unhealthy report uses exit class 7 because the diagnostic completed
 successfully with findings; transport failures retain their ordinary exit class.
 
+`darkstar run start --scenario fake-success` creates the M1 deterministic
+fake-provider run through `POST /api/v1/runs`. `fake-restart` is the recovery
+acceptance scenario: it persists its first provider event, waits for a daemon
+restart, and resumes from the durable sequence cursor. `--idempotency-key <key>`
+is optional for interactive use and lets automation safely repeat the same start.
+`darkstar run show <run-id>` reads the persisted run and attempt projections;
+`darkstar run watch <run-id>` replays the authenticated event stream until the
+run reaches a terminal event, then prints the final persisted projection.
+
 `darkstar run export <run-id> --output <file>` downloads the daemon-created ZIP
 without duplicating export or redaction logic in the client. The CLI resolves the
 output to an absolute path, writes a protected temporary file in the destination
