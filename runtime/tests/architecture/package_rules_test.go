@@ -18,6 +18,7 @@ func TestRequiredPortPackagesExist(t *testing.T) {
 
 	root := runtimeRoot(t)
 	for _, name := range []string{
+		"artifactregistry",
 		"artifactstore",
 		"contentprocessor",
 		"delivery",

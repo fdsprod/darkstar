@@ -27,10 +27,13 @@ artifact revision and can affect only a later attempt or an explicit replan.
 
 ## 2. Stable records
 
-An `Artifact` records an opaque ID, source kind, source name, declared media type,
+An `Artifact` has an opaque stable ID and one or more monotonically numbered,
+immutable versions. Each version records source kind and name, declared and
 detected media type, byte length, SHA-256 digest, storage locator, sensitivity,
-trust (`untrusted` in the MVP), creator, creation time, and lifecycle status.
-Names and media types are display hints, not paths or parser authority.
+trust (`untrusted` in the MVP), creator, producer name/version, semantic roles,
+tags, string metadata, creation time, lifecycle status, and provenance.
+Names, tags, roles, metadata, and media types are display or selection hints,
+not paths, parser authority, or authorization.
 
 A `Representation` records its own ID and digest; parent artifact ID; kind
 (`text`, `structured`, `table`, `image`, `preview`, or `descriptor`); processor
@@ -42,8 +45,9 @@ workflow/run/node/attempt input name with `required` or `optional` disposition.
 A `ContextManifest` freezes an ordered list of selected representation digests,
 omission reasons, limits, policy version, selection time, and aggregate digest.
 
-Two artifact records with the same digest may share one blob, but keep distinct
-source, audit, binding, and arrival records. Digest equality is not identity.
+Two artifact versions with the same digest may share one blob, but keep distinct
+source, audit, binding, and arrival records. Digest equality is not identity,
+and a registry reference always names an artifact ID plus an exact positive version.
 
 ## 3. Support matrix
 

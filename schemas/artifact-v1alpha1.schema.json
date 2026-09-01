@@ -19,6 +19,7 @@
         "kind": {"const": "artifact"},
         "schemaVersion": {"const": 1},
         "artifactId": {"$ref": "#/$defs/identifier"},
+        "version": {"type": "integer", "minimum": 1},
         "sourceKind": {"enum": ["file", "paste", "stdin", "generated", "external"]},
         "sourceName": {"type": "string"},
         "blobDigest": {"$ref": "#/$defs/digest"},
@@ -29,9 +30,22 @@
         "sensitivity": {"enum": ["unknown", "public", "internal", "sensitive", "secret"]},
         "trust": {"const": "untrusted"},
         "creator": {"type": "string", "minLength": 1},
+        "producer": {"$ref": "#/$defs/producer"},
+        "roles": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
+        "tags": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
+        "metadata": {"type": "object", "additionalProperties": {"type": "string"}},
         "status": {"enum": ["stored", "stored_uninspectable", "quarantined"]},
         "createdAt": {"type": "string", "format": "date-time"},
         "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1}
       }
     },
     "provenance": {

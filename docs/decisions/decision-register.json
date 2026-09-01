@@ -47,7 +47,7 @@
       "title": "Store immutable artifacts and freeze selected context",
       "document": "docs/architecture/artifacts/ARTIFACT_AND_CONTEXT_CONTRACT.md",
       "sourceIssue": {"id": "DAR-9", "url": "https://linear.app/darkstar-dev/issue/DAR-9"},
-      "affectedIssues": ["DS-021", "DS-025", "DS-070", "DS-074", "DS-075", "DS-077", "DS-135", "DS-193"],
+      "affectedIssues": ["DS-021", "DS-025", "DS-070", "DS-071", "DS-074", "DS-075", "DS-077", "DS-135", "DS-193"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -79,7 +79,7 @@
       "title": "Enforce the MVP threat model at every trust boundary",
       "document": "docs/architecture/security/THREAT_MODEL.md",
       "sourceIssue": {"id": "DAR-14", "url": "https://linear.app/darkstar-dev/issue/DAR-14"},
-      "affectedIssues": ["DS-080", "DS-114", "DS-190", "DS-191", "DS-192", "DS-193", "DS-200"],
+      "affectedIssues": ["DS-071", "DS-080", "DS-114", "DS-190", "DS-191", "DS-192", "DS-193", "DS-200"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     }
   ]

@@ -55,6 +55,8 @@ test("provider state combinations are encoded as tagged variants", () => {
 test("artifact provenance and context order have one source of truth", () => {
   const schema = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha1.schema.json"), "utf8"));
   assert.deepEqual(schema.$defs.provenance.oneOf.map((variant) => variant.properties.origin.const), ["attempt", "operation"]);
+  for (const field of ["version", "producer", "roles", "tags", "metadata"])
+    assert.ok(schema.$defs.artifact.properties[field], `artifact is missing ${field}`);
   assert.equal(schema.$defs.contextEntry.properties.order, undefined);
   assert.equal(schema.$defs.contextEntry.required.includes("order"), false);
 });
