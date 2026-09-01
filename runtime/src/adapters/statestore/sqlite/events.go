@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -37,6 +38,17 @@ type RevisionConflictError struct {
 
 func (e *RevisionConflictError) Error() string {
 	return fmt.Sprintf("aggregate %s revision conflict: expected %d, actual %d", e.AggregateID, e.Expected, e.Actual)
+}
+
+// IdempotencyConflictError reports reuse of an aggregate command identity for
+// a different transition. An exact retry returns the original committed event.
+type IdempotencyConflictError struct {
+	AggregateID string
+	CommandID   string
+}
+
+func (e *IdempotencyConflictError) Error() string {
+	return fmt.Sprintf("aggregate %s command %s conflicts with its committed transition", e.AggregateID, e.CommandID)
 }
 
 // NotFoundError reports a missing current-state projection.
@@ -79,6 +91,17 @@ func (d *Database) Append(ctx context.Context, pending ...statestore.PendingEven
 	recordedAt := d.now().UTC().Round(0)
 	committed = make([]statestore.Event, 0, len(pending))
 	for _, item := range pending {
+		existing, duplicate, readErr := readEventByCommand(ctx, tx, item.AggregateID, item.CommandID)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if duplicate {
+			if !sameTransitionCommand(existing, item) {
+				return nil, &IdempotencyConflictError{AggregateID: item.AggregateID, CommandID: item.CommandID}
+			}
+			committed = append(committed, existing)
+			continue
+		}
 		currentRevision, exists, readErr := readAggregateRevision(ctx, tx, item.AggregateID, item.AggregateType)
 		if readErr != nil {
 			err = readErr
@@ -172,6 +195,39 @@ func (d *Database) Run(ctx context.Context, id string) (statestore.RunProjection
 	return projection, nil
 }
 
+// Node returns the current state of one workflow node visit.
+func (d *Database) Node(ctx context.Context, id string) (statestore.NodeProjection, error) {
+	value, err := readNodeProjection(ctx, d.sql, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return statestore.NodeProjection{}, &NotFoundError{Kind: "node visit", ID: id}
+	}
+	if err != nil {
+		return statestore.NodeProjection{}, fmt.Errorf("read node projection: %w", err)
+	}
+	return value, nil
+}
+
+// NodesForRun returns node visits in stable creation order.
+func (d *Database) NodesForRun(ctx context.Context, runID string) ([]statestore.NodeProjection, error) {
+	rows, err := d.sql.QueryContext(ctx, nodeSelect+` WHERE run_id = ? ORDER BY created_at, visit_id`, runID)
+	if err != nil {
+		return nil, fmt.Errorf("query node projections: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var values []statestore.NodeProjection
+	for rows.Next() {
+		value, scanErr := scanNodeProjection(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate node projections: %w", err)
+	}
+	return values, nil
+}
+
 // Attempt returns the current provider-attempt projection.
 func (d *Database) Attempt(ctx context.Context, id string) (statestore.AttemptProjection, error) {
 	value, err := readAttemptProjection(ctx, d.sql, id)
@@ -191,7 +247,7 @@ func (d *Database) AttemptsForRun(ctx context.Context, runID string) ([]statesto
 
 // ActiveAttempts returns every non-terminal attempt that startup must resume.
 func (d *Database) ActiveAttempts(ctx context.Context) ([]statestore.AttemptProjection, error) {
-	return d.queryAttempts(ctx, ` WHERE status IN ('starting', 'running') ORDER BY created_at, attempt_id`)
+	return d.queryAttempts(ctx, ` WHERE status IN ('created', 'starting', 'running') ORDER BY created_at, attempt_id`)
 }
 
 func (d *Database) queryAttempts(ctx context.Context, suffix string, args ...any) ([]statestore.AttemptProjection, error) {
@@ -352,7 +408,7 @@ func (d *Database) RebuildProjections(ctx context.Context) (err error) {
 	if closeErr != nil {
 		return fmt.Errorf("close replay events: %w", closeErr)
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM run_projection; DELETE FROM attempt_projection; DELETE FROM approval_projection; DELETE FROM projection_checkpoints`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM attempt_projection; DELETE FROM approval_projection; DELETE FROM projection_checkpoints`); err != nil {
 		return fmt.Errorf("clear projections: %w", err)
 	}
 	for _, event := range events {
@@ -410,6 +466,42 @@ func validatePendingEvent(event statestore.PendingEvent) error {
 	return nil
 }
 
+func readEventByCommand(ctx context.Context, tx *sql.Tx, aggregateID, commandID string) (statestore.Event, bool, error) {
+	rows, err := tx.QueryContext(ctx, eventSelect+` WHERE aggregate_id = ? AND command_id = ?`, aggregateID, commandID)
+	if err != nil {
+		return statestore.Event{}, false, fmt.Errorf("read aggregate command %s/%s: %w", aggregateID, commandID, err)
+	}
+	events, scanErr := scanEvents(rows)
+	closeErr := rows.Close()
+	if scanErr != nil {
+		return statestore.Event{}, false, scanErr
+	}
+	if closeErr != nil {
+		return statestore.Event{}, false, fmt.Errorf("close aggregate command query: %w", closeErr)
+	}
+	if len(events) == 0 {
+		return statestore.Event{}, false, nil
+	}
+	return events[0], true, nil
+}
+
+func sameTransitionCommand(committed statestore.Event, pending statestore.PendingEvent) bool {
+	return committed.SchemaVersion == pending.SchemaVersion &&
+		committed.AggregateType == pending.AggregateType &&
+		committed.AggregateID == pending.AggregateID &&
+		committed.AggregateRevision == pending.ExpectedRevision+1 &&
+		committed.Kind == pending.Kind && committed.CorrelationID == pending.CorrelationID &&
+		sameOptionalString(committed.CausationID, pending.CausationID) && committed.CommandID == pending.CommandID &&
+		committed.Actor == pending.Actor && bytes.Equal(committed.Data, pending.Data) && bytes.Equal(committed.Metadata, pending.Metadata)
+}
+
+func sameOptionalString(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
 func readAggregateRevision(ctx context.Context, tx *sql.Tx, id string, wantType statestore.AggregateType) (uint64, bool, error) {
 	var revision uint64
 	var gotType statestore.AggregateType
@@ -462,6 +554,19 @@ func applyProjection(ctx context.Context, tx *sql.Tx, event statestore.Event) er
 			return err
 		}
 		return writeRunProjection(ctx, tx, next)
+	case statestore.AggregateVisit:
+		current, err := readNodeProjection(ctx, tx, event.AggregateID)
+		var existing *statestore.NodeProjection
+		if err == nil {
+			existing = &current
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		next, applies, err := projection.ReduceNode(existing, event)
+		if err != nil || !applies {
+			return err
+		}
+		return writeNodeProjection(ctx, tx, next)
 	case statestore.AggregateAttempt:
 		current, err := readAttemptProjection(ctx, tx, event.AggregateID)
 		var existing *statestore.AttemptProjection
@@ -491,6 +596,30 @@ func applyProjection(ctx context.Context, tx *sql.Tx, event statestore.Event) er
 	default:
 		return nil
 	}
+}
+
+const nodeSelect = `SELECT visit_id, run_id, node_id, status, resource_version,
+	last_global_position, created_at, updated_at FROM node_projection`
+
+type nodeRowScanner interface{ Scan(...any) error }
+
+func scanNodeProjection(row nodeRowScanner) (statestore.NodeProjection, error) {
+	var value statestore.NodeProjection
+	var createdAt, updatedAt string
+	err := row.Scan(&value.VisitID, &value.RunID, &value.NodeID, &value.Status, &value.ResourceVersion,
+		&value.LastGlobalPosition, &createdAt, &updatedAt)
+	if err != nil {
+		return statestore.NodeProjection{}, err
+	}
+	value.CreatedAt, err = parseTime(createdAt)
+	if err == nil {
+		value.UpdatedAt, err = parseTime(updatedAt)
+	}
+	return value, err
+}
+
+func readNodeProjection(ctx context.Context, query rowQueryer, id string) (statestore.NodeProjection, error) {
+	return scanNodeProjection(query.QueryRowContext(ctx, nodeSelect+` WHERE visit_id = ?`, id))
 }
 
 type rowQueryer interface {
@@ -533,7 +662,7 @@ func readApprovalProjection(ctx context.Context, query rowQueryer, id string) (s
 	return result, err
 }
 
-const attemptSelect = `SELECT attempt_id, run_id, node_id, scenario, provider, status,
+const attemptSelect = `SELECT attempt_id, run_id, visit_id, node_id, scenario, provider, status,
 	provider_thread_id, provider_turn_id, process_owner_id, last_sequence, log_reference,
 	resource_version, last_global_position, created_at, updated_at FROM attempt_projection`
 
@@ -542,7 +671,7 @@ type attemptRowScanner interface{ Scan(...any) error }
 func scanAttemptProjection(row attemptRowScanner) (statestore.AttemptProjection, error) {
 	var value statestore.AttemptProjection
 	var createdAt, updatedAt string
-	err := row.Scan(&value.AttemptID, &value.RunID, &value.NodeID, &value.Scenario, &value.Provider, &value.Status,
+	err := row.Scan(&value.AttemptID, &value.RunID, &value.VisitID, &value.NodeID, &value.Scenario, &value.Provider, &value.Status,
 		&value.ProviderThreadID, &value.ProviderTurnID, &value.ProcessOwnerID, &value.LastSequence, &value.LogReference,
 		&value.ResourceVersion, &value.LastGlobalPosition, &createdAt, &updatedAt)
 	if err != nil {
@@ -571,6 +700,18 @@ func writeRunProjection(ctx context.Context, tx *sql.Tx, value statestore.RunPro
 	return nil
 }
 
+func writeNodeProjection(ctx context.Context, tx *sql.Tx, value statestore.NodeProjection) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO node_projection VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(visit_id) DO UPDATE SET status=excluded.status, resource_version=excluded.resource_version,
+		last_global_position=excluded.last_global_position, updated_at=excluded.updated_at`,
+		value.VisitID, value.RunID, value.NodeID, value.Status, value.ResourceVersion,
+		value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
+	if err != nil {
+		return fmt.Errorf("write node projection %s: %w", value.VisitID, err)
+	}
+	return nil
+}
+
 func writeApprovalProjection(ctx context.Context, tx *sql.Tx, value statestore.ApprovalProjection) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO approval_projection VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(approval_id) DO UPDATE SET status=excluded.status, resource_version=excluded.resource_version,
@@ -584,13 +725,13 @@ func writeApprovalProjection(ctx context.Context, tx *sql.Tx, value statestore.A
 }
 
 func writeAttemptProjection(ctx context.Context, tx *sql.Tx, value statestore.AttemptProjection) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO attempt_projection VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := tx.ExecContext(ctx, `INSERT INTO attempt_projection VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(attempt_id) DO UPDATE SET status=excluded.status,
 		provider_thread_id=excluded.provider_thread_id, provider_turn_id=excluded.provider_turn_id,
 		process_owner_id=excluded.process_owner_id, last_sequence=excluded.last_sequence,
 		resource_version=excluded.resource_version, last_global_position=excluded.last_global_position,
 		updated_at=excluded.updated_at`,
-		value.AttemptID, value.RunID, value.NodeID, value.Scenario, value.Provider, value.Status,
+		value.AttemptID, value.RunID, value.VisitID, value.NodeID, value.Scenario, value.Provider, value.Status,
 		value.ProviderThreadID, value.ProviderTurnID, value.ProcessOwnerID, value.LastSequence, value.LogReference,
 		value.ResourceVersion, value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
 	if err != nil {

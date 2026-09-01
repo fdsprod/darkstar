@@ -108,6 +108,7 @@ func (s *Service) Start(ctx context.Context, request StartRequest, idempotencyKe
 	}
 
 	runID := stableID("run_", commandScope+"\x00"+idempotencyKey)
+	visitID := stableID("visit_", runID+"\x00"+nodeID)
 	attemptID := stableID("attempt_", runID+"\x00"+nodeID)
 	if reused {
 		view, getErr := s.Get(ctx, runID)
@@ -129,8 +130,15 @@ func (s *Service) Start(ctx context.Context, request StartRequest, idempotencyKe
 		pendingEvent("run.created", statestore.AggregateRun, runID, 0, runID, idempotencyKey, statestore.ActorUser, "cli", now, map[string]any{
 			"workItemId": stableID("work_", runID), "workflowId": workflowID, "workflowVersion": workflowVersion,
 		}),
+		pendingEvent("run.route_frozen", statestore.AggregateRun, runID, 1, runID, "route-frozen:"+runID, statestore.ActorSystem, "daemon", now, map[string]any{}),
+		pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "cli", now, map[string]any{}),
+		pendingEvent("visit.created", statestore.AggregateVisit, visitID, 0, runID, "visit-create:"+visitID, statestore.ActorSystem, "daemon", now, map[string]any{
+			"runId": runID, "nodeId": nodeID,
+		}),
+		pendingEvent("visit.ready", statestore.AggregateVisit, visitID, 1, runID, "visit-ready:"+visitID, statestore.ActorSystem, "daemon", now, map[string]any{}),
+		pendingEvent("visit.started", statestore.AggregateVisit, visitID, 2, runID, "visit-start:"+visitID, statestore.ActorSystem, "daemon", now, map[string]any{}),
 		pendingEvent("attempt.created", statestore.AggregateAttempt, attemptID, 0, runID, idempotencyKey, statestore.ActorSystem, "daemon", now, map[string]any{
-			"runId": runID, "nodeId": nodeID, "scenario": request.Scenario, "provider": "fake", "logReference": logReference,
+			"runId": runID, "visitId": visitID, "nodeId": nodeID, "scenario": request.Scenario, "provider": "fake", "logReference": logReference,
 		}),
 	)
 	if err != nil {
@@ -202,6 +210,16 @@ func (s *Service) launch(attempt statestore.AttemptProjection) {
 
 func (s *Service) execute(attempt statestore.AttemptProjection) {
 	resume := attempt.Status == statestore.AttemptRunning
+	run, err := s.store.Run(s.ctx, attempt.RunID)
+	if err != nil {
+		return
+	}
+	if run.Status == statestore.RunQueued {
+		if _, err = s.store.Append(s.ctx, pendingEvent("run.visit_ready", statestore.AggregateRun, run.RunID, run.ResourceVersion,
+			run.RunID, "visit-ready:"+attempt.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"visitId": attempt.VisitID})); err != nil {
+			return
+		}
+	}
 	adapter, err := s.factory.Provider(attempt.Scenario, attempt.AttemptID, resume)
 	if err != nil {
 		s.failAttempt(attempt.AttemptID, attempt.RunID, err)
@@ -240,22 +258,20 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 	if resume {
 		kind = "attempt.resumed"
 	}
-	started, err := s.store.Append(s.ctx, pendingEvent(kind, statestore.AggregateAttempt, current.AttemptID, current.ResourceVersion,
-		current.RunID, kind+":"+current.AttemptID, statestore.ActorProvider, "fake", s.now(), map[string]any{
-			"providerThreadId": handle.ProviderThreadID, "providerTurnId": handle.ProviderTurnID, "processOwnerId": handle.ProcessOwnerID,
-		}))
+	identity := map[string]any{
+		"providerThreadId": handle.ProviderThreadID, "providerTurnId": handle.ProviderTurnID, "processOwnerId": handle.ProcessOwnerID,
+	}
+	startEvents := make([]statestore.PendingEvent, 0, 2)
+	if current.Status == statestore.AttemptCreated {
+		startEvents = append(startEvents, pendingEvent("attempt.resources_acquired", statestore.AggregateAttempt, current.AttemptID, current.ResourceVersion,
+			current.RunID, "resources:"+current.AttemptID, statestore.ActorSystem, "daemon", s.now(), map[string]any{}))
+		current.ResourceVersion++
+	}
+	startEvents = append(startEvents, pendingEvent(kind, statestore.AggregateAttempt, current.AttemptID, current.ResourceVersion,
+		current.RunID, kind+":"+current.AttemptID, statestore.ActorProvider, "fake", s.now(), identity))
+	started, err := s.store.Append(s.ctx, startEvents...)
 	if err != nil || len(started) == 0 {
 		return
-	}
-	run, err := s.store.Run(s.ctx, current.RunID)
-	if err != nil {
-		return
-	}
-	if run.Status == statestore.RunPending {
-		if _, err = s.store.Append(s.ctx, pendingEvent("run.started", statestore.AggregateRun, run.RunID, run.ResourceVersion,
-			run.RunID, "run-start:"+run.RunID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"attemptId": current.AttemptID})); err != nil {
-			return
-		}
 	}
 
 	stream, err := adapter.StreamEvents(s.ctx, provider.EventRequest{Handle: handle, AfterSequence: current.LastSequence})
@@ -319,27 +335,43 @@ func (s *Service) completeAttempt(attemptID, runID string, result provider.Attem
 	if err != nil {
 		return
 	}
-	attemptKind, runKind := "attempt.completed", "run.completed"
+	node, err := s.store.Node(s.ctx, attempt.VisitID)
+	if err != nil {
+		return
+	}
+	attemptKind, nodeKind, runKind := "attempt.succeeded", "visit.succeeded", "run.completed"
 	data := map[string]any{"lastSequence": attempt.LastSequence, "logReference": attempt.LogReference}
 	switch value := result.(type) {
 	case provider.SucceededResult:
 		data["output"] = json.RawMessage(value.StructuredOutput)
 	case provider.FailedResult:
-		attemptKind, runKind, data["failure"] = "attempt.failed", "run.failed", value.Failure
+		attemptKind, nodeKind, runKind, data["failure"] = "attempt.failed", "visit.failed", "run.failed", value.Failure
 	case provider.CancelledResult:
-		attemptKind, runKind = "attempt.cancelled", "run.cancelled"
+		attemptKind, nodeKind, runKind = "attempt.cancelled", "visit.cancelled", "run.cancelled"
 	case provider.InterruptedResult:
-		attemptKind, runKind, data["failure"] = "attempt.interrupted", "run.failed", value.Failure
+		attemptKind, nodeKind, runKind, data["failure"] = "attempt.interrupted", "visit.failed", "run.failed", value.Failure
 	case provider.UnknownResult:
-		attemptKind, runKind, data["failure"] = "attempt.reconcile_required", "run.reconcile_required", value.Failure
+		attemptKind, nodeKind, runKind, data["failure"] = "attempt.reconcile_required", "visit.failed", "run.reconcile_required", value.Failure
 	default:
 		s.failAttempt(attemptID, runID, fmt.Errorf("unsupported provider result %T", result))
 		return
 	}
-	_, _ = s.store.Append(s.ctx,
-		pendingEvent(attemptKind, statestore.AggregateAttempt, attemptID, attempt.ResourceVersion, runID, "terminal:"+attemptID, statestore.ActorProvider, "fake", s.now(), data),
-		pendingEvent(runKind, statestore.AggregateRun, runID, run.ResourceVersion, runID, "terminal:"+runID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"attemptId": attemptID}),
-	)
+	events := make([]statestore.PendingEvent, 0, 5)
+	if _, ok := result.(provider.SucceededResult); ok {
+		events = append(events,
+			pendingEvent("attempt.result_received", statestore.AggregateAttempt, attemptID, attempt.ResourceVersion, runID, "result:"+attemptID, statestore.ActorProvider, "fake", s.now(), data),
+			pendingEvent(attemptKind, statestore.AggregateAttempt, attemptID, attempt.ResourceVersion+1, runID, "terminal:"+attemptID, statestore.ActorSystem, "daemon", s.now(), data),
+			pendingEvent("visit.result_received", statestore.AggregateVisit, node.VisitID, node.ResourceVersion, runID, "result:"+node.VisitID, statestore.ActorProvider, "fake", s.now(), data),
+			pendingEvent(nodeKind, statestore.AggregateVisit, node.VisitID, node.ResourceVersion+1, runID, "terminal:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), data),
+		)
+	} else {
+		events = append(events,
+			pendingEvent(attemptKind, statestore.AggregateAttempt, attemptID, attempt.ResourceVersion, runID, "terminal:"+attemptID, statestore.ActorProvider, "fake", s.now(), data),
+			pendingEvent(nodeKind, statestore.AggregateVisit, node.VisitID, node.ResourceVersion, runID, "terminal:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), data),
+		)
+	}
+	events = append(events, pendingEvent(runKind, statestore.AggregateRun, runID, run.ResourceVersion, runID, "terminal:"+runID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"attemptId": attemptID}))
+	_, _ = s.store.Append(s.ctx, events...)
 }
 
 func (s *Service) failAttempt(attemptID, runID string, cause error) {
@@ -348,8 +380,13 @@ func (s *Service) failAttempt(attemptID, runID string, cause error) {
 	if attemptErr != nil || runErr != nil || attempt.Status.Terminal() {
 		return
 	}
+	node, nodeErr := s.store.Node(context.Background(), attempt.VisitID)
+	if nodeErr != nil {
+		return
+	}
 	_, _ = s.store.Append(context.Background(),
 		pendingEvent("attempt.failed", statestore.AggregateAttempt, attemptID, attempt.ResourceVersion, runID, "failure:"+attemptID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"code": "PROVIDER_FAILED", "message": cause.Error(), "logReference": attempt.LogReference}),
+		pendingEvent("visit.failed", statestore.AggregateVisit, node.VisitID, node.ResourceVersion, runID, "failure:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"code": "PROVIDER_FAILED", "message": cause.Error()}),
 		pendingEvent("run.failed", statestore.AggregateRun, runID, run.ResourceVersion, runID, "failure:"+runID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"attemptId": attemptID}),
 	)
 }

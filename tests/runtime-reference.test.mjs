@@ -60,10 +60,11 @@ test("event and error schemas are strict", () => {
 
 test("SQLite logical model contains append, idempotency, coordination, outbox, and projection boundaries", () => {
   const sql = readFileSync(resolve(root, "schemas/sqlite-v1alpha1.sql"), "utf8");
-  for (const table of ["events","commands","outbox","run_projection","attempt_projection","approval_projection","external_refs","projection_checkpoints","lease_scopes","leases","queue_entries","recovery_decisions"])
+  for (const table of ["events","commands","outbox","run_projection","node_projection","attempt_projection","approval_projection","external_refs","projection_checkpoints","lease_scopes","leases","queue_entries","recovery_decisions"])
     assert.match(sql, new RegExp(`CREATE TABLE ${table} \\(`));
   assert.doesNotMatch(sql, /stream_id|stream_sequence|aggregate_type TEXT NOT NULL REFERENCES/);
   assert.match(sql, /UNIQUE\(aggregate_id, aggregate_revision\)/);
+  assert.match(sql, /UNIQUE INDEX events_aggregate_command ON events\(aggregate_id, command_id\)/);
   assert.match(sql, /PRIMARY KEY\(scope, idempotency_key\)/);
 });
 

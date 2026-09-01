@@ -10,7 +10,7 @@ import (
 )
 
 // ReducerVersion changes whenever replay semantics change incompatibly.
-const ReducerVersion = "2"
+const ReducerVersion = "3"
 
 // UnsupportedSchemaVersionError means replay cannot safely interpret an event.
 type UnsupportedSchemaVersionError struct {
@@ -20,6 +20,19 @@ type UnsupportedSchemaVersionError struct {
 
 func (e *UnsupportedSchemaVersionError) Error() string {
 	return fmt.Sprintf("event %s uses unsupported schema version %d", e.EventID, e.Version)
+}
+
+// InvalidTransitionError identifies a rejected lifecycle transition without
+// leaking adapter-specific errors across the core boundary.
+type InvalidTransitionError struct {
+	Machine string
+	ID      string
+	From    string
+	Event   string
+}
+
+func (e *InvalidTransitionError) Error() string {
+	return fmt.Sprintf("%s %s cannot apply %s from state %s", e.Machine, e.ID, e.Event, e.From)
 }
 
 // ReduceRun applies an event to a run projection. The boolean reports whether
@@ -49,7 +62,7 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 		}
 		return statestore.RunProjection{
 			RunID: event.AggregateID, WorkItemID: data.WorkItemID, WorkflowID: data.WorkflowID,
-			WorkflowVersion: data.WorkflowVersion, Status: statestore.RunPending,
+			WorkflowVersion: data.WorkflowVersion, Status: statestore.RunDraft,
 			ResourceVersion: event.AggregateRevision, LastGlobalPosition: event.GlobalPosition,
 			CreatedAt: event.RecordedAt, UpdatedAt: event.RecordedAt,
 		}, true, nil
@@ -63,18 +76,165 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 
 	next := *current
 	switch event.Kind {
-	case "run.started", "run.resumed":
+	case "context.frozen":
+		// Schema v1 histories created before the workflow state machines used a
+		// context event here. Preserve it as a replay-only draft self-loop.
+		if err := requireRunState(current, event, statestore.RunDraft); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+	case "run.route_frozen":
+		if err := requireRunState(current, event, statestore.RunDraft); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		next.Status = statestore.RunReady
+	case "run.started":
+		if err := requireRunState(current, event, statestore.RunDraft, statestore.RunReady); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		if current.Status == statestore.RunDraft {
+			// Compatibility for pre-state-machine schema v1 event histories.
+			next.Status = statestore.RunRunning
+		} else {
+			next.Status = statestore.RunQueued
+		}
+	case "run.visit_ready":
+		if err := requireRunState(current, event, statestore.RunQueued); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
 		next.Status = statestore.RunRunning
 	case "run.waiting":
+		if err := requireRunState(current, event, statestore.RunRunning); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
 		next.Status = statestore.RunWaiting
+	case "run.blocked":
+		if err := requireRunState(current, event, statestore.RunRunning); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		next.Status = statestore.RunBlocked
+	case "run.resumed":
+		if err := requireRunState(current, event, statestore.RunWaiting, statestore.RunBlocked, statestore.RunFailed); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		next.Status = statestore.RunQueued
 	case "run.completed":
+		if err := requireRunState(current, event, statestore.RunRunning); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
 		next.Status = statestore.RunCompleted
 	case "run.failed":
+		if err := requireRunState(current, event, statestore.RunRunning); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
 		next.Status = statestore.RunFailed
 	case "run.cancelled":
+		if current.Status.Terminal() {
+			return statestore.RunProjection{}, true, invalidTransition("run", current.RunID, string(current.Status), event.Kind)
+		}
 		next.Status = statestore.RunCancelled
 	case "run.reconcile_required":
+		if current.Status.Terminal() {
+			return statestore.RunProjection{}, true, invalidTransition("run", current.RunID, string(current.Status), event.Kind)
+		}
 		next.Status = statestore.RunReconcileRequired
+	default:
+		return statestore.RunProjection{}, true, invalidTransition("run", current.RunID, string(current.Status), event.Kind)
+	}
+	next.ResourceVersion = event.AggregateRevision
+	next.LastGlobalPosition = event.GlobalPosition
+	next.UpdatedAt = event.RecordedAt
+	return next, true, nil
+}
+
+// ReduceNode applies an event to a workflow node-visit projection.
+func ReduceNode(current *statestore.NodeProjection, event statestore.Event) (statestore.NodeProjection, bool, error) {
+	if event.SchemaVersion != 1 {
+		return statestore.NodeProjection{}, false, &UnsupportedSchemaVersionError{EventID: event.ID, Version: event.SchemaVersion}
+	}
+	if event.AggregateType != statestore.AggregateVisit {
+		return statestore.NodeProjection{}, false, nil
+	}
+	if current == nil {
+		if event.Kind != "visit.created" {
+			return statestore.NodeProjection{}, true, fmt.Errorf("node visit %s first event is %s, want visit.created", event.AggregateID, event.Kind)
+		}
+		var data struct {
+			RunID  string `json:"runId"`
+			NodeID string `json:"nodeId"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		if data.RunID == "" || data.NodeID == "" {
+			return statestore.NodeProjection{}, true, errors.New("visit.created requires runId and nodeId")
+		}
+		return statestore.NodeProjection{
+			VisitID: event.AggregateID, RunID: data.RunID, NodeID: data.NodeID, Status: statestore.NodePending,
+			ResourceVersion: event.AggregateRevision, LastGlobalPosition: event.GlobalPosition,
+			CreatedAt: event.RecordedAt, UpdatedAt: event.RecordedAt,
+		}, true, nil
+	}
+	if current.VisitID != event.AggregateID {
+		return statestore.NodeProjection{}, true, fmt.Errorf("node projection %s cannot apply event for %s", current.VisitID, event.AggregateID)
+	}
+	if event.AggregateRevision != current.ResourceVersion+1 {
+		return statestore.NodeProjection{}, true, fmt.Errorf("node visit %s projection revision %d cannot apply revision %d", current.VisitID, current.ResourceVersion, event.AggregateRevision)
+	}
+
+	next := *current
+	switch event.Kind {
+	case "visit.ready":
+		if err := requireNodeState(current, event, statestore.NodePending); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeReady
+	case "visit.started":
+		if err := requireNodeState(current, event, statestore.NodeReady); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeRunning
+	case "visit.result_received":
+		if err := requireNodeState(current, event, statestore.NodeRunning); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeValidating
+	case "visit.succeeded":
+		if err := requireNodeState(current, event, statestore.NodeValidating, statestore.NodeWaitingCheckpoint); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeSucceeded
+	case "visit.waiting_checkpoint":
+		if err := requireNodeState(current, event, statestore.NodeValidating); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeWaitingCheckpoint
+	case "visit.changes_requested":
+		if err := requireNodeState(current, event, statestore.NodeWaitingCheckpoint); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeRunning
+	case "visit.rejected":
+		if err := requireNodeState(current, event, statestore.NodeWaitingCheckpoint); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeRejected
+	case "visit.retrying":
+		if err := requireNodeState(current, event, statestore.NodeRunning, statestore.NodeValidating); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeReady
+	case "visit.failed":
+		if err := requireNodeState(current, event, statestore.NodeRunning, statestore.NodeValidating); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeFailed
+	case "visit.cancelled":
+		if current.Status.Terminal() {
+			return statestore.NodeProjection{}, true, invalidTransition("node visit", current.VisitID, string(current.Status), event.Kind)
+		}
+		next.Status = statestore.NodeCancelled
+	default:
+		return statestore.NodeProjection{}, true, invalidTransition("node visit", current.VisitID, string(current.Status), event.Kind)
 	}
 	next.ResourceVersion = event.AggregateRevision
 	next.LastGlobalPosition = event.GlobalPosition
@@ -96,6 +256,7 @@ func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event
 		}
 		var data struct {
 			RunID    string `json:"runId"`
+			VisitID  string `json:"visitId"`
 			NodeID   string `json:"nodeId"`
 			Scenario string `json:"scenario"`
 			Provider string `json:"provider"`
@@ -108,8 +269,8 @@ func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event
 			return statestore.AttemptProjection{}, true, errors.New("attempt.created requires runId, nodeId, scenario, provider, and logReference")
 		}
 		return statestore.AttemptProjection{
-			AttemptID: event.AggregateID, RunID: data.RunID, NodeID: data.NodeID,
-			Scenario: data.Scenario, Provider: data.Provider, Status: statestore.AttemptStarting,
+			AttemptID: event.AggregateID, RunID: data.RunID, VisitID: data.VisitID, NodeID: data.NodeID,
+			Scenario: data.Scenario, Provider: data.Provider, Status: statestore.AttemptCreated,
 			LogReference: data.LogRef, ResourceVersion: event.AggregateRevision,
 			LastGlobalPosition: event.GlobalPosition, CreatedAt: event.RecordedAt, UpdatedAt: event.RecordedAt,
 		}, true, nil
@@ -120,13 +281,17 @@ func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event
 	if event.AggregateRevision != current.ResourceVersion+1 {
 		return statestore.AttemptProjection{}, true, fmt.Errorf("attempt %s projection revision %d cannot apply revision %d", current.AttemptID, current.ResourceVersion, event.AggregateRevision)
 	}
-	if current.Status.Terminal() {
-		return statestore.AttemptProjection{}, true, fmt.Errorf("attempt %s is already terminal in state %s", current.AttemptID, current.Status)
-	}
-
 	next := *current
 	switch event.Kind {
-	case "attempt.started", "attempt.resumed":
+	case "attempt.resources_acquired":
+		if err := requireAttemptState(current, event, statestore.AttemptCreated); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		next.Status = statestore.AttemptStarting
+	case "attempt.started":
+		if err := requireAttemptState(current, event, statestore.AttemptCreated, statestore.AttemptStarting); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
 		var data struct {
 			ProviderThreadID string `json:"providerThreadId"`
 			ProviderTurnID   string `json:"providerTurnId"`
@@ -140,6 +305,21 @@ func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event
 		}
 		next.Status = statestore.AttemptRunning
 		next.ProviderThreadID, next.ProviderTurnID, next.ProcessOwnerID = data.ProviderThreadID, data.ProviderTurnID, data.ProcessOwnerID
+	case "attempt.resumed":
+		if err := requireAttemptState(current, event, statestore.AttemptRunning); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		var data struct {
+			ProviderThreadID string `json:"providerThreadId"`
+			ProviderTurnID   string `json:"providerTurnId"`
+			ProcessOwnerID   string `json:"processOwnerId"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		if data.ProviderThreadID != current.ProviderThreadID || data.ProviderTurnID != current.ProviderTurnID || data.ProcessOwnerID != current.ProcessOwnerID {
+			return statestore.AttemptProjection{}, true, errors.New("attempt.resumed recovery identity does not match the running attempt")
+		}
 	case "attempt.provider_event":
 		var data struct {
 			Sequence uint64 `json:"sequence"`
@@ -151,23 +331,80 @@ func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event
 			return statestore.AttemptProjection{}, true, fmt.Errorf("attempt %s provider sequence %d does not advance %d while running", current.AttemptID, data.Sequence, next.LastSequence)
 		}
 		next.LastSequence = data.Sequence
+	case "attempt.result_received":
+		if err := requireAttemptState(current, event, statestore.AttemptRunning); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		next.Status = statestore.AttemptValidating
+	case "attempt.succeeded":
+		if err := requireAttemptState(current, event, statestore.AttemptValidating); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		next.Status = statestore.AttemptSucceeded
 	case "attempt.completed":
-		next.Status = statestore.AttemptCompleted
+		// Compatibility for pre-state-machine schema v1 event histories.
+		if err := requireAttemptState(current, event, statestore.AttemptRunning, statestore.AttemptValidating); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		next.Status = statestore.AttemptSucceeded
 	case "attempt.failed":
+		if err := requireAttemptState(current, event, statestore.AttemptCreated, statestore.AttemptStarting, statestore.AttemptRunning, statestore.AttemptValidating); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
 		next.Status = statestore.AttemptFailed
 	case "attempt.cancelled":
+		if current.Status.Terminal() {
+			return statestore.AttemptProjection{}, true, invalidTransition("attempt", current.AttemptID, string(current.Status), event.Kind)
+		}
 		next.Status = statestore.AttemptCancelled
 	case "attempt.interrupted":
+		if current.Status.Terminal() {
+			return statestore.AttemptProjection{}, true, invalidTransition("attempt", current.AttemptID, string(current.Status), event.Kind)
+		}
 		next.Status = statestore.AttemptInterrupted
 	case "attempt.reconcile_required":
+		if current.Status.Terminal() {
+			return statestore.AttemptProjection{}, true, invalidTransition("attempt", current.AttemptID, string(current.Status), event.Kind)
+		}
 		next.Status = statestore.AttemptReconcileRequired
 	default:
-		return statestore.AttemptProjection{}, true, fmt.Errorf("unsupported attempt event kind %q", event.Kind)
+		return statestore.AttemptProjection{}, true, invalidTransition("attempt", current.AttemptID, string(current.Status), event.Kind)
 	}
 	next.ResourceVersion = event.AggregateRevision
 	next.LastGlobalPosition = event.GlobalPosition
 	next.UpdatedAt = event.RecordedAt
 	return next, true, nil
+}
+
+func requireRunState(current *statestore.RunProjection, event statestore.Event, allowed ...statestore.RunStatus) error {
+	for _, state := range allowed {
+		if current.Status == state {
+			return nil
+		}
+	}
+	return invalidTransition("run", current.RunID, string(current.Status), event.Kind)
+}
+
+func requireNodeState(current *statestore.NodeProjection, event statestore.Event, allowed ...statestore.NodeStatus) error {
+	for _, state := range allowed {
+		if current.Status == state {
+			return nil
+		}
+	}
+	return invalidTransition("node visit", current.VisitID, string(current.Status), event.Kind)
+}
+
+func requireAttemptState(current *statestore.AttemptProjection, event statestore.Event, allowed ...statestore.AttemptStatus) error {
+	for _, state := range allowed {
+		if current.Status == state {
+			return nil
+		}
+	}
+	return invalidTransition("attempt", current.AttemptID, string(current.Status), event.Kind)
+}
+
+func invalidTransition(machine, id, from, event string) error {
+	return &InvalidTransitionError{Machine: machine, ID: id, From: from, Event: event}
 }
 
 // ReduceApproval applies an event to an approval projection.

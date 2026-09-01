@@ -37,7 +37,7 @@ func TestPublicCLIFakeRunSurvivesRestartWithoutDuplicateEffectsAndExports(t *tes
 	first := startAcceptanceService(t, paths, "11111111111111111111111111111111")
 	var start runexecution.View
 	runCLIJSON(t, []string{"run", "start", "--scenario", runexecution.ScenarioRestart, "--idempotency-key", "acceptance-restart", "--json"}, &start)
-	if start.Run.Status != statestore.RunPending || len(start.Attempts) != 1 || start.Attempts[0].Status != statestore.AttemptStarting {
+	if start.Run.Status != statestore.RunQueued || len(start.Attempts) != 1 || start.Attempts[0].Status != statestore.AttemptCreated {
 		t.Fatalf("start response = %#v", start)
 	}
 
@@ -73,7 +73,7 @@ func TestPublicCLIFakeRunSurvivesRestartWithoutDuplicateEffectsAndExports(t *tes
 	events := readZipEntry(t, bundle, "events.jsonl")
 	for kind, want := range map[string]int{
 		`"kind":"attempt.started"`: 1, `"kind":"attempt.resumed"`: 1,
-		`"kind":"attempt.provider_event"`: 3, `"kind":"attempt.completed"`: 1, `"kind":"run.completed"`: 1,
+		`"kind":"attempt.provider_event"`: 3, `"kind":"attempt.succeeded"`: 1, `"kind":"run.completed"`: 1,
 	} {
 		if got := strings.Count(events, kind); got != want {
 			t.Errorf("%s count = %d, want %d\n%s", kind, got, want, events)

@@ -87,18 +87,31 @@ type EventBounds struct {
 	Latest uint64
 }
 
-// RunStatus is the closed set of persisted run states.
+// RunStatus is the closed set of persisted workflow-run states.
 type RunStatus string
 
 const (
-	RunPending           RunStatus = "pending"
+	RunDraft             RunStatus = "draft"
+	RunReady             RunStatus = "ready"
+	RunQueued            RunStatus = "queued"
 	RunRunning           RunStatus = "running"
 	RunWaiting           RunStatus = "waiting"
+	RunBlocked           RunStatus = "blocked"
 	RunCompleted         RunStatus = "completed"
 	RunFailed            RunStatus = "failed"
 	RunCancelled         RunStatus = "cancelled"
 	RunReconcileRequired RunStatus = "reconcile_required"
+
+	// RunPending is retained as a source-compatible alias for pre-workflow
+	// callers. Newly persisted runs use the precise draft state.
+	RunPending = RunDraft
 )
+
+// Terminal reports whether a run can no longer transition normally. Failed is
+// deliberately resumable by an explicit retry and is therefore non-terminal.
+func (status RunStatus) Terminal() bool {
+	return status == RunCompleted || status == RunCancelled || status == RunReconcileRequired
+}
 
 // RunProjection is the rebuildable query representation of a run.
 type RunProjection struct {
@@ -113,23 +126,70 @@ type RunProjection struct {
 	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
-// AttemptStatus is the closed set of persisted provider-attempt states.
+// NodeStatus is the closed lifecycle of one activated workflow node visit.
+// A new visit is a new aggregate; retries create attempts beneath the visit.
+type NodeStatus string
+
+const (
+	NodePending           NodeStatus = "pending"
+	NodeReady             NodeStatus = "ready"
+	NodeRunning           NodeStatus = "running"
+	NodeValidating        NodeStatus = "validating"
+	NodeWaitingCheckpoint NodeStatus = "waiting_checkpoint"
+	NodeSucceeded         NodeStatus = "succeeded"
+	NodeRejected          NodeStatus = "rejected"
+	NodeFailed            NodeStatus = "failed"
+	NodeCancelled         NodeStatus = "cancelled"
+)
+
+// Terminal reports whether this visit can produce no further attempts or
+// successful output binding.
+func (status NodeStatus) Terminal() bool {
+	switch status {
+	case NodeSucceeded, NodeRejected, NodeFailed, NodeCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// NodeProjection is the rebuildable query representation of a node visit.
+type NodeProjection struct {
+	VisitID            string     `json:"id"`
+	RunID              string     `json:"runId"`
+	NodeID             string     `json:"nodeId"`
+	Status             NodeStatus `json:"status"`
+	ResourceVersion    uint64     `json:"resourceVersion"`
+	LastGlobalPosition uint64     `json:"lastGlobalPosition"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
+}
+
+// AttemptStatus is the closed set of persisted provider-attempt states. It is
+// intentionally separate from NodeStatus: provider completion is not node
+// success until validation and any checkpoint have completed.
 type AttemptStatus string
 
 const (
+	AttemptCreated           AttemptStatus = "created"
 	AttemptStarting          AttemptStatus = "starting"
 	AttemptRunning           AttemptStatus = "running"
-	AttemptCompleted         AttemptStatus = "completed"
+	AttemptValidating        AttemptStatus = "validating"
+	AttemptSucceeded         AttemptStatus = "succeeded"
 	AttemptFailed            AttemptStatus = "failed"
 	AttemptCancelled         AttemptStatus = "cancelled"
 	AttemptInterrupted       AttemptStatus = "interrupted"
 	AttemptReconcileRequired AttemptStatus = "reconcile_required"
+
+	// AttemptCompleted is retained as a source-compatible alias. Persisted
+	// state uses succeeded to match the workflow execution contract.
+	AttemptCompleted = AttemptSucceeded
 )
 
 // Terminal reports whether no provider work remains for this attempt.
 func (status AttemptStatus) Terminal() bool {
 	switch status {
-	case AttemptCompleted, AttemptFailed, AttemptCancelled, AttemptInterrupted, AttemptReconcileRequired:
+	case AttemptSucceeded, AttemptFailed, AttemptCancelled, AttemptInterrupted, AttemptReconcileRequired:
 		return true
 	default:
 		return false
@@ -142,6 +202,7 @@ func (status AttemptStatus) Terminal() bool {
 type AttemptProjection struct {
 	AttemptID          string        `json:"id"`
 	RunID              string        `json:"runId"`
+	VisitID            string        `json:"visitId,omitempty"`
 	NodeID             string        `json:"nodeId"`
 	Scenario           string        `json:"scenario"`
 	Provider           string        `json:"provider"`
@@ -342,6 +403,8 @@ type Store interface {
 	EventsAfter(context.Context, uint64, int) ([]Event, error)
 	EventBounds(context.Context) (EventBounds, error)
 	Run(context.Context, string) (RunProjection, error)
+	Node(context.Context, string) (NodeProjection, error)
+	NodesForRun(context.Context, string) ([]NodeProjection, error)
 	Attempt(context.Context, string) (AttemptProjection, error)
 	AttemptsForRun(context.Context, string) ([]AttemptProjection, error)
 	ActiveAttempts(context.Context) ([]AttemptProjection, error)

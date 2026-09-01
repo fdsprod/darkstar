@@ -50,6 +50,7 @@ CREATE TABLE events (
 
 CREATE INDEX events_correlation ON events(correlation_id, global_position);
 CREATE INDEX events_kind_position ON events(kind, global_position);
+CREATE UNIQUE INDEX events_aggregate_command ON events(aggregate_id, command_id);
 
 CREATE TRIGGER events_reject_update
 BEFORE UPDATE ON events
@@ -108,7 +109,7 @@ CREATE TABLE run_projection (
   work_item_id TEXT NOT NULL,
   workflow_id TEXT NOT NULL,
   workflow_version TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'waiting', 'completed', 'failed', 'cancelled', 'reconcile_required')),
+  status TEXT NOT NULL CHECK (status IN ('draft', 'ready', 'queued', 'running', 'waiting', 'blocked', 'completed', 'failed', 'cancelled', 'reconcile_required')),
   resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
   last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
   created_at TEXT NOT NULL,
@@ -118,10 +119,11 @@ CREATE TABLE run_projection (
 CREATE TABLE attempt_projection (
   attempt_id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL,
+  visit_id TEXT NOT NULL DEFAULT '',
   node_id TEXT NOT NULL,
   scenario TEXT NOT NULL,
   provider TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('starting', 'running', 'completed', 'failed', 'cancelled', 'interrupted', 'reconcile_required')),
+  status TEXT NOT NULL CHECK (status IN ('created', 'starting', 'running', 'validating', 'succeeded', 'failed', 'cancelled', 'interrupted', 'reconcile_required')),
   provider_thread_id TEXT NOT NULL DEFAULT '',
   provider_turn_id TEXT NOT NULL DEFAULT '',
   process_owner_id TEXT NOT NULL DEFAULT '',
@@ -135,11 +137,24 @@ CREATE TABLE attempt_projection (
     (provider_thread_id = '' AND provider_turn_id = '' AND process_owner_id = '' AND last_sequence = 0) OR
     (provider_thread_id <> '' AND provider_turn_id <> '' AND process_owner_id <> '')
   ),
-  CHECK (status <> 'running' OR provider_thread_id <> '')
+  CHECK (status NOT IN ('running', 'validating', 'succeeded') OR provider_thread_id <> '')
 ) STRICT;
 
 CREATE INDEX attempt_projection_run ON attempt_projection(run_id, created_at, attempt_id);
 CREATE INDEX attempt_projection_active ON attempt_projection(status, updated_at);
+
+CREATE TABLE node_projection (
+  visit_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'running', 'validating', 'waiting_checkpoint', 'succeeded', 'rejected', 'failed', 'cancelled')),
+  resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
+  last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX node_projection_run ON node_projection(run_id, created_at, visit_id);
 
 CREATE TABLE approval_projection (
   approval_id TEXT PRIMARY KEY,
