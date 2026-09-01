@@ -4,9 +4,15 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 function bytesFor(fixture, base) {
-  return fixture.inline === undefined
-    ? readFileSync(resolve(base, fixture.path))
-    : Buffer.from(fixture.inline, "utf8");
+  if (fixture.inlineBase64 !== undefined) return Buffer.from(fixture.inlineBase64, "base64");
+  return fixture.inline === undefined ? readFileSync(resolve(base, fixture.path)) : Buffer.from(fixture.inline, "utf8");
+}
+
+function isSupportedImage(fixture, bytes) {
+  if (fixture.declaredType === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (fixture.declaredType === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (fixture.declaredType === "image/webp") return bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP";
+  return false;
 }
 
 function classify(fixture, bytes, sourceByteLimit) {
@@ -22,7 +28,9 @@ function classify(fixture, bytes, sourceByteLimit) {
   if (fixture.declaredType === "application/pdf") return bytes.subarray(0, 5).toString() === "%PDF-"
     ? { state: "ready", representation: "document" }
     : { state: "stored_uninspectable", representation: "descriptor" };
-  if (fixture.declaredType.startsWith("image/")) return { state: "ready", representation: "image" };
+  if (fixture.declaredType.startsWith("image/")) return isSupportedImage(fixture, bytes)
+    ? { state: "ready", representation: "image" }
+    : { state: "stored_uninspectable", representation: "descriptor" };
   return { state: "ready", representation: "text" };
 }
 

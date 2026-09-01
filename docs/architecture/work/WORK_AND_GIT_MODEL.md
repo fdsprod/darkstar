@@ -487,3 +487,10 @@ The downstream suites must cover at least:
 
 These cases are acceptance inputs for DS-112, DS-118, DS-152, DS-153, DS-157,
 DS-194, and DS-195.
+
+[`examples/repositories/golden-repositories.json`](../../../examples/repositories/golden-repositories.json)
+and [`scripts/repository-fixtures.mjs`](../../../scripts/repository-fixtures.mjs)
+materialize clean, dirty, branched, and linked-worktree repositories from fixed
+bytes and commit metadata. Normalized observations exclude absolute paths, the
+materializer refuses an existing destination, and the contract suite compares
+independent materializations to detect nondeterminism.

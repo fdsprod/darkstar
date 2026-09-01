@@ -49,7 +49,8 @@ Some project knowledge belongs beside executable material rather than in `docs/`
 - [`tests/`](../tests/) verifies deterministic behavior.
 - [`examples/recovery/`](../examples/recovery/) and [`scripts/recovery-reference.mjs`](../scripts/recovery-reference.mjs) make crash-window decisions and catalog coverage executable.
 - [`examples/approvals/`](../examples/approvals/) and [`scripts/approval-reference.mjs`](../scripts/approval-reference.mjs) make approval separation, negative cases, and idempotency executable.
-- [`examples/artifacts/`](../examples/artifacts/) and [`scripts/artifact-reference.mjs`](../scripts/artifact-reference.mjs) provide the golden artifact corpus and deterministic context selector.
+- [`examples/artifacts/`](../examples/artifacts/) and [`scripts/artifact-reference.mjs`](../scripts/artifact-reference.mjs) provide the self-contained golden artifact corpus and deterministic context selector.
+- [`examples/repositories/`](../examples/repositories/) and [`scripts/repository-fixtures.mjs`](../scripts/repository-fixtures.mjs) materialize deterministic clean, dirty, branched, and linked-worktree Git fixtures.
 - [`examples/runtime/`](../examples/runtime/) and [`scripts/runtime-reference.mjs`](../scripts/runtime-reference.mjs) validate the fake end-to-end event trace and projections.
 - [`examples/capabilities/`](../examples/capabilities/) and [`scripts/capability-reference.mjs`](../scripts/capability-reference.mjs) make capability classification, resolution, and fallback executable.
 - [`examples/security/`](../examples/security/) and [`scripts/threat-model-reference.mjs`](../scripts/threat-model-reference.mjs) enforce owned control and negative-test coverage for every high-risk trust boundary.

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "git": {
+    "initialBranch": "main",
+    "authorName": "DARKSTAR Fixture",
+    "authorEmail": "fixtures@darkstar.local",
+    "timestamp": "2000-01-01T00:00:00Z",
+    "commitMessage": "fixture: establish deterministic base"
+  },
+  "baseFiles": {
+    ".gitattributes": "* text=auto eol=lf\n",
+    "README.md": "# DARKSTAR golden repository\n",
+    "src/value.txt": "base value\n"
+  },
+  "fixtures": [
+    {
+      "id": "clean_checkout",
+      "covers": ["clean", "repository"],
+      "expected": {
+        "headBranch": "main",
+        "status": [],
+        "branches": ["main"],
+        "worktreeBranches": ["main"]
+      }
+    },
+    {
+      "id": "dirty_checkout",
+      "covers": ["dirty", "tracked_change", "untracked_file"],
+      "changes": [
+        {"path": "src/value.txt", "content": "user-owned modification\n"},
+        {"path": "notes/untracked.txt", "content": "preserve this untracked evidence\n"}
+      ],
+      "expected": {
+        "headBranch": "main",
+        "status": [" M src/value.txt", "?? notes/untracked.txt"],
+        "branches": ["main"],
+        "worktreeBranches": ["main"]
+      }
+    },
+    {
+      "id": "branch_topology",
+      "covers": ["branches", "owned_branch", "unowned_branch_collision"],
+      "branches": ["darkstar/work-item-owned", "topic/work-item-owned"],
+      "expected": {
+        "headBranch": "main",
+        "status": [],
+        "branches": ["darkstar/work-item-owned", "main", "topic/work-item-owned"],
+        "worktreeBranches": ["main"]
+      }
+    },
+    {
+      "id": "linked_worktree",
+      "covers": ["worktree", "isolated_delivery_branch"],
+      "worktrees": [
+        {"name": "run-dar-20", "branch": "darkstar/dar-20", "startPoint": "main"}
+      ],
+      "expected": {
+        "headBranch": "main",
+        "status": [],
+        "branches": ["darkstar/dar-20", "main"],
+        "worktreeBranches": ["darkstar/dar-20", "main"]
+      }
+    }
+  ]
+}

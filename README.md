@@ -45,6 +45,8 @@ node scripts/approval-reference.mjs examples/approvals/approval-scenarios.json
 node --test tests/approval-reference.test.mjs
 node scripts/artifact-reference.mjs examples/artifacts/golden-corpus.json
 node --test tests/artifact-reference.test.mjs
+node scripts/repository-fixtures.mjs examples/repositories/golden-repositories.json out/golden-repositories
+node --test tests/repository-fixtures.test.mjs
 ./probes/windows-process-control/Test-WindowsProcessProbe.ps1
 node scripts/runtime-reference.mjs examples/runtime/fake-run.json
 node --test tests/runtime-reference.test.mjs

@@ -17,7 +17,13 @@ test("golden corpus covers the required artifact risks", () => {
 
 test("every fixture has its documented safe outcome", () => {
   assert.deepEqual(results.filter((entry) => !entry.pass), []);
-  assert.ok(results.filter((entry) => ["malformed-json","unknown-binary"].includes(entry.id)).every((entry) => entry.actual.representation === "descriptor"));
+  assert.ok(results.filter((entry) => ["malformed-json","malformed-png","unknown-binary"].includes(entry.id)).every((entry) => entry.actual.representation === "descriptor"));
+});
+
+test("artifact corpus is self-contained and validates image bytes", () => {
+  assert.ok(corpus.fixtures.filter((fixture) => fixture.path).every((fixture) => !fixture.path.replaceAll("\\", "/").split("/").includes("..")));
+  assert.equal(results.find((entry) => entry.id === "png").actual.state, "ready");
+  assert.equal(results.find((entry) => entry.id === "malformed-png").actual.state, "stored_uninspectable");
 });
 
 test("equal bytes share a blob but retain artifact identities", () => {

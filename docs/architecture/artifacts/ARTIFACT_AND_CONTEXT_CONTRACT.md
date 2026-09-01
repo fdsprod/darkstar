@@ -160,7 +160,8 @@ storage completed.
 ## 8. Golden corpus and acceptance
 
 [`examples/artifacts/golden-corpus.json`](../../../examples/artifacts/golden-corpus.json)
-covers text, Markdown prompt injection, JSON/YAML/CSV, PDF, PNG, malformed input,
+is self-contained and covers text, Markdown prompt injection, JSON/YAML/CSV, PDF,
+valid and malformed PNG bytes, malformed input,
 unknown binary, duplicates, size limits, required/optional budgets, and late
 evidence. [`scripts/artifact-reference.mjs`](../../../scripts/artifact-reference.mjs)
 and [`tests/artifact-reference.test.mjs`](../../../tests/artifact-reference.test.mjs)
