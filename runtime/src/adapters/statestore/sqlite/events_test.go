@@ -69,6 +69,41 @@ func TestAppendAtomicallyAdvancesEventStreamAndRunProjection(t *testing.T) {
 	}
 }
 
+func TestRunEvidenceIncludesCorrelatedEventsAndCommandRows(t *testing.T) {
+	t.Parallel()
+	database := openEventTestDatabase(t)
+	ctx := context.Background()
+	runID := testID("run", 'V')
+	otherRunID := testID("run", 'W')
+	created := pendingEvent(testID("event", 'V'), statestore.AggregateRun, runID, 0, "run.created",
+		`{"workItemId":"work_01K3Z1C1AAAAAAAAAAAAAAAAAA","workflowId":"delivery","workflowVersion":"1"}`)
+	correlated := pendingEvent(testID("event", 'W'), statestore.AggregateArtifact, testID("artifact", 'V'), 0, "artifact.created", `{}`)
+	correlated.CorrelationID = runID
+	correlated.CommandID = "export-command"
+	other := pendingEvent(testID("event", 'X'), statestore.AggregateRun, otherRunID, 0, "run.created",
+		`{"workItemId":"work_01K3Z1C1BBBBBBBBBBBBBBBBBB","workflowId":"delivery","workflowVersion":"1"}`)
+	if _, err := database.Append(ctx, created, correlated, other); err != nil {
+		t.Fatalf("append evidence events: %v", err)
+	}
+	if _, err := database.SQL().ExecContext(ctx, `INSERT INTO commands(scope, idempotency_key, request_digest, status,
+		response_status, response_json, first_event_position, last_event_position, created_at, completed_at)
+		VALUES (?, ?, ?, 'completed', 200, ?, 1, 2, ?, ?)`, runID, "create-run", "sha256:request", `{"ok":true}`,
+		formatTime(eventTestTime), formatTime(eventTestTime)); err != nil {
+		t.Fatalf("insert command evidence: %v", err)
+	}
+
+	evidence, err := database.RunEvidence(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Run.RunID != runID || len(evidence.Events) != 2 || len(evidence.Commands) != 1 {
+		t.Fatalf("run evidence = %#v", evidence)
+	}
+	if evidence.Events[1].AggregateType != statestore.AggregateArtifact || evidence.Commands[0].ResponseStatus == nil || *evidence.Commands[0].ResponseStatus != 200 {
+		t.Fatalf("run evidence details = %#v", evidence)
+	}
+}
+
 func TestAppendRollsBackEventAggregateAndProjectionTogether(t *testing.T) {
 	t.Parallel()
 

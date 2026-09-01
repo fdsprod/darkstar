@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/run-export-manifest-v1alpha1.schema.json",
+  "title": "DARKSTAR run export manifest v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "exportedAt", "redactionPolicy", "entries", "omissions"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "runId": {"type": "string", "pattern": "^run_[0-9A-HJKMNP-TV-Z]{26}$"},
+    "exportedAt": {"type": "string", "format": "date-time"},
+    "redactionPolicy": {"const": "default-v1"},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "kind", "mediaType", "sha256", "size"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["run_snapshot", "events", "command_evidence", "artifact_index", "log"]},
+          "mediaType": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "size": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "omissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "reference", "reason"],
+        "properties": {
+          "kind": {"enum": ["artifact", "log", "reference"]},
+          "reference": {"type": "string", "minLength": 1},
+          "reason": {"enum": ["unavailable", "sensitive_by_default"]}
+        }
+      }
+    }
+  }
+}

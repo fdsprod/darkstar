@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
 	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
 )
 
@@ -26,7 +27,7 @@ const (
 
 var (
 	// ErrLogNotFound means that an opaque log reference is unknown.
-	ErrLogNotFound = errors.New("log reference not found")
+	ErrLogNotFound = runexport.ErrLogNotFound
 	// ErrLogOffsetOutOfRange means that a cursor is beyond the current log size.
 	ErrLogOffsetOutOfRange = errors.New("log offset out of range")
 	logReferencePattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
@@ -39,9 +40,7 @@ type EventSource interface {
 }
 
 // LogSource reads a bounded byte range from an opaque append-only log.
-type LogSource interface {
-	ReadLog(context.Context, string, int64, int) (LogChunk, error)
-}
+type LogSource = runexport.LogSource
 
 // StreamServices is the complete streaming capability published by the API.
 type StreamServices struct {
@@ -49,19 +48,8 @@ type StreamServices struct {
 	Logs   LogSource
 }
 
-// LogChunk is one snapshot-consistent bounded read. NextOffset and completion
-// are derived from Offset, Content, and Size rather than stored independently.
-type LogChunk struct {
-	Offset  int64
-	Size    int64
-	Content []byte
-}
-
-// NextOffset is the exclusive cursor for the next read.
-func (chunk LogChunk) NextOffset() int64 { return chunk.Offset + int64(len(chunk.Content)) }
-
-// Complete reports whether this chunk reached the snapshot end.
-func (chunk LogChunk) Complete() bool { return chunk.NextOffset() == chunk.Size }
+// LogChunk is one snapshot-consistent bounded read.
+type LogChunk = runexport.LogChunk
 
 // DirectoryLogs maps opaque single-segment references to protected log files.
 // References never contain path separators and are not interpreted as paths.

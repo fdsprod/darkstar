@@ -4,8 +4,12 @@ package statestore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 )
+
+// ErrNotFound is the portable classification for missing durable state.
+var ErrNotFound = errors.New("state not found")
 
 // AggregateType identifies one domain event stream.
 type AggregateType string
@@ -98,15 +102,40 @@ const (
 
 // RunProjection is the rebuildable query representation of a run.
 type RunProjection struct {
-	RunID              string
-	WorkItemID         string
-	WorkflowID         string
-	WorkflowVersion    string
-	Status             RunStatus
-	ResourceVersion    uint64
-	LastGlobalPosition uint64
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	RunID              string    `json:"id"`
+	WorkItemID         string    `json:"workItemId"`
+	WorkflowID         string    `json:"workflowId"`
+	WorkflowVersion    string    `json:"workflowVersion"`
+	Status             RunStatus `json:"status"`
+	ResourceVersion    uint64    `json:"resourceVersion"`
+	LastGlobalPosition uint64    `json:"lastGlobalPosition"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
+}
+
+// CommandEvidence is the durable, replay-safe evidence for one command. The
+// request itself is represented by its digest; response JSON is redacted again
+// by the export boundary before it leaves the daemon.
+type CommandEvidence struct {
+	Scope              string          `json:"scope"`
+	IdempotencyKey     string          `json:"idempotencyKey"`
+	RequestDigest      string          `json:"requestDigest"`
+	Status             string          `json:"status"`
+	ResponseStatus     *int            `json:"responseStatus,omitempty"`
+	Response           json.RawMessage `json:"response,omitempty"`
+	FirstEventPosition *uint64         `json:"firstEventPosition,omitempty"`
+	LastEventPosition  *uint64         `json:"lastEventPosition,omitempty"`
+	CreatedAt          time.Time       `json:"createdAt"`
+	CompletedAt        *time.Time      `json:"completedAt,omitempty"`
+}
+
+// RunEvidence is one transactionally consistent source snapshot for a run
+// export. Events are authoritative; Run is a rebuildable convenience snapshot,
+// and Commands records idempotency/response evidence associated with them.
+type RunEvidence struct {
+	Run      RunProjection
+	Events   []Event
+	Commands []CommandEvidence
 }
 
 // ApprovalClass identifies why a decision is required.
@@ -250,6 +279,7 @@ type Store interface {
 	EventsAfter(context.Context, uint64, int) ([]Event, error)
 	EventBounds(context.Context) (EventBounds, error)
 	Run(context.Context, string) (RunProjection, error)
+	RunEvidence(context.Context, string) (RunEvidence, error)
 	Approval(context.Context, string) (ApprovalProjection, error)
 	RebuildProjections(context.Context) error
 	AcquireLease(context.Context, AcquireLeaseRequest) (Lease, error)

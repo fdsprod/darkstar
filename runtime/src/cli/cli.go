@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/fdsprod/darkstar/runtime/src/adapters/provider/fake"
@@ -19,6 +20,7 @@ import (
 	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
 	"github.com/fdsprod/darkstar/runtime/src/core/health"
 	"github.com/fdsprod/darkstar/runtime/src/core/recovery"
+	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
 	"github.com/fdsprod/darkstar/runtime/src/daemon"
 	"github.com/fdsprod/darkstar/runtime/src/doctor"
 	"github.com/fdsprod/darkstar/runtime/src/platform/windows"
@@ -35,10 +37,14 @@ Commands:
   daemon     Run and control the per-user daemon
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
+  run        Inspect and export runs
   version    Show version information
 
 API commands:
   api status [--json]      Discover or autostart the daemon and verify its API
+
+Run commands:
+  run export <run-id> --output <file> [--json]
 
 Daemon commands:
   daemon run [--json]      Run in the foreground
@@ -53,6 +59,8 @@ Example:
 
 // Version is replaced by release builds through -ldflags.
 var Version = "dev"
+
+var runIdentityPattern = regexp.MustCompile(`^run_[0-9A-HJKMNP-TV-Z]{26}$`)
 
 type helpOutput struct {
 	SchemaVersion int    `json:"schemaVersion"`
@@ -103,6 +111,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runAPI(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "doctor":
 		return runDoctor(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "run":
+		return runRun(cleanArgs[1:], jsonOutput, stdout, stderr)
 	default:
 		message := fmt.Sprintf("unknown command %q; run 'darkstar help' for usage", cleanArgs[0])
 		return writeCommandError(stdout, stderr, jsonOutput, "darkstar", "ARGUMENT_INVALID", message, false, ExitInvalidInput)
@@ -219,6 +229,17 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return err
 	}
 	if err := service.server.SetStreams(localapi.StreamServices{Events: database, Logs: logs}); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	exporter, err := runexport.New(database, logs)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.server.SetRunExporter(exporter); err != nil {
 		_ = database.Close()
 		service.database = nil
 		return err
@@ -585,6 +606,92 @@ func runDoctor(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		return int(ExitValidationFailed)
 	}
 	return int(ExitSuccess)
+}
+
+type runExportOutput struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	RunID         string `json:"runId"`
+	Output        string `json:"output"`
+	Size          int    `json:"size"`
+}
+
+func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
+	if len(args) != 4 || args[0] != "export" || args[2] != "--output" || args[1] == "" || args[3] == "" {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "expected 'run export <run-id> --output <file>'", false, ExitInvalidInput)
+	}
+	runID, outputPath := args[1], args[3]
+	if !runIdentityPattern.MatchString(runID) {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run export", "ARGUMENT_INVALID", "run ID must be a canonical run_ ULID", false, ExitInvalidInput)
+	}
+	absoluteOutput, err := filepath.Abs(outputPath)
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run export", "ARGUMENT_INVALID", "resolve output path: "+err.Error(), false, ExitInvalidInput)
+	}
+	manager, err := newDaemonManager(context.Background())
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run export", "DAEMON_RUNTIME_UNAVAILABLE", err.Error(), true, ExitTransientFailure)
+	}
+	client, err := clientapi.New(clientapi.Config{
+		RuntimeDirectory: manager.RuntimeDirectory(),
+		Autostart: func(ctx context.Context) error {
+			_, startErr := startDaemonProcess(ctx, manager)
+			return startErr
+		},
+	})
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run export", "INTERNAL_INVARIANT_VIOLATION", err.Error(), false, ExitInvariantViolation)
+	}
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, "darkstar run export", err)
+	}
+	content, err := session.Download(context.Background(), "runs/"+runID+"/export")
+	if err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, "darkstar run export", err)
+	}
+	if err := writeNewFileAtomically(absoluteOutput, content); err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run export", "OUTPUT_FAILED", err.Error(), false, ExitInvalidInput)
+	}
+	output := runExportOutput{SchemaVersion: machineSchemaVersion, RunID: runID, Output: absoluteOutput, Size: len(content)}
+	if jsonOutput {
+		if err := writeJSON(stdout, output); err != nil {
+			return writeCommandError(stdout, stderr, false, "darkstar run export", "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
+		}
+	} else {
+		fmt.Fprintf(stdout, "Exported %s to %s (%d bytes).\n", runID, absoluteOutput, len(content))
+	}
+	return int(ExitSuccess)
+}
+
+func writeNewFileAtomically(destination string, content []byte) (err error) {
+	if _, statErr := os.Stat(destination); statErr == nil {
+		return fmt.Errorf("output file already exists: %s", destination)
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("inspect output path: %w", statErr)
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".darkstar-export-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary export: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if err = temporary.Chmod(0o600); err == nil {
+		_, err = temporary.Write(content)
+	}
+	if err == nil {
+		err = temporary.Sync()
+	}
+	closeErr := temporary.Close()
+	if err != nil {
+		return fmt.Errorf("write temporary export: %w", err)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close temporary export: %w", closeErr)
+	}
+	if err := os.Rename(temporaryPath, destination); err != nil {
+		return fmt.Errorf("publish export: %w", err)
+	}
+	return nil
 }
 
 func writeDoctorReport(destination io.Writer, report health.Report) error {

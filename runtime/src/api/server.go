@@ -42,6 +42,7 @@ type Server struct {
 	recovery RecoveryStatus
 	doctor   DoctorReporter
 	streams  *StreamServices
+	exporter RunExporter
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
@@ -119,6 +120,20 @@ func (s *Server) SetStreams(services StreamServices) error {
 		return errors.New("API event and log sources are required")
 	}
 	s.streams = &services
+	return nil
+}
+
+// SetRunExporter installs the finite run-export capability before Start.
+func (s *Server) SetRunExporter(exporter RunExporter) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API run exporter can only be set before start")
+	}
+	if exporter == nil {
+		return errors.New("API run exporter is required")
+	}
+	s.exporter = exporter
 	return nil
 }
 
@@ -296,6 +311,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/logs/") {
 		s.serveLog(response, request, requestID)
+		return
+	}
+	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/runs/") && strings.HasSuffix(path.Clean(request.URL.Path), "/export") {
+		s.serveRunExport(response, request, requestID)
 		return
 	}
 

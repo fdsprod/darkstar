@@ -12,6 +12,7 @@ import (
 
 	localapi "github.com/fdsprod/darkstar/runtime/src/api"
 	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
+	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
 )
 
 func TestConnectDiscoversRunningDaemonWithoutAutostart(t *testing.T) {
@@ -140,6 +141,40 @@ func TestDoJSONRejectsResourceOutsideAPIRoot(t *testing.T) {
 	if !errors.As(err, &failure) || failure.Kind != clientapi.FailureProtocol {
 		t.Fatalf("DoJSON() error = %T %v, want protocol Failure", err, err)
 	}
+}
+
+func TestDownloadReturnsAuthenticatedZIP(t *testing.T) {
+	t.Parallel()
+	runtimeDirectory := absoluteTempDirectory(t)
+	server, err := localapi.NewServer(runtimeDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SetRunExporter(downloadExporter{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Start(context.Background(), os.Getpid(), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	client := newClient(t, clientapi.Config{RuntimeDirectory: runtimeDirectory})
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := session.Download(context.Background(), "runs/run_01K3Z1C2AAAAAAAAAAAAAAAAAA/export")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "PK-client-test" {
+		t.Fatalf("download = %q", content)
+	}
+}
+
+type downloadExporter struct{}
+
+func (downloadExporter) Build(context.Context, string) ([]byte, runexport.Manifest, error) {
+	return []byte("PK-client-test"), runexport.Manifest{SchemaVersion: 1}, nil
 }
 
 func newClient(t *testing.T, config clientapi.Config) *clientapi.Client {

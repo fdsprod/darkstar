@@ -45,7 +45,7 @@
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "8976093a88040b5bd96dc3fba3745cc0a4b6c093e74a07bc9abedc79ad10031b",
+      "sha256": "2fc3fd2e5d64e927d4e2ee05813ff667aecc9a0f7c65821c703bd14c29c13677",
       "version": "v1alpha1"
     },
     {
@@ -62,6 +62,14 @@
       "id": "https://darkstar.local/schemas/route-patch-v1alpha1.schema.json",
       "name": "route-patch-v1alpha1",
       "sha256": "49f54a0c747912d1cf513bb5522c483617e62bca489b925cbd8ae2a06710e896",
+      "version": "v1alpha1"
+    },
+    {
+      "file": "run-export-manifest-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/run-export-manifest-v1alpha1.schema.json",
+      "name": "run-export-manifest-v1alpha1",
+      "sha256": "3aba6ddf9de0fce8d0158da1b0ef27a45ab56a53fbdabde735f213f52b29c569",
       "version": "v1alpha1"
     },
     {

@@ -17,6 +17,13 @@ code, and required action. `--json` returns the versioned report unchanged. A
 degraded or unhealthy report uses exit class 7 because the diagnostic completed
 successfully with findings; transport failures retain their ordinary exit class.
 
+`darkstar run export <run-id> --output <file>` downloads the daemon-created ZIP
+without duplicating export or redaction logic in the client. The CLI resolves the
+output to an absolute path, writes a protected temporary file in the destination
+directory, and atomically publishes it. It refuses to overwrite an existing
+file. With `--json`, stdout contains the run ID, absolute output path, and byte
+size while the bundle remains at the requested path.
+
 ## Machine output
 
 Every finite human-readable command accepts `--json` as its final argument. A

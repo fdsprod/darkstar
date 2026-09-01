@@ -47,6 +47,9 @@ type NotFoundError struct {
 
 func (e *NotFoundError) Error() string { return fmt.Sprintf("%s %s not found", e.Kind, e.ID) }
 
+// Unwrap preserves the adapter-independent missing-state classification.
+func (e *NotFoundError) Unwrap() error { return statestore.ErrNotFound }
+
 // Append assigns consecutive global positions and aggregate revisions, appends
 // immutable events, and updates all affected projections in one transaction.
 func (d *Database) Append(ctx context.Context, pending ...statestore.PendingEvent) (committed []statestore.Event, err error) {
@@ -165,6 +168,103 @@ func (d *Database) Run(ctx context.Context, id string) (statestore.RunProjection
 		return statestore.RunProjection{}, fmt.Errorf("read run projection: %w", err)
 	}
 	return projection, nil
+}
+
+// RunEvidence reads the run projection, every correlated event, and command
+// evidence from one SQLite snapshot so an export cannot mix revisions.
+func (d *Database) RunEvidence(ctx context.Context, id string) (evidence statestore.RunEvidence, err error) {
+	tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return statestore.RunEvidence{}, fmt.Errorf("begin run evidence snapshot: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	evidence.Run, err = readRunProjection(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return statestore.RunEvidence{}, &NotFoundError{Kind: "run", ID: id}
+	}
+	if err != nil {
+		return statestore.RunEvidence{}, fmt.Errorf("read run projection: %w", err)
+	}
+	rows, err := tx.QueryContext(ctx, eventSelect+` WHERE correlation_id = ? OR aggregate_id = ? ORDER BY global_position`, id, id)
+	if err != nil {
+		return statestore.RunEvidence{}, fmt.Errorf("query run events: %w", err)
+	}
+	evidence.Events, err = scanEvents(rows)
+	closeErr := rows.Close()
+	if err != nil {
+		return statestore.RunEvidence{}, err
+	}
+	if closeErr != nil {
+		return statestore.RunEvidence{}, fmt.Errorf("close run events: %w", closeErr)
+	}
+	evidence.Commands, err = readRunCommands(ctx, tx, id)
+	if err != nil {
+		return statestore.RunEvidence{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return statestore.RunEvidence{}, fmt.Errorf("commit run evidence snapshot: %w", err)
+	}
+	return evidence, nil
+}
+
+func readRunCommands(ctx context.Context, query *sql.Tx, runID string) ([]statestore.CommandEvidence, error) {
+	rows, err := query.QueryContext(ctx, `SELECT scope, idempotency_key, request_digest, status, response_status,
+		response_json, first_event_position, last_event_position, created_at, completed_at
+		FROM commands WHERE scope = ? OR idempotency_key IN
+		(SELECT command_id FROM events WHERE correlation_id = ? OR aggregate_id = ?)
+		ORDER BY created_at, scope, idempotency_key`, runID, runID, runID)
+	if err != nil {
+		return nil, fmt.Errorf("query run commands: %w", err)
+	}
+	defer rows.Close()
+
+	commands := make([]statestore.CommandEvidence, 0)
+	for rows.Next() {
+		var command statestore.CommandEvidence
+		var responseStatus, firstPosition, lastPosition sql.NullInt64
+		var responseJSON, completedAt sql.NullString
+		var createdAt string
+		if err := rows.Scan(&command.Scope, &command.IdempotencyKey, &command.RequestDigest, &command.Status,
+			&responseStatus, &responseJSON, &firstPosition, &lastPosition, &createdAt, &completedAt); err != nil {
+			return nil, fmt.Errorf("scan run command: %w", err)
+		}
+		command.CreatedAt, err = parseTime(createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("command %s created_at: %w", command.IdempotencyKey, err)
+		}
+		if responseStatus.Valid {
+			value := int(responseStatus.Int64)
+			command.ResponseStatus = &value
+		}
+		if responseJSON.Valid {
+			command.Response = json.RawMessage(responseJSON.String)
+		}
+		if firstPosition.Valid {
+			value := uint64(firstPosition.Int64)
+			command.FirstEventPosition = &value
+		}
+		if lastPosition.Valid {
+			value := uint64(lastPosition.Int64)
+			command.LastEventPosition = &value
+		}
+		if completedAt.Valid {
+			value, parseErr := parseTime(completedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("command %s completed_at: %w", command.IdempotencyKey, parseErr)
+			}
+			command.CompletedAt = &value
+		}
+		commands = append(commands, command)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate run commands: %w", err)
+	}
+	return commands, nil
 }
 
 // Approval returns the current approval projection.

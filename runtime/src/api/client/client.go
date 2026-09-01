@@ -22,6 +22,7 @@ import (
 const (
 	defaultTimeout  = 10 * time.Second
 	maxResponseSize = 4 << 20
+	maxDownloadSize = 64 << 20
 )
 
 // FailureKind is a closed transport failure classification. API business
@@ -256,6 +257,48 @@ func (session *Session) DoJSON(ctx context.Context, method, resource string, req
 		return &Failure{Kind: FailureProtocol, Op: "decode daemon API response", Err: err}
 	}
 	return nil
+}
+
+// Download sends one authenticated request for a finite binary resource.
+func (session *Session) Download(ctx context.Context, resource string) ([]byte, error) {
+	resourceURL, err := session.resourceURL(resource)
+	if err != nil {
+		return nil, &Failure{Kind: FailureProtocol, Op: "build API request", Err: err}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
+	if err != nil {
+		return nil, &Failure{Kind: FailureProtocol, Op: "build API request", Err: err}
+	}
+	request.Header.Set("Authorization", session.endpoint.AuthorizationHeader())
+	request.Header.Set("Accept", "application/zip")
+	response, err := session.client.http.Do(request)
+	if err != nil {
+		return nil, &Failure{Kind: FailureUnavailable, Op: "call daemon API", Err: err}
+	}
+	defer response.Body.Close()
+	limit := int64(maxDownloadSize)
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		limit = maxResponseSize
+	}
+	content, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if err != nil {
+		return nil, &Failure{Kind: FailureProtocol, Op: "read daemon API response", Err: err}
+	}
+	if int64(len(content)) > limit {
+		return nil, &Failure{Kind: FailureProtocol, Op: "read daemon API response", Err: fmt.Errorf("response exceeds %d bytes", limit)}
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		var problem APIError
+		if err := json.Unmarshal(content, &problem); err != nil || problem.SchemaVersion != 1 || problem.Code == "" || problem.Message == "" {
+			return nil, &Failure{Kind: FailureProtocol, Op: "decode daemon API error", Err: fmt.Errorf("HTTP %d returned an invalid error envelope", response.StatusCode)}
+		}
+		problem.HTTPStatus = response.StatusCode
+		return nil, &problem
+	}
+	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/zip") {
+		return nil, &Failure{Kind: FailureProtocol, Op: "validate daemon API response", Err: fmt.Errorf("unexpected Content-Type %q", contentType)}
+	}
+	return content, nil
 }
 
 func (session *Session) resourceURL(resource string) (string, error) {

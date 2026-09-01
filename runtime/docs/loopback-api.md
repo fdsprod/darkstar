@@ -67,6 +67,16 @@ The `after` byte cursor and bounded `limit` query return raw bytes plus
 `X-Darkstar-Log-Complete`. Following clients request successive offsets; the API
 never accepts a filesystem path or returns an unbounded log body.
 
+`GET /api/v1/runs/{runId}/export` returns a finite `application/zip` support
+bundle. It contains `run.json`, correlated `events.jsonl`, `commands.json`, an
+`artifacts/index.json`, and every discovered log that remains locally available.
+`manifest.json` identifies the `default-v1` redaction policy, records each
+payload entry's SHA-256 digest and size, and lists unavailable or withheld
+evidence as explicit omissions. JSON fields with credential semantics, opaque
+locators, bearer values, and common credential assignments are redacted again at
+the export boundary; logs receive the same value redaction. The manifest itself
+is not listed in its entries because it cannot contain its own digest.
+
 The CLI client performs this discovery and negotiation once per finite command.
 For missing or unreachable endpoint state it idempotently autostarts the daemon,
 then performs one fresh discovery attempt. It never replays an application
