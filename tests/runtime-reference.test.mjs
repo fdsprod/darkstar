@@ -42,7 +42,8 @@ test("initial OpenAPI surface is versioned and references shared errors", () => 
   assert.ok(api.paths["/api/v1/events"].get.responses["410"]);
   assert.equal(api.components.schemas.RunPage.properties.pageInfo.properties.hasNextPage, undefined);
   assert.ok(api.paths["/api/v1/approvals/{approvalId}/decisions"].post.requestBody.content["application/json"].schema.properties.action.enum.includes("allow_once"));
-  assert.ok(api.components.schemas.Health.required.includes("recovery"));
+  assert.equal(api.components.schemas.Health.properties.recovery.$ref, "#/components/schemas/RecoveryStatus");
+  assert.equal(api.components.schemas.Health.required.includes("recovery"), false);
   assert.deepEqual(api.components.schemas.RecoveryStatus.required, ["reconciled", "reconcileRequired"]);
 });
 

@@ -19,6 +19,22 @@ test("generated schema catalog is deterministic and current", () => {
   assert.equal(checkCatalog(loadContracts(resolve(root, "schemas"))).matches, true);
 });
 
+test("v1 run evolution preserves legacy operations and models new requests as a distinct variant", () => {
+  const api = JSON.parse(readFileSync(resolve(root, "schemas", "openapi-v1alpha1.json"), "utf8"));
+  const runs = api.paths["/api/v1/runs"];
+
+  assert.equal(runs.get.operationId, "listRuns");
+  assert.ok(runs.post.responses["201"]);
+  assert.ok(runs.post.responses["202"]);
+  assert.deepEqual(
+    runs.post.requestBody.content["application/json"].schema.oneOf.map((variant) => variant.$ref),
+    ["#/components/schemas/CreateRunRequest", "#/components/schemas/StartFakeRunRequest"]
+  );
+  assert.equal(api.components.schemas.Health.required.includes("recovery"), false);
+  assert.equal(api.components.schemas.ApiRoot.required.includes("recovery"), false);
+  assert.equal(api.components.schemas.Run.required.includes("lastGlobalPosition"), false);
+});
+
 test("provider and artifact boundaries are published as strict schemas", () => {
   for (const name of ["provider-v1alpha1.schema.json", "artifact-v1alpha1.schema.json"]) {
     const schema = JSON.parse(readFileSync(resolve(root, "schemas", name), "utf8"));
