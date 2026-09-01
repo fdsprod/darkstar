@@ -67,7 +67,8 @@ func TestHealthIsUnauthenticatedButAPIRootRequiresBearerToken(t *testing.T) {
 	}
 	var healthBody healthResponse
 	decodeJSON(t, health, &healthBody)
-	if healthBody.Status != "ok" || len(healthBody.APIVersions) != 1 || healthBody.APIVersions[0] != VersionV1 {
+	if healthBody.Status != "ok" || len(healthBody.APIVersions) != 1 || healthBody.APIVersions[0] != VersionV1 ||
+		!healthBody.Recovery.SchedulingAllowed() {
 		t.Fatalf("health response = %#v", healthBody)
 	}
 
@@ -85,8 +86,38 @@ func TestHealthIsUnauthenticatedButAPIRootRequiresBearerToken(t *testing.T) {
 	}
 	var root apiRootResponse
 	decodeJSON(t, authorized, &root)
-	if root.SchemaVersion != 1 || root.APIVersion != VersionV1 {
+	if root.SchemaVersion != 1 || root.APIVersion != VersionV1 || !root.Recovery.SchedulingAllowed() {
 		t.Fatalf("API root = %#v", root)
+	}
+}
+
+func TestRecoveryRequiredIsObservableWithoutAdmittingScheduling(t *testing.T) {
+	t.Parallel()
+	server, err := NewServer(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SetRecoveryStatus(RecoveryStatus{Reconciled: 3, ReconcileRequired: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Start(context.Background(), os.Getpid(), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestServer(t, server)
+	endpoint, found := server.Endpoint()
+	if !found {
+		t.Fatal("started server has no endpoint")
+	}
+	response := get(t, endpoint.BaseURL()+"/api/v1", endpoint.AuthorizationHeader())
+	defer response.Body.Close()
+	var root apiRootResponse
+	decodeJSON(t, response, &root)
+	if root.Recovery.SchedulingAllowed() ||
+		root.Recovery.Reconciled != 3 || root.Recovery.ReconcileRequired != 2 {
+		t.Fatalf("API root recovery = %#v", root.Recovery)
+	}
+	if err := server.SetRecoveryStatus(RecoveryStatus{}); err == nil {
+		t.Fatal("SetRecoveryStatus succeeded after server start")
 	}
 }
 

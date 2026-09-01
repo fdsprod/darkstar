@@ -36,6 +36,7 @@ type Server struct {
 	state    serverState
 	endpoint Endpoint
 	http     *http.Server
+	recovery RecoveryStatus
 }
 
 // NewServer constructs an unstarted loopback API server.
@@ -48,7 +49,32 @@ func NewServer(runtimeDirectory string) (*Server, error) {
 		endpointPath: statePath,
 		now:          time.Now,
 		state:        serverNew,
+		recovery:     RecoveryStatus{},
 	}, nil
+}
+
+// RecoveryStatus is the safe startup-reconciliation summary exposed by the
+// public API. It contains no authority evidence or credentials.
+type RecoveryStatus struct {
+	Reconciled        int `json:"reconciled"`
+	ReconcileRequired int `json:"reconcileRequired"`
+}
+
+// SchedulingAllowed derives scheduler admission from the unresolved count.
+func (status RecoveryStatus) SchedulingAllowed() bool { return status.ReconcileRequired == 0 }
+
+// SetRecoveryStatus configures startup state before Start publishes the API.
+func (s *Server) SetRecoveryStatus(status RecoveryStatus) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API recovery status can only be set before start")
+	}
+	if status.Reconciled < 0 || status.ReconcileRequired < 0 || status.ReconcileRequired > status.Reconciled {
+		return errors.New("API recovery status is contradictory")
+	}
+	s.recovery = status
+	return nil
 }
 
 // Start binds an OS-assigned IPv4 loopback port, creates a fresh 256-bit token,
@@ -187,6 +213,7 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 			SchemaVersion: 1,
 			Status:        "ok",
 			APIVersions:   SupportedVersions(),
+			Recovery:      s.recovery,
 		})
 		return
 	}
@@ -230,7 +257,7 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 			})
 			return
 		}
-		writeJSON(response, http.StatusOK, apiRootResponse{SchemaVersion: 1, APIVersion: VersionV1})
+		writeJSON(response, http.StatusOK, apiRootResponse{SchemaVersion: 1, APIVersion: VersionV1, Recovery: s.recovery})
 		return
 	}
 
@@ -266,14 +293,16 @@ func requestedAPIVersion(requestPath string) (Version, bool) {
 }
 
 type healthResponse struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	Status        string    `json:"status"`
-	APIVersions   []Version `json:"apiVersions"`
+	SchemaVersion int            `json:"schemaVersion"`
+	Status        string         `json:"status"`
+	APIVersions   []Version      `json:"apiVersions"`
+	Recovery      RecoveryStatus `json:"recovery"`
 }
 
 type apiRootResponse struct {
-	SchemaVersion int     `json:"schemaVersion"`
-	APIVersion    Version `json:"apiVersion"`
+	SchemaVersion int            `json:"schemaVersion"`
+	APIVersion    Version        `json:"apiVersion"`
+	Recovery      RecoveryStatus `json:"recovery"`
 }
 
 type apiError struct {

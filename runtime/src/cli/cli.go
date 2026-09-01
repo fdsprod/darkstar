@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/fdsprod/darkstar/runtime/src/adapters/statestore/sqlite"
 	localapi "github.com/fdsprod/darkstar/runtime/src/api"
 	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
+	"github.com/fdsprod/darkstar/runtime/src/core/recovery"
 	"github.com/fdsprod/darkstar/runtime/src/daemon"
 	"github.com/fdsprod/darkstar/runtime/src/platform/windows"
 	platformport "github.com/fdsprod/darkstar/runtime/src/ports/platform"
@@ -149,13 +151,57 @@ func runDaemon(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	}
 }
 
-type daemonAPIService struct{ server *localapi.Server }
-
-func (service daemonAPIService) Start(ctx context.Context, identity daemon.ProcessIdentity) error {
-	return service.server.Start(ctx, identity.PID, identity.StartedAt)
+type daemonAPIService struct {
+	server        *localapi.Server
+	dataDirectory string
+	database      *sqlite.Database
 }
 
-func (service daemonAPIService) Close() error { return service.server.Close() }
+func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) error {
+	if err := os.MkdirAll(service.dataDirectory, 0o700); err != nil {
+		return fmt.Errorf("create daemon data directory: %w", err)
+	}
+	database, err := sqlite.Open(ctx, filepath.Join(service.dataDirectory, "darkstar.db"), sqlite.Options{})
+	if err != nil {
+		return fmt.Errorf("open daemon state: %w", err)
+	}
+	service.database = database
+	reconciler, err := recovery.New(database, nil)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	report, err := reconciler.Run(ctx, state.InstanceID)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return fmt.Errorf("startup reconciliation: %w", err)
+	}
+	if err := service.server.SetRecoveryStatus(localapi.RecoveryStatus{
+		Reconciled: len(report.Results), ReconcileRequired: report.ReconcileRequired(),
+	}); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.server.Start(ctx, state.Process.PID, state.Process.StartedAt); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	return nil
+}
+
+func (service *daemonAPIService) Close() error {
+	serverErr := service.server.Close()
+	var databaseErr error
+	if service.database != nil {
+		databaseErr = service.database.Close()
+		service.database = nil
+	}
+	return errors.Join(serverErr, databaseErr)
+}
 
 type daemonRunEvent struct {
 	SchemaVersion int                     `json:"schemaVersion"`
@@ -171,7 +217,12 @@ func runDaemonForeground(manager *daemon.Manager, jsonOutput bool, stdout, stder
 		return writeCommandError(stdout, stderr, jsonOutput, "darkstar daemon run", "DAEMON_START_FAILED", err.Error(), true, ExitTransientFailure)
 	}
 	var outputErr error
-	err = manager.RunWithService(ctx, daemonAPIService{server: server}, func(state daemon.State) {
+	paths, err := resolveApplicationPaths(ctx)
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar daemon run", "DAEMON_START_FAILED", err.Error(), true, ExitTransientFailure)
+	}
+	service := &daemonAPIService{server: server, dataDirectory: paths.Data}
+	err = manager.RunWithService(ctx, service, func(state daemon.State) {
 		if jsonOutput {
 			process := state.Process
 			outputErr = writeJSON(stdout, daemonRunEvent{SchemaVersion: machineSchemaVersion, Event: "running", Process: &process})
@@ -206,11 +257,15 @@ func runDaemonForeground(manager *daemon.Manager, jsonOutput bool, stdout, stder
 }
 
 func newDaemonManager(ctx context.Context) (*daemon.Manager, error) {
-	paths, err := windows.NewPathResolver().ResolvePaths(ctx, platformport.PathRequest{ApplicationName: "DARKSTAR"})
+	paths, err := resolveApplicationPaths(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolve runtime paths: %w", err)
 	}
 	return daemon.NewManager(paths.Runtime, windows.NewDaemonHost())
+}
+
+func resolveApplicationPaths(ctx context.Context) (platformport.Paths, error) {
+	return windows.NewPathResolver().ResolvePaths(ctx, platformport.PathRequest{ApplicationName: "DARKSTAR"})
 }
 
 func detachedRequest(manager *daemon.Manager) (daemon.DetachedRequest, error) {
@@ -381,10 +436,12 @@ func daemonStatus(manager *daemon.Manager, jsonOutput bool, stdout, stderr io.Wr
 }
 
 type apiStatusOutput struct {
-	SchemaVersion int              `json:"schemaVersion"`
-	Status        string           `json:"status"`
-	APIVersion    localapi.Version `json:"apiVersion"`
-	PID           int              `json:"pid"`
+	SchemaVersion     int              `json:"schemaVersion"`
+	Status            string           `json:"status"`
+	APIVersion        localapi.Version `json:"apiVersion"`
+	PID               int              `json:"pid"`
+	Reconciled        int              `json:"reconciled"`
+	ReconcileRequired int              `json:"reconcileRequired"`
 }
 
 func runAPI(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
@@ -409,18 +466,29 @@ func runAPI(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if err != nil {
 		return writeClientError(stdout, stderr, jsonOutput, "darkstar api status", err)
 	}
+	recoveryState := session.Recovery()
+	status := "ready"
+	if !recoveryState.SchedulingAllowed() {
+		status = "reconciliation_required"
+	}
 	output := apiStatusOutput{
-		SchemaVersion: machineSchemaVersion,
-		Status:        "ready",
-		APIVersion:    session.Version(),
-		PID:           session.Endpoint().PID,
+		SchemaVersion:     machineSchemaVersion,
+		Status:            status,
+		APIVersion:        session.Version(),
+		PID:               session.Endpoint().PID,
+		Reconciled:        recoveryState.Reconciled,
+		ReconcileRequired: recoveryState.ReconcileRequired,
 	}
 	if jsonOutput {
 		if err := writeJSON(stdout, output); err != nil {
 			return writeCommandError(stdout, stderr, false, "darkstar api status", "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
 		}
 	} else {
-		fmt.Fprintf(stdout, "Daemon API %s is ready (pid %d).\n", output.APIVersion, output.PID)
+		if recoveryState.SchedulingAllowed() {
+			fmt.Fprintf(stdout, "Daemon API %s is ready (pid %d); startup recovery is complete.\n", output.APIVersion, output.PID)
+		} else {
+			fmt.Fprintf(stdout, "Daemon API %s is ready (pid %d); %d item(s) require reconciliation and scheduling is paused.\n", output.APIVersion, output.PID, output.ReconcileRequired)
+		}
 	}
 	return int(ExitSuccess)
 }

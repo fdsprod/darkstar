@@ -70,9 +70,9 @@ func TestRunWithServicePublishesStateOnlyAfterServiceIsReady(t *testing.T) {
 
 	manager, host := newTestManager(t)
 	host.current = testState(202).Process
-	service := &fakeRuntimeService{start: func(identity ProcessIdentity) error {
-		if identity != host.current {
-			t.Fatalf("service identity = %#v, want %#v", identity, host.current)
+	service := &fakeRuntimeService{start: func(state State) error {
+		if state.Process != host.current {
+			t.Fatalf("service identity = %#v, want %#v", state.Process, host.current)
 		}
 		if _, err := os.Stat(manager.statePath()); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("daemon state during service start = %v, want absent", err)
@@ -313,12 +313,12 @@ func (fakeStopEvent) Close() error { return nil }
 type fakeRuntimeService struct {
 	startCalls int
 	closeCalls int
-	start      func(ProcessIdentity) error
+	start      func(State) error
 }
 
-func (service *fakeRuntimeService) Start(_ context.Context, identity ProcessIdentity) error {
+func (service *fakeRuntimeService) Start(_ context.Context, state State) error {
 	service.startCalls++
-	return service.start(identity)
+	return service.start(state)
 }
 
 func (service *fakeRuntimeService) Close() error {

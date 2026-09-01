@@ -38,6 +38,11 @@ Clients read `apiVersion`, intersect it with their supported versions, and use
 the corresponding `/api/v1` base. An authenticated request for another `/api/*`
 version receives HTTP 426 with stable code `API_VERSION_UNSUPPORTED`. The API
 root at `GET /api/v1/` confirms the negotiated representation version.
+Both the API root and health response include the safe startup-recovery counts:
+how many durable records were classified and how many require operator
+reconciliation. Scheduling admission is derived from the unresolved count.
+Authority evidence remains authenticated durable state and is not returned by
+the health endpoint.
 
 The CLI client performs this discovery and negotiation once per finite command.
 For missing or unreachable endpoint state it idempotently autostarts the daemon,

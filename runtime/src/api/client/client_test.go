@@ -38,6 +38,9 @@ func TestConnectDiscoversRunningDaemonWithoutAutostart(t *testing.T) {
 	if session.Endpoint().Port != endpointPort(t, server) {
 		t.Fatal("session did not retain the discovered endpoint")
 	}
+	if !session.Recovery().SchedulingAllowed() {
+		t.Fatalf("Recovery() = %#v", session.Recovery())
+	}
 	if starts.Load() != 0 {
 		t.Fatalf("autostart calls = %d, want 0", starts.Load())
 	}

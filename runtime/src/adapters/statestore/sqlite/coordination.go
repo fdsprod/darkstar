@@ -538,7 +538,11 @@ func readActiveLease(ctx context.Context, query leaseRowQueryer, kind statestore
 	return scanLease(query.QueryRowContext(ctx, leaseSelect+` WHERE scope_kind = ? AND scope_id = ? AND state <> 'released'`, kind, scopeID))
 }
 
-func scanLease(row *sql.Row) (statestore.Lease, error) {
+type rowScanner interface {
+	Scan(...any) error
+}
+
+func scanLease(row rowScanner) (statestore.Lease, error) {
 	var lease statestore.Lease
 	var acquiredAt, heartbeatAt, expiresAt string
 	var processIdentity, evidence, releasedAt sql.NullString
@@ -584,7 +588,7 @@ func readQueueEntry(ctx context.Context, query leaseRowQueryer, kind statestore.
 		FROM queue_entries WHERE queue_kind = ? AND scope_id = ? AND item_id = ?`, kind, scopeID, itemID))
 }
 
-func scanQueueEntry(row *sql.Row) (statestore.QueueEntry, error) {
+func scanQueueEntry(row rowScanner) (statestore.QueueEntry, error) {
 	var entry statestore.QueueEntry
 	var availableAt, enqueuedAt, payload string
 	if err := row.Scan(&entry.Kind, &entry.ScopeID, &entry.ItemID, &entry.Priority, &availableAt, &enqueuedAt, &payload); err != nil {

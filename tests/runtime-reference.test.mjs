@@ -42,6 +42,8 @@ test("initial OpenAPI surface is versioned and references shared errors", () => 
   assert.ok(api.paths["/api/v1/events"].get.responses["410"]);
   assert.equal(api.components.schemas.RunPage.properties.pageInfo.properties.hasNextPage, undefined);
   assert.ok(api.paths["/api/v1/approvals/{approvalId}/decisions"].post.requestBody.content["application/json"].schema.properties.action.enum.includes("allow_once"));
+  assert.ok(api.components.schemas.Health.required.includes("recovery"));
+  assert.deepEqual(api.components.schemas.RecoveryStatus.required, ["reconciled", "reconcileRequired"]);
 });
 
 test("event and error schemas are strict", () => {
@@ -57,11 +59,22 @@ test("event and error schemas are strict", () => {
 
 test("SQLite logical model contains append, idempotency, coordination, outbox, and projection boundaries", () => {
   const sql = readFileSync(resolve(root, "schemas/sqlite-v1alpha1.sql"), "utf8");
-  for (const table of ["events","commands","outbox","run_projection","approval_projection","external_refs","projection_checkpoints","lease_scopes","leases","queue_entries"])
+  for (const table of ["events","commands","outbox","run_projection","approval_projection","external_refs","projection_checkpoints","lease_scopes","leases","queue_entries","recovery_decisions"])
     assert.match(sql, new RegExp(`CREATE TABLE ${table} \\(`));
   assert.doesNotMatch(sql, /stream_id|stream_sequence|aggregate_type TEXT NOT NULL REFERENCES/);
   assert.match(sql, /UNIQUE\(aggregate_id, aggregate_revision\)/);
   assert.match(sql, /PRIMARY KEY\(scope, idempotency_key\)/);
+});
+
+test("startup recovery decisions are closed, atomic, and append-only", () => {
+  const logical = readFileSync(resolve(root, "schemas/sqlite-v1alpha1.sql"), "utf8").replaceAll("\r\n", "\n");
+  const migration = readFileSync(resolve(root, "runtime/src/adapters/statestore/sqlite/migrations/0005_startup_recovery.sql"), "utf8").replaceAll("\r\n", "\n");
+  for (const sql of [logical, migration]) {
+    assert.match(sql, /'adopt'.*'resume'.*'retry'.*'interrupt'.*'reconcile_required'/s);
+    assert.match(sql, /PRIMARY KEY\(startup_id, subject_kind, subject_id\)/);
+    assert.match(sql, /recovery_decisions_reject_update/);
+    assert.match(sql, /recovery_decisions_reject_delete/);
+  }
 });
 
 test("SQLite coordination model fences one repository writer and orders its durable queue", () => {

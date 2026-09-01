@@ -40,6 +40,9 @@ transport, versioned JSON conventions, and stable process exit classes.
 See [durable coordination](coordination.md) for lease fencing, heartbeat and
 release semantics, deterministic queues, and repository writer locks.
 
+See [startup reconciliation](startup-recovery.md) for authority-backed recovery
+decisions, durable evidence, scheduler gating, and API/CLI observability.
+
 ## Validate independently
 
 From the repository root:

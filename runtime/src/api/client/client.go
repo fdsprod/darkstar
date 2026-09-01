@@ -123,10 +123,14 @@ type Session struct {
 	client   *Client
 	endpoint localapi.Endpoint
 	version  localapi.Version
+	recovery localapi.RecoveryStatus
 }
 
 // Version returns the negotiated API representation version.
 func (session *Session) Version() localapi.Version { return session.version }
+
+// Recovery returns the daemon's safe startup-reconciliation summary.
+func (session *Session) Recovery() localapi.RecoveryStatus { return session.recovery }
 
 // EndpointMetadata is the safe subset of endpoint discovery state exposed to
 // command output. It cannot represent or serialize the bearer credential.
@@ -177,8 +181,9 @@ func (client *Client) connectOnce(ctx context.Context) (*Session, error) {
 	}
 	session := &Session{client: client, endpoint: endpoint, version: version}
 	var root struct {
-		SchemaVersion int              `json:"schemaVersion"`
-		APIVersion    localapi.Version `json:"apiVersion"`
+		SchemaVersion int                     `json:"schemaVersion"`
+		APIVersion    localapi.Version        `json:"apiVersion"`
+		Recovery      localapi.RecoveryStatus `json:"recovery"`
 	}
 	if err := session.DoJSON(ctx, http.MethodGet, "", nil, &root); err != nil {
 		var problem *APIError
@@ -190,6 +195,7 @@ func (client *Client) connectOnce(ctx context.Context) (*Session, error) {
 	if root.SchemaVersion != 1 || root.APIVersion != version {
 		return nil, &Failure{Kind: FailureProtocol, Op: "validate daemon API", Err: fmt.Errorf("unexpected root response schemaVersion=%d apiVersion=%q", root.SchemaVersion, root.APIVersion)}
 	}
+	session.recovery = root.Recovery
 	return session, nil
 }
 

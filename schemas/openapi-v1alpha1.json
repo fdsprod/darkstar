@@ -39,8 +39,9 @@
     "responses":{"Error":{"description":"Stable API error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"}}}}},
     "schemas": {
       "ApiError":{"$ref":"./api-error-v1alpha1.schema.json"},
-      "Health":{"type":"object","additionalProperties":false,"required":["schemaVersion","status","apiVersions"],"properties":{"schemaVersion":{"const":1},"status":{"const":"ok"},"apiVersions":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["v1"]}}}},
-      "ApiRoot":{"type":"object","additionalProperties":false,"required":["schemaVersion","apiVersion"],"properties":{"schemaVersion":{"const":1},"apiVersion":{"const":"v1"}}},
+      "RecoveryStatus":{"type":"object","additionalProperties":false,"required":["reconciled","reconcileRequired"],"properties":{"reconciled":{"type":"integer","minimum":0},"reconcileRequired":{"type":"integer","minimum":0}}},
+      "Health":{"type":"object","additionalProperties":false,"required":["schemaVersion","status","apiVersions","recovery"],"properties":{"schemaVersion":{"const":1},"status":{"const":"ok"},"apiVersions":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["v1"]}},"recovery":{"$ref":"#/components/schemas/RecoveryStatus"}}},
+      "ApiRoot":{"type":"object","additionalProperties":false,"required":["schemaVersion","apiVersion","recovery"],"properties":{"schemaVersion":{"const":1},"apiVersion":{"const":"v1"},"recovery":{"$ref":"#/components/schemas/RecoveryStatus"}}},
       "Run":{"type":"object","additionalProperties":false,"required":["id","workItemId","workflowId","workflowVersion","status","resourceVersion","createdAt","updatedAt"],"properties":{"id":{"type":"string"},"workItemId":{"type":"string"},"workflowId":{"type":"string"},"workflowVersion":{"type":"string"},"status":{"enum":["pending","running","waiting","completed","failed","cancelled","reconcile_required"]},"resourceVersion":{"type":"integer","minimum":1},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}},
       "RunPage":{"type":"object","additionalProperties":false,"required":["items","pageInfo"],"properties":{"items":{"type":"array","items":{"$ref":"#/components/schemas/Run"}},"pageInfo":{"type":"object","additionalProperties":false,"required":["nextCursor"],"properties":{"nextCursor":{"type":["string","null"]}}}}}
     }

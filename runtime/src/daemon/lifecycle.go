@@ -92,7 +92,7 @@ type StopEvent interface {
 // RuntimeService is an independently testable transport or worker that must be
 // ready before daemon state becomes discoverable. The daemon owns its lifetime.
 type RuntimeService interface {
-	Start(context.Context, ProcessIdentity) error
+	Start(context.Context, State) error
 	Close() error
 }
 
@@ -269,7 +269,7 @@ func (m *Manager) RunWithService(ctx context.Context, service RuntimeService, re
 		}
 	}()
 	if service != nil {
-		if err := service.Start(ctx, identity); err != nil {
+		if err := service.Start(ctx, state); err != nil {
 			return fmt.Errorf("start daemon runtime service: %w", err)
 		}
 		serviceStarted = true
