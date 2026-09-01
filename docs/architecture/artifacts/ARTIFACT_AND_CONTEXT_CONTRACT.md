@@ -67,6 +67,15 @@ HTML, office documents, archives, source maps, audio/video transcription, and OC
 are not automatically discovered or processed in the MVP. A later explicit,
 versioned processor may add a representation without changing the artifact.
 
+Common-image processing emits an `image` representation containing the exact
+source bytes and a model-usable durable locator. Its metadata records `width`,
+`height`, `format`, `mediaType`, and `modelUsable`. When decoding is safe within
+the pixel budget, it also emits a deterministic PNG `preview` bounded to 512
+pixels on its longest edge; preview metadata records its own dimensions plus
+`sourceWidth`, `sourceHeight`, `sourceFormat`, and `resizeAlgorithm`. The preview
+representation's presence is the source of truth for availability—there is no
+separate thumbnail flag to become stale.
+
 ## 4. Identification and processing
 
 The ingestion adapter canonicalizes only the destination owned by DARKSTAR; it

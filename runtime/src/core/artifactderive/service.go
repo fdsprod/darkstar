@@ -119,7 +119,8 @@ func (service *Service) Derive(ctx context.Context, request Request) (Result, er
 	limits := effectiveLimits(request.Limits, service.policy.ProcessorLimits())
 	sink := &registrySink{
 		store: service.store, registry: service.representations, source: request.Artifact,
-		processor: selected.Descriptor(), operationID: request.OperationID, idempotencyKey: request.IdempotencyKey, maxBytes: limits.OutputBytes,
+		processor: selected.Descriptor(), operationID: request.OperationID, idempotencyKey: request.IdempotencyKey,
+		maxBytes: limits.OutputBytes, maxSourceBytes: limits.SourceBytes,
 	}
 	processCtx, cancel := context.WithTimeout(ctx, limits.WallTime)
 	defer cancel()
@@ -175,14 +176,22 @@ type registrySink struct {
 	operationID    string
 	idempotencyKey string
 	maxBytes       int64
+	maxSourceBytes int64
 	created        []representationregistry.Representation
 }
 
 func (sink *registrySink) Store(ctx context.Context, representation contentprocessor.Representation) (contentprocessor.Receipt, error) {
 	key := sink.idempotencyKey + "/" + string(representation.Kind)
+	maxBytes := sink.maxBytes
+	// Image representations intentionally retain source bytes so their locator
+	// is directly usable by a model adapter. The source-byte policy remains the
+	// governing bound; previews still use the smaller decoded-output bound.
+	if representation.Kind == contentprocessor.RepresentationImage {
+		maxBytes = sink.maxSourceBytes
+	}
 	blob, err := sink.store.Put(ctx, artifactstore.PutRequest{
 		IdempotencyKey: key, Content: representation.Content, ExpectedDigest: representation.Digest,
-		ExpectedSize: &representation.Size, MaxBytes: sink.maxBytes, MediaType: representation.MediaType,
+		ExpectedSize: &representation.Size, MaxBytes: maxBytes, MediaType: representation.MediaType,
 	})
 	if err != nil {
 		return contentprocessor.Receipt{}, err
