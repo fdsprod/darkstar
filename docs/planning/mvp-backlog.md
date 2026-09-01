@@ -2,7 +2,7 @@
 
 > [Documentation index](../README.md)
 
-**Status:** Linear-ready planning backlog; not pushed to Linear  
+**Status:** Synchronized with the Linear `DARKSTAR MVP` project; Linear owns live status and relationships, while this file preserves the portable planning baseline
 **Source specifications:** [Product specification](../product/product-specification.md) and [default workflow](../product/default-workflow.md)  
 **Scope boundary:** Windows-first, Codex-first, local daemon, complete CLI, thin dashboard, configurable workflow, folder artifact store, GitHub pull-request delivery, and self-hosting proof
 
@@ -10,17 +10,16 @@
 
 ## 1. How to use this backlog
 
-Each `DS-###` identifier is a stable planning key. When the Linear workspace exists:
+Each `DS-###` identifier is a stable planning key. When reconciling this baseline with Linear:
 
-1. Create one Linear project per initiative in section 5.
-2. Create the milestones in section 3.
-3. Add labels: `spike`, `architecture`, `runtime`, `workflow`, `artifact`, `provider`, `git`, `delivery`, `dashboard`, `security`, `testing`, `windows`, and `dogfood`.
-4. Create issues using the title and completion statement in the initiative tables.
-5. Preserve `DS-###` in the issue title or description even after Linear assigns its own identifier.
-6. Add dependency relations from the `Depends on` column after all issues exist.
-7. Convert unusually large `L` issues into Linear sub-issues during iteration planning without changing their acceptance boundary.
+1. Keep one `DARKSTAR MVP` Linear project with the milestones in section 3.
+2. Map each initiative in section 5 to the issue's workstream text and labels rather than a separate project.
+3. Preserve `DS-###` in every issue title and planning-metadata section after Linear assigns its `DAR-###` identifier.
+4. Keep blocked-by relationships aligned with the `Depends on` column; use related links for later issues that extend a deliberately narrow foundation.
+5. Keep milestone exit conditions outcome-based. A milestone is not complete merely because its original issue list reached `Done`.
+6. Convert unusually large `L` issues into Linear sub-issues during iteration planning without changing their acceptance boundary.
 
-No issue in this document has been sent to Linear or any other external system.
+Scope changes must update both this file and Linear in the same planning change.
 
 ### Field conventions
 
@@ -89,7 +88,7 @@ The shortest credible self-hosting path is:
 ```text
 DS-001/002/003/004/005/006/008/009
 → DS-020/021/023/024
-→ DS-031/032/033/034/037/038
+→ DS-031/032/033/034/037/038/040/041
 → DS-050/052/054/055/057
 → DS-070/071/072/073/077
 → DS-090/091/093/094/095/096/097
@@ -109,12 +108,12 @@ The dashboard is required for MVP, but the CLI path should reach end-to-end deli
 | Milestone | Exit condition | Primary issues |
 |---|---|---|
 | **M0 — Contracts de-risked** | All blocking spikes have written decisions, executable probes, and affected backlog updates. | DS-001–DS-010 |
-| **M1 — Walking skeleton** | `darkstar.exe` starts a local daemon, persists events, exposes an authenticated API, and runs a fake-provider job through the CLI. | DS-020–DS-040 |
+| **M1 — Runtime walking skeleton** | A public CLI command starts a persisted deterministic fake-provider run through the daemon; clients can show/watch it, daemon restart recovers it without duplicate effects, and the completed run can be exported. | DS-020–DS-041 |
 | **M2 — Workflow and artifact core** | A versioned custom workflow can ingest evidence, create/revise artifacts, route from a selected node, and resume deterministically with a fake provider. | DS-050–DS-080 |
 | **M3 — Real Codex execution** | Codex can execute structured read/write nodes with approvals, resume, cancellation, capabilities, and contract tests on Windows. | DS-090–DS-100 |
-| **M4 — End-to-end CLI delivery** | A work item produces approved artifacts, an implementation plan, validated atomic commits, and a GitHub PR using only public CLI commands. | DS-110–DS-157 |
+| **M4 — Self-hostable CLI MVP** | A real Codex-backed work item produces approved artifacts, an implementation plan, validated atomic commits, and a GitHub PR using only public CLI/API interfaces. Completion makes DARKSTAR usable for internal self-development from the CLI. | DS-110–DS-157 |
 | **M5 — Dashboard parity** | Every MVP dashboard action maps to an existing API/CLI transition and supports live board/run/agent/artifact/checkpoint views. | DS-170–DS-179 |
-| **M6 — Self-hosted release** | DARKSTAR uses itself to deliver a real DARKSTAR change, passes all quality gates, and ships as a Windows MVP build. | DS-190–DS-218 |
+| **M6 — Hardened, released MVP** | DARKSTAR has used its own public workflow to deliver a real change, passed acceptance, security, recovery, and Windows release-candidate gates, and ships as a supportable Windows MVP. | DS-190–DS-218 |
 
 ---
 
@@ -254,6 +253,7 @@ These issues should be written up before their dependent implementation closes. 
 | DS-038 | Feature | P0 | L | Implement startup reconciliation and interrupted-run recovery | DS-003, DS-033, DS-037 | Restart classifies stale attempts/processes and resumes, retries, or pauses them without duplicating completed effects. |
 | DS-039 | Feature | P1 | M | Implement doctor and subsystem health reports | DS-001, DS-030, DS-033 | CLI/API report database, daemon, paths, Git, Codex, GitHub, configuration, and provider readiness with actionable codes. |
 | DS-040 | Feature | P1 | M | Export redacted self-contained run bundles | DS-032, DS-035 | A run export contains events, snapshots, artifacts/references, command evidence, and logs while excluding secrets by default. |
+| DS-041 | Feature | P0 | L | Execute a persisted fake-provider run through the public CLI/API | DS-024, DS-032–DS-038, DS-040 | A CLI-started deterministic fake-provider run persists lifecycle/evidence, is observable through show/watch, survives one daemon restart without duplicate effects, exports successfully, and is proven by an end-to-end test that does not seed SQLite directly. |
 
 **Initiative exit:** A fake-provider run survives daemon restart and is fully controllable and observable through the public CLI/API.
 
