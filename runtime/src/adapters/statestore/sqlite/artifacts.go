@@ -80,6 +80,13 @@ func (d *Database) Register(ctx context.Context, request artifactregistry.Regist
 	if err != nil {
 		return artifactregistry.ArtifactVersion{}, false, fmt.Errorf("read created artifact version: %w", err)
 	}
+	if created.Version > 1 {
+		previous := artifactregistry.VersionRef{ArtifactID: created.ArtifactID, Version: created.Version - 1}
+		current := artifactregistry.VersionRef{ArtifactID: created.ArtifactID, Version: created.Version}
+		if err := recordArtifactInvalidations(ctx, tx, previous, current, formatTime(created.CreatedAt)); err != nil {
+			return artifactregistry.ArtifactVersion{}, false, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return artifactregistry.ArtifactVersion{}, false, fmt.Errorf("commit artifact registration: %w", err)
 	}

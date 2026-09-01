@@ -39,15 +39,15 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read schema version: %v", err)
 	}
-	if version != 9 {
-		t.Fatalf("schema version = %d, want 9", version)
+	if version != 10 {
+		t.Fatalf("schema version = %d, want 10", version)
 	}
 	history, err := database.AppliedMigrations(ctx)
 	if err != nil {
 		t.Fatalf("read migration history: %v", err)
 	}
-	if len(history) != 9 || history[0].Version != 1 || history[0].Name != "initial" || history[1].Version != 2 || history[1].Name != "constrain_state" || history[2].Version != 3 || history[2].Name != "append_only_events" || history[3].Version != 4 || history[3].Name != "leases_queues" || history[4].Version != 5 || history[4].Name != "startup_recovery" || history[5].Version != 6 || history[5].Name != "attempt_projection" || history[6].Version != 7 || history[6].Name != "workflow_snapshots" || history[7].Version != 8 || history[7].Name != "workflow_state_machines" || history[8].Version != 9 || history[8].Name != "artifact_registry" {
-		t.Fatalf("migration history = %#v, want initial through artifact_registry migrations", history)
+	if len(history) != 10 || history[0].Version != 1 || history[0].Name != "initial" || history[1].Version != 2 || history[1].Name != "constrain_state" || history[2].Version != 3 || history[2].Name != "append_only_events" || history[3].Version != 4 || history[3].Name != "leases_queues" || history[4].Version != 5 || history[4].Name != "startup_recovery" || history[5].Version != 6 || history[5].Name != "attempt_projection" || history[6].Version != 7 || history[6].Name != "workflow_snapshots" || history[7].Version != 8 || history[7].Name != "workflow_state_machines" || history[8].Version != 9 || history[8].Name != "artifact_registry" || history[9].Version != 10 || history[9].Name != "artifact_lineage_bindings" {
+		t.Fatalf("migration history = %#v, want initial through artifact_lineage_bindings migrations", history)
 	}
 	for _, item := range history {
 		if len(item.Checksum) != 64 {
@@ -59,7 +59,7 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	}
 
 	wantTables := []string{
-		"aggregates", "approval_projection", "artifact_versions", "attempt_projection", "commands", "events", "external_refs",
+		"aggregates", "approval_projection", "artifact_binding_versions", "artifact_dependencies", "artifact_invalidations", "artifact_versions", "attempt_projection", "commands", "events", "external_refs",
 		"global_positions", "leases", "lease_scopes", "outbox", "projection_checkpoints",
 		"node_projection", "queue_entries", "recovery_decisions", "run_projection", "run_workflow_snapshots", "schema_migrations", "workflow_versions",
 	}
@@ -78,8 +78,8 @@ func TestOpenCreatesAndRecordsFreshSchema(t *testing.T) {
 	if err := database.SQL().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrationCount != 9 {
-		t.Errorf("migration count = %d, want 9", migrationCount)
+	if migrationCount != 10 {
+		t.Errorf("migration count = %d, want 10", migrationCount)
 	}
 	if err := database.SQL().QueryRowContext(ctx,
 		`SELECT last_position FROM global_positions WHERE singleton = 1`).Scan(&initialPosition); err != nil {
@@ -119,8 +119,8 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err := second.SQL().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 9 {
-		t.Fatalf("migration count after reopen = %d, want 9", count)
+	if count != 10 {
+		t.Fatalf("migration count after reopen = %d, want 10", count)
 	}
 }
 
