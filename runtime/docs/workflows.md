@@ -55,3 +55,20 @@ selected range. Required bindings may be satisfied by run inputs, accepted prior
 outputs, or an included predecessor. Any remaining gaps are returned as ordered
 `RUN_INPUT_REQUIRED` requirements so the run can wait for input without fabricating
 a value or executing an excluded predecessor.
+
+## Bounded edges and sub-workflow frames
+
+Runtime control-flow state is scoped to an execution frame. Firing a transition
+creates an idempotent token keyed by source visit, transition, and join epoch. A
+bounded token owns its post-consumption traversal ordinal and declared limit;
+replaying the same token does not consume the budget again, while a new firing
+after the limit fails visibly with `RUN_LOOP_LIMIT_EXHAUSTED`. Serializable frame
+snapshots reconstruct traversal counts from the authoritative tokens and reject
+duplicate, conflicting, or discontinuous evidence before replay.
+
+A sub-workflow call creates a child frame pinned to the declared workflow name,
+version, and digest. The call must use its declared entry and terminal set, copies
+mapped inputs by value, rejects recursive ancestry, and maps only declared,
+type-compatible child outputs to the parent candidate. Parent, child, and sibling
+frames never share transition tokens or traversal counters, so reusable story and
+repair workflows have isolated iteration state.
