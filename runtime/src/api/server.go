@@ -10,9 +10,12 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/fdsprod/darkstar/runtime/src/core/health"
 )
 
 const requestIDHeader = "X-Request-Id"
@@ -37,6 +40,12 @@ type Server struct {
 	endpoint Endpoint
 	http     *http.Server
 	recovery RecoveryStatus
+	doctor   DoctorReporter
+}
+
+// DoctorReporter produces the authenticated, detailed subsystem health report.
+type DoctorReporter interface {
+	ReportForProject(context.Context, string) (health.Report, error)
 }
 
 // NewServer constructs an unstarted loopback API server.
@@ -74,6 +83,20 @@ func (s *Server) SetRecoveryStatus(status RecoveryStatus) error {
 		return errors.New("API recovery status is contradictory")
 	}
 	s.recovery = status
+	return nil
+}
+
+// SetDoctor configures detailed health reporting before Start publishes the API.
+func (s *Server) SetDoctor(reporter DoctorReporter) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API doctor can only be set before start")
+	}
+	if reporter == nil {
+		return errors.New("API doctor is required")
+	}
+	s.doctor = reporter
 	return nil
 }
 
@@ -245,6 +268,68 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		return
 	}
 
+	if path.Clean(request.URL.Path) == "/api/v1/doctor" {
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			response.Header().Set("Allow", "GET, HEAD")
+			writeAPIError(response, http.StatusMethodNotAllowed, apiError{
+				SchemaVersion: 1,
+				Code:          "METHOD_NOT_ALLOWED",
+				Message:       "The HTTP method is not supported for this resource.",
+				RequestID:     requestID,
+				Retryable:     false,
+			})
+			return
+		}
+		s.mu.RLock()
+		reporter := s.doctor
+		s.mu.RUnlock()
+		if reporter == nil {
+			writeAPIError(response, http.StatusServiceUnavailable, apiError{
+				SchemaVersion: 1,
+				Code:          "DOCTOR_UNAVAILABLE",
+				Message:       "Detailed subsystem health reporting is not configured.",
+				RequestID:     requestID,
+				Retryable:     true,
+			})
+			return
+		}
+		query := request.URL.Query()
+		if len(query) > 1 || (len(query) == 1 && !query.Has("projectRoot")) || len(query["projectRoot"]) > 1 {
+			writeAPIError(response, http.StatusBadRequest, apiError{
+				SchemaVersion: 1,
+				Code:          "VALIDATION_FAILED",
+				Message:       "The doctor request query is invalid.",
+				RequestID:     requestID,
+				Retryable:     false,
+			})
+			return
+		}
+		projectRoot := query.Get("projectRoot")
+		if projectRoot != "" && !pathIsAbsolute(projectRoot) {
+			writeAPIError(response, http.StatusBadRequest, apiError{
+				SchemaVersion: 1,
+				Code:          "VALIDATION_FAILED",
+				Message:       "The doctor project root must be absolute.",
+				RequestID:     requestID,
+				Retryable:     false,
+			})
+			return
+		}
+		report, err := reporter.ReportForProject(request.Context(), projectRoot)
+		if err != nil {
+			writeAPIError(response, http.StatusServiceUnavailable, apiError{
+				SchemaVersion: 1,
+				Code:          "DOCTOR_FAILED",
+				Message:       "Detailed subsystem health reporting failed.",
+				RequestID:     requestID,
+				Retryable:     true,
+			})
+			return
+		}
+		writeJSON(response, http.StatusOK, report)
+		return
+	}
+
 	if path.Clean(request.URL.Path) == "/api/v1" {
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			response.Header().Set("Allow", "GET, HEAD")
@@ -268,6 +353,12 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		RequestID:     requestID,
 		Retryable:     false,
 	})
+}
+
+func pathIsAbsolute(value string) bool {
+	// API and daemon run on the same operating system, so filepath semantics are
+	// the authoritative validation for the local project path.
+	return filepath.IsAbs(value)
 }
 
 func (s *Server) authenticate(request *http.Request) bool {

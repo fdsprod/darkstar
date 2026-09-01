@@ -12,6 +12,7 @@ import (
 	"github.com/fdsprod/darkstar/runtime/src/adapters/statestore/sqlite"
 	localapi "github.com/fdsprod/darkstar/runtime/src/api"
 	"github.com/fdsprod/darkstar/runtime/src/daemon"
+	"github.com/fdsprod/darkstar/runtime/src/ports/platform"
 	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
 )
 
@@ -21,6 +22,10 @@ func TestDaemonServiceReconcilesBeforePublishingAPI(t *testing.T) {
 	root := t.TempDir()
 	runtimeDirectory := filepath.Join(root, "runtime")
 	dataDirectory := filepath.Join(root, "data")
+	paths := platform.Paths{
+		Config: filepath.Join(root, "config"), Data: dataDirectory, Cache: filepath.Join(root, "cache"),
+		Logs: filepath.Join(root, "logs"), Runtime: runtimeDirectory,
+	}
 	if err := os.MkdirAll(dataDirectory, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +48,7 @@ func TestDaemonServiceReconcilesBeforePublishingAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := &daemonAPIService{server: server, dataDirectory: dataDirectory}
+	service := &daemonAPIService{server: server, paths: paths, projectRoot: root}
 	state := daemon.State{
 		SchemaVersion: 1,
 		InstanceID:    "11111111111111111111111111111111",

@@ -10,6 +10,9 @@
     "/api/v1/": {
       "get": {"operationId":"getApiRoot","responses":{"200":{"description":"Negotiated API root","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiRoot"}}}},"default":{"$ref":"#/components/responses/Error"}}}
     },
+    "/api/v1/doctor": {
+      "get": {"operationId":"getDoctorReport","parameters":[{"name":"projectRoot","in":"query","required":false,"schema":{"type":"string"}}],"responses":{"200":{"description":"Detailed subsystem readiness report","content":{"application/json":{"schema":{"$ref":"#/components/schemas/DoctorReport"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
     "/api/v1/runs": {
       "get": {"operationId":"listRuns","parameters":[{"$ref":"#/components/parameters/Limit"},{"$ref":"#/components/parameters/After"}],"responses":{"200":{"description":"Run page","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RunPage"}}}},"default":{"$ref":"#/components/responses/Error"}}},
       "post": {"operationId":"createRun","parameters":[{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"required":["workItemId","workflowId","workflowVersion"],"properties":{"workItemId":{"type":"string"},"workflowId":{"type":"string"},"workflowVersion":{"type":"string"}}}}}},"responses":{"201":{"description":"Run created","headers":{"ETag":{"schema":{"type":"string"}}},"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Run"}}}},"default":{"$ref":"#/components/responses/Error"}}}
@@ -42,6 +45,7 @@
       "RecoveryStatus":{"type":"object","additionalProperties":false,"required":["reconciled","reconcileRequired"],"properties":{"reconciled":{"type":"integer","minimum":0},"reconcileRequired":{"type":"integer","minimum":0}}},
       "Health":{"type":"object","additionalProperties":false,"required":["schemaVersion","status","apiVersions","recovery"],"properties":{"schemaVersion":{"const":1},"status":{"const":"ok"},"apiVersions":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["v1"]}},"recovery":{"$ref":"#/components/schemas/RecoveryStatus"}}},
       "ApiRoot":{"type":"object","additionalProperties":false,"required":["schemaVersion","apiVersion","recovery"],"properties":{"schemaVersion":{"const":1},"apiVersion":{"const":"v1"},"recovery":{"$ref":"#/components/schemas/RecoveryStatus"}}},
+      "DoctorReport":{"$ref":"./health-report-v1alpha1.schema.json"},
       "Run":{"type":"object","additionalProperties":false,"required":["id","workItemId","workflowId","workflowVersion","status","resourceVersion","createdAt","updatedAt"],"properties":{"id":{"type":"string"},"workItemId":{"type":"string"},"workflowId":{"type":"string"},"workflowVersion":{"type":"string"},"status":{"enum":["pending","running","waiting","completed","failed","cancelled","reconcile_required"]},"resourceVersion":{"type":"integer","minimum":1},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}},
       "RunPage":{"type":"object","additionalProperties":false,"required":["items","pageInfo"],"properties":{"items":{"type":"array","items":{"$ref":"#/components/schemas/Run"}},"pageInfo":{"type":"object","additionalProperties":false,"required":["nextCursor"],"properties":{"nextCursor":{"type":["string","null"]}}}}}
     }

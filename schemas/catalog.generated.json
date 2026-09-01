@@ -33,11 +33,19 @@
       "version": "v1alpha1"
     },
     {
+      "file": "health-report-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/health-report-v1alpha1.schema.json",
+      "name": "health-report-v1alpha1",
+      "sha256": "b326d6b79188096e469875aa2c987e02089d4d2660f82146eee0f0ad85142d43",
+      "version": "v1alpha1"
+    },
+    {
       "file": "openapi-v1alpha1.json",
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "0e9c36c3369b73db80fa13e89c45bad687df45791badb569a85477818954cd68",
+      "sha256": "1ed32c5e99a36bc0297d9e8552bdc428c1847047fa7a1ffcb03ccf3ae7b0ef2b",
       "version": "v1alpha1"
     },
     {

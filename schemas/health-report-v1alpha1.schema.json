@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/health-report-v1alpha1.schema.json",
+  "title": "DARKSTAR subsystem health report v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "generatedAt", "checks"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "status": {"enum": ["healthy", "degraded", "unhealthy"]},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "checks": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {"$ref": "#/$defs/check"}
+    }
+  },
+  "$defs": {
+    "subsystem": {
+      "enum": ["database", "daemon", "paths", "git", "codex", "github", "configuration", "provider"]
+    },
+    "check": {
+      "oneOf": [
+        {"$ref": "#/$defs/healthyCheck"},
+        {"$ref": "#/$defs/findingCheck"}
+      ]
+    },
+    "healthyCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subsystem", "status", "code", "message"],
+      "properties": {
+        "subsystem": {"$ref": "#/$defs/subsystem"},
+        "status": {"const": "healthy"},
+        "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "message": {"type": "string", "minLength": 1}
+      }
+    },
+    "findingCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subsystem", "status", "code", "message", "action"],
+      "properties": {
+        "subsystem": {"$ref": "#/$defs/subsystem"},
+        "status": {"enum": ["degraded", "unhealthy"]},
+        "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "message": {"type": "string", "minLength": 1},
+        "action": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

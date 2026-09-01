@@ -6,16 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"time"
 
+	"github.com/fdsprod/darkstar/runtime/src/adapters/provider/fake"
 	"github.com/fdsprod/darkstar/runtime/src/adapters/statestore/sqlite"
 	localapi "github.com/fdsprod/darkstar/runtime/src/api"
 	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
+	"github.com/fdsprod/darkstar/runtime/src/core/health"
 	"github.com/fdsprod/darkstar/runtime/src/core/recovery"
 	"github.com/fdsprod/darkstar/runtime/src/daemon"
+	"github.com/fdsprod/darkstar/runtime/src/doctor"
 	"github.com/fdsprod/darkstar/runtime/src/platform/windows"
 	platformport "github.com/fdsprod/darkstar/runtime/src/ports/platform"
 )
@@ -28,6 +33,7 @@ Usage:
 Commands:
   api        Inspect the autostarted local API
   daemon     Run and control the per-user daemon
+  doctor     Report subsystem readiness and remediation codes
   help       Show this help
   version    Show version information
 
@@ -95,6 +101,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runDaemon(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "api":
 		return runAPI(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "doctor":
+		return runDoctor(cleanArgs[1:], jsonOutput, stdout, stderr)
 	default:
 		message := fmt.Sprintf("unknown command %q; run 'darkstar help' for usage", cleanArgs[0])
 		return writeCommandError(stdout, stderr, jsonOutput, "darkstar", "ARGUMENT_INVALID", message, false, ExitInvalidInput)
@@ -152,16 +160,17 @@ func runDaemon(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 }
 
 type daemonAPIService struct {
-	server        *localapi.Server
-	dataDirectory string
-	database      *sqlite.Database
+	server      *localapi.Server
+	paths       platformport.Paths
+	projectRoot string
+	database    *sqlite.Database
 }
 
 func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) error {
-	if err := os.MkdirAll(service.dataDirectory, 0o700); err != nil {
+	if err := os.MkdirAll(service.paths.Data, 0o700); err != nil {
 		return fmt.Errorf("create daemon data directory: %w", err)
 	}
-	database, err := sqlite.Open(ctx, filepath.Join(service.dataDirectory, "darkstar.db"), sqlite.Options{})
+	database, err := sqlite.Open(ctx, filepath.Join(service.paths.Data, "darkstar.db"), sqlite.Options{})
 	if err != nil {
 		return fmt.Errorf("open daemon state: %w", err)
 	}
@@ -181,6 +190,24 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	if err := service.server.SetRecoveryStatus(localapi.RecoveryStatus{
 		Reconciled: len(report.Results), ReconcileRequired: report.ReconcileRequired(),
 	}); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	providerAdapter, err := fake.New(fake.Scenario{})
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return fmt.Errorf("construct default provider: %w", err)
+	}
+	reporter := doctor.New(doctor.Options{
+		Paths:       service.paths,
+		Database:    database,
+		Process:     state.Process,
+		ProjectRoot: service.projectRoot,
+		Provider:    providerAdapter,
+	})
+	if err := service.server.SetDoctor(reporter); err != nil {
 		_ = database.Close()
 		service.database = nil
 		return err
@@ -221,7 +248,15 @@ func runDaemonForeground(manager *daemon.Manager, jsonOutput bool, stdout, stder
 	if err != nil {
 		return writeCommandError(stdout, stderr, jsonOutput, "darkstar daemon run", "DAEMON_START_FAILED", err.Error(), true, ExitTransientFailure)
 	}
-	service := &daemonAPIService{server: server, dataDirectory: paths.Data}
+	projectRoot, err := os.Getwd()
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar daemon run", "DAEMON_START_FAILED", "resolve daemon working directory: "+err.Error(), true, ExitTransientFailure)
+	}
+	projectRoot, err = filepath.Abs(projectRoot)
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar daemon run", "DAEMON_START_FAILED", "resolve absolute daemon working directory: "+err.Error(), true, ExitTransientFailure)
+	}
+	service := &daemonAPIService{server: server, paths: paths, projectRoot: projectRoot}
 	err = manager.RunWithService(ctx, service, func(state daemon.State) {
 		if jsonOutput {
 			process := state.Process
@@ -491,4 +526,69 @@ func runAPI(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		}
 	}
 	return int(ExitSuccess)
+}
+
+func runDoctor(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar doctor", "ARGUMENT_INVALID", "doctor accepts no arguments", false, ExitInvalidInput)
+	}
+	manager, err := newDaemonManager(context.Background())
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar doctor", "DAEMON_RUNTIME_UNAVAILABLE", err.Error(), true, ExitTransientFailure)
+	}
+	client, err := clientapi.New(clientapi.Config{
+		RuntimeDirectory: manager.RuntimeDirectory(),
+		Autostart: func(ctx context.Context) error {
+			_, startErr := startDaemonProcess(ctx, manager)
+			return startErr
+		},
+	})
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar doctor", "INTERNAL_INVARIANT_VIOLATION", err.Error(), false, ExitInvariantViolation)
+	}
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, "darkstar doctor", err)
+	}
+	var report health.Report
+	projectRoot, err := os.Getwd()
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar doctor", "PROJECT_ROOT_UNAVAILABLE", err.Error(), false, ExitInvalidInput)
+	}
+	projectRoot, err = filepath.Abs(projectRoot)
+	if err != nil {
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar doctor", "PROJECT_ROOT_UNAVAILABLE", err.Error(), false, ExitInvalidInput)
+	}
+	resource := "doctor?projectRoot=" + url.QueryEscape(projectRoot)
+	if err := session.DoJSON(context.Background(), http.MethodGet, resource, nil, &report); err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, "darkstar doctor", err)
+	}
+	if jsonOutput {
+		if err := writeJSON(stdout, report); err != nil {
+			return writeCommandError(stdout, stderr, false, "darkstar doctor", "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
+		}
+	} else if err := writeDoctorReport(stdout, report); err != nil {
+		return writeCommandError(stdout, stderr, false, "darkstar doctor", "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
+	}
+	if report.Status() != health.StatusHealthy {
+		return int(ExitValidationFailed)
+	}
+	return int(ExitSuccess)
+}
+
+func writeDoctorReport(destination io.Writer, report health.Report) error {
+	if _, err := fmt.Fprintf(destination, "DARKSTAR doctor: %s\n", report.Status()); err != nil {
+		return err
+	}
+	for _, check := range report.Checks {
+		if _, err := fmt.Fprintf(destination, "[%s] %s %s: %s\n", check.Status, check.Subsystem, check.Code, check.Message); err != nil {
+			return err
+		}
+		if check.Action != "" {
+			if _, err := fmt.Fprintf(destination, "  Action: %s\n", check.Action); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

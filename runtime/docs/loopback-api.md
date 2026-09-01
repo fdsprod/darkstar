@@ -44,6 +44,16 @@ reconciliation. Scheduling admission is derived from the unresolved count.
 Authority evidence remains authenticated durable state and is not returned by
 the health endpoint.
 
+`GET /api/v1/doctor` is authenticated and returns the detailed database, daemon,
+path, Git, Codex, GitHub, configuration, and provider report. Each check has one
+closed readiness state and stable uppercase code. Degraded and unhealthy checks
+also carry a safe remediation action; command output and credentials are never
+included. The report status is derived from the worst check, and independent
+checks run concurrently so a slow external CLI probe does not serialize the
+entire diagnostic. The optional absolute `projectRoot` query selects the Git and
+project-configuration context; the CLI always supplies its current directory so
+a persistent per-user daemon does not report a repository left over from startup.
+
 The CLI client performs this discovery and negotiation once per finite command.
 For missing or unreachable endpoint state it idempotently autostarts the daemon,
 then performs one fresh discovery attempt. It never replays an application

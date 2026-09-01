@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fdsprod/darkstar/runtime/src/core/health"
 )
 
 func TestServerPublishesProtectedLoopbackEndpointAndNegotiatesVersion(t *testing.T) {
@@ -139,6 +141,47 @@ func TestAuthenticatedFailuresUseStableErrorEnvelope(t *testing.T) {
 	assertAPIError(t, notFound, http.StatusNotFound, "NOT_FOUND")
 }
 
+func TestDoctorRequiresAuthenticationAndReturnsDetailedReport(t *testing.T) {
+	t.Parallel()
+	report := testDoctorReport(t)
+	server, err := NewServer(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SetDoctor(staticDoctor{report: report}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Start(context.Background(), 1234, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestServer(t, server)
+	endpoint, found := server.Endpoint()
+	if !found {
+		t.Fatal("started server has no endpoint")
+	}
+
+	unauthorized := get(t, endpoint.BaseURL()+"/api/v1/doctor", "")
+	defer unauthorized.Body.Close()
+	assertAPIError(t, unauthorized, http.StatusUnauthorized, "UNAUTHENTICATED")
+	invalid := get(t, endpoint.BaseURL()+"/api/v1/doctor?projectRoot=relative", endpoint.AuthorizationHeader())
+	defer invalid.Body.Close()
+	assertAPIError(t, invalid, http.StatusBadRequest, "VALIDATION_FAILED")
+
+	response := get(t, endpoint.BaseURL()+"/api/v1/doctor", endpoint.AuthorizationHeader())
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/v1/doctor status = %d", response.StatusCode)
+	}
+	var received health.Report
+	decodeJSON(t, response, &received)
+	if received.Status() != health.StatusDegraded || len(received.Checks) != 8 || received.Checks[4].Code != "CODEX_AUTH_REQUIRED" {
+		t.Fatalf("doctor report = %#v", received)
+	}
+	if err := server.SetDoctor(staticDoctor{report: report}); err == nil {
+		t.Fatal("SetDoctor succeeded after server start")
+	}
+}
+
 func TestRotationAtomicallyInvalidatesPreviousToken(t *testing.T) {
 	t.Parallel()
 
@@ -244,4 +287,29 @@ func assertAPIError(t *testing.T, response *http.Response, status int, code stri
 		t.Fatalf("request ID header = %q, body = %q", header, problem.RequestID)
 	}
 	return problem
+}
+
+type staticDoctor struct{ report health.Report }
+
+func (doctor staticDoctor) ReportForProject(context.Context, string) (health.Report, error) {
+	return doctor.report, nil
+}
+
+func testDoctorReport(t *testing.T) health.Report {
+	t.Helper()
+	checks := []health.Check{
+		{Subsystem: health.SubsystemDatabase, Status: health.StatusHealthy, Code: "DATABASE_READY", Message: "Ready."},
+		{Subsystem: health.SubsystemDaemon, Status: health.StatusHealthy, Code: "DAEMON_READY", Message: "Ready."},
+		{Subsystem: health.SubsystemPaths, Status: health.StatusHealthy, Code: "PATHS_READY", Message: "Ready."},
+		{Subsystem: health.SubsystemGit, Status: health.StatusHealthy, Code: "GIT_READY", Message: "Ready."},
+		{Subsystem: health.SubsystemCodex, Status: health.StatusDegraded, Code: "CODEX_AUTH_REQUIRED", Message: "Sign-in required.", Action: "Sign in."},
+		{Subsystem: health.SubsystemGitHub, Status: health.StatusHealthy, Code: "GITHUB_READY", Message: "Ready."},
+		{Subsystem: health.SubsystemConfiguration, Status: health.StatusHealthy, Code: "CONFIGURATION_READY", Message: "Ready."},
+		{Subsystem: health.SubsystemProvider, Status: health.StatusHealthy, Code: "PROVIDER_READY", Message: "Ready."},
+	}
+	report, err := health.NewReport(time.Now(), checks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report
 }

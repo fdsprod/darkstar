@@ -11,6 +11,12 @@ idempotently autostarts one, authenticates `GET /api/v1/`, validates the respons
 version, and reports readiness. Lifecycle inspection is intentionally different:
 `darkstar daemon status` is read-only and never autostarts the daemon.
 
+`darkstar doctor` uses the same discovery and authentication path, then requests
+`GET /api/v1/doctor`. Human output lists every subsystem state, stable diagnostic
+code, and required action. `--json` returns the versioned report unchanged. A
+degraded or unhealthy report uses exit class 7 because the diagnostic completed
+successfully with findings; transport failures retain their ordinary exit class.
+
 ## Machine output
 
 Every finite human-readable command accepts `--json` as its final argument. A

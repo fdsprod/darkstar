@@ -12,6 +12,7 @@ independent from dashboard build tooling.
 | `src/cli` | Terminal commands, output, and exit-code mapping. |
 | `src/api` | Authenticated, versioned loopback HTTP transport and endpoint discovery. |
 | `src/daemon` | Daemon lifecycle and application coordination. |
+| `src/doctor` | Safe subsystem readiness probes and actionable diagnostics. |
 | `src/core` | Deterministic domain and workflow behavior. |
 | `src/ports` | Application-owned interfaces for external effects. |
 | `src/adapters` | Infrastructure implementations of runtime ports. |
