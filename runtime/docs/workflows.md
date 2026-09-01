@@ -38,3 +38,20 @@ workflow bytes and the fully resolved non-secret configuration into an immutable
 run record. The configuration snapshot includes source attribution for every
 resolved leaf. Repeating the exact snapshot is idempotent; trying to change either
 the workflow or configuration for that run fails instead of mutating history.
+
+## Explicit route creation
+
+Route creation accepts one optional `from` entry and an optional `until` terminal
+set. Omitted values use `routeDefaults`; explicit values must name eligible nodes.
+Traversal follows every enabled possible outcome and stops at the selected terminal
+boundary. A route is rejected if a selected terminal is unreachable, any included
+branch cannot reach a selected terminal, or project policy marks an excluded node
+as required. Disabled transitions remain outside the route.
+
+The frozen result separates executable nodes from `excludedNodes`, which prevents a
+skipped node from acquiring an execution state. Exclusions record whether a node is
+before the selected entry, past the terminal boundary, or disconnected from the
+selected range. Required bindings may be satisfied by run inputs, accepted prior
+outputs, or an included predecessor. Any remaining gaps are returned as ordered
+`RUN_INPUT_REQUIRED` requirements so the run can wait for input without fabricating
+a value or executing an excluded predecessor.
