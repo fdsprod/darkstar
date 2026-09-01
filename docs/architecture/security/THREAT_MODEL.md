@@ -252,6 +252,10 @@ an error message alone is insufficient.
 
 ## 8. Residual risks and review cadence
 
+Lifecycle, ownership, review dates, and control links for these residual risks
+are authoritative in the [risk register](../../risks/risk-register.json); this
+section remains the source analysis rather than a second disposition record.
+
 Prompt injection cannot be perfectly detected; containment relies on independent
 authorization, structured context, least privilege, and effect validation. Secret
 redaction is imperfect; minimize collection and withhold by policy. Parser and

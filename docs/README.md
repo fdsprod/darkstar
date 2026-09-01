@@ -33,8 +33,13 @@ This directory separates documentation by the kind of decision or work it repres
 ## Decisions
 
 - [DS-001 Codex host recommendation](decisions/DS-001-codex-host-recommendation.md) — accepted transport choice and supporting evidence.
+- [Decision conventions and preflight](decisions/README.md) — lifecycle, ADR template, issue linkage, supersession, and implementation checks.
+- [Decision register](decisions/decision-register.json) — authoritative discovery metadata for DS-001 through DS-010 and future architecture decisions.
 
-Future architecture decisions should use one file per decision in this directory and identify the related DS issue in the filename and document header.
+## Risks
+
+- [Risk-register conventions](risks/README.md) — ownership, tagged lifecycle states, review triggers, and update rules.
+- [Risk register](risks/risk-register.json) — residual risk disposition linked to decisions, Linear sources, and control stories.
 
 ## Planning
 
@@ -47,6 +52,7 @@ Some project knowledge belongs beside executable material rather than in `docs/`
 - [`schemas/`](../schemas/) contains machine-readable contracts.
 - [`examples/`](../examples/) contains workflow and scenario examples.
 - [`tests/`](../tests/) verifies deterministic behavior.
+- [`scripts/governance-reference.mjs`](../scripts/governance-reference.mjs) validates decision/risk records and blocks implementation against a superseded decision.
 - [`examples/recovery/`](../examples/recovery/) and [`scripts/recovery-reference.mjs`](../scripts/recovery-reference.mjs) make crash-window decisions and catalog coverage executable.
 - [`examples/approvals/`](../examples/approvals/) and [`scripts/approval-reference.mjs`](../scripts/approval-reference.mjs) make approval separation, negative cases, and idempotency executable.
 - [`examples/artifacts/`](../examples/artifacts/) and [`scripts/artifact-reference.mjs`](../scripts/artifact-reference.mjs) provide the self-contained golden artifact corpus and deterministic context selector.

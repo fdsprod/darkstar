@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "kind": "RiskRegister",
+  "risks": [
+    {
+      "id": "RSK-001",
+      "title": "Adversarial evidence influences provider behavior",
+      "severity": "critical",
+      "owner": "authorization-capability-security",
+      "statement": "Prompt injection cannot be perfectly detected and may influence a provider despite evidence boundaries.",
+      "affectedDecisions": ["DS-005", "DS-006", "DS-007", "DS-010"],
+      "sourceIssues": ["DAR-14"],
+      "controls": ["DS-192", "DS-193", "DS-199", "DS-200"],
+      "reviewTriggers": ["provider permission change", "new evidence format", "new inherited capability"],
+      "lifecycle": {"state": "open"}
+    },
+    {
+      "id": "RSK-002",
+      "title": "Sensitive values survive redaction",
+      "severity": "critical",
+      "owner": "data-protection",
+      "statement": "Structural redaction may miss an encoded or transformed credential copied into context, logs, or exports.",
+      "affectedDecisions": ["DS-006", "DS-008", "DS-010"],
+      "sourceIssues": ["DAR-14"],
+      "controls": ["DS-040", "DS-193", "DS-199", "DS-200"],
+      "reviewTriggers": ["new credential source", "new export surface", "redaction test failure"],
+      "lifecycle": {"state": "open"}
+    },
+    {
+      "id": "RSK-003",
+      "title": "Artifact processor or provider vulnerability",
+      "severity": "high",
+      "owner": "artifact-provider-security",
+      "statement": "Sandboxing and limits reduce but cannot eliminate parser and provider implementation vulnerabilities.",
+      "affectedDecisions": ["DS-001", "DS-006", "DS-010"],
+      "sourceIssues": ["DAR-9", "DAR-14"],
+      "controls": ["DS-075", "DS-080", "DS-099", "DS-200"],
+      "reviewTriggers": ["processor version change", "provider compatibility change", "security advisory"],
+      "lifecycle": {"state": "open"}
+    },
+    {
+      "id": "RSK-004",
+      "title": "Same-user operating-system compromise",
+      "severity": "high",
+      "owner": "release-platform",
+      "statement": "A fully compromised same-user account can bypass the MVP local confidentiality boundary.",
+      "affectedDecisions": ["DS-009", "DS-010"],
+      "sourceIssues": ["DAR-12", "DAR-14"],
+      "controls": ["DS-030", "DS-191", "DS-200", "DS-210"],
+      "reviewTriggers": ["multi-user mode", "system-service mode", "remote daemon access"],
+      "lifecycle": {"state": "accepted", "acceptedBy": "DS-010", "acceptedAt": "2026-08-31", "reviewBy": "2026-12-01"}
+    },
+    {
+      "id": "RSK-005",
+      "title": "External provider or delivery service compromise",
+      "severity": "high",
+      "owner": "delivery-provider-security",
+      "statement": "Provider and GitHub services can fail or be compromised outside DARKSTAR's local control boundary.",
+      "affectedDecisions": ["DS-001", "DS-003", "DS-004", "DS-010"],
+      "sourceIssues": ["DAR-5", "DAR-7", "DAR-11", "DAR-14"],
+      "controls": ["DS-099", "DS-150", "DS-151", "DS-194", "DS-200"],
+      "reviewTriggers": ["provider incident", "delivery credential change", "remote mutation policy change"],
+      "lifecycle": {"state": "open"}
+    }
+  ]
+}

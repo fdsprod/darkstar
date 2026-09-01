@@ -83,6 +83,19 @@ file for those changes.
 
 ## Repository rules
 
+Before implementing work governed by an architecture decision, identify the
+applicable DS keys and run the supersession preflight:
+
+```powershell
+node scripts/governance-reference.mjs docs/decisions/decision-register.json docs/risks/risk-register.json DS-004 DS-010
+```
+
+Read the current canonical documents and surfaced risks before changing code.
+When work becomes affected by a decision, add its stable DS key to that decision's
+`affectedIssues` entry. New decisions and risk dispositions must follow the
+[decision](docs/decisions/README.md) and [risk-register](docs/risks/README.md)
+conventions.
+
 - Keep deterministic domain behavior in `runtime/src/core`.
 - Put interfaces owned by the application in `runtime/src/ports` and concrete
   side-effect implementations in `runtime/src/adapters/<port>/<implementation>`

@@ -47,6 +47,8 @@ node scripts/artifact-reference.mjs examples/artifacts/golden-corpus.json
 node --test tests/artifact-reference.test.mjs
 node scripts/repository-fixtures.mjs examples/repositories/golden-repositories.json out/golden-repositories
 node --test tests/repository-fixtures.test.mjs
+node scripts/governance-reference.mjs docs/decisions/decision-register.json docs/risks/risk-register.json DS-004 DS-010
+node --test tests/governance-reference.test.mjs
 ./probes/windows-process-control/Test-WindowsProcessProbe.ps1
 node scripts/runtime-reference.mjs examples/runtime/fake-run.json
 node --test tests/runtime-reference.test.mjs
