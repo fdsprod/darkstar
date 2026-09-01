@@ -85,6 +85,18 @@ type InputRequirement struct {
 // terminals, validates authorization and connectivity, and reports missing
 // runtime inputs without treating excluded nodes as failed visits.
 func CreateRoute(document Document, request RouteRequest, context RouteContext) (Route, ValidationErrors) {
+	return createRoute(document, request, context, nil)
+}
+
+// createRoute is the single route derivation path for both initial freezing and
+// route-patch validation. An override changes only whether an authored
+// transition participates; it never changes its target, predicate, or budget.
+func createRoute(
+	document Document,
+	request RouteRequest,
+	context RouteContext,
+	overrides map[Identifier]bool,
+) (Route, ValidationErrors) {
 	entry := request.From
 	if entry == "" {
 		entry = document.Spec.RouteDefaults.Entry
@@ -102,9 +114,9 @@ func CreateRoute(document Document, request RouteRequest, context RouteContext) 
 	}
 
 	terminalSet := identifierSet(terminals)
-	included := forwardRouteNodes(document, entry, terminalSet)
+	included := forwardRouteNodes(document, entry, terminalSet, overrides)
 	errors = append(errors, validateReachableTerminals(terminals, included)...)
-	transitions := includedRouteTransitions(document, included, terminalSet)
+	transitions := includedRouteTransitions(document, included, terminalSet, overrides)
 	errors = append(errors, validateRouteClosure(included, terminalSet, transitions)...)
 	errors = append(errors, validateRoutePolicy(document, included, context.RequiredNodes)...)
 	if len(errors) != 0 {
@@ -116,7 +128,7 @@ func CreateRoute(document Document, request RouteRequest, context RouteContext) 
 		Entry:         entry,
 		Terminals:     terminals,
 		Transitions:   transitions,
-		ExcludedNodes: excludedRouteNodes(document, included, entry, terminalSet),
+		ExcludedNodes: excludedRouteNodes(document, included, entry, terminalSet, overrides),
 	}
 	route.Nodes = projectedRouteNodes(document, included, transitions)
 	route.InputRequirements = routeInputRequirements(document, included, transitions, context)
@@ -150,7 +162,7 @@ func validateRouteBoundaries(document Document, entry Identifier, terminals []Id
 	return errors
 }
 
-func forwardRouteNodes(document Document, entry Identifier, terminals map[Identifier]bool) map[Identifier]bool {
+func forwardRouteNodes(document Document, entry Identifier, terminals map[Identifier]bool, overrides map[Identifier]bool) map[Identifier]bool {
 	included := make(map[Identifier]bool, len(document.Spec.Nodes))
 	stack := []Identifier{entry}
 	for len(stack) != 0 {
@@ -165,7 +177,7 @@ func forwardRouteNodes(document Document, entry Identifier, terminals map[Identi
 			continue
 		}
 		for _, transition := range document.Spec.Nodes[current].Fields().Transitions {
-			if transitionEnabled(transition) {
+			if routeTransitionEnabled(transition, overrides) {
 				if _, exists := document.Spec.Nodes[transition.Target()]; exists {
 					stack = append(stack, transition.Target())
 				}
@@ -188,14 +200,14 @@ func validateReachableTerminals(terminals []Identifier, included map[Identifier]
 	return errors
 }
 
-func includedRouteTransitions(document Document, included, terminals map[Identifier]bool) []RouteTransition {
+func includedRouteTransitions(document Document, included, terminals map[Identifier]bool, overrides map[Identifier]bool) []RouteTransition {
 	result := make([]RouteTransition, 0)
 	for _, source := range sortedNodeIDs(document.Spec.Nodes) {
 		if !included[source] || terminals[source] {
 			continue
 		}
 		for _, transition := range document.Spec.Nodes[source].Fields().Transitions {
-			if transitionEnabled(transition) && included[transition.Target()] {
+			if routeTransitionEnabled(transition, overrides) && included[transition.Target()] {
 				result = append(result, RouteTransition{ID: transition.ID(), From: source, To: transition.Target()})
 			}
 		}
@@ -286,9 +298,9 @@ func projectedRouteNodes(document Document, included map[Identifier]bool, transi
 	return result
 }
 
-func excludedRouteNodes(document Document, included map[Identifier]bool, entry Identifier, terminals map[Identifier]bool) []ExcludedNode {
-	before := reverseReachable(document, entry)
-	past := forwardReachable(document, terminals)
+func excludedRouteNodes(document Document, included map[Identifier]bool, entry Identifier, terminals map[Identifier]bool, overrides map[Identifier]bool) []ExcludedNode {
+	before := reverseReachable(document, entry, overrides)
+	past := forwardReachable(document, terminals, overrides)
 	result := make([]ExcludedNode, 0, len(document.Spec.Nodes)-len(included))
 	for _, nodeID := range sortedNodeIDs(document.Spec.Nodes) {
 		if included[nodeID] {
@@ -306,11 +318,11 @@ func excludedRouteNodes(document Document, included map[Identifier]bool, entry I
 	return result
 }
 
-func reverseReachable(document Document, target Identifier) map[Identifier]bool {
+func reverseReachable(document Document, target Identifier, overrides map[Identifier]bool) map[Identifier]bool {
 	reverse := make(map[Identifier][]Identifier, len(document.Spec.Nodes))
 	for source, node := range document.Spec.Nodes {
 		for _, transition := range node.Fields().Transitions {
-			if transitionEnabled(transition) {
+			if routeTransitionEnabled(transition, overrides) {
 				reverse[transition.Target()] = append(reverse[transition.Target()], source)
 			}
 		}
@@ -331,7 +343,7 @@ func reverseReachable(document Document, target Identifier) map[Identifier]bool 
 	return visited
 }
 
-func forwardReachable(document Document, starts map[Identifier]bool) map[Identifier]bool {
+func forwardReachable(document Document, starts map[Identifier]bool, overrides map[Identifier]bool) map[Identifier]bool {
 	visited := make(map[Identifier]bool, len(document.Spec.Nodes))
 	stack := make([]Identifier, 0, len(starts))
 	for start := range starts {
@@ -350,12 +362,19 @@ func forwardReachable(document Document, starts map[Identifier]bool) map[Identif
 			continue
 		}
 		for _, transition := range node.Fields().Transitions {
-			if transitionEnabled(transition) {
+			if routeTransitionEnabled(transition, overrides) {
 				stack = append(stack, transition.Target())
 			}
 		}
 	}
 	return visited
+}
+
+func routeTransitionEnabled(transition Transition, overrides map[Identifier]bool) bool {
+	if enabled, exists := overrides[transition.ID()]; exists {
+		return enabled
+	}
+	return transitionEnabled(transition)
 }
 
 func routeInputRequirements(

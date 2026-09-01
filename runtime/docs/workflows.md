@@ -80,3 +80,32 @@ mapped inputs by value, rejects recursive ancestry, and maps only declared,
 type-compatible child outputs to the parent candidate. Parent, child, and sibling
 frames never share transition tokens or traversal counters, so reusable story and
 repair workflows have isolated iteration state.
+
+## Route-patch proposal and authorization
+
+The production route-patch core accepts the existing `RoutePatch` v1alpha1 wire
+contract as a closed operation union. A patch may enable or disable only an
+authored transition, or replace the future terminal set; it cannot author nodes,
+predicates, targets, joins, or traversal budgets. Transition overrides are stored
+as a small projection over the immutable workflow and the complete candidate route
+is rederived through the same validator used for initial route freezing. Exclusive
+nodes cannot gain multiple unconditional outcomes.
+
+Proposal and application are separate types. A proposal records deterministic
+added/removed nodes and transitions, the old/new terminal boundaries, a validation
+digest, and a canonical authorization-scope digest bound to the run, expected route
+revision, reason, operations, and frozen policy. Only `AuthorizeRoutePatch` can
+produce the value accepted by application. Automatic authorization requires an
+exact matching system-policy scope; a named approval, policy-required change, or
+terminal expansion requires an approved `workflow_control` request with the same
+run, scope, and policy plus an attributable user or external actor. A provider
+permission approval is therefore not type-compatible authority for a route change.
+
+Application performs a second validation and one compare-and-swap revision. It
+rejects stale topology or validation evidence, an affected running attempt, a
+disabled transition that already emitted a token, and any candidate that would
+drop an activated, successful, or terminal-reached node from the route projection.
+On success it returns the new route revision and one audit payload containing the
+old/new revisions, exact operations, impact, rationale, actor, optional approval
+ID, scope digest, and validation digest; persistence writes both atomically without
+changing the immutable workflow digest or historical visit/token evidence.
