@@ -24,6 +24,7 @@ func TestRequiredPortPackagesExist(t *testing.T) {
 		"executor",
 		"platform",
 		"provider",
+		"workflowstore",
 	} {
 		name := name
 		t.Run(name, func(t *testing.T) {

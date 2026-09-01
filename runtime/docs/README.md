@@ -24,10 +24,13 @@ At a high level, deterministic behavior belongs in `core`, external contracts in
 `ports`, and concrete side effects in `adapters` or `platform`.
 
 See the normative [core ports and adapter package rules](../../docs/architecture/runtime/PORTS_AND_ADAPTERS.md)
-for the six port families and the dependency checks enforced by `go test`.
+for the seven required port families and the dependency checks enforced by `go test`.
 
 See [runtime configuration](configuration.md) for layer precedence, source
 attribution, file locations, and Windows application-data roots.
+
+See [workflow loading and immutable snapshots](workflows.md) for configured
+workflow scopes, canonical installation identity, and per-run freezing.
 
 See [daemon lifecycle](daemon-lifecycle.md) for foreground/background commands,
 identity verification, stale-state handling, and shutdown escalation.

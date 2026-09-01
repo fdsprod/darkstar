@@ -12,7 +12,7 @@ interfaces and normalized values under `runtime/src/ports`; concrete provider,
 storage, delivery, processing, and operating-system behavior depends inward on
 those interfaces. A concrete adapter is never a dependency of core code.
 
-The six port families are:
+The seven required external-effect port families are:
 
 | Package | Owns |
 |---|---|
@@ -22,6 +22,7 @@ The six port families are:
 | `ports/contentprocessor` | Bounded, isolated derivation of immutable artifact representations. |
 | `ports/platform` | Paths, locks, endpoint publication, process ownership, terminal, atomic-file, and executable-resolution strategy. |
 | `ports/executor` | Scheduler-facing start/resume/events/result/cancel lifecycle for a node attempt. |
+| `ports/workflowstore` | Configured workflow discovery plus immutable installed-version and per-run snapshot persistence. |
 
 Ports define capabilities and application vocabulary, not adapter mechanics.
 They may use the Go standard library and shared `ports` values only. In
@@ -85,7 +86,7 @@ observation; core owns the state transition.
 ## Enforcement
 
 `runtime/tests/architecture/package_rules_test.go` parses every Go import under
-`runtime/src`, verifies all six port packages exist, rejects forbidden core/port
+`runtime/src`, verifies all seven required port packages exist, rejects forbidden core/port
 dependencies, and reserves concrete package roots. Normal `go test ./...` and
 the repository verification script run this check.
 
