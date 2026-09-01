@@ -114,6 +114,9 @@ func (s *Store) Put(ctx context.Context, request artifactstore.PutRequest) (arti
 	if request.ExpectedSize != nil && *request.ExpectedSize < 0 {
 		return artifactstore.Blob{}, failure(ports.FailureInvalidRequest, "expected artifact size cannot be negative", false)
 	}
+	if request.MaxBytes < 0 {
+		return artifactstore.Blob{}, failure(ports.FailureInvalidRequest, "artifact byte limit cannot be negative", false)
+	}
 	mediaType, err := normalizeMediaType(request.MediaType)
 	if err != nil {
 		return artifactstore.Blob{}, err
@@ -136,7 +139,15 @@ func (s *Store) Put(ctx context.Context, request artifactstore.PutRequest) (arti
 	}
 
 	hasher := sha256.New()
-	size, copyErr := copyWithContext(ctx, io.MultiWriter(temporary, hasher), request.Content)
+	content := request.Content
+	if request.MaxBytes > 0 {
+		content = io.LimitReader(content, request.MaxBytes+1)
+	}
+	size, copyErr := copyWithContext(ctx, io.MultiWriter(temporary, hasher), content)
+	if copyErr == nil && request.MaxBytes > 0 && size > request.MaxBytes {
+		_ = temporary.Close()
+		return artifactstore.Blob{}, failure(ports.FailureResourceExhausted, "artifact content exceeds source byte limit", false)
+	}
 	if copyErr == nil {
 		copyErr = temporary.Sync()
 	}

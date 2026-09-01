@@ -72,13 +72,18 @@ func (processor Processor) Process(ctx context.Context, request contentprocessor
 		return contentprocessor.ProcessResult{Diagnostics: []string{"source exceeds processor byte limit"}, Limited: true}, nil
 	}
 
-	outputs, diagnostics := transform(support.MediaType, content)
+	outputs, diagnostics := transform(support.MediaType, content, request.Limits)
 	result := contentprocessor.ProcessResult{Diagnostics: diagnostics}
 	for index, output := range outputs {
 		if request.Limits.Representations > 0 && index >= request.Limits.Representations {
 			result.Limited = true
 			result.Diagnostics = append(result.Diagnostics, "representation count limit reached")
 			break
+		}
+		if request.Limits.ExpandedBytes > 0 && int64(len(output.content)) > request.Limits.ExpandedBytes {
+			result.Limited = true
+			result.Diagnostics = append(result.Diagnostics, "expanded representation exceeds decoded-content safety limit")
+			continue
 		}
 		bounded, truncated := truncateUTF8(output.content, request.Limits.OutputBytes)
 		if truncated {
@@ -101,7 +106,7 @@ type derived struct {
 	metadata  map[string]string
 }
 
-func transform(mediaType string, content []byte) ([]derived, []string) {
+func transform(mediaType string, content []byte, limits contentprocessor.Limits) ([]derived, []string) {
 	switch mediaType {
 	case "text/plain", "text/markdown":
 		if !utf8.Valid(content) {
@@ -122,7 +127,7 @@ func transform(mediaType string, content []byte) ([]derived, []string) {
 		}
 		return structuredOutputs(canonical, "yaml"), nil
 	case "text/csv":
-		table, preview, rows, columns, err := canonicalCSV(content)
+		table, preview, rows, columns, err := canonicalCSV(content, limits.TableCells)
 		if err != nil {
 			return nil, []string{"CSV parse failed: " + err.Error()}
 		}
@@ -135,6 +140,9 @@ func transform(mediaType string, content []byte) ([]derived, []string) {
 		text, pages, err := extractPDFText(content)
 		if err != nil {
 			return nil, []string{"PDF extraction failed: " + err.Error()}
+		}
+		if limits.Pages > 0 && pages > limits.Pages {
+			return nil, []string{"PDF page limit exceeded"}
 		}
 		return []derived{{kind: contentprocessor.RepresentationText, mediaType: "text/plain; charset=utf-8", content: text,
 			metadata: map[string]string{"pages": strconv.Itoa(pages)}}}, nil
@@ -240,7 +248,7 @@ func yamlValue(node *yaml.Node) (any, error) {
 	}
 }
 
-func canonicalCSV(content []byte) ([]byte, []byte, int, int, error) {
+func canonicalCSV(content []byte, cellLimit int) ([]byte, []byte, int, int, error) {
 	if !utf8.Valid(content) {
 		return nil, nil, 0, 0, errors.New("CSV is not valid UTF-8")
 	}
@@ -254,6 +262,9 @@ func canonicalCSV(content []byte) ([]byte, []byte, int, int, error) {
 	columns := 0
 	if len(records) > 0 {
 		columns = len(records[0])
+	}
+	if cellLimit > 0 && len(records)*columns > cellLimit {
+		return nil, nil, 0, 0, errors.New("table cell limit exceeded")
 	}
 	table, err := json.Marshal(records)
 	if err != nil {

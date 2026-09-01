@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fdsprod/darkstar/runtime/src/core/artifactsafety"
+	"github.com/fdsprod/darkstar/runtime/src/ports"
 	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
 	"github.com/fdsprod/darkstar/runtime/src/ports/artifactstore"
 	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
@@ -65,6 +67,53 @@ func TestIngestFilePreservesOriginalBytesAndHidesSourcePath(t *testing.T) {
 	}
 }
 
+func TestSafetyPolicyRejectsOversizeAndQuarantinesUnsafeMagic(t *testing.T) {
+	t.Parallel()
+	store := &memoryStore{blobs: map[artifactstore.Locator][]byte{}}
+	registry := &memoryRegistry{}
+	policy := artifactsafety.DefaultPolicy()
+	policy.SourceBytes = 4
+	service, err := NewWithPolicy(store, registry, supportedResolver{}, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.IngestPaste(context.Background(), "12345", testRequest("artifact_BIG", "big"))
+	var failure *ports.Failure
+	if !errors.As(err, &failure) || failure.Code != ports.FailureResourceExhausted || len(registry.versions) != 0 {
+		t.Fatalf("oversize error/registry = %v / %#v", err, registry.versions)
+	}
+
+	policy.SourceBytes = 1024
+	service, err = NewWithPolicy(store, registry, supportedResolver{}, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := testRequest("artifact_EXE", "exe")
+	request.SourceKind, request.SourceName, request.Content = artifactregistry.SourceFile, "notes.txt", bytes.NewReader([]byte{'M', 'Z', 0, 1})
+	request.DeclaredMediaType = "text/plain"
+	result, err := service.Ingest(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Artifact.Status != artifactregistry.StatusQuarantined || result.Capability.State != contentprocessor.SupportQuarantined || result.Artifact.Metadata["ingest.mediaTypeMismatch"] != "true" {
+		t.Fatalf("unsafe result = %#v", result)
+	}
+}
+
+func TestSafetyPolicyBlocksUnclassifiedAndSecretProcessing(t *testing.T) {
+	t.Parallel()
+	service := newTestService(t, supportedResolver{})
+	request := testRequest("artifact_SECRET", "secret")
+	request.Sensitivity = artifactregistry.SensitivitySecret
+	result, err := service.IngestPaste(context.Background(), "secret", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Artifact.Status != artifactregistry.StatusStored || result.Capability.State != contentprocessor.SupportUnsupported || len(result.Capability.Diagnostics) == 0 {
+		t.Fatalf("secret result = %#v", result)
+	}
+}
+
 func newTestService(t *testing.T, resolver CapabilityResolver) *Service {
 	t.Helper()
 	store := &memoryStore{blobs: map[artifactstore.Locator][]byte{}}
@@ -97,6 +146,9 @@ func (store *memoryStore) Put(_ context.Context, request artifactstore.PutReques
 	content, err := io.ReadAll(request.Content)
 	if err != nil {
 		return artifactstore.Blob{}, err
+	}
+	if request.MaxBytes > 0 && int64(len(content)) > request.MaxBytes {
+		return artifactstore.Blob{}, &ports.Failure{Code: ports.FailureResourceExhausted, Message: "artifact content exceeds source byte limit"}
 	}
 	digestBytes := sha256.Sum256(content)
 	digest := hex.EncodeToString(digestBytes[:])

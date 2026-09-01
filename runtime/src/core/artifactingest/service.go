@@ -4,6 +4,7 @@ package artifactingest
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fdsprod/darkstar/runtime/src/core/artifactsafety"
 	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
 	"github.com/fdsprod/darkstar/runtime/src/ports/artifactstore"
 	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
@@ -54,6 +56,7 @@ type Result struct {
 	Created     bool                             `json:"created"`
 	DuplicateOf *artifactregistry.VersionRef     `json:"duplicateOf,omitempty"`
 	Capability  contentprocessor.Support         `json:"capability"`
+	Diagnostics []string                         `json:"diagnostics"`
 }
 
 // Service composes the content store and metadata registry at the application
@@ -62,13 +65,21 @@ type Service struct {
 	store        artifactstore.Store
 	registry     artifactregistry.Registry
 	capabilities CapabilityResolver
+	policy       artifactsafety.Policy
 }
 
 func New(store artifactstore.Store, registry artifactregistry.Registry, capabilities CapabilityResolver) (*Service, error) {
+	return NewWithPolicy(store, registry, capabilities, artifactsafety.DefaultPolicy())
+}
+
+func NewWithPolicy(store artifactstore.Store, registry artifactregistry.Registry, capabilities CapabilityResolver, policy artifactsafety.Policy) (*Service, error) {
 	if store == nil || registry == nil {
 		return nil, errors.New("artifact store and registry are required")
 	}
-	return &Service{store: store, registry: registry, capabilities: capabilities}, nil
+	if err := policy.Validate(); err != nil {
+		return nil, err
+	}
+	return &Service{store: store, registry: registry, capabilities: capabilities, policy: policy}, nil
 }
 
 // Ingest streams one source to immutable storage, registers a distinct artifact
@@ -83,11 +94,12 @@ func (s *Service) Ingest(ctx context.Context, request Request) (Result, error) {
 	if peekErr != nil && !errors.Is(peekErr, io.EOF) && !errors.Is(peekErr, bufio.ErrBufferFull) {
 		return Result{}, fmt.Errorf("inspect artifact header: %w", peekErr)
 	}
-	detected := detectMediaType(header, request.DeclaredMediaType)
+	assessment := assessMediaType(header, request.DeclaredMediaType)
 	blob, err := s.store.Put(ctx, artifactstore.PutRequest{
 		IdempotencyKey: request.IdempotencyKey,
 		Content:        buffered,
-		MediaType:      detected,
+		MaxBytes:       s.policy.SourceBytes,
+		MediaType:      assessment.mediaType,
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("store artifact original: %w", err)
@@ -97,7 +109,15 @@ func (s *Service) Ingest(ctx context.Context, request Request) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("detect duplicate artifact content: %w", err)
 	}
-	status := artifactregistry.StatusStored
+	metadata := cloneMetadata(request.Metadata)
+	metadata["ingest.policyVersion"] = s.policy.Version
+	if assessment.mismatch {
+		metadata["ingest.mediaTypeMismatch"] = "true"
+	}
+	if assessment.quarantineReason != "" {
+		metadata["ingest.quarantineReason"] = assessment.quarantineReason
+	}
+	status := assessment.status
 	createdAt := blob.StoredAt.UTC()
 	if createdAt.IsZero() {
 		return Result{}, errors.New("artifact store returned no durable storage time")
@@ -106,10 +126,10 @@ func (s *Service) Ingest(ctx context.Context, request Request) (Result, error) {
 		ArtifactID: request.ArtifactID, IdempotencyKey: request.IdempotencyKey,
 		SourceKind: request.SourceKind, SourceName: request.SourceName,
 		BlobDigest: blob.Digest, Size: blob.Size, DeclaredMediaType: request.DeclaredMediaType,
-		DetectedMediaType: detected, Locator: blob.Locator, Sensitivity: request.Sensitivity,
+		DetectedMediaType: assessment.mediaType, Locator: blob.Locator, Sensitivity: request.Sensitivity,
 		Creator: request.Creator, Status: status,
 		Producer: artifactregistry.Producer{Name: producerName, Version: producerVersion},
-		Roles:    request.Roles, Tags: request.Tags, Metadata: request.Metadata,
+		Roles:    request.Roles, Tags: request.Tags, Metadata: metadata,
 		Provenance: artifactregistry.OperationProvenance{OperationID: request.OperationID},
 		CreatedAt:  createdAt,
 	})
@@ -117,8 +137,12 @@ func (s *Service) Ingest(ctx context.Context, request Request) (Result, error) {
 		return Result{}, fmt.Errorf("register artifact original: %w", err)
 	}
 
-	capability := contentprocessor.Support{State: contentprocessor.SupportUnsupported, MediaType: detected}
-	if s.capabilities != nil {
+	capability := contentprocessor.Support{State: contentprocessor.SupportUnsupported, MediaType: assessment.mediaType}
+	if status == artifactregistry.StatusQuarantined {
+		capability = contentprocessor.Support{State: contentprocessor.SupportQuarantined, MediaType: assessment.mediaType, Diagnostics: append([]string(nil), assessment.diagnostics...)}
+	} else if !s.policy.AllowsProcessing(artifact.Sensitivity) {
+		capability.Diagnostics = []string{"artifact sensitivity is not eligible for processing under the active disclosure policy"}
+	} else if s.capabilities != nil {
 		capability, err = s.capabilities.Supports(ctx, contentprocessor.SourceDescriptor{
 			ArtifactID: artifact.ArtifactID, DeclaredMediaType: artifact.DeclaredMediaType,
 			DetectedMediaType: artifact.DetectedMediaType, Digest: artifact.BlobDigest, Size: artifact.Size,
@@ -127,7 +151,7 @@ func (s *Service) Ingest(ctx context.Context, request Request) (Result, error) {
 			return Result{}, fmt.Errorf("resolve artifact processor capability: %w", err)
 		}
 	}
-	result := Result{Artifact: artifact, Created: created, Capability: capability}
+	result := Result{Artifact: artifact, Created: created, Capability: capability, Diagnostics: assessment.diagnostics}
 	for _, duplicate := range matching {
 		if duplicate.ArtifactID != artifact.ArtifactID || duplicate.Version != artifact.Version {
 			result.DuplicateOf = &artifactregistry.VersionRef{ArtifactID: duplicate.ArtifactID, Version: duplicate.Version}
@@ -218,16 +242,60 @@ func mediaTypeFromExtension(path string) string {
 	return "application/octet-stream"
 }
 
-func detectMediaType(header []byte, declared string) string {
-	detected := http.DetectContentType(header)
+type mediaAssessment struct {
+	mediaType        string
+	status           artifactregistry.Status
+	mismatch         bool
+	quarantineReason string
+	diagnostics      []string
+}
+
+func assessMediaType(header []byte, declared string) mediaAssessment {
+	detected, quarantineReason := sniffMediaType(header)
 	base, _, _ := mime.ParseMediaType(declared)
 	if len(header) == 0 {
-		return strings.ToLower(base)
+		detected = strings.ToLower(base)
 	}
 	// DetectContentType intentionally reports generic text for structured text.
 	// A compatible explicit declaration retains its more useful semantic type.
 	if strings.HasPrefix(detected, "text/plain") && (strings.HasPrefix(base, "text/") || base == "application/json" || base == "application/yaml") {
-		return strings.ToLower(base)
+		detected = strings.ToLower(base)
 	}
-	return strings.ToLower(detected)
+	assessment := mediaAssessment{mediaType: strings.ToLower(detected), status: artifactregistry.StatusStored, quarantineReason: quarantineReason}
+	if quarantineReason != "" {
+		assessment.status = artifactregistry.StatusQuarantined
+		assessment.diagnostics = append(assessment.diagnostics, "unsafe active or container content was quarantined: "+quarantineReason)
+	}
+	base = strings.ToLower(base)
+	assessment.mismatch = base != "" && base != "application/octet-stream" && base != assessment.mediaType
+	if assessment.mismatch {
+		assessment.diagnostics = append(assessment.diagnostics, fmt.Sprintf("declared media type %s does not match detected media type %s", base, assessment.mediaType))
+	}
+	return assessment
+}
+
+func sniffMediaType(header []byte) (string, string) {
+	switch {
+	case len(header) >= 2 && bytes.Equal(header[:2], []byte{'M', 'Z'}):
+		return "application/x-msdownload", "windows_executable"
+	case len(header) >= 4 && bytes.Equal(header[:4], []byte{0x7f, 'E', 'L', 'F'}):
+		return "application/x-executable", "executable"
+	case len(header) >= 4 && bytes.Equal(header[:4], []byte{'P', 'K', 0x03, 0x04}):
+		return "application/zip", "archive"
+	case len(header) >= 2 && bytes.Equal(header[:2], []byte{0x1f, 0x8b}):
+		return "application/gzip", "archive"
+	}
+	detected := strings.ToLower(http.DetectContentType(header))
+	if detected == "text/html; charset=utf-8" {
+		return "text/html", "active_content"
+	}
+	return detected, ""
+}
+
+func cloneMetadata(value map[string]string) map[string]string {
+	result := make(map[string]string, len(value)+3)
+	for key, entry := range value {
+		result[key] = entry
+	}
+	return result
 }

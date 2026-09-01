@@ -24,6 +24,7 @@ type PutRequest struct {
 	Content        io.Reader
 	ExpectedDigest string
 	ExpectedSize   *int64
+	MaxBytes       int64
 	MediaType      string
 }
 

@@ -47,7 +47,9 @@ type Support struct {
 type Limits struct {
 	SourceBytes     int64
 	OutputBytes     int64
+	ExpandedBytes   int64
 	Representations int
+	TableCells      int
 	Pages           int
 	Pixels          int64
 	WallTime        time.Duration

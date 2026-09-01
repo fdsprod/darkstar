@@ -71,6 +71,22 @@ func TestProcessorBoundsOutputAndReportsTruncation(t *testing.T) {
 	}
 }
 
+func TestProcessorEnforcesTableAndPageLimits(t *testing.T) {
+	t.Parallel()
+	for _, request := range []contentprocessor.ProcessRequest{
+		processRequest("text/csv", "a,b\n1,2\n"),
+		processRequest("application/pdf", "%PDF-1.4\n/Type /Page\n/Type /Page\nBT (text) Tj ET\n%%EOF"),
+	} {
+		request.Limits.TableCells = 3
+		request.Limits.Pages = 1
+		sink := &captureSink{}
+		result, err := New().Process(context.Background(), request, sink)
+		if err != nil || len(result.Diagnostics) == 0 || len(sink.contents) != 0 {
+			t.Fatalf("limited Process() = %#v, sink %#v, error %v", result, sink, err)
+		}
+	}
+}
+
 func processRequest(mediaType, input string) contentprocessor.ProcessRequest {
 	return contentprocessor.ProcessRequest{
 		OperationID: "operation-test", IdempotencyKey: "derive-test",

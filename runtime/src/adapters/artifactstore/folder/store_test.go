@@ -97,6 +97,23 @@ func TestPutOpenAndStatArbitraryBinaryContent(t *testing.T) {
 	}
 }
 
+func TestPutRejectsOversizeContentWithoutPublishingPartialBlob(t *testing.T) {
+	t.Parallel()
+	store := newStore(t, t.TempDir())
+	_, err := store.Put(context.Background(), artifactstore.PutRequest{
+		IdempotencyKey: "operation-oversize", Content: strings.NewReader("12345"), MaxBytes: 4,
+		MediaType: "text/plain",
+	})
+	var failure *ports.Failure
+	if !errors.As(err, &failure) || failure.Code != ports.FailureResourceExhausted {
+		t.Fatalf("Put() error = %v", err)
+	}
+	page, err := store.List(context.Background(), artifactstore.ListRequest{})
+	if err != nil || len(page.Blobs) != 0 {
+		t.Fatalf("List() after rejection = %#v, %v", page, err)
+	}
+}
+
 func TestPutDeduplicatesContentAndPersistsFirstBlobMetadata(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
