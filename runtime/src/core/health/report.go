@@ -51,11 +51,59 @@ var codePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 // Check is one safe, actionable subsystem observation. Action is empty only
 // when the subsystem is healthy.
 type Check struct {
-	Subsystem Subsystem `json:"subsystem"`
-	Status    Status    `json:"status"`
-	Code      string    `json:"code"`
-	Message   string    `json:"message"`
-	Action    string    `json:"action,omitempty"`
+	Subsystem       Subsystem        `json:"subsystem"`
+	Status          Status           `json:"status"`
+	Code            string           `json:"code"`
+	Message         string           `json:"message"`
+	Action          string           `json:"action,omitempty"`
+	ProviderDetails *ProviderDetails `json:"providerDetails,omitempty"`
+}
+
+// AuthenticationState and UsageReadiness are credential-free readiness
+// projections. They deliberately report no account identity, balance, or raw
+// provider response.
+type AuthenticationState string
+
+const (
+	AuthenticationAuthenticated   AuthenticationState = "authenticated"
+	AuthenticationUnauthenticated AuthenticationState = "unauthenticated"
+	AuthenticationUnknown         AuthenticationState = "unknown"
+)
+
+type UsageReadiness string
+
+const (
+	UsageReady     UsageReadiness = "ready"
+	UsageExhausted UsageReadiness = "exhausted"
+	UsageUnknown   UsageReadiness = "unknown"
+)
+
+// AvailableCapability and UnavailableCapability are separate collections so
+// a capability cannot simultaneously carry a version and an unavailable
+// reason.
+type AvailableCapability struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+type UnavailableCapability struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+// ProviderDetails is the safe adapter/install projection attached only to the
+// Codex and selected-provider checks.
+type ProviderDetails struct {
+	Name                    string                  `json:"name"`
+	Version                 string                  `json:"version"`
+	ExecutableIdentity      string                  `json:"executableIdentity"`
+	Platform                string                  `json:"platform"`
+	Authentication          AuthenticationState     `json:"authentication"`
+	Usage                   UsageReadiness          `json:"usage"`
+	InstructionSources      []string                `json:"instructionSources"`
+	ConflictingExecutables  []string                `json:"conflictingExecutables"`
+	AvailableCapabilities   []AvailableCapability   `json:"availableCapabilities"`
+	UnavailableCapabilities []UnavailableCapability `json:"unavailableCapabilities"`
 }
 
 // Report is a point-in-time snapshot. Its JSON status is derived from Checks
@@ -71,7 +119,7 @@ func NewReport(generatedAt time.Time, checks []Check) (Report, error) {
 	report := Report{
 		SchemaVersion: SchemaVersion,
 		GeneratedAt:   generatedAt.UTC(),
-		Checks:        append([]Check(nil), checks...),
+		Checks:        cloneChecks(checks),
 	}
 	if err := report.validateAndOrder(); err != nil {
 		return Report{}, err
@@ -95,7 +143,7 @@ func (report Report) Status() Status {
 
 func (report Report) MarshalJSON() ([]byte, error) {
 	copy := report
-	copy.Checks = append([]Check(nil), report.Checks...)
+	copy.Checks = cloneChecks(report.Checks)
 	if err := copy.validateAndOrder(); err != nil {
 		return nil, err
 	}
@@ -156,7 +204,9 @@ func (report *Report) validateAndOrder() error {
 		rank[subsystem] = index
 	}
 	seen := make(map[Subsystem]struct{}, len(report.Checks))
-	for _, check := range report.Checks {
+	for index := range report.Checks {
+		normalizeProviderDetails(report.Checks[index].ProviderDetails)
+		check := report.Checks[index]
 		if _, known := rank[check.Subsystem]; !known {
 			return fmt.Errorf("unknown health subsystem %q", check.Subsystem)
 		}
@@ -189,6 +239,111 @@ func validateCheck(check Check) error {
 	}
 	if check.Status != StatusHealthy && check.Action == "" {
 		return errors.New("degraded or unhealthy check requires an action")
+	}
+	if check.ProviderDetails != nil {
+		if check.Subsystem != SubsystemCodex && check.Subsystem != SubsystemProvider {
+			return errors.New("provider details are only valid for codex or provider checks")
+		}
+		if err := validateProviderDetails(*check.ProviderDetails); err != nil {
+			return err
+		}
+		if check.Status == StatusHealthy && (check.ProviderDetails.Authentication == AuthenticationUnauthenticated || check.ProviderDetails.Usage == UsageExhausted) {
+			return errors.New("healthy check contradicts provider readiness")
+		}
+	}
+	return nil
+}
+
+func cloneChecks(checks []Check) []Check {
+	cloned := append([]Check(nil), checks...)
+	for index := range cloned {
+		if cloned[index].ProviderDetails == nil {
+			continue
+		}
+		details := *cloned[index].ProviderDetails
+		details.InstructionSources = append([]string(nil), details.InstructionSources...)
+		details.ConflictingExecutables = append([]string(nil), details.ConflictingExecutables...)
+		details.AvailableCapabilities = append([]AvailableCapability(nil), details.AvailableCapabilities...)
+		details.UnavailableCapabilities = append([]UnavailableCapability(nil), details.UnavailableCapabilities...)
+		cloned[index].ProviderDetails = &details
+	}
+	return cloned
+}
+
+func normalizeProviderDetails(details *ProviderDetails) {
+	if details == nil {
+		return
+	}
+	if details.InstructionSources == nil {
+		details.InstructionSources = []string{}
+	}
+	if details.ConflictingExecutables == nil {
+		details.ConflictingExecutables = []string{}
+	}
+	if details.AvailableCapabilities == nil {
+		details.AvailableCapabilities = []AvailableCapability{}
+	}
+	if details.UnavailableCapabilities == nil {
+		details.UnavailableCapabilities = []UnavailableCapability{}
+	}
+	sort.Strings(details.InstructionSources)
+	sort.Strings(details.ConflictingExecutables)
+	sort.Slice(details.AvailableCapabilities, func(left, right int) bool {
+		return details.AvailableCapabilities[left].Name < details.AvailableCapabilities[right].Name
+	})
+	sort.Slice(details.UnavailableCapabilities, func(left, right int) bool {
+		return details.UnavailableCapabilities[left].Name < details.UnavailableCapabilities[right].Name
+	})
+}
+
+func validateProviderDetails(details ProviderDetails) error {
+	if details.Name == "" {
+		return errors.New("provider details require a name")
+	}
+	if details.Authentication != AuthenticationAuthenticated && details.Authentication != AuthenticationUnauthenticated && details.Authentication != AuthenticationUnknown {
+		return fmt.Errorf("invalid provider authentication state %q", details.Authentication)
+	}
+	if details.Usage != UsageReady && details.Usage != UsageExhausted && details.Usage != UsageUnknown {
+		return fmt.Errorf("invalid provider usage readiness %q", details.Usage)
+	}
+	if err := validateUniqueDetails("instruction source", details.InstructionSources); err != nil {
+		return err
+	}
+	if err := validateUniqueDetails("conflicting executable", details.ConflictingExecutables); err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(details.AvailableCapabilities)+len(details.UnavailableCapabilities))
+	for _, capability := range details.AvailableCapabilities {
+		if capability.Name == "" || capability.Version == "" {
+			return errors.New("available capability requires name and version")
+		}
+		if _, duplicate := seen[capability.Name]; duplicate {
+			return fmt.Errorf("duplicate provider capability %q", capability.Name)
+		}
+		seen[capability.Name] = struct{}{}
+	}
+	for _, capability := range details.UnavailableCapabilities {
+		if capability.Name == "" || capability.Reason == "" {
+			return errors.New("unavailable capability requires name and reason")
+		}
+		if _, duplicate := seen[capability.Name]; duplicate {
+			return fmt.Errorf("duplicate provider capability %q", capability.Name)
+		}
+		seen[capability.Name] = struct{}{}
+	}
+	return nil
+}
+
+func validateUniqueDetails(kind string, values []string) error {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			return fmt.Errorf("%s cannot be empty", kind)
+		}
+		if _, duplicate := seen[value]; duplicate {
+			return fmt.Errorf("duplicate %s %q", kind, value)
+		}
+		seen[value] = struct{}{}
 	}
 	return nil
 }

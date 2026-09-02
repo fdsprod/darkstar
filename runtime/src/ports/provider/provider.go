@@ -29,7 +29,29 @@ const (
 	HealthAvailable       HealthState = "available"
 	HealthUnavailable     HealthState = "unavailable"
 	HealthUnauthenticated HealthState = "unauthenticated"
+	HealthUsageExhausted  HealthState = "usage_exhausted"
 	HealthDegraded        HealthState = "degraded"
+)
+
+// AuthenticationState is a credential-free account readiness observation.
+// Adapters must never copy account identifiers, tokens, or provider payloads
+// into provider health.
+type AuthenticationState string
+
+const (
+	AuthenticationAuthenticated   AuthenticationState = "authenticated"
+	AuthenticationUnauthenticated AuthenticationState = "unauthenticated"
+	AuthenticationUnknown         AuthenticationState = "unknown"
+)
+
+// UsageReadiness is the provider's ability to admit another attempt. It is
+// intentionally not a balance or billing projection.
+type UsageReadiness string
+
+const (
+	UsageReady     UsageReadiness = "ready"
+	UsageExhausted UsageReadiness = "exhausted"
+	UsageUnknown   UsageReadiness = "unknown"
 )
 
 // Health contains only safe executable and connectivity observations.
@@ -39,6 +61,9 @@ type Health struct {
 	ProviderVersion    string
 	ExecutableIdentity string
 	Platform           string
+	Authentication     AuthenticationState
+	Usage              UsageReadiness
+	InstructionSources []string
 	Diagnostics        []string
 }
 

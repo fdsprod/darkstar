@@ -327,15 +327,23 @@ func startOwnedExecProcess(command ExecCommand) (ExecProcess, error) {
 func (adapter *ExecAdapter) ProbeHealth(ctx context.Context) (providerport.Health, error) {
 	version, err := adapter.providerVersion(ctx)
 	if err != nil {
-		return providerport.Health{State: providerport.HealthUnavailable, Provider: providerName, ExecutableIdentity: adapter.executable, Diagnostics: []string{err.Error()}}, nil
+		return providerport.Health{
+			State: providerport.HealthUnavailable, Provider: providerName, ExecutableIdentity: adapter.executable,
+			Authentication: providerport.AuthenticationUnknown, Usage: providerport.UsageUnknown,
+			InstructionSources: []string{}, Diagnostics: []string{"Codex exec version could not be read"},
+		}, nil
 	}
 	state := providerport.HealthAvailable
-	diagnostics := []string(nil)
+	diagnostics := []string{}
 	if !adapter.supports(version) {
 		state = providerport.HealthDegraded
 		diagnostics = []string{fmt.Sprintf("codex exec JSONL is not admitted for exact version %s", version)}
 	}
-	return providerport.Health{State: state, Provider: providerName, ProviderVersion: version, ExecutableIdentity: adapter.executable, Platform: "windows", Diagnostics: diagnostics}, nil
+	return providerport.Health{
+		State: state, Provider: providerName, ProviderVersion: version, ExecutableIdentity: adapter.executable, Platform: "windows",
+		Authentication: providerport.AuthenticationUnknown, Usage: providerport.UsageUnknown,
+		InstructionSources: []string{}, Diagnostics: diagnostics,
+	}, nil
 }
 
 func (adapter *ExecAdapter) Capabilities(ctx context.Context) (providerport.CapabilityManifest, error) {
@@ -344,16 +352,20 @@ func (adapter *ExecAdapter) Capabilities(ctx context.Context) (providerport.Capa
 		return providerport.CapabilityManifest{}, classifyAdapterError(err)
 	}
 	features := map[string]providerport.Capability{
-		"exec_json":         providerport.AvailableCapability{Version: version, Metadata: map[string]string{"transport": execTransport, "fallback": "true"}},
-		"structured_output": providerport.AvailableCapability{Version: "json-schema"},
-		"resume":            providerport.AvailableCapability{Version: "session-id"},
-		"interactions":      providerport.UnavailableCapability{Reason: "exec JSONL has no bidirectional interaction bridge"},
-		"workspace_write":   providerport.UnavailableCapability{Reason: "bounded exec fallback is read-only"},
+		"artifact_text_input":  providerport.AvailableCapability{Version: "v1"},
+		"exec_json":            providerport.AvailableCapability{Version: version, Metadata: map[string]string{"transport": execTransport, "fallback": "true"}},
+		"explicit_skill_input": providerport.UnavailableCapability{Reason: "exec JSONL cannot supply an explicit native skill input"},
+		"interactions":         providerport.UnavailableCapability{Reason: "exec JSONL has no bidirectional interaction bridge"},
+		"local_image_input":    providerport.UnavailableCapability{Reason: "bounded exec fallback does not supply local image inputs"},
+		"resume":               providerport.AvailableCapability{Version: "session-id"},
+		"structured_output":    providerport.AvailableCapability{Version: "json-schema"},
+		"text_input":           providerport.AvailableCapability{Version: "v1"},
+		"workspace_write":      providerport.UnavailableCapability{Reason: "bounded exec fallback is read-only"},
 	}
 	if !adapter.supports(version) {
 		features["exec_json"] = providerport.UnavailableCapability{Reason: "exact Codex CLI version has not passed exec probes"}
 	}
-	digest := sha256.Sum256([]byte("exec_json=" + version + "|interactions=none|resume=session-id|structured_output=json-schema|workspace_write=none"))
+	digest := sha256.Sum256([]byte("artifact_text_input=v1|exec_json=" + version + "|explicit_skill_input=none|interactions=none|local_image_input=none|resume=session-id|structured_output=json-schema|text_input=v1|workspace_write=none"))
 	return providerport.CapabilityManifest{Provider: providerName, Fingerprint: hex.EncodeToString(digest[:]), Features: features, ObservedAt: adapter.clock().UTC()}, nil
 }
 

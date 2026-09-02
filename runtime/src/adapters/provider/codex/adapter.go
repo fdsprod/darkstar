@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -38,6 +37,7 @@ type AppServerFactory func(context.Context) (*AppServerClient, InitializeResult,
 // AdapterOptions configures the concrete Codex provider.
 type AdapterOptions struct {
 	Executable       string
+	ProjectRoot      string
 	Client           AppServerOptions
 	Factory          AppServerFactory
 	EvidenceRecorder EvidenceRecorder
@@ -46,11 +46,12 @@ type AdapterOptions struct {
 
 // Adapter implements the provider-neutral port using Codex App Server.
 type Adapter struct {
-	executable string
-	client     AppServerOptions
-	factory    AppServerFactory
-	evidence   EvidenceRecorder
-	clock      func() time.Time
+	executable  string
+	projectRoot string
+	client      AppServerOptions
+	factory     AppServerFactory
+	evidence    EvidenceRecorder
+	clock       func() time.Time
 
 	mu       sync.Mutex
 	attempts map[string]*codexAttempt
@@ -211,13 +212,18 @@ func NewAdapter(options AdapterOptions) (*Adapter, error) {
 			return StartAppServer(ctx, executable, clientOptions)
 		}
 	}
+	projectRoot := strings.TrimSpace(options.ProjectRoot)
+	if projectRoot != "" {
+		projectRoot = filepath.Clean(projectRoot)
+	}
 	return &Adapter{
-		executable: options.Executable,
-		client:     options.Client,
-		factory:    options.Factory,
-		evidence:   options.EvidenceRecorder,
-		clock:      options.Clock,
-		attempts:   make(map[string]*codexAttempt),
+		executable:  options.Executable,
+		projectRoot: projectRoot,
+		client:      options.Client,
+		factory:     options.Factory,
+		evidence:    options.EvidenceRecorder,
+		clock:       options.Clock,
+		attempts:    make(map[string]*codexAttempt),
 	}, nil
 }
 
@@ -225,26 +231,172 @@ func (adapter *Adapter) ProbeHealth(ctx context.Context) (providerport.Health, e
 	if err := ctx.Err(); err != nil {
 		return providerport.Health{}, err
 	}
-	if strings.TrimSpace(adapter.executable) == "" {
-		return providerport.Health{State: providerport.HealthAvailable, Provider: providerName, ExecutableIdentity: "injected-app-server", Platform: "test"}, nil
+	executable := "injected-app-server"
+	if strings.TrimSpace(adapter.executable) != "" {
+		canonical, err := canonicalExecutable(adapter.executable)
+		if err != nil {
+			return unavailableHealth("Codex executable identity could not be resolved"), nil
+		}
+		executable = canonical
 	}
-	canonical, err := canonicalExecutable(adapter.executable)
+
+	client, initialized, err := adapter.factory(ctx)
 	if err != nil {
-		return providerport.Health{State: providerport.HealthUnavailable, Provider: providerName, Diagnostics: []string{err.Error()}}, nil
+		observation := unavailableHealth("Codex App Server could not start or negotiate a supported version")
+		observation.ExecutableIdentity = executable
+		return observation, nil
 	}
-	command := exec.CommandContext(ctx, canonical, "--version")
-	configureProbeProcess(command)
-	output, err := command.Output()
-	if err != nil {
-		return providerport.Health{State: providerport.HealthUnavailable, Provider: providerName, ExecutableIdentity: canonical, Diagnostics: []string{err.Error()}}, nil
-	}
-	return providerport.Health{
+	observation := providerport.Health{
 		State:              providerport.HealthAvailable,
 		Provider:           providerName,
-		ProviderVersion:    strings.TrimSpace(string(output)),
-		ExecutableIdentity: canonical,
-		Platform:           "windows",
-	}, nil
+		ProviderVersion:    client.ProviderVersion(),
+		ExecutableIdentity: executable,
+		Platform:           initialized.PlatformFamily,
+		Authentication:     providerport.AuthenticationUnknown,
+		Usage:              providerport.UsageUnknown,
+		InstructionSources: []string{},
+		Diagnostics:        []string{},
+	}
+	adapter.probeAccountHealth(ctx, client, &observation)
+	if err := ctx.Err(); err != nil {
+		_ = client.Close()
+		return providerport.Health{}, err
+	}
+	adapter.probeInstructionSources(ctx, client, &observation)
+	if err := ctx.Err(); err != nil {
+		_ = client.Close()
+		return providerport.Health{}, err
+	}
+	if err := client.Close(); err != nil {
+		observation.Diagnostics = append(observation.Diagnostics, "Codex App Server health process did not shut down cleanly")
+		if observation.State == providerport.HealthAvailable {
+			observation.State = providerport.HealthDegraded
+		}
+	}
+	return observation, nil
+}
+
+type accountReadResponse struct {
+	Account *struct {
+		Type string `json:"type"`
+	} `json:"account"`
+	RequiresOpenAIAuth *bool `json:"requiresOpenaiAuth"`
+}
+
+type rateLimitWindow struct {
+	UsedPercent *int `json:"usedPercent"`
+}
+
+type rateLimitSnapshot struct {
+	Primary              *rateLimitWindow `json:"primary"`
+	Secondary            *rateLimitWindow `json:"secondary"`
+	RateLimitReachedType string           `json:"rateLimitReachedType"`
+	SpendControlReached  *bool            `json:"spendControlReached"`
+}
+
+type accountRateLimitsResponse struct {
+	RateLimits *rateLimitSnapshot `json:"rateLimits"`
+}
+
+func (adapter *Adapter) probeAccountHealth(ctx context.Context, client *AppServerClient, observation *providerport.Health) {
+	var account accountReadResponse
+	if err := client.Call(ctx, "account/read", map[string]bool{"refreshToken": false}, &account); err != nil {
+		observation.State = providerport.HealthDegraded
+		observation.Diagnostics = append(observation.Diagnostics, "Codex authentication readiness could not be read")
+		return
+	}
+	if account.RequiresOpenAIAuth == nil {
+		observation.State = providerport.HealthDegraded
+		observation.Diagnostics = append(observation.Diagnostics, "Codex authentication readiness response was incomplete")
+		return
+	}
+	if *account.RequiresOpenAIAuth && account.Account == nil {
+		observation.State = providerport.HealthUnauthenticated
+		observation.Authentication = providerport.AuthenticationUnauthenticated
+		observation.Diagnostics = append(observation.Diagnostics, "Codex authentication is required")
+		return
+	}
+	observation.Authentication = providerport.AuthenticationAuthenticated
+
+	var limits accountRateLimitsResponse
+	if err := client.Call(ctx, "account/rateLimits/read", struct{}{}, &limits); err != nil {
+		observation.State = providerport.HealthDegraded
+		observation.Diagnostics = append(observation.Diagnostics, "Codex usage readiness could not be read")
+		return
+	}
+	if limits.RateLimits == nil || !validRateLimitWindows(*limits.RateLimits) {
+		observation.State = providerport.HealthDegraded
+		observation.Diagnostics = append(observation.Diagnostics, "Codex usage readiness response was incomplete")
+		return
+	}
+	if rateLimitsExhausted(*limits.RateLimits) {
+		observation.State = providerport.HealthUsageExhausted
+		observation.Usage = providerport.UsageExhausted
+		observation.Diagnostics = append(observation.Diagnostics, "Codex usage is exhausted")
+		return
+	}
+	observation.Usage = providerport.UsageReady
+}
+
+func rateLimitsExhausted(snapshot rateLimitSnapshot) bool {
+	return snapshot.RateLimitReachedType != "" ||
+		(snapshot.SpendControlReached != nil && *snapshot.SpendControlReached) ||
+		(snapshot.Primary != nil && *snapshot.Primary.UsedPercent >= 100) ||
+		(snapshot.Secondary != nil && *snapshot.Secondary.UsedPercent >= 100)
+}
+
+func validRateLimitWindows(snapshot rateLimitSnapshot) bool {
+	return (snapshot.Primary == nil || snapshot.Primary.UsedPercent != nil) &&
+		(snapshot.Secondary == nil || snapshot.Secondary.UsedPercent != nil)
+}
+
+type configReadResponse struct {
+	Origins map[string]struct {
+		Name struct {
+			Type string `json:"type"`
+		} `json:"name"`
+	} `json:"origins"`
+}
+
+func (adapter *Adapter) probeInstructionSources(ctx context.Context, client *AppServerClient, observation *providerport.Health) {
+	params := struct {
+		CWD           string `json:"cwd,omitempty"`
+		IncludeLayers bool   `json:"includeLayers"`
+	}{CWD: adapter.projectRoot, IncludeLayers: false}
+	var config configReadResponse
+	if err := client.Call(ctx, "config/read", params, &config); err != nil {
+		observation.Diagnostics = append(observation.Diagnostics, "Codex instruction-source configuration could not be read")
+		if observation.State == providerport.HealthAvailable {
+			observation.State = providerport.HealthDegraded
+		}
+		return
+	}
+	if config.Origins == nil {
+		observation.Diagnostics = append(observation.Diagnostics, "Codex instruction-source response was incomplete")
+		if observation.State == providerport.HealthAvailable {
+			observation.State = providerport.HealthDegraded
+		}
+		return
+	}
+	for key, origin := range config.Origins {
+		if key != "instructions" && key != "developer_instructions" {
+			continue
+		}
+		source := strings.TrimSpace(origin.Name.Type)
+		if source == "" {
+			source = "unknown"
+		}
+		observation.InstructionSources = append(observation.InstructionSources, source+":"+key)
+	}
+	sort.Strings(observation.InstructionSources)
+}
+
+func unavailableHealth(diagnostic string) providerport.Health {
+	return providerport.Health{
+		State: providerport.HealthUnavailable, Provider: providerName,
+		Authentication: providerport.AuthenticationUnknown, Usage: providerport.UsageUnknown,
+		InstructionSources: []string{}, Diagnostics: []string{diagnostic},
+	}
 }
 
 func (adapter *Adapter) Capabilities(ctx context.Context) (providerport.CapabilityManifest, error) {
@@ -256,10 +408,13 @@ func (adapter *Adapter) Capabilities(ctx context.Context) (providerport.Capabili
 
 func appServerCapabilityManifest(observedAt time.Time) providerport.CapabilityManifest {
 	features := map[string]providerport.Capability{
-		"app_server":        providerport.AvailableCapability{Version: "v2"},
-		"structured_output": providerport.AvailableCapability{Version: "json-schema"},
-		"workspace_write":   providerport.AvailableCapability{Version: "sandbox"},
-		"interactions":      providerport.AvailableCapability{Version: "json-rpc"},
+		"app_server":          providerport.AvailableCapability{Version: "v2"},
+		"artifact_text_input": providerport.AvailableCapability{Version: "v1"},
+		"text_input":          providerport.AvailableCapability{Version: "v1"},
+		"structured_output":   providerport.AvailableCapability{Version: "json-schema"},
+		"workspace_write":     providerport.AvailableCapability{Version: "sandbox"},
+		"interactions":        providerport.AvailableCapability{Version: "json-rpc"},
+		"resume":              providerport.AvailableCapability{Version: "thread-id"},
 		capabilityLocalImageInput: providerport.AvailableCapability{Version: "v2", Metadata: map[string]string{
 			"inputType": "localImage", "mediaTypes": "image/jpeg,image/png,image/webp", "details": "auto,low,high,original",
 		}},
@@ -267,7 +422,7 @@ func appServerCapabilityManifest(observedAt time.Time) providerport.CapabilityMa
 			"inputType": "skill", "locator": "bounded-local-SKILL.md",
 		}},
 	}
-	fingerprintSource := "app_server=v2|explicit_skill_input=v2|interactions=json-rpc|local_image_input=v2|structured_output=json-schema|workspace_write=sandbox"
+	fingerprintSource := "app_server=v2|artifact_text_input=v1|explicit_skill_input=v2|interactions=json-rpc|local_image_input=v2|resume=thread-id|structured_output=json-schema|text_input=v1|workspace_write=sandbox"
 	digest := sha256.Sum256([]byte(fingerprintSource))
 	return providerport.CapabilityManifest{
 		Provider:    providerName,

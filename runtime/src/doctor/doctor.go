@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -27,30 +29,60 @@ const commandTimeout = 5 * time.Second
 // CommandRunner is the non-mutating executable boundary used by tool probes.
 type CommandRunner interface {
 	LookPath(string) (string, error)
-	Run(context.Context, string, ...string) error
+	Output(context.Context, string, ...string) ([]byte, error)
+}
+
+type executableEnumerator interface {
+	LookPaths(string) ([]string, error)
 }
 
 type osCommandRunner struct{}
 
 func (osCommandRunner) LookPath(name string) (string, error) { return exec.LookPath(name) }
 
-func (osCommandRunner) Run(ctx context.Context, name string, arguments ...string) error {
+func (osCommandRunner) Output(ctx context.Context, name string, arguments ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, name, arguments...)
 	command.Stdin = nil
-	command.Stdout = io.Discard
 	command.Stderr = io.Discard
-	return command.Run()
+	return command.Output()
+}
+
+func (runner osCommandRunner) LookPaths(name string) ([]string, error) {
+	selected, err := runner.LookPath(name)
+	if err != nil {
+		return nil, err
+	}
+	command := "which"
+	arguments := []string{"-a", name}
+	if runtime.GOOS == "windows" {
+		command = "where.exe"
+		arguments = []string{name}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	output, err := runner.Output(ctx, command, arguments...)
+	if err != nil {
+		return []string{selected}, nil
+	}
+	paths := []string{selected}
+	for _, line := range strings.Split(strings.ReplaceAll(string(output), "\r\n", "\n"), "\n") {
+		if candidate := strings.TrimSpace(line); candidate != "" {
+			paths = append(paths, candidate)
+		}
+	}
+	return paths, nil
 }
 
 // Options supplies the live dependencies and observations used by Doctor.
 type Options struct {
-	Paths       platformport.Paths
-	Database    *sqlite.Database
-	Process     daemon.ProcessIdentity
-	ProjectRoot string
-	Provider    providerport.Provider
-	Runner      CommandRunner
-	Now         func() time.Time
+	Paths           platformport.Paths
+	Database        *sqlite.Database
+	Process         daemon.ProcessIdentity
+	ProjectRoot     string
+	Provider        providerport.Provider
+	CodexExecutable string
+	Runner          CommandRunner
+	Now             func() time.Time
 }
 
 // Doctor is a reusable, side-effect-bounded local readiness probe.
@@ -60,6 +92,7 @@ type Doctor struct {
 	process     daemon.ProcessIdentity
 	projectRoot string
 	provider    providerport.Provider
+	codex       executableResolution
 	runner      CommandRunner
 	now         func() time.Time
 }
@@ -75,12 +108,14 @@ func New(options Options) *Doctor {
 	if now == nil {
 		now = time.Now
 	}
+	codex := resolveExecutable(runner, options.CodexExecutable, "codex")
 	return &Doctor{
 		paths:       options.Paths,
 		database:    options.Database,
 		process:     options.Process,
 		projectRoot: options.ProjectRoot,
 		provider:    options.Provider,
+		codex:       codex,
 		runner:      runner,
 		now:         now,
 	}
@@ -189,30 +224,55 @@ func (doctor *Doctor) gitCheck(ctx context.Context, projectRoot string) health.C
 	if err != nil {
 		return finding(health.SubsystemGit, health.StatusUnhealthy, "GIT_EXECUTABLE_NOT_FOUND", "Git is not available on PATH.", "Install Git for Windows and add it to PATH, then restart the daemon.")
 	}
-	if err := doctor.runCommand(ctx, git, "--version"); err != nil {
+	if _, err := doctor.runCommand(ctx, git, "--version"); err != nil {
 		return finding(health.SubsystemGit, health.StatusUnhealthy, "GIT_EXECUTABLE_FAILED", "Git could not report its version.", "Repair the Git installation and rerun doctor.")
 	}
 	if !filepath.IsAbs(projectRoot) {
 		return finding(health.SubsystemGit, health.StatusDegraded, "GIT_PROJECT_ROOT_UNAVAILABLE", "The daemon has no absolute project root to inspect.", "Start DARKSTAR from the target repository and rerun doctor.")
 	}
-	if err := doctor.runCommand(ctx, git, "-C", projectRoot, "rev-parse", "--show-toplevel"); err != nil {
+	if _, err := doctor.runCommand(ctx, git, "-C", projectRoot, "rev-parse", "--show-toplevel"); err != nil {
 		return finding(health.SubsystemGit, health.StatusDegraded, "GIT_REPOSITORY_NOT_FOUND", "The current project root is not a Git worktree.", "Run DARKSTAR from a Git worktree or initialize the project repository.")
 	}
 	return healthy(health.SubsystemGit, "GIT_READY", "Git is executable and the current project is a worktree.")
 }
 
 func (doctor *Doctor) codexCheck(ctx context.Context) health.Check {
-	codex, err := doctor.runner.LookPath("codex")
-	if err != nil {
+	details := &health.ProviderDetails{
+		Name: "codex", Authentication: health.AuthenticationUnknown, Usage: health.UsageUnknown,
+		InstructionSources: []string{}, ConflictingExecutables: append([]string(nil), doctor.codex.Conflicts...),
+		AvailableCapabilities: []health.AvailableCapability{}, UnavailableCapabilities: []health.UnavailableCapability{},
+	}
+	if doctor.codex.Err != nil {
 		return finding(health.SubsystemCodex, health.StatusDegraded, "CODEX_EXECUTABLE_NOT_FOUND", "Codex is not available on PATH.", "Install Codex, add it to PATH, and restart the daemon before selecting a Codex provider.")
 	}
-	if err := doctor.runCommand(ctx, codex, "--version"); err != nil {
-		return finding(health.SubsystemCodex, health.StatusDegraded, "CODEX_VERSION_UNAVAILABLE", "Codex could not report its version.", "Repair or upgrade the Codex installation, then rerun doctor.")
+	details.ExecutableIdentity = doctor.codex.Selected
+	versionOutput, err := doctor.runCommand(ctx, doctor.codex.Selected, "--version")
+	if err != nil {
+		check := finding(health.SubsystemCodex, health.StatusDegraded, "CODEX_VERSION_UNAVAILABLE", "The pinned Codex executable could not report its version.", "Repair or upgrade the pinned Codex installation, then restart the daemon.")
+		check.ProviderDetails = details
+		return check
 	}
-	if err := doctor.runCommand(ctx, codex, "login", "status"); err != nil {
-		return finding(health.SubsystemCodex, health.StatusDegraded, "CODEX_AUTH_REQUIRED", "Codex is installed but authentication is not ready.", "Sign in with `codex login`, then rerun doctor.")
+	details.Version = exactCodexVersion(string(versionOutput))
+	if details.Version == "" {
+		check := finding(health.SubsystemCodex, health.StatusDegraded, "CODEX_VERSION_INVALID", "The pinned Codex executable returned an unrecognized version.", "Repair or upgrade the pinned Codex installation, then restart the daemon.")
+		check.ProviderDetails = details
+		return check
 	}
-	return healthy(health.SubsystemCodex, "CODEX_READY", "Codex is executable and authenticated.")
+	if _, err := doctor.runCommand(ctx, doctor.codex.Selected, "login", "status"); err != nil {
+		details.Authentication = health.AuthenticationUnauthenticated
+		check := finding(health.SubsystemCodex, health.StatusDegraded, "CODEX_AUTH_REQUIRED", "The pinned Codex installation requires authentication.", "Sign in with `codex login`, then rerun doctor.")
+		check.ProviderDetails = details
+		return check
+	}
+	details.Authentication = health.AuthenticationAuthenticated
+	if len(details.ConflictingExecutables) > 0 {
+		check := finding(health.SubsystemCodex, health.StatusUnhealthy, "CODEX_EXECUTABLE_CONFLICT", "More than one canonical Codex executable is discoverable.", "Remove stale Codex installations from PATH or configure the selected provider with one explicit executable, then restart the daemon.")
+		check.ProviderDetails = details
+		return check
+	}
+	check := healthy(health.SubsystemCodex, "CODEX_READY", fmt.Sprintf("Codex %s is pinned and authenticated.", details.Version))
+	check.ProviderDetails = details
+	return check
 }
 
 func (doctor *Doctor) githubCheck(ctx context.Context) health.Check {
@@ -220,10 +280,10 @@ func (doctor *Doctor) githubCheck(ctx context.Context) health.Check {
 	if err != nil {
 		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_CLI_NOT_FOUND", "GitHub CLI is not available on PATH.", "Install GitHub CLI, add it to PATH, and restart the daemon before enabling GitHub delivery.")
 	}
-	if err := doctor.runCommand(ctx, github, "--version"); err != nil {
+	if _, err := doctor.runCommand(ctx, github, "--version"); err != nil {
 		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_CLI_FAILED", "GitHub CLI could not report its version.", "Repair the GitHub CLI installation, then rerun doctor.")
 	}
-	if err := doctor.runCommand(ctx, github, "auth", "status", "--hostname", "github.com"); err != nil {
+	if _, err := doctor.runCommand(ctx, github, "auth", "status", "--hostname", "github.com"); err != nil {
 		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_AUTH_REQUIRED", "GitHub CLI is installed but github.com authentication is not ready.", "Run `gh auth login --hostname github.com`, then rerun doctor.")
 	}
 	return healthy(health.SubsystemGitHub, "GITHUB_READY", "GitHub CLI is executable and authenticated for github.com.")
@@ -255,24 +315,123 @@ func (doctor *Doctor) providerCheck(ctx context.Context) health.Check {
 	if err != nil {
 		return finding(health.SubsystemProvider, health.StatusUnhealthy, "PROVIDER_PROBE_FAILED", "The selected provider health probe failed.", "Inspect provider configuration and authentication, then rerun doctor.")
 	}
+	manifest, err := doctor.provider.Capabilities(ctx)
+	if err != nil {
+		check := finding(health.SubsystemProvider, health.StatusUnhealthy, "PROVIDER_CAPABILITIES_UNAVAILABLE", "The selected provider could not report its final capability manifest.", "Repair or upgrade the provider adapter, then rerun doctor.")
+		check.ProviderDetails = projectProviderDetails(observation, providerport.CapabilityManifest{})
+		return check
+	}
+	details := projectProviderDetails(observation, manifest)
+	capabilitySummary := fmt.Sprintf("%d available and %d unavailable capabilities", len(details.AvailableCapabilities), len(details.UnavailableCapabilities))
+	withDetails := func(check health.Check) health.Check {
+		check.ProviderDetails = details
+		return check
+	}
 	switch observation.State {
 	case providerport.HealthAvailable:
-		return healthy(health.SubsystemProvider, "PROVIDER_READY", fmt.Sprintf("Provider %s is available.", observation.Provider))
+		return withDetails(healthy(health.SubsystemProvider, "PROVIDER_READY", fmt.Sprintf("Provider %s %s is available with %s.", observation.Provider, observation.ProviderVersion, capabilitySummary)))
 	case providerport.HealthDegraded:
-		return finding(health.SubsystemProvider, health.StatusDegraded, "PROVIDER_DEGRADED", "The selected provider reports degraded readiness.", "Inspect provider diagnostics and capabilities before starting a run.")
+		return withDetails(finding(health.SubsystemProvider, health.StatusDegraded, "PROVIDER_DEGRADED", "The selected provider reports degraded readiness.", "Inspect provider authentication, usage, version, instruction sources, and capabilities before starting a run."))
 	case providerport.HealthUnauthenticated:
-		return finding(health.SubsystemProvider, health.StatusUnhealthy, "PROVIDER_AUTH_REQUIRED", "The selected provider requires authentication.", "Authenticate the selected provider, then rerun doctor.")
+		return withDetails(finding(health.SubsystemProvider, health.StatusUnhealthy, "PROVIDER_AUTH_REQUIRED", "The selected provider requires authentication.", "Authenticate the selected provider, then rerun doctor."))
+	case providerport.HealthUsageExhausted:
+		return withDetails(finding(health.SubsystemProvider, health.StatusUnhealthy, "PROVIDER_USAGE_EXHAUSTED", "The selected provider cannot admit another attempt because usage is exhausted.", "Wait for the provider limit to reset or resolve the account usage limit, then rerun doctor."))
 	case providerport.HealthUnavailable:
-		return finding(health.SubsystemProvider, health.StatusUnhealthy, "PROVIDER_UNAVAILABLE", "The selected provider is unavailable.", "Repair the provider executable or connectivity, then rerun doctor.")
+		return withDetails(finding(health.SubsystemProvider, health.StatusUnhealthy, "PROVIDER_UNAVAILABLE", "The selected provider is unavailable.", "Repair the provider executable or connectivity, then rerun doctor."))
 	default:
-		return finding(health.SubsystemProvider, health.StatusUnhealthy, "PROVIDER_HEALTH_INVALID", "The selected provider returned an unknown health state.", "Upgrade or repair the provider adapter, then rerun doctor.")
+		return withDetails(finding(health.SubsystemProvider, health.StatusUnhealthy, "PROVIDER_HEALTH_INVALID", "The selected provider returned an unknown health state.", "Upgrade or repair the provider adapter, then rerun doctor."))
 	}
 }
 
-func (doctor *Doctor) runCommand(ctx context.Context, executable string, arguments ...string) error {
+func (doctor *Doctor) runCommand(ctx context.Context, executable string, arguments ...string) ([]byte, error) {
 	commandContext, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
-	return doctor.runner.Run(commandContext, executable, arguments...)
+	return doctor.runner.Output(commandContext, executable, arguments...)
+}
+
+type executableResolution struct {
+	Selected  string
+	Conflicts []string
+	Err       error
+}
+
+func resolveExecutable(runner CommandRunner, configured, name string) executableResolution {
+	target := strings.TrimSpace(configured)
+	if target == "" {
+		target = name
+	}
+	selected, err := runner.LookPath(target)
+	if err != nil {
+		return executableResolution{Err: err}
+	}
+	selected = canonicalPath(selected)
+	candidates := []string{selected}
+	if enumerator, ok := runner.(executableEnumerator); ok {
+		if discovered, discoverErr := enumerator.LookPaths(name); discoverErr == nil {
+			candidates = append(candidates, discovered...)
+		}
+	}
+	seen := map[string]struct{}{strings.ToLower(selected): {}}
+	conflicts := []string{}
+	for _, candidate := range candidates {
+		canonical := canonicalPath(candidate)
+		identity := strings.ToLower(canonical)
+		if canonical == "" {
+			continue
+		}
+		if _, duplicate := seen[identity]; duplicate {
+			continue
+		}
+		seen[identity] = struct{}{}
+		conflicts = append(conflicts, canonical)
+	}
+	sort.Strings(conflicts)
+	return executableResolution{Selected: selected, Conflicts: conflicts}
+}
+
+func canonicalPath(path string) string {
+	absolute, err := filepath.Abs(strings.TrimSpace(path))
+	if err != nil {
+		return filepath.Clean(strings.TrimSpace(path))
+	}
+	if evaluated, evaluateErr := filepath.EvalSymlinks(absolute); evaluateErr == nil {
+		absolute = evaluated
+	}
+	return filepath.Clean(absolute)
+}
+
+func exactCodexVersion(output string) string {
+	fields := strings.Fields(strings.TrimSpace(output))
+	if len(fields) < 2 || (fields[0] != "codex-cli" && fields[0] != "codex") {
+		return ""
+	}
+	return fields[len(fields)-1]
+}
+
+func projectProviderDetails(observation providerport.Health, manifest providerport.CapabilityManifest) *health.ProviderDetails {
+	authentication := health.AuthenticationState(observation.Authentication)
+	if authentication == "" {
+		authentication = health.AuthenticationUnknown
+	}
+	usage := health.UsageReadiness(observation.Usage)
+	if usage == "" {
+		usage = health.UsageUnknown
+	}
+	details := &health.ProviderDetails{
+		Name: observation.Provider, Version: observation.ProviderVersion, ExecutableIdentity: observation.ExecutableIdentity, Platform: observation.Platform,
+		Authentication: authentication, Usage: usage,
+		InstructionSources: append([]string(nil), observation.InstructionSources...), ConflictingExecutables: []string{},
+		AvailableCapabilities: []health.AvailableCapability{}, UnavailableCapabilities: []health.UnavailableCapability{},
+	}
+	for name, capability := range manifest.Features {
+		switch value := capability.(type) {
+		case providerport.AvailableCapability:
+			details.AvailableCapabilities = append(details.AvailableCapabilities, health.AvailableCapability{Name: name, Version: value.Version})
+		case providerport.UnavailableCapability:
+			details.UnavailableCapabilities = append(details.UnavailableCapabilities, health.UnavailableCapability{Name: name, Reason: value.Reason})
+		}
+	}
+	return details
 }
 
 func healthy(subsystem health.Subsystem, code, message string) health.Check {

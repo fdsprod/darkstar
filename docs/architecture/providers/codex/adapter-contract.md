@@ -28,6 +28,26 @@ input, or an uncertain write recovery decision.
 | `CancelAttempt` | Interrupt the active turn, then terminate only the owned process tree if graceful interruption does not complete within policy. |
 | `GetResult` | Return terminal status, structured result or validation failure, usage, workspace evidence, and recovery metadata. |
 
+### Health and final capability projection
+
+The App Server health probe starts the pinned executable, completes exact-version
+initialize negotiation, and performs read-only `account/read`,
+`account/rateLimits/read`, and `config/read` calls. It reduces those responses to
+closed authentication and usage-readiness states plus instruction-source layer
+categories. Email addresses, tokens, credit balances, raw responses, and free-form
+account metadata are discarded at the adapter boundary. Authentication required,
+usage exhausted, version/protocol incompatibility, and partial probe failure are
+distinct health outcomes with different doctor actions.
+
+The final App Server manifest advertises `app_server`, `text_input`,
+`artifact_text_input`, `local_image_input`, `explicit_skill_input`,
+`structured_output`, `workspace_write`, `interactions`, and `resume`. The bounded
+exec manifest marks native image, explicit skill, workspace write, and interaction
+capabilities unavailable while reporting its supported text/artifact inputs,
+structured output, session resume, and version-gated JSONL transport. Doctor
+publishes available and unavailable capabilities as separate collections so one
+capability cannot appear in contradictory states.
+
 ## Attempt request
 
 A provider-neutral attempt request contains:

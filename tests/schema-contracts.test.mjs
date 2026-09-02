@@ -51,6 +51,22 @@ test("provider state combinations are encoded as tagged variants", () => {
   assert.equal(schema.$defs.interactionResponse.oneOf.length, 2);
   assert.equal(schema.$defs.attemptResult.oneOf.length, 3);
   assert.deepEqual(schema.$defs.input.properties.detail.enum, ["auto", "low", "high", "original"]);
+  assert.deepEqual(schema.$defs.health.properties.authentication.enum, ["authenticated", "unauthenticated", "unknown"]);
+  assert.deepEqual(schema.$defs.health.properties.usage.enum, ["ready", "exhausted", "unknown"]);
+  assert.ok(schema.$defs.health.properties.state.enum.includes("usage_exhausted"));
+});
+
+test("doctor provider details separate available and unavailable capabilities", () => {
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "health-report-v1alpha1.schema.json"), "utf8"));
+  const details = schema.$defs.providerDetails;
+  assert.ok(details.required.includes("authentication"));
+  assert.ok(details.required.includes("usage"));
+  assert.ok(details.required.includes("instructionSources"));
+  assert.ok(details.required.includes("conflictingExecutables"));
+  assert.equal(details.properties.availableCapabilities.items.$ref, "#/$defs/availableCapability");
+  assert.equal(details.properties.unavailableCapabilities.items.$ref, "#/$defs/unavailableCapability");
+  assert.equal(schema.$defs.healthyCheck.properties.providerDetails.$ref, "#/$defs/providerDetails");
+  assert.equal(schema.$defs.findingCheck.properties.providerDetails.$ref, "#/$defs/providerDetails");
 });
 
 test("provider events publish the normalized adapter vocabulary", () => {

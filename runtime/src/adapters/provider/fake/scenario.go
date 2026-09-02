@@ -74,9 +74,13 @@ type Scenario struct {
 func normalizeScenario(scenario Scenario) (Scenario, error) {
 	if scenario.Health.Provider == "" {
 		scenario.Health = provider.Health{
-			State:           provider.HealthAvailable,
-			Provider:        "fake",
-			ProviderVersion: "scenario-v1",
+			State:              provider.HealthAvailable,
+			Provider:           "fake",
+			ProviderVersion:    "scenario-v1",
+			Authentication:     provider.AuthenticationUnknown,
+			Usage:              provider.UsageUnknown,
+			InstructionSources: []string{},
+			Diagnostics:        []string{},
 		}
 	}
 	if scenario.Capabilities.Provider == "" {

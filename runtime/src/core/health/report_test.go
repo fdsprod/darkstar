@@ -54,6 +54,52 @@ func TestReportRequiresEverySubsystemAndActionsForFindings(t *testing.T) {
 	}
 }
 
+func TestReportNormalizesProviderDetailsAndRejectsContradictoryCapabilityStates(t *testing.T) {
+	t.Parallel()
+	checks := completeChecks(StatusHealthy)
+	checks[len(checks)-1].ProviderDetails = &ProviderDetails{
+		Name: "codex", Authentication: AuthenticationAuthenticated, Usage: UsageReady,
+		AvailableCapabilities: []AvailableCapability{{Name: "zeta", Version: "v1"}, {Name: "alpha", Version: "v2"}},
+	}
+	report, err := NewReport(time.Now(), checks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	details := report.Checks[len(report.Checks)-1].ProviderDetails
+	if details.AvailableCapabilities[0].Name != "alpha" || details.InstructionSources == nil {
+		t.Fatalf("provider details were not normalized: %#v", details)
+	}
+
+	checks = completeChecks(StatusDegraded)
+	checks[len(checks)-1].ProviderDetails = &ProviderDetails{
+		Name: "codex", Authentication: AuthenticationUnknown, Usage: UsageUnknown,
+		AvailableCapabilities:   []AvailableCapability{{Name: "duplicate", Version: "v1"}},
+		UnavailableCapabilities: []UnavailableCapability{{Name: "duplicate", Reason: "not ready"}},
+	}
+	if _, err := NewReport(time.Now(), checks); err == nil {
+		t.Fatal("contradictory capability states succeeded")
+	}
+}
+
+func TestHealthyProviderCannotReportUnauthenticatedOrExhausted(t *testing.T) {
+	t.Parallel()
+	for name, test := range map[string]struct {
+		authentication AuthenticationState
+		usage          UsageReadiness
+	}{
+		"authentication": {AuthenticationUnauthenticated, UsageUnknown},
+		"usage":          {AuthenticationAuthenticated, UsageExhausted},
+	} {
+		t.Run(name, func(t *testing.T) {
+			checks := completeChecks(StatusHealthy)
+			checks[len(checks)-1].ProviderDetails = &ProviderDetails{Name: "codex", Authentication: test.authentication, Usage: test.usage}
+			if _, err := NewReport(time.Now(), checks); err == nil {
+				t.Fatal("contradictory healthy provider details succeeded")
+			}
+		})
+	}
+}
+
 func completeChecks(status Status) []Check {
 	checks := make([]Check, 0, len(subsystemOrder))
 	for _, subsystem := range subsystemOrder {

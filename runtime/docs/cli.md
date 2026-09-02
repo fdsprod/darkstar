@@ -13,7 +13,10 @@ version, and reports readiness. Lifecycle inspection is intentionally different:
 
 `darkstar doctor` uses the same discovery and authentication path, then requests
 `GET /api/v1/doctor`. Human output lists every subsystem state, stable diagnostic
-code, and required action. `--json` returns the versioned report unchanged. A
+code, and required action. Provider sections additionally list the pinned
+executable, exact version, authentication and usage readiness, instruction
+source categories, executable conflicts, and final capability states. `--json`
+returns the versioned report unchanged. A
 degraded or unhealthy report uses exit class 7 because the diagnostic completed
 successfully with findings; transport failures retain their ordinary exit class.
 

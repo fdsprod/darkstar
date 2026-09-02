@@ -935,6 +935,33 @@ func writeDoctorReport(destination io.Writer, report health.Report) error {
 				return err
 			}
 		}
+		if check.ProviderDetails != nil {
+			details := check.ProviderDetails
+			if _, err := fmt.Fprintf(destination, "  Provider: %s %s\n  Executable: %s\n  Authentication: %s; usage: %s\n",
+				details.Name, details.Version, details.ExecutableIdentity, details.Authentication, details.Usage); err != nil {
+				return err
+			}
+			for _, source := range details.InstructionSources {
+				if _, err := fmt.Fprintf(destination, "  Instruction source: %s\n", source); err != nil {
+					return err
+				}
+			}
+			for _, conflict := range details.ConflictingExecutables {
+				if _, err := fmt.Fprintf(destination, "  Conflicting executable: %s\n", conflict); err != nil {
+					return err
+				}
+			}
+			for _, capability := range details.AvailableCapabilities {
+				if _, err := fmt.Fprintf(destination, "  Capability: %s %s (available)\n", capability.Name, capability.Version); err != nil {
+					return err
+				}
+			}
+			for _, capability := range details.UnavailableCapabilities {
+				if _, err := fmt.Fprintf(destination, "  Capability: %s (unavailable: %s)\n", capability.Name, capability.Reason); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return nil
 }

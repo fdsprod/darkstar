@@ -48,7 +48,12 @@ the health endpoint.
 path, Git, Codex, GitHub, configuration, and provider report. Each check has one
 closed readiness state and stable uppercase code. Degraded and unhealthy checks
 also carry a safe remediation action; command output and credentials are never
-included. The report status is derived from the worst check, and independent
+included. Codex and provider checks may include the pinned executable, exact
+version, credential-free authentication and usage readiness, effective
+instruction-source categories, conflicting executable identities, and separate
+available/unavailable capability lists. Account identifiers, tokens, balances,
+and raw provider responses are never part of this projection. The report status
+is derived from the worst check, and independent
 checks run concurrently so a slow external CLI probe does not serialize the
 entire diagnostic. The optional absolute `projectRoot` query selects the Git and
 project-configuration context; the CLI always supplies its current directory so

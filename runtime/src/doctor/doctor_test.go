@@ -2,9 +2,12 @@ package doctor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,20 +22,37 @@ import (
 type fakeRunner struct {
 	missing map[string]bool
 	failing map[string]bool
+	paths   map[string][]string
 }
 
 func (runner fakeRunner) LookPath(name string) (string, error) {
 	if runner.missing[name] {
 		return "", os.ErrNotExist
 	}
+	if len(runner.paths[name]) > 0 {
+		return runner.paths[name][0], nil
+	}
 	return name, nil
 }
 
-func (runner fakeRunner) Run(_ context.Context, name string, _ ...string) error {
-	if runner.failing[name] {
-		return errors.New("command failed")
+func (runner fakeRunner) LookPaths(name string) ([]string, error) {
+	if runner.missing[name] {
+		return nil, os.ErrNotExist
 	}
-	return nil
+	if len(runner.paths[name]) > 0 {
+		return append([]string(nil), runner.paths[name]...), nil
+	}
+	return []string{name}, nil
+}
+
+func (runner fakeRunner) Output(_ context.Context, name string, arguments ...string) ([]byte, error) {
+	if runner.failing[name] {
+		return nil, errors.New("command failed")
+	}
+	if len(arguments) == 1 && arguments[0] == "--version" && strings.Contains(strings.ToLower(filepath.Base(name)), "codex") {
+		return []byte("codex-cli 0.151.0-alpha.7.2\n"), nil
+	}
+	return []byte("ok\n"), nil
 }
 
 func TestReportReturnsCompleteHealthySnapshot(t *testing.T) {
@@ -118,6 +138,64 @@ func TestReportClassifiesProviderHealthStates(t *testing.T) {
 	}
 	if got := report.Checks[7].Code; got != "PROVIDER_AUTH_REQUIRED" {
 		t.Fatalf("provider code = %q", got)
+	}
+}
+
+func TestReportPinsCodexAndRejectsConflictingInstallations(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	first := filepath.Join(root, "desktop", "codex.exe")
+	second := filepath.Join(root, "npm", "codex.exe")
+	doctor := New(Options{Runner: fakeRunner{paths: map[string][]string{"codex": {first, second}}}})
+	report, err := doctor.Report(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := report.Checks[4]
+	if check.Code != "CODEX_EXECUTABLE_CONFLICT" || check.ProviderDetails == nil {
+		t.Fatalf("codex check = %#v", check)
+	}
+	if check.ProviderDetails.ExecutableIdentity != filepath.Clean(first) || !reflect.DeepEqual(check.ProviderDetails.ConflictingExecutables, []string{filepath.Clean(second)}) {
+		t.Fatalf("codex details = %#v", check.ProviderDetails)
+	}
+}
+
+func TestReportProjectsProviderCapabilitiesAndUsageWithoutAccountData(t *testing.T) {
+	t.Parallel()
+	providerAdapter, err := fake.New(fake.Scenario{
+		Health: provider.Health{
+			State: provider.HealthUsageExhausted, Provider: "codex", ProviderVersion: "0.151.0-alpha.7.2",
+			ExecutableIdentity: `C:\Program Files\Codex\codex.exe`, Platform: "windows",
+			Authentication: provider.AuthenticationAuthenticated, Usage: provider.UsageExhausted,
+			InstructionSources: []string{"user:instructions"},
+		},
+		Capabilities: provider.CapabilityManifest{Provider: "codex", Fingerprint: strings.Repeat("a", 64), Features: map[string]provider.Capability{
+			"local_image_input": provider.AvailableCapability{Version: "v2", Metadata: map[string]string{"inputType": "localImage"}},
+			"workspace_write":   provider.UnavailableCapability{Reason: "read-only selection"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := New(Options{Provider: providerAdapter, Runner: fakeRunner{missing: map[string]bool{"git": true, "codex": true, "gh": true}}}).Report(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := report.Checks[7]
+	if check.Code != "PROVIDER_USAGE_EXHAUSTED" || check.ProviderDetails == nil || check.ProviderDetails.Usage != health.UsageExhausted {
+		t.Fatalf("provider check = %#v", check)
+	}
+	if len(check.ProviderDetails.AvailableCapabilities) != 1 || len(check.ProviderDetails.UnavailableCapabilities) != 1 {
+		t.Fatalf("provider capabilities = %#v", check.ProviderDetails)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secretLike := range []string{"email", "token", "balance"} {
+		if strings.Contains(strings.ToLower(string(encoded)), secretLike) {
+			t.Fatalf("report unexpectedly contains %q: %s", secretLike, encoded)
+		}
 	}
 }
 

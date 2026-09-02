@@ -34,7 +34,8 @@
         "subsystem": {"$ref": "#/$defs/subsystem"},
         "status": {"const": "healthy"},
         "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
-        "message": {"type": "string", "minLength": 1}
+        "message": {"type": "string", "minLength": 1},
+        "providerDetails": {"$ref": "#/$defs/providerDetails"}
       }
     },
     "findingCheck": {
@@ -46,7 +47,43 @@
         "status": {"enum": ["degraded", "unhealthy"]},
         "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
         "message": {"type": "string", "minLength": 1},
-        "action": {"type": "string", "minLength": 1}
+        "action": {"type": "string", "minLength": 1},
+        "providerDetails": {"$ref": "#/$defs/providerDetails"}
+      }
+    },
+    "availableCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1}
+      }
+    },
+    "unavailableCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "reason"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "providerDetails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "executableIdentity", "platform", "authentication", "usage", "instructionSources", "conflictingExecutables", "availableCapabilities", "unavailableCapabilities"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string"},
+        "executableIdentity": {"type": "string"},
+        "platform": {"type": "string"},
+        "authentication": {"enum": ["authenticated", "unauthenticated", "unknown"]},
+        "usage": {"enum": ["ready", "exhausted", "unknown"]},
+        "instructionSources": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "conflictingExecutables": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "availableCapabilities": {"type": "array", "items": {"$ref": "#/$defs/availableCapability"}},
+        "unavailableCapabilities": {"type": "array", "items": {"$ref": "#/$defs/unavailableCapability"}}
       }
     }
   }

@@ -37,7 +37,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/health-report-v1alpha1.schema.json",
       "name": "health-report-v1alpha1",
-      "sha256": "b326d6b79188096e469875aa2c987e02089d4d2660f82146eee0f0ad85142d43",
+      "sha256": "c76b9b519c2a265ffc8bb4877a869d33ace52e48aa69953a23a3e49207671222",
       "version": "v1alpha1"
     },
     {
@@ -53,7 +53,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/provider-v1alpha1.schema.json",
       "name": "provider-v1alpha1",
-      "sha256": "4f40eaf3239f21f564354833313a9aca44421891e06368ec705317608af29e5c",
+      "sha256": "c65e8504f0a4080e623458b4abc424ce406a2c4b4a8355953f92ac4badb22595",
       "version": "v1alpha1"
     },
     {
