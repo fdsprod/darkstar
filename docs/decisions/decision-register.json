@@ -15,7 +15,7 @@
       "title": "Use immutable typed workflow graphs",
       "document": "docs/architecture/workflow/execution-semantics.md",
       "sourceIssue": {"id": "DAR-6", "url": "https://linear.app/darkstar-dev/issue/DAR-6"},
-      "affectedIssues": ["DS-021", "DS-023", "DS-050", "DS-053", "DS-054", "DS-131"],
+      "affectedIssues": ["DS-021", "DS-023", "DS-050", "DS-053", "DS-054", "DS-113", "DS-131"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -23,7 +23,7 @@
       "title": "Use at-least-once control with idempotent effects",
       "document": "docs/architecture/recovery/RECOVERY_MODEL.md",
       "sourceIssue": {"id": "DAR-11", "url": "https://linear.app/darkstar-dev/issue/DAR-11"},
-      "affectedIssues": ["DS-037", "DS-038", "DS-095", "DS-152", "DS-194"],
+      "affectedIssues": ["DS-037", "DS-038", "DS-095", "DS-113", "DS-152", "DS-194"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -31,7 +31,7 @@
       "title": "Use one owned delivery line per work item and repository",
       "document": "docs/architecture/work/WORK_AND_GIT_MODEL.md",
       "sourceIssue": {"id": "DAR-7", "url": "https://linear.app/darkstar-dev/issue/DAR-7"},
-      "affectedIssues": ["DS-025", "DS-110", "DS-112", "DS-118", "DS-150"],
+      "affectedIssues": ["DS-025", "DS-110", "DS-112", "DS-113", "DS-118", "DS-150"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -47,7 +47,7 @@
       "title": "Store immutable artifacts and freeze selected context",
       "document": "docs/architecture/artifacts/ARTIFACT_AND_CONTEXT_CONTRACT.md",
       "sourceIssue": {"id": "DAR-9", "url": "https://linear.app/darkstar-dev/issue/DAR-9"},
-      "affectedIssues": ["DS-021", "DS-025", "DS-070", "DS-071", "DS-072", "DS-073", "DS-074", "DS-075", "DS-077", "DS-135", "DS-193"],
+      "affectedIssues": ["DS-021", "DS-025", "DS-070", "DS-071", "DS-072", "DS-073", "DS-074", "DS-075", "DS-077", "DS-113", "DS-135", "DS-193"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -63,7 +63,7 @@
       "title": "Use versioned resources and an append-only event log",
       "document": "docs/architecture/runtime/RUNTIME_CONTRACT.md",
       "sourceIssue": {"id": "DAR-13", "url": "https://linear.app/darkstar-dev/issue/DAR-13"},
-      "affectedIssues": ["DS-023", "DS-024", "DS-031", "DS-032", "DS-034", "DS-090", "DS-093"],
+      "affectedIssues": ["DS-023", "DS-024", "DS-031", "DS-032", "DS-034", "DS-090", "DS-093", "DS-113"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -79,7 +79,7 @@
       "title": "Enforce the MVP threat model at every trust boundary",
       "document": "docs/architecture/security/THREAT_MODEL.md",
       "sourceIssue": {"id": "DAR-14", "url": "https://linear.app/darkstar-dev/issue/DAR-14"},
-      "affectedIssues": ["DS-071", "DS-072", "DS-073", "DS-080", "DS-114", "DS-190", "DS-191", "DS-192", "DS-193", "DS-200"],
+      "affectedIssues": ["DS-071", "DS-072", "DS-073", "DS-080", "DS-113", "DS-114", "DS-190", "DS-191", "DS-192", "DS-193", "DS-200"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     }
   ]

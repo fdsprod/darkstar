@@ -33,6 +33,12 @@ Windows handle, CLI model, or dashboard type.
 The normalized provider lifecycle has a machine-readable interchange contract in
 [`provider-v1alpha1.schema.json`](../../../schemas/provider-v1alpha1.schema.json).
 
+`core/attemptexecution` is the scheduler-facing orchestration boundary. It
+acquires one closed read/write resource plan, freezes one context snapshot,
+starts or resumes the selected `ports/executor`, journals its ordered events,
+validates candidate output, and commits accepted output plus terminal state in
+one idempotent transaction before releasing resources.
+
 ## Dependency direction
 
 ```text
