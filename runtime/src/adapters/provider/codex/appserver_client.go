@@ -95,8 +95,17 @@ func (ServerRequest) isIncomingMessage() {}
 type IncomingMessage interface{ isIncomingMessage() }
 
 // ThreadRef and TurnRef retain the opaque provider identities returned by Codex.
-type ThreadRef struct{ ID string }
-type TurnRef struct{ ID string }
+// Resume responses also expose enough turn state to prove that the recorded
+// in-progress turn is the one this client rejoined.
+type ThreadRef struct {
+	ID    string
+	Turns []TurnRef
+}
+
+type TurnRef struct {
+	ID     string
+	Status string
+}
 
 type wireMessage struct {
 	ID          json.RawMessage `json:"id,omitempty"`
@@ -355,13 +364,25 @@ func (client *AppServerClient) ResumeThread(ctx context.Context, params any) (Th
 	}
 	var response struct {
 		Thread struct {
-			ID string `json:"id"`
+			ID    string `json:"id"`
+			Turns []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"turns"`
 		} `json:"thread"`
 	}
 	if err := client.Call(ctx, "thread/resume", params, &response); err != nil {
 		return ThreadRef{}, err
 	}
-	return client.rememberThread(response.Thread.ID, "thread/resume")
+	thread, err := client.rememberThread(response.Thread.ID, "thread/resume")
+	if err != nil {
+		return ThreadRef{}, err
+	}
+	thread.Turns = make([]TurnRef, len(response.Thread.Turns))
+	for index, turn := range response.Thread.Turns {
+		thread.Turns[index] = TurnRef{ID: turn.ID, Status: turn.Status}
+	}
+	return thread, nil
 }
 
 // StartTurn starts a turn on a tracked thread.

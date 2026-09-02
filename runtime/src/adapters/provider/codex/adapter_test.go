@@ -25,6 +25,18 @@ type appServerScript struct {
 	done         chan error
 }
 
+type resumeAppServerScript struct {
+	turnStatus   string
+	resumeParams chan json.RawMessage
+	done         chan error
+}
+
+func newResumeAppServerScript(turnStatus string) *resumeAppServerScript {
+	return &resumeAppServerScript{
+		turnStatus: turnStatus, resumeParams: make(chan json.RawMessage, 1), done: make(chan error, 1),
+	}
+}
+
 func newAppServerScript(output string, write bool) *appServerScript {
 	return &appServerScript{
 		output:       output,
@@ -182,6 +194,93 @@ func (script *appServerScript) run(reader *io.PipeReader, writer *io.PipeWriter)
 	unsubscribe, err := receive()
 	if err != nil || unsubscribe.Method != "thread/unsubscribe" {
 		return errors.New("script expected thread/unsubscribe")
+	}
+	return send(map[string]any{"id": unsubscribe.ID, "result": map[string]string{"status": "unsubscribed"}})
+}
+
+func (script *resumeAppServerScript) factory(ctx context.Context) (*AppServerClient, InitializeResult, error) {
+	serverReads, clientWrites := io.Pipe()
+	clientReads, serverWrites := io.Pipe()
+	client, err := NewAppServerClient(clientWrites, clientReads, AppServerOptions{
+		ClientInfo: ClientInfo{Name: "darkstar-test", Version: "1.0.0"}, SupportedVersions: []string{"0.151.0-alpha.7.2"},
+	})
+	if err != nil {
+		return nil, InitializeResult{}, err
+	}
+	go func() { script.done <- script.run(serverReads, serverWrites) }()
+	initialized, err := client.Initialize(ctx)
+	if err != nil {
+		return nil, InitializeResult{}, err
+	}
+	return client, initialized, nil
+}
+
+func (script *resumeAppServerScript) run(reader *io.PipeReader, writer *io.PipeWriter) error {
+	defer func() { _ = reader.Close() }()
+	defer func() { _ = writer.Close() }()
+	scanner := bufio.NewScanner(reader)
+	receive := func() (wireMessage, error) {
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return wireMessage{}, err
+			}
+			return wireMessage{}, io.EOF
+		}
+		var message wireMessage
+		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
+			return wireMessage{}, err
+		}
+		return message, nil
+	}
+	send := func(value any) error {
+		payload, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		_, err = writer.Write(append(payload, '\n'))
+		return err
+	}
+
+	initialize, err := receive()
+	if err != nil || initialize.Method != "initialize" {
+		return errors.New("resume script expected initialize")
+	}
+	if err := send(map[string]any{"id": initialize.ID, "result": map[string]any{
+		"userAgent": "Codex Desktop/0.151.0-alpha.7.2 (Windows 10; x86_64)", "codexHome": `C:\Users\test\.codex`,
+		"platformFamily": "windows", "platformOs": "windows",
+	}}); err != nil {
+		return err
+	}
+	initialized, err := receive()
+	if err != nil || initialized.Method != "initialized" {
+		return errors.New("resume script expected initialized notification")
+	}
+	resume, err := receive()
+	if err != nil || resume.Method != "thread/resume" {
+		return errors.New("resume script expected thread/resume")
+	}
+	script.resumeParams <- cloneRaw(resume.Params)
+	if err := send(map[string]any{"id": resume.ID, "result": map[string]any{"thread": map[string]any{
+		"id": "thread-1", "turns": []map[string]string{{"id": "turn-1", "status": script.turnStatus}},
+	}}}); err != nil {
+		return err
+	}
+	if script.turnStatus == "inProgress" {
+		if err := send(map[string]any{"method": "item/completed", "params": map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1",
+			"item": map[string]any{"type": "agentMessage", "id": "message-2", "phase": "final_answer", "text": `{"answer":"resumed"}`},
+		}, "emittedAtMs": 7000}); err != nil {
+			return err
+		}
+		if err := send(map[string]any{"method": "turn/completed", "params": map[string]any{
+			"threadId": "thread-1", "turn": map[string]any{"id": "turn-1", "status": "completed"},
+		}, "emittedAtMs": 8000}); err != nil {
+			return err
+		}
+	}
+	unsubscribe, err := receive()
+	if err != nil || unsubscribe.Method != "thread/unsubscribe" {
+		return errors.New("resume script expected thread/unsubscribe")
 	}
 	return send(map[string]any{"id": unsubscribe.ID, "result": map[string]string{"status": "unsubscribed"}})
 }
@@ -351,6 +450,63 @@ func TestAdapterRejectsInvalidSchemaAndFailsMismatchedOutput(t *testing.T) {
 	}
 }
 
+func TestAdapterResumesRecordedActiveTurnFromPersistedSequence(t *testing.T) {
+	t.Parallel()
+	script := newResumeAppServerScript("inProgress")
+	adapter := newResumeTestAdapter(t, script)
+	request := providerport.ResumeRequest{
+		AttemptID: "attempt-resume", IdempotencyKey: "resume-1", ProviderThreadID: "thread-1", ProviderTurnID: "turn-1", LastSequence: 7,
+	}
+	handle, err := adapter.ResumeAttempt(context.Background(), request)
+	if err != nil {
+		t.Fatalf("ResumeAttempt() error = %v", err)
+	}
+	params := <-script.resumeParams
+	if !strings.Contains(string(params), `"threadId":"thread-1"`) || handle.ProviderTurnID != "turn-1" {
+		t.Fatalf("resume params = %s, handle = %#v", params, handle)
+	}
+	replayed, err := adapter.ResumeAttempt(context.Background(), request)
+	if err != nil || replayed != handle {
+		t.Fatalf("idempotent ResumeAttempt() = (%#v, %v)", replayed, err)
+	}
+	changed := request
+	changed.LastSequence++
+	_, err = adapter.ResumeAttempt(context.Background(), changed)
+	var conflict *ports.Failure
+	if !errors.As(err, &conflict) || conflict.Code != ports.FailureConflict {
+		t.Fatalf("changed ResumeAttempt() error = %#v", err)
+	}
+	events := collectEvents(t, adapter, handle, nil)
+	if len(events) != 3 || events[0].Sequence != 8 || events[2].Sequence != 10 ||
+		!hasEventKind(events, providerport.EventStructuredOutputCompleted) {
+		t.Fatalf("resumed events = %#v", events)
+	}
+	result := getResult(t, adapter, handle)
+	succeeded, ok := result.(providerport.SucceededResult)
+	if !ok || string(succeeded.StructuredOutput) != `{"answer":"resumed"}` || succeeded.Recovery.LastSequence != 10 {
+		t.Fatalf("resumed result = %#v", result)
+	}
+	if err := <-script.done; err != nil {
+		t.Fatalf("resume App Server script error = %v", err)
+	}
+}
+
+func TestAdapterFailsClosedWhenRecordedTurnIsNotActive(t *testing.T) {
+	t.Parallel()
+	script := newResumeAppServerScript("completed")
+	adapter := newResumeTestAdapter(t, script)
+	_, err := adapter.ResumeAttempt(context.Background(), providerport.ResumeRequest{
+		AttemptID: "attempt-resume", IdempotencyKey: "resume-1", ProviderThreadID: "thread-1", ProviderTurnID: "turn-1", LastSequence: 7,
+	})
+	var failure *ports.Failure
+	if !errors.As(err, &failure) || failure.Code != ports.FailureUncertain {
+		t.Fatalf("ResumeAttempt() error = %#v", err)
+	}
+	if err := <-script.done; err != nil {
+		t.Fatalf("resume App Server script error = %v", err)
+	}
+}
+
 func newTestAdapter(t *testing.T, script *appServerScript) *Adapter {
 	t.Helper()
 	recorder, err := NewDirectoryEvidenceRecorder(t.TempDir())
@@ -363,6 +519,22 @@ func newTestAdapter(t *testing.T, script *appServerScript) *Adapter {
 		Clock: func() time.Time {
 			return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
 		},
+	})
+	if err != nil {
+		t.Fatalf("NewAdapter() error = %v", err)
+	}
+	return adapter
+}
+
+func newResumeTestAdapter(t *testing.T, script *resumeAppServerScript) *Adapter {
+	t.Helper()
+	recorder, err := NewDirectoryEvidenceRecorder(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewDirectoryEvidenceRecorder() error = %v", err)
+	}
+	adapter, err := NewAdapter(AdapterOptions{
+		Factory: script.factory, EvidenceRecorder: recorder,
+		Clock: func() time.Time { return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC) },
 	})
 	if err != nil {
 		t.Fatalf("NewAdapter() error = %v", err)

@@ -102,6 +102,22 @@ func TestEventNormalizerReplaysVersionedAppServerFixtures(t *testing.T) {
 	}
 }
 
+func TestEventNormalizerContinuesPersistedSequence(t *testing.T) {
+	t.Parallel()
+	normalizer, err := NewEventNormalizer(NormalizerOptions{
+		AttemptID: "attempt-resumed", ProviderVersion: "0.151.0-alpha.7.2", InitialSequence: 41,
+	})
+	if err != nil {
+		t.Fatalf("NewEventNormalizer() error = %v", err)
+	}
+	event, err := normalizer.Normalize(ServerNotification{
+		Method: "turn/started", Params: json.RawMessage(`{"threadId":"thread-1","turn":{"id":"turn-1","status":"inProgress"}}`),
+	})
+	if err != nil || event.Sequence != 42 {
+		t.Fatalf("Normalize() = (sequence %d, %v), want (42, nil)", event.Sequence, err)
+	}
+}
+
 func TestEventNormalizerPreservesKnownUnknownAndRequestPayloads(t *testing.T) {
 	t.Parallel()
 

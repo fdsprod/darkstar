@@ -317,9 +317,10 @@ func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event
 		if err := decodeData(event, &data); err != nil {
 			return statestore.AttemptProjection{}, true, err
 		}
-		if data.ProviderThreadID != current.ProviderThreadID || data.ProviderTurnID != current.ProviderTurnID || data.ProcessOwnerID != current.ProcessOwnerID {
+		if data.ProviderThreadID != current.ProviderThreadID || data.ProviderTurnID != current.ProviderTurnID || data.ProcessOwnerID == "" {
 			return statestore.AttemptProjection{}, true, errors.New("attempt.resumed recovery identity does not match the running attempt")
 		}
+		next.ProcessOwnerID = data.ProcessOwnerID
 	case "attempt.provider_event":
 		var data struct {
 			Sequence uint64 `json:"sequence"`

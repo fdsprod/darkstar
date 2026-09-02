@@ -221,6 +221,48 @@ func TestAppServerClientTracksThreadsTurnsAndUnsubscribesBeforeShutdown(t *testi
 	}
 }
 
+func TestAppServerClientResumesThreadWithTurnSnapshot(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, "0.151.0-alpha.7.2")
+	initializeClient(t, client, server)
+
+	completed := make(chan struct {
+		thread ThreadRef
+		err    error
+	}, 1)
+	go func() {
+		thread, err := client.ResumeThread(context.Background(), map[string]string{"threadId": "thread-1"})
+		completed <- struct {
+			thread ThreadRef
+			err    error
+		}{thread: thread, err: err}
+	}()
+	request := server.receive(t)
+	if request.Method != "thread/resume" || !strings.Contains(string(request.Params), "thread-1") {
+		t.Fatalf("resume request = %#v", request)
+	}
+	server.send(t, map[string]any{
+		"id": request.ID,
+		"result": map[string]any{"thread": map[string]any{
+			"id": "thread-1", "turns": []map[string]string{{"id": "turn-1", "status": "inProgress"}},
+		}},
+	})
+	result := <-completed
+	if result.err != nil || result.thread.ID != "thread-1" || len(result.thread.Turns) != 1 ||
+		result.thread.Turns[0] != (TurnRef{ID: "turn-1", Status: "inProgress"}) {
+		t.Fatalf("ResumeThread() = (%#v, %v)", result.thread, result.err)
+	}
+
+	shutdownDone := make(chan error, 1)
+	go func() { shutdownDone <- client.Shutdown(context.Background()) }()
+	unsubscribe := server.receive(t)
+	server.send(t, map[string]any{"id": json.RawMessage(unsubscribe.ID), "result": map[string]string{"status": "unsubscribed"}})
+	if err := <-shutdownDone; err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+}
+
 func TestAppServerClientFailsPendingCallOnMalformedFrame(t *testing.T) {
 	t.Parallel()
 

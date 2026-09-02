@@ -16,6 +16,7 @@ import (
 type NormalizerOptions struct {
 	AttemptID       string
 	ProviderVersion string
+	InitialSequence uint64
 	Clock           func() time.Time
 	EvidenceRef     func(sequence uint64, method string) string
 }
@@ -57,6 +58,7 @@ func NewEventNormalizer(options NormalizerOptions) (*EventNormalizer, error) {
 		providerVersion: options.ProviderVersion,
 		clock:           options.Clock,
 		evidenceRef:     options.EvidenceRef,
+		sequence:        options.InitialSequence,
 		interactions:    make(map[string]interactionKind),
 	}, nil
 }

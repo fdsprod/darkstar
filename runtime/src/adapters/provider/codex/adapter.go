@@ -55,13 +55,16 @@ type codexAttempt struct {
 	ready   chan struct{}
 	changed chan struct{}
 
-	startKey string
-	startErr error
-	request  providerport.AttemptRequest
-	handle   providerport.AttemptHandle
-	client   *AppServerClient
-	schema   *jsonschema.Schema
-	normal   *EventNormalizer
+	operation         attemptOperation
+	operationDigest   string
+	attemptID         string
+	initialSequence   uint64
+	cancellationGrace time.Duration
+	startErr          error
+	handle            providerport.AttemptHandle
+	client            *AppServerClient
+	outputValidator   attemptOutputValidator
+	normal            *EventNormalizer
 
 	events            []providerport.Event
 	result            providerport.AttemptResult
@@ -73,6 +76,34 @@ type codexAttempt struct {
 	responses         map[string]attemptResponse
 	cancelRequested   bool
 }
+
+type attemptOperation string
+
+const (
+	attemptOperationStart  attemptOperation = "start"
+	attemptOperationResume attemptOperation = "resume"
+)
+
+type attemptOutputValidator interface {
+	validate(json.RawMessage) error
+}
+
+type schemaOutputValidator struct{ schema *jsonschema.Schema }
+
+func (validator schemaOutputValidator) validate(output json.RawMessage) error {
+	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(output))
+	if err != nil {
+		return err
+	}
+	return validator.schema.Validate(instance)
+}
+
+// A resumed Codex turn retains the output schema in its durable provider
+// history. DARKSTAR still validates JSON syntax locally, while the provider is
+// authoritative for the already-started turn's schema constraint.
+type resumedOutputValidator struct{}
+
+func (resumedOutputValidator) validate(json.RawMessage) error { return nil }
 
 type attemptResponse struct {
 	key     string
@@ -96,6 +127,10 @@ type turnStartParams struct {
 	OutputSchema json.RawMessage `json:"outputSchema"`
 	Model        string          `json:"model,omitempty"`
 	Effort       string          `json:"effort,omitempty"`
+}
+
+type threadResumeParams struct {
+	ThreadID string `json:"threadId"`
 }
 
 type turnInput struct {
@@ -189,26 +224,33 @@ func (adapter *Adapter) StartAttempt(ctx context.Context, request providerport.A
 		return providerport.AttemptHandle{}, err
 	}
 
+	digest, err := operationDigest(attemptOperationStart, normalized)
+	if err != nil {
+		return providerport.AttemptHandle{}, adapterFailure(ports.FailureInternal, "Codex start request could not be fingerprinted", false)
+	}
+
 	adapter.mu.Lock()
 	if existing := adapter.attempts[normalized.AttemptID]; existing != nil {
 		adapter.mu.Unlock()
-		if existing.startKey != normalized.IdempotencyKey {
-			return providerport.AttemptHandle{}, adapterFailure(ports.FailureConflict, "attempt ID was already used with a different idempotency key", false)
+		if existing.operation != attemptOperationStart || existing.operationDigest != digest {
+			return providerport.AttemptHandle{}, adapterFailure(ports.FailureConflict, "attempt ID was already used with a different start request", false)
 		}
 		return waitForAttemptStart(ctx, existing)
 	}
 	state := &codexAttempt{
-		ready:     make(chan struct{}),
-		changed:   make(chan struct{}),
-		startKey:  normalized.IdempotencyKey,
-		request:   normalized,
-		schema:    schema,
-		responses: make(map[string]attemptResponse),
+		ready:             make(chan struct{}),
+		changed:           make(chan struct{}),
+		operation:         attemptOperationStart,
+		operationDigest:   digest,
+		attemptID:         normalized.AttemptID,
+		cancellationGrace: normalized.CancellationGrace,
+		outputValidator:   schemaOutputValidator{schema: schema},
+		responses:         make(map[string]attemptResponse),
 	}
 	adapter.attempts[normalized.AttemptID] = state
 	adapter.mu.Unlock()
 
-	handle, startErr := adapter.startAttempt(ctx, state)
+	handle, startErr := adapter.startAttempt(ctx, state, normalized)
 	state.mu.Lock()
 	state.handle = handle
 	state.startErr = startErr
@@ -221,14 +263,14 @@ func (adapter *Adapter) StartAttempt(ctx context.Context, request providerport.A
 	return handle, nil
 }
 
-func (adapter *Adapter) startAttempt(ctx context.Context, state *codexAttempt) (providerport.AttemptHandle, error) {
+func (adapter *Adapter) startAttempt(ctx context.Context, state *codexAttempt, request providerport.AttemptRequest) (providerport.AttemptHandle, error) {
 	client, _, err := adapter.factory(ctx)
 	if err != nil {
 		return providerport.AttemptHandle{}, classifyAdapterError(err)
 	}
 	state.client = client
 	normalizer, err := NewEventNormalizer(NormalizerOptions{
-		AttemptID:       state.request.AttemptID,
+		AttemptID:       state.attemptID,
 		ProviderVersion: client.ProviderVersion(),
 		Clock:           adapter.clock,
 	})
@@ -238,13 +280,13 @@ func (adapter *Adapter) startAttempt(ctx context.Context, state *codexAttempt) (
 	}
 	state.normal = normalizer
 
-	threadParams := makeThreadStartParams(state.request)
+	threadParams := makeThreadStartParams(request)
 	thread, err := client.StartThread(ctx, threadParams)
 	if err != nil {
 		_ = client.KillOwnedProcess()
 		return providerport.AttemptHandle{}, classifyAdapterError(err)
 	}
-	turnParams, err := makeTurnStartParams(state.request, thread.ID)
+	turnParams, err := makeTurnStartParams(request, thread.ID)
 	if err != nil {
 		_ = shutdownClient(client)
 		return providerport.AttemptHandle{}, err
@@ -259,7 +301,7 @@ func (adapter *Adapter) startAttempt(ctx context.Context, state *codexAttempt) (
 		processID = strconv.Itoa(client.ProcessID())
 	}
 	return providerport.AttemptHandle{
-		AttemptID:        state.request.AttemptID,
+		AttemptID:        state.attemptID,
 		Provider:         providerName,
 		ProviderThreadID: thread.ID,
 		ProviderTurnID:   turn.ID,
@@ -267,8 +309,92 @@ func (adapter *Adapter) startAttempt(ctx context.Context, state *codexAttempt) (
 	}, nil
 }
 
-func (adapter *Adapter) ResumeAttempt(context.Context, providerport.ResumeRequest) (providerport.AttemptHandle, error) {
-	return providerport.AttemptHandle{}, adapterFailure(ports.FailureUnsupported, "Codex thread persistence and resume is implemented by DAR-55", false)
+func (adapter *Adapter) ResumeAttempt(ctx context.Context, request providerport.ResumeRequest) (providerport.AttemptHandle, error) {
+	if err := validateResumeRequest(request); err != nil {
+		return providerport.AttemptHandle{}, err
+	}
+	digest, err := operationDigest(attemptOperationResume, request)
+	if err != nil {
+		return providerport.AttemptHandle{}, adapterFailure(ports.FailureInternal, "Codex resume request could not be fingerprinted", false)
+	}
+
+	adapter.mu.Lock()
+	if existing := adapter.attempts[request.AttemptID]; existing != nil {
+		adapter.mu.Unlock()
+		if existing.operation != attemptOperationResume || existing.operationDigest != digest {
+			return providerport.AttemptHandle{}, adapterFailure(ports.FailureConflict, "attempt ID was already used with a different resume request", false)
+		}
+		return waitForAttemptStart(ctx, existing)
+	}
+	state := &codexAttempt{
+		ready:           make(chan struct{}),
+		changed:         make(chan struct{}),
+		operation:       attemptOperationResume,
+		operationDigest: digest,
+		attemptID:       request.AttemptID,
+		initialSequence: request.LastSequence,
+		outputValidator: resumedOutputValidator{},
+		responses:       make(map[string]attemptResponse),
+	}
+	adapter.attempts[request.AttemptID] = state
+	adapter.mu.Unlock()
+
+	handle, resumeErr := adapter.resumeAttempt(ctx, state, request)
+	state.mu.Lock()
+	state.handle = handle
+	state.startErr = resumeErr
+	close(state.ready)
+	state.mu.Unlock()
+	if resumeErr != nil {
+		return providerport.AttemptHandle{}, resumeErr
+	}
+	go adapter.pump(state)
+	return handle, nil
+}
+
+func (adapter *Adapter) resumeAttempt(ctx context.Context, state *codexAttempt, request providerport.ResumeRequest) (providerport.AttemptHandle, error) {
+	client, _, err := adapter.factory(ctx)
+	if err != nil {
+		return providerport.AttemptHandle{}, classifyAdapterError(err)
+	}
+	state.client = client
+	normalizer, err := NewEventNormalizer(NormalizerOptions{
+		AttemptID:       state.attemptID,
+		ProviderVersion: client.ProviderVersion(),
+		InitialSequence: request.LastSequence,
+		Clock:           adapter.clock,
+	})
+	if err != nil {
+		_ = client.KillOwnedProcess()
+		return providerport.AttemptHandle{}, classifyAdapterError(err)
+	}
+	state.normal = normalizer
+
+	thread, err := client.ResumeThread(ctx, threadResumeParams{ThreadID: request.ProviderThreadID})
+	if err != nil {
+		_ = client.KillOwnedProcess()
+		return providerport.AttemptHandle{}, classifyResumeError(err)
+	}
+	if thread.ID != request.ProviderThreadID {
+		_ = shutdownClient(client)
+		return providerport.AttemptHandle{}, adapterFailure(ports.FailureUncertain, "Codex resumed a different thread than the recorded recovery identity", false)
+	}
+	if !hasActiveTurn(thread, request.ProviderTurnID) {
+		_ = shutdownClient(client)
+		return providerport.AttemptHandle{}, adapterFailure(ports.FailureUncertain, "recorded Codex turn is not active in the resumed thread", false)
+	}
+
+	processID := "in-process"
+	if client.ProcessID() != 0 {
+		processID = strconv.Itoa(client.ProcessID())
+	}
+	return providerport.AttemptHandle{
+		AttemptID:        request.AttemptID,
+		Provider:         providerName,
+		ProviderThreadID: request.ProviderThreadID,
+		ProviderTurnID:   request.ProviderTurnID,
+		ProcessOwnerID:   processID,
+	}, nil
 }
 
 func (adapter *Adapter) StreamEvents(ctx context.Context, request providerport.EventRequest) (providerport.EventStream, error) {
@@ -335,7 +461,7 @@ func (adapter *Adapter) CancelAttempt(ctx context.Context, request providerport.
 	}
 	grace := request.GracePeriod
 	if grace <= 0 {
-		grace = state.request.CancellationGrace
+		grace = state.cancellationGrace
 	}
 	if grace <= 0 {
 		grace = 5 * time.Second
@@ -397,7 +523,7 @@ func (adapter *Adapter) pump(state *codexAttempt) {
 			adapter.failPump(state, ports.FailureProtocolDrift, "Codex event normalization failed", err)
 			return
 		}
-		record, err := nativeEvidenceRecord(state.request.AttemptID, event.Sequence, message)
+		record, err := nativeEvidenceRecord(state.attemptID, event.Sequence, message)
 		if err != nil {
 			adapter.failPump(state, ports.FailureProtocolDrift, "Codex event evidence encoding failed", err)
 			return
@@ -475,8 +601,7 @@ func (adapter *Adapter) finishTurn(state *codexAttempt, params map[string]json.R
 		adapter.complete(state, providerport.FailedResult{AttemptResultMetadata: adapter.metadata(state), Failure: failure})
 		return
 	}
-	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(output))
-	if err != nil || state.schema.Validate(instance) != nil {
+	if err := state.outputValidator.validate(output); err != nil {
 		failure := ports.Failure{Code: ports.FailureInvalidRequest, Message: "Codex structured output does not match the requested schema", Details: map[string]string{"phase": "output_validation"}}
 		_ = shutdownClient(state.client)
 		adapter.complete(state, providerport.FailedResult{AttemptResultMetadata: adapter.metadata(state), Failure: failure})
@@ -488,7 +613,7 @@ func (adapter *Adapter) finishTurn(state *codexAttempt, params map[string]json.R
 		return
 	}
 	evidence, err := adapter.evidence.Record(context.Background(), EvidenceRecord{
-		AttemptID: state.request.AttemptID,
+		AttemptID: state.attemptID,
 		Sequence:  derived.Sequence,
 		Kind:      string(derived.Kind),
 		MediaType: "application/json",
@@ -551,7 +676,7 @@ func (adapter *Adapter) failPump(state *codexAttempt, code ports.FailureCode, me
 func (adapter *Adapter) metadata(state *codexAttempt) providerport.AttemptResultMetadata {
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	lastSequence := uint64(0)
+	lastSequence := state.initialSequence
 	if len(state.events) > 0 {
 		lastSequence = state.events[len(state.events)-1].Sequence
 	}
@@ -683,6 +808,47 @@ func validateAttemptRequest(request providerport.AttemptRequest) (providerport.A
 		}
 	}
 	return request, compiled, nil
+}
+
+func validateResumeRequest(request providerport.ResumeRequest) error {
+	switch {
+	case strings.TrimSpace(request.AttemptID) == "":
+		return adapterFailure(ports.FailureInvalidRequest, "attempt ID is required", false)
+	case strings.TrimSpace(request.IdempotencyKey) == "":
+		return adapterFailure(ports.FailureInvalidRequest, "idempotency key is required", false)
+	case strings.TrimSpace(request.ProviderThreadID) == "":
+		return adapterFailure(ports.FailureInvalidRequest, "provider thread ID is required", false)
+	case strings.TrimSpace(request.ProviderTurnID) == "":
+		return adapterFailure(ports.FailureInvalidRequest, "provider turn ID is required", false)
+	case strings.TrimSpace(request.AttemptID) != request.AttemptID ||
+		strings.TrimSpace(request.IdempotencyKey) != request.IdempotencyKey ||
+		strings.TrimSpace(request.ProviderThreadID) != request.ProviderThreadID ||
+		strings.TrimSpace(request.ProviderTurnID) != request.ProviderTurnID:
+		return adapterFailure(ports.FailureInvalidRequest, "resume identity fields cannot contain surrounding whitespace", false)
+	default:
+		return nil
+	}
+}
+
+func operationDigest(operation attemptOperation, request any) (string, error) {
+	payload, err := json.Marshal(struct {
+		Operation attemptOperation `json:"operation"`
+		Request   any              `json:"request"`
+	}{Operation: operation, Request: request})
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func hasActiveTurn(thread ThreadRef, turnID string) bool {
+	for _, turn := range thread.Turns {
+		if turn.ID == turnID {
+			return turn.Status == "inProgress"
+		}
+	}
+	return false
 }
 
 func validInteractionPolicy(policy providerport.InteractionPolicy) bool {
@@ -887,6 +1053,24 @@ func classifyAdapterError(err error) error {
 		return adapterFailure(ports.FailureCancelled, "Codex operation was cancelled", false)
 	default:
 		return adapterFailure(ports.FailureInternal, err.Error(), false)
+	}
+}
+
+func classifyResumeError(err error) error {
+	var rpcError *RPCError
+	if !errors.As(err, &rpcError) {
+		return classifyAdapterError(err)
+	}
+	message := strings.ToLower(rpcError.Message)
+	switch {
+	case rpcError.Code == -32601 || strings.Contains(message, "unsupported") || strings.Contains(message, "not implemented"):
+		return adapterFailure(ports.FailureUnsupported, "Codex App Server does not support thread resume", false)
+	case strings.Contains(message, "not found") || strings.Contains(message, "no rollout") || strings.Contains(message, "unknown thread"):
+		return adapterFailure(ports.FailureNotFound, "recorded Codex thread was not found", false)
+	case strings.Contains(message, "closing"):
+		return adapterFailure(ports.FailureUnavailable, "Codex thread is still closing", true)
+	default:
+		return classifyAdapterError(err)
 	}
 }
 

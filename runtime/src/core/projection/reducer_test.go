@@ -124,6 +124,25 @@ func TestAttemptTransitionTable(t *testing.T) {
 	})
 }
 
+func TestAttemptResumeTransfersProcessOwnership(t *testing.T) {
+	t.Parallel()
+	current := statestore.AttemptProjection{
+		AttemptID: "attempt_A", Status: statestore.AttemptRunning, ResourceVersion: 1,
+		ProviderThreadID: "thread", ProviderTurnID: "turn", ProcessOwnerID: "process-old",
+	}
+	event := transitionEvent(statestore.AggregateAttempt, current.AttemptID, "attempt.resumed")
+	event.Data = []byte(`{"providerThreadId":"thread","providerTurnId":"turn","processOwnerId":"process-new"}`)
+	next, applies, err := ReduceAttempt(&current, event)
+	if err != nil || !applies || next.ProcessOwnerID != "process-new" {
+		t.Fatalf("resume = (%#v, %v, %v)", next, applies, err)
+	}
+
+	event.Data = []byte(`{"providerThreadId":"other-thread","providerTurnId":"turn","processOwnerId":"process-new"}`)
+	if _, _, err := ReduceAttempt(&current, event); err == nil {
+		t.Fatal("resume accepted a changed provider thread identity")
+	}
+}
+
 func transitionEvent(kind statestore.AggregateType, id, eventKind string) statestore.Event {
 	return statestore.Event{
 		SchemaVersion: 1, ID: "event_A", AggregateType: kind, AggregateID: id,

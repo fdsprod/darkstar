@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fdsprod/darkstar/runtime/src/ports"
 	"github.com/fdsprod/darkstar/runtime/src/ports/provider"
 	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
 )
@@ -242,12 +243,23 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 	}
 	if err != nil {
 		if s.ctx.Err() == nil {
-			s.failAttempt(attempt.AttemptID, attempt.RunID, err)
+			if resume {
+				s.pauseUnsafeResume(attempt, err)
+			} else {
+				s.failAttempt(attempt.AttemptID, attempt.RunID, err)
+			}
 		}
 		return
 	}
-	if handle.AttemptID != attempt.AttemptID || handle.Provider != attempt.Provider || handle.ProviderThreadID == "" || handle.ProviderTurnID == "" || handle.ProcessOwnerID == "" {
-		s.failAttempt(attempt.AttemptID, attempt.RunID, errors.New("provider returned an inconsistent recovery handle"))
+	identityChanged := resume && (handle.ProviderThreadID != attempt.ProviderThreadID || handle.ProviderTurnID != attempt.ProviderTurnID)
+	if handle.AttemptID != attempt.AttemptID || handle.Provider != attempt.Provider || handle.ProviderThreadID == "" ||
+		handle.ProviderTurnID == "" || handle.ProcessOwnerID == "" || identityChanged {
+		inconsistent := errors.New("provider returned an inconsistent recovery handle")
+		if resume {
+			s.pauseUnsafeResume(attempt, inconsistent)
+		} else {
+			s.failAttempt(attempt.AttemptID, attempt.RunID, inconsistent)
+		}
 		return
 	}
 	current, err := s.store.Attempt(s.ctx, attempt.AttemptID)
@@ -328,6 +340,35 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 		return
 	}
 	s.completeAttempt(current.AttemptID, current.RunID, result)
+}
+
+func (s *Service) pauseUnsafeResume(attempt statestore.AttemptProjection, cause error) {
+	failure := ports.Failure{
+		Code: ports.FailureUncertain, Message: "provider resume could not be proven safe", Retryable: false,
+	}
+	var classified *ports.Failure
+	if errors.As(cause, &classified) {
+		failure = *classified
+		failure.Details = cloneStringMap(classified.Details)
+	}
+	s.completeAttempt(attempt.AttemptID, attempt.RunID, provider.UnknownResult{
+		AttemptResultMetadata: provider.AttemptResultMetadata{Recovery: provider.RecoveryMetadata{
+			ProviderThreadID: attempt.ProviderThreadID, ProviderTurnID: attempt.ProviderTurnID,
+			LastSequence: attempt.LastSequence, ProcessOwnerID: attempt.ProcessOwnerID, Resumable: true,
+		}},
+		Failure: failure,
+	})
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	if source == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func (s *Service) completeAttempt(attemptID, runID string, result provider.AttemptResult) {
