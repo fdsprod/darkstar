@@ -7,7 +7,7 @@
       "title": "Use Codex App Server with bounded exec fallback",
       "document": "docs/decisions/DS-001-codex-host-recommendation.md",
       "sourceIssue": {"id": "DAR-5", "url": "https://linear.app/darkstar-dev/issue/DAR-5"},
-      "affectedIssues": ["DS-021", "DS-024", "DS-039", "DS-090", "DS-091", "DS-092", "DS-098", "DS-099"],
+      "affectedIssues": ["DS-021", "DS-024", "DS-039", "DS-090", "DS-091", "DS-092", "DS-098", "DS-099", "DS-115"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-30"}
     },
     {
@@ -39,7 +39,7 @@
       "title": "Separate workflow approval from provider permission",
       "document": "docs/architecture/security/APPROVAL_AND_PERMISSION_MODEL.md",
       "sourceIssue": {"id": "DAR-8", "url": "https://linear.app/darkstar-dev/issue/DAR-8"},
-      "affectedIssues": ["DS-058", "DS-096", "DS-116", "DS-192"],
+      "affectedIssues": ["DS-058", "DS-096", "DS-115", "DS-116", "DS-192"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -47,7 +47,7 @@
       "title": "Store immutable artifacts and freeze selected context",
       "document": "docs/architecture/artifacts/ARTIFACT_AND_CONTEXT_CONTRACT.md",
       "sourceIssue": {"id": "DAR-9", "url": "https://linear.app/darkstar-dev/issue/DAR-9"},
-      "affectedIssues": ["DS-021", "DS-025", "DS-070", "DS-071", "DS-072", "DS-073", "DS-074", "DS-075", "DS-077", "DS-113", "DS-135", "DS-193"],
+      "affectedIssues": ["DS-021", "DS-025", "DS-070", "DS-071", "DS-072", "DS-073", "DS-074", "DS-075", "DS-077", "DS-113", "DS-115", "DS-135", "DS-193"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -55,7 +55,7 @@
       "title": "Resolve namespaced capabilities by explicit provenance",
       "document": "docs/architecture/capabilities/CAPABILITY_REGISTRY_CONTRACT.md",
       "sourceIssue": {"id": "DAR-10", "url": "https://linear.app/darkstar-dev/issue/DAR-10"},
-      "affectedIssues": ["DS-098", "DS-099", "DS-130", "DS-132"],
+      "affectedIssues": ["DS-098", "DS-099", "DS-115", "DS-130", "DS-132"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -79,7 +79,7 @@
       "title": "Enforce the MVP threat model at every trust boundary",
       "document": "docs/architecture/security/THREAT_MODEL.md",
       "sourceIssue": {"id": "DAR-14", "url": "https://linear.app/darkstar-dev/issue/DAR-14"},
-      "affectedIssues": ["DS-071", "DS-072", "DS-073", "DS-080", "DS-113", "DS-114", "DS-190", "DS-191", "DS-192", "DS-193", "DS-200"],
+      "affectedIssues": ["DS-071", "DS-072", "DS-073", "DS-080", "DS-113", "DS-114", "DS-115", "DS-190", "DS-191", "DS-192", "DS-193", "DS-200"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     }
   ]

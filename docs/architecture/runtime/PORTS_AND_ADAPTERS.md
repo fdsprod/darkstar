@@ -39,6 +39,20 @@ starts or resumes the selected `ports/executor`, journals its ordered events,
 validates candidate output, and commits accepted output plus terminal state in
 one idempotent transaction before releasing resources.
 
+`core/agentprofile` owns DS-115's immutable agent profile and deterministic
+provider-admission policy. A profile groups role instructions, required and
+preferred capabilities, a closed any-compatible/allowlist eligibility choice,
+provider preference order, permission ceilings, and bounded context, output,
+cost, timeout, and cancellation limits. Selection consumes already-probed
+provider health and capability manifests, rejects policy-denied, unhealthy,
+malformed, or capability-incompatible candidates, and ranks the survivors by
+provider preference, preferred-capability coverage, and stable configured ID.
+Workspace-write and interactive permissions imply their corresponding provider
+capabilities even when a profile author omits them from the explicit required
+set. The result preserves the selected capability fingerprint, unavailable
+preferences, and every rejection reason for scheduler audit; provider adapter
+construction remains in daemon or command composition.
+
 `adapters/executor/command` implements DS-114's deterministic command boundary.
 Workflow commands select a configured executable alias, workspace-relative
 working-directory allowlist entry, and allowlisted environment names; the
