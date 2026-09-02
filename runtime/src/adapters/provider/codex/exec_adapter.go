@@ -417,6 +417,11 @@ func (adapter *ExecAdapter) StartAttempt(ctx context.Context, request providerpo
 }
 
 func validateExecEligibility(request providerport.AttemptRequest) error {
+	for _, input := range request.Inputs {
+		if input.Kind == providerport.InputImage || input.Kind == providerport.InputSkill {
+			return adapterFailure(ports.FailureUnsupported, "Codex exec fallback does not support image or skill inputs", false)
+		}
+	}
 	switch {
 	case request.Access != providerport.AccessReadOnly:
 		return adapterFailure(ports.FailureUnsupported, "Codex exec fallback is limited to read-only nodes", false)

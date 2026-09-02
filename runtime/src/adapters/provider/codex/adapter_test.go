@@ -496,6 +496,122 @@ func TestAdapterExecutesStructuredReadOnlyNode(t *testing.T) {
 	}
 }
 
+func TestAdapterSuppliesModelUsableImageAndSelectedSkill(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	imagePath := filepath.Join(workspace, "selected.png")
+	imageContent := []byte("bounded prepared image representation")
+	if err := os.WriteFile(imagePath, imageContent, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	skillPath := filepath.Join(workspace, "skills", "review", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	skillContent := []byte("---\nname: review\n---\nUse the selected review procedure.\n")
+	if err := os.WriteFile(skillPath, skillContent, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	script := newAppServerScript(`{"answer":"ok"}`, false)
+	adapter := newTestAdapter(t, script)
+	request := testAttemptRequest(workspace)
+	request.Inputs = append(request.Inputs,
+		providerport.Input{Kind: providerport.InputImage, Name: "selected-image", MediaType: "image/png", Locator: imagePath, Digest: digestText(string(imageContent)), Detail: providerport.ImageDetailOriginal},
+		providerport.Input{Kind: providerport.InputSkill, Name: "review", MediaType: "text/markdown", Locator: skillPath, Digest: digestText(string(skillContent))},
+	)
+	handle, err := adapter.StartAttempt(context.Background(), request)
+	if err != nil {
+		t.Fatalf("StartAttempt() error = %v", err)
+	}
+	<-script.threadParams
+	turnParams := <-script.turnParams
+	var turn struct {
+		Input []turnInput `json:"input"`
+	}
+	if err := json.Unmarshal(turnParams, &turn); err != nil || len(turn.Input) != 4 {
+		t.Fatalf("turn params = %#v, error = %v", turn, err)
+	}
+	imageInput, skillInput := turn.Input[2], turn.Input[3]
+	if imageInput.Type != "localImage" || imageInput.Path != imagePath || imageInput.Detail != providerport.ImageDetailOriginal {
+		t.Fatalf("image input = %#v", imageInput)
+	}
+	if skillInput.Type != "skill" || skillInput.Name != "review" || skillInput.Path != skillPath {
+		t.Fatalf("skill input = %#v", skillInput)
+	}
+
+	_ = collectEvents(t, adapter, handle, nil)
+	result := getResult(t, adapter, handle)
+	succeeded, ok := result.(providerport.SucceededResult)
+	if !ok || len(succeeded.WorkspaceEvidence) != 2 {
+		t.Fatalf("result = %#v", result)
+	}
+	assertEvidenceFiles(t, succeeded.WorkspaceEvidence)
+	var selection providerport.Evidence
+	for _, evidence := range succeeded.WorkspaceEvidence {
+		if evidence.Kind == "input-selection" {
+			selection = evidence
+		}
+	}
+	selectionPayload, err := os.ReadFile(selection.Ref)
+	if err != nil || !strings.Contains(string(selectionPayload), `"capabilityFingerprint"`) || !strings.Contains(string(selectionPayload), `"kind":"image"`) || !strings.Contains(string(selectionPayload), `"kind":"skill"`) {
+		t.Fatalf("selection evidence = %s, error = %v", selectionPayload, err)
+	}
+	if err := <-script.done; err != nil {
+		t.Fatalf("App Server script error = %v", err)
+	}
+}
+
+func TestPreparedLocalInputsMustRemainInsideRootsAndMatchDigest(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.png")
+	content := []byte("prepared image")
+	if err := os.WriteFile(outside, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request := testAttemptRequest(workspace)
+	request.Inputs = append(request.Inputs, providerport.Input{Kind: providerport.InputImage, Name: "outside", MediaType: "image/png", Locator: outside, Digest: digestText(string(content))})
+	if _, _, err := validateAttemptRequest(request); !failureCodeIs(err, ports.FailurePermissionDenied) {
+		t.Fatalf("outside-root error = %v", err)
+	}
+
+	inside := filepath.Join(workspace, "inside.png")
+	if err := os.WriteFile(inside, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request.Inputs[len(request.Inputs)-1].Locator = inside
+	request.Inputs[len(request.Inputs)-1].Digest = strings.Repeat("0", 64)
+	if _, _, err := validateAttemptRequest(request); !failureCodeIs(err, ports.FailureInvalidRequest) {
+		t.Fatalf("changed-digest error = %v", err)
+	}
+}
+
+func TestImageAndSkillInputsRequireFrozenAvailableCapabilities(t *testing.T) {
+	t.Parallel()
+
+	manifest := appServerCapabilityManifest(time.Time{})
+	request := providerport.AttemptRequest{
+		CapabilityFingerprint: manifest.Fingerprint,
+		Inputs:                []providerport.Input{{Kind: providerport.InputImage}, {Kind: providerport.InputSkill}},
+	}
+	if err := validateAttemptCapabilities(request, manifest); err != nil {
+		t.Fatalf("available capabilities rejected: %v", err)
+	}
+
+	request.CapabilityFingerprint = strings.Repeat("0", 64)
+	if err := validateAttemptCapabilities(request, manifest); !failureCodeIs(err, ports.FailureUnsupported) {
+		t.Fatalf("stale fingerprint error = %v", err)
+	}
+	request.CapabilityFingerprint = manifest.Fingerprint
+	manifest.Features[capabilityExplicitSkillInput] = providerport.UnavailableCapability{Reason: "not negotiated"}
+	if err := validateAttemptCapabilities(request, manifest); !failureCodeIs(err, ports.FailureUnsupported) {
+		t.Fatalf("missing skill capability error = %v", err)
+	}
+}
+
 func TestAdapterExecutesWorkspaceWriteNodeWithExplicitApprovalEvidence(t *testing.T) {
 	t.Parallel()
 
@@ -947,6 +1063,7 @@ func newStopTestAdapter(t *testing.T, script *stopAppServerScript) *Adapter {
 }
 
 func testAttemptRequest(workspace string) providerport.AttemptRequest {
+	contextText := "Prepared immutable context."
 	return providerport.AttemptRequest{
 		AttemptID:      "attempt-1",
 		RunID:          "run-1",
@@ -960,12 +1077,17 @@ func testAttemptRequest(workspace string) providerport.AttemptRequest {
 		ToolPolicy:     providerport.InteractionDeny,
 		Prompt:         "Return the structured answer.",
 		Inputs: []providerport.Input{{
-			Kind: providerport.InputText,
-			Name: "context",
-			Text: "Prepared immutable context.",
+			Kind: providerport.InputText, Name: "context", MediaType: "text/plain", Locator: "context:text",
+			Digest: digestText(contextText), Text: contextText,
 		}},
-		OutputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string"}},"required":["answer"]}`),
+		OutputSchema:          json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string"}},"required":["answer"]}`),
+		CapabilityFingerprint: appServerCapabilityManifest(time.Time{}).Fingerprint,
 	}
+}
+
+func failureCodeIs(err error, code ports.FailureCode) bool {
+	var failure *ports.Failure
+	return errors.As(err, &failure) && failure.Code == code
 }
 
 func collectEvents(t *testing.T, adapter *Adapter, handle providerport.AttemptHandle, observe func(providerport.Event)) []providerport.Event {

@@ -7,7 +7,7 @@
       "title": "Use Codex App Server with bounded exec fallback",
       "document": "docs/decisions/DS-001-codex-host-recommendation.md",
       "sourceIssue": {"id": "DAR-5", "url": "https://linear.app/darkstar-dev/issue/DAR-5"},
-      "affectedIssues": ["DS-021", "DS-024", "DS-039", "DS-090", "DS-091", "DS-092", "DS-099"],
+      "affectedIssues": ["DS-021", "DS-024", "DS-039", "DS-090", "DS-091", "DS-092", "DS-098", "DS-099"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-30"}
     },
     {

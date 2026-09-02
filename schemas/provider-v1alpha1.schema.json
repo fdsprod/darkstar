@@ -79,6 +79,7 @@
         "locator": {"type": "string"},
         "digest": {"$ref": "#/$defs/digest"},
         "text": {"type": "string"},
+        "detail": {"enum": ["auto", "low", "high", "original"]},
         "metadata": {"type": "object", "additionalProperties": {"type": "string"}}
       }
     },

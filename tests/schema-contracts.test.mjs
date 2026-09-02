@@ -50,6 +50,7 @@ test("provider state combinations are encoded as tagged variants", () => {
   assert.deepEqual(schema.$defs.capability.oneOf.map((variant) => variant.properties.state.const), ["available", "unavailable"]);
   assert.equal(schema.$defs.interactionResponse.oneOf.length, 2);
   assert.equal(schema.$defs.attemptResult.oneOf.length, 3);
+  assert.deepEqual(schema.$defs.input.properties.detail.enum, ["auto", "low", "high", "original"]);
 });
 
 test("provider events publish the normalized adapter vocabulary", () => {

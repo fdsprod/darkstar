@@ -46,6 +46,28 @@ A provider-neutral attempt request contains:
 The adapter must not infer broader permissions from the prompt, inherited Codex
 configuration, a workflow approval, or a previous attempt.
 
+### Prepared image and skill inputs
+
+The App Server adapter advertises separate `local_image_input` and
+`explicit_skill_input` capabilities. Attempt preparation freezes the complete
+provider capability fingerprint; start fails before creating a thread if that
+fingerprint changed or a required typed input capability is unavailable.
+
+An image input names a PNG, JPEG, or WebP model representation, its SHA-256
+digest, a local locator, and one of `auto`, `low`, `high`, or `original` detail.
+A skill input names one explicit `text/markdown` `SKILL.md` file and its digest.
+The adapter resolves both locators to regular files within the canonical
+workspace or declared additional roots, rejects symbolic-link traversal and
+content changed after selection, then emits native `localImage` and `skill`
+turn items. It never discovers or activates a skill by prompt text.
+
+Before `turn/start`, the adapter persists protected `input-selection` evidence
+containing the provider version, transport, frozen capability fingerprint,
+bounded roots, and selected names, kinds, locators, media types, digests, and
+image detail. The evidence is included in attempt result metadata so selection
+remains auditable even though the provider protocol does not emit a dedicated
+context-selection event.
+
 ## Normalized event envelope
 
 Every event has:

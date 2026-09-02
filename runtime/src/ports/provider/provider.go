@@ -141,6 +141,18 @@ const (
 	InputArtifact InputKind = "artifact"
 )
 
+// ImageDetail is the provider-neutral fidelity requested for a model-usable
+// image. Adapters must fail closed when a provider cannot honor the selected
+// value.
+type ImageDetail string
+
+const (
+	ImageDetailAuto     ImageDetail = "auto"
+	ImageDetailLow      ImageDetail = "low"
+	ImageDetailHigh     ImageDetail = "high"
+	ImageDetailOriginal ImageDetail = "original"
+)
+
 // Input references prepared context. Locator is an opaque DARKSTAR-owned
 // reference, never an adapter-specific URL or protocol object.
 type Input struct {
@@ -150,6 +162,7 @@ type Input struct {
 	Locator   string
 	Digest    string
 	Text      string
+	Detail    ImageDetail
 	Metadata  map[string]string
 }
 

@@ -26,6 +26,12 @@ import (
 
 const providerName = "codex"
 
+const (
+	appServerTransport           = "app-server"
+	capabilityLocalImageInput    = "local_image_input"
+	capabilityExplicitSkillInput = "explicit_skill_input"
+)
+
 // AppServerFactory starts and initializes one owned client process.
 type AppServerFactory func(context.Context) (*AppServerClient, InitializeResult, error)
 
@@ -174,8 +180,11 @@ type threadResumeParams struct {
 }
 
 type turnInput struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type   string                   `json:"type"`
+	Text   string                   `json:"text,omitempty"`
+	Name   string                   `json:"name,omitempty"`
+	Path   string                   `json:"path,omitempty"`
+	Detail providerport.ImageDetail `json:"detail,omitempty"`
 }
 
 var _ providerport.Provider = (*Adapter)(nil)
@@ -242,25 +251,38 @@ func (adapter *Adapter) Capabilities(ctx context.Context) (providerport.Capabili
 	if err := ctx.Err(); err != nil {
 		return providerport.CapabilityManifest{}, err
 	}
+	return appServerCapabilityManifest(adapter.clock().UTC()), nil
+}
+
+func appServerCapabilityManifest(observedAt time.Time) providerport.CapabilityManifest {
 	features := map[string]providerport.Capability{
 		"app_server":        providerport.AvailableCapability{Version: "v2"},
 		"structured_output": providerport.AvailableCapability{Version: "json-schema"},
 		"workspace_write":   providerport.AvailableCapability{Version: "sandbox"},
 		"interactions":      providerport.AvailableCapability{Version: "json-rpc"},
+		capabilityLocalImageInput: providerport.AvailableCapability{Version: "v2", Metadata: map[string]string{
+			"inputType": "localImage", "mediaTypes": "image/jpeg,image/png,image/webp", "details": "auto,low,high,original",
+		}},
+		capabilityExplicitSkillInput: providerport.AvailableCapability{Version: "v2", Metadata: map[string]string{
+			"inputType": "skill", "locator": "bounded-local-SKILL.md",
+		}},
 	}
-	fingerprintSource := "app_server=v2|interactions=json-rpc|structured_output=json-schema|workspace_write=sandbox"
+	fingerprintSource := "app_server=v2|explicit_skill_input=v2|interactions=json-rpc|local_image_input=v2|structured_output=json-schema|workspace_write=sandbox"
 	digest := sha256.Sum256([]byte(fingerprintSource))
 	return providerport.CapabilityManifest{
 		Provider:    providerName,
 		Fingerprint: hex.EncodeToString(digest[:]),
 		Features:    features,
-		ObservedAt:  adapter.clock().UTC(),
-	}, nil
+		ObservedAt:  observedAt,
+	}
 }
 
 func (adapter *Adapter) StartAttempt(ctx context.Context, request providerport.AttemptRequest) (providerport.AttemptHandle, error) {
 	normalized, schema, err := validateAttemptRequest(request)
 	if err != nil {
+		return providerport.AttemptHandle{}, err
+	}
+	if err := validateAttemptCapabilities(normalized, appServerCapabilityManifest(adapter.clock().UTC())); err != nil {
 		return providerport.AttemptHandle{}, err
 	}
 
@@ -326,6 +348,10 @@ func (adapter *Adapter) startAttempt(ctx context.Context, state *codexAttempt, r
 		return providerport.AttemptHandle{}, classifyAdapterError(err)
 	}
 	state.normal = normalizer
+	if err := adapter.recordInputSelection(ctx, state, request, client.ProviderVersion()); err != nil {
+		_ = client.KillOwnedProcess()
+		return providerport.AttemptHandle{}, err
+	}
 
 	threadParams := makeThreadStartParams(request)
 	thread, err := client.StartThread(ctx, threadParams)
@@ -1041,15 +1067,97 @@ func validateAttemptRequest(request providerport.AttemptRequest) (providerport.A
 	if err != nil {
 		return request, nil, adapterFailure(ports.FailureInvalidRequest, "output schema could not be compiled", false)
 	}
-	for _, input := range request.Inputs {
-		if input.Kind != providerport.InputText && input.Kind != providerport.InputArtifact {
-			return request, nil, adapterFailure(ports.FailureUnsupported, "image and skill inputs are implemented by DAR-61", false)
+	request.Inputs = append([]providerport.Input(nil), request.Inputs...)
+	allowedRoots := append([]string{request.Workspace}, request.AdditionalRoots...)
+	for index, input := range request.Inputs {
+		normalized, err := normalizeAttemptInput(input, allowedRoots)
+		if err != nil {
+			return request, nil, err
 		}
-		if strings.TrimSpace(input.Text) == "" {
-			return request, nil, adapterFailure(ports.FailureInvalidRequest, "text and artifact inputs require prepared text", false)
-		}
+		request.Inputs[index] = normalized
 	}
 	return request, compiled, nil
+}
+
+func normalizeAttemptInput(input providerport.Input, allowedRoots []string) (providerport.Input, error) {
+	input.Name = strings.TrimSpace(input.Name)
+	input.MediaType = strings.ToLower(strings.TrimSpace(input.MediaType))
+	input.Locator = strings.TrimSpace(input.Locator)
+	input.Digest = strings.TrimSpace(input.Digest)
+	input.Metadata = cloneStrings(input.Metadata)
+	if input.Name == "" || input.MediaType == "" || input.Locator == "" || !validInputDigest(input.Digest) {
+		return input, adapterFailure(ports.FailureInvalidRequest, "prepared inputs require name, media type, locator, and lowercase SHA-256 digest", false)
+	}
+
+	switch input.Kind {
+	case providerport.InputText, providerport.InputArtifact:
+		if strings.TrimSpace(input.Text) == "" || input.Detail != "" {
+			return input, adapterFailure(ports.FailureInvalidRequest, "text and artifact inputs require prepared text and cannot request image detail", false)
+		}
+		if digestText(input.Text) != input.Digest {
+			return input, adapterFailure(ports.FailureInvalidRequest, "prepared text input digest does not match its content", false)
+		}
+	case providerport.InputImage:
+		if input.Text != "" || !supportedLocalImageMediaType(input.MediaType) {
+			return input, adapterFailure(ports.FailureUnsupported, "Codex local images require a supported model-usable image representation", false)
+		}
+		if input.Detail == "" {
+			input.Detail = providerport.ImageDetailAuto
+		}
+		if !validImageDetail(input.Detail) {
+			return input, adapterFailure(ports.FailureInvalidRequest, "unsupported Codex image detail", false)
+		}
+		path, err := canonicalInputFile(input.Locator, allowedRoots)
+		if err != nil {
+			return input, adapterFailure(ports.FailurePermissionDenied, err.Error(), false)
+		}
+		input.Locator = path
+		if err := verifyFileDigest(path, input.Digest); err != nil {
+			return input, adapterFailure(ports.FailureInvalidRequest, err.Error(), false)
+		}
+	case providerport.InputSkill:
+		if input.Text != "" || input.Detail != "" || input.MediaType != "text/markdown" {
+			return input, adapterFailure(ports.FailureInvalidRequest, "Codex skills require a text/markdown SKILL.md locator", false)
+		}
+		path, err := canonicalInputFile(input.Locator, allowedRoots)
+		if err != nil {
+			return input, adapterFailure(ports.FailurePermissionDenied, err.Error(), false)
+		}
+		if !strings.EqualFold(filepath.Base(path), "SKILL.md") {
+			return input, adapterFailure(ports.FailureInvalidRequest, "Codex skill locator must name SKILL.md", false)
+		}
+		input.Locator = path
+		if err := verifyFileDigest(path, input.Digest); err != nil {
+			return input, adapterFailure(ports.FailureInvalidRequest, err.Error(), false)
+		}
+	default:
+		return input, adapterFailure(ports.FailureUnsupported, "unsupported Codex input kind", false)
+	}
+	return input, nil
+}
+
+func validateAttemptCapabilities(request providerport.AttemptRequest, manifest providerport.CapabilityManifest) error {
+	if !validInputDigest(request.CapabilityFingerprint) {
+		return adapterFailure(ports.FailureInvalidRequest, "Codex attempt requires a frozen capability fingerprint", false)
+	}
+	if request.CapabilityFingerprint != manifest.Fingerprint {
+		return adapterFailure(ports.FailureUnsupported, "Codex capability fingerprint changed after attempt preparation", false)
+	}
+	for _, input := range request.Inputs {
+		feature := ""
+		switch input.Kind {
+		case providerport.InputImage:
+			feature = capabilityLocalImageInput
+		case providerport.InputSkill:
+			feature = capabilityExplicitSkillInput
+		}
+		if feature != "" {
+			if _, available := manifest.Features[feature].(providerport.AvailableCapability); !available {
+				return adapterFailure(ports.FailureUnsupported, "Codex required input capability is unavailable: "+feature, false)
+			}
+		}
+	}
+	return nil
 }
 
 func validateResumeRequest(request providerport.ResumeRequest) error {
@@ -1126,7 +1234,16 @@ func makeThreadStartParams(request providerport.AttemptRequest) threadStartParam
 func makeTurnStartParams(request providerport.AttemptRequest, threadID string) (turnStartParams, error) {
 	inputs := []turnInput{{Type: "text", Text: request.Prompt}}
 	for _, input := range request.Inputs {
-		inputs = append(inputs, turnInput{Type: "text", Text: input.Text})
+		switch input.Kind {
+		case providerport.InputText, providerport.InputArtifact:
+			inputs = append(inputs, turnInput{Type: "text", Text: input.Text})
+		case providerport.InputImage:
+			inputs = append(inputs, turnInput{Type: "localImage", Path: input.Locator, Detail: input.Detail})
+		case providerport.InputSkill:
+			inputs = append(inputs, turnInput{Type: "skill", Name: input.Name, Path: input.Locator})
+		default:
+			return turnStartParams{}, adapterFailure(ports.FailureUnsupported, "unsupported Codex input kind", false)
+		}
 	}
 	return turnStartParams{
 		ThreadID:     threadID,
@@ -1135,6 +1252,131 @@ func makeTurnStartParams(request providerport.AttemptRequest, threadID string) (
 		Model:        request.ModelHint,
 		Effort:       request.ReasoningHint,
 	}, nil
+}
+
+func (adapter *Adapter) recordInputSelection(ctx context.Context, state *codexAttempt, request providerport.AttemptRequest, providerVersion string) error {
+	type selectedInput struct {
+		Kind      providerport.InputKind   `json:"kind"`
+		Name      string                   `json:"name"`
+		MediaType string                   `json:"mediaType"`
+		Locator   string                   `json:"locator"`
+		Digest    string                   `json:"digest"`
+		Detail    providerport.ImageDetail `json:"detail,omitempty"`
+	}
+	selected := make([]selectedInput, 0)
+	for _, input := range request.Inputs {
+		if input.Kind == providerport.InputImage || input.Kind == providerport.InputSkill {
+			selected = append(selected, selectedInput{Kind: input.Kind, Name: input.Name, MediaType: input.MediaType, Locator: input.Locator, Digest: input.Digest, Detail: input.Detail})
+		}
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	payload, err := json.Marshal(struct {
+		Provider              string          `json:"provider"`
+		ProviderVersion       string          `json:"providerVersion"`
+		Transport             string          `json:"transport"`
+		CapabilityFingerprint string          `json:"capabilityFingerprint"`
+		AllowedRoots          []string        `json:"allowedRoots"`
+		Inputs                []selectedInput `json:"inputs"`
+	}{providerName, providerVersion, appServerTransport, request.CapabilityFingerprint,
+		append([]string{request.Workspace}, request.AdditionalRoots...), selected})
+	if err != nil {
+		return adapterFailure(ports.FailureInternal, "Codex input selection evidence could not be encoded", false)
+	}
+	evidence, err := adapter.evidence.Record(ctx, EvidenceRecord{AttemptID: request.AttemptID, Sequence: state.initialSequence + 1, Kind: "input-selection", MediaType: "application/json", Data: payload})
+	if err != nil {
+		return adapterFailure(ports.FailureInternal, "Codex input selection evidence could not be persisted", false)
+	}
+	state.workspaceEvidence = append(state.workspaceEvidence, evidence)
+	return nil
+}
+
+func validInputDigest(value string) bool {
+	if len(value) != sha256.Size*2 || strings.ToLower(value) != value {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func digestText(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
+}
+
+func supportedLocalImageMediaType(value string) bool {
+	return value == "image/jpeg" || value == "image/png" || value == "image/webp"
+}
+
+func validImageDetail(value providerport.ImageDetail) bool {
+	return value == providerport.ImageDetailAuto || value == providerport.ImageDetailLow || value == providerport.ImageDetailHigh || value == providerport.ImageDetailOriginal
+}
+
+func canonicalInputFile(path string, allowedRoots []string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve Codex input locator: %w", err)
+	}
+	absolute = filepath.Clean(absolute)
+	if evaluated, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
+		absolute = filepath.Clean(evaluated)
+	}
+	info, err := os.Stat(absolute)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", fmt.Errorf("codex input locator %q is not a regular file", absolute)
+	}
+	for _, root := range allowedRoots {
+		relative, relErr := filepath.Rel(root, absolute)
+		if relErr == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative) {
+			if hasSymlinkComponent(root, relative) {
+				return "", fmt.Errorf("codex input locator %q crosses a symbolic link", absolute)
+			}
+			return absolute, nil
+		}
+	}
+	return "", fmt.Errorf("codex input locator %q is outside the attempt workspace roots", absolute)
+}
+
+func hasSymlinkComponent(root, relative string) bool {
+	current := root
+	if info, err := os.Lstat(current); err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return true
+	}
+	for _, part := range strings.Split(relative, string(filepath.Separator)) {
+		current = filepath.Join(current, part)
+		if info, err := os.Lstat(current); err != nil || info.Mode()&os.ModeSymlink != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func verifyFileDigest(path, expected string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open Codex input locator: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	digest := sha256.New()
+	if _, err := io.Copy(digest, file); err != nil {
+		return fmt.Errorf("digest Codex input locator: %w", err)
+	}
+	if hex.EncodeToString(digest.Sum(nil)) != expected {
+		return errors.New("codex input locator digest changed after context selection")
+	}
+	return nil
+}
+
+func cloneStrings(source map[string]string) map[string]string {
+	if source == nil {
+		return nil
+	}
+	clone := make(map[string]string, len(source))
+	for key, value := range source {
+		clone[key] = value
+	}
+	return clone
 }
 
 func canonicalDirectory(path string) (string, error) {
