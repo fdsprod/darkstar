@@ -101,7 +101,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/workflow-v1alpha1.schema.json",
       "name": "workflow-v1alpha1",
-      "sha256": "4788651414fcd82265faa9e785f4fa49d5c4886eea981e169d5997ee718a1122",
+      "sha256": "ce80e45762d8230cbda364ca42f29a2e6886a6f24088465c645274444308c0f6",
       "version": "v1alpha1"
     }
   ],

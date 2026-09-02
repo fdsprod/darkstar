@@ -35,6 +35,13 @@ frozen capability view can additionally verify each explicitly required reasonin
 skill and tool; skill and tool namespaces are separate, so one cannot silently
 satisfy the other.
 
+Each node may also declare a typed `readiness` contract. Required inputs remain the
+single source of executable truth in the node's input bindings; readiness separately
+records recommended evidence, advisory/blocking/external policy gates, invariants,
+and targeted remedies. Remedy targets must be the current node or one of its graph
+predecessors, so a failed check can route the user to the smallest relevant upstream
+correction without inventing a forward dependency.
+
 At execution time, predicates receive one immutable snapshot containing candidate
 outputs, bound node inputs, and frozen run inputs. The evaluator supports only the
 typed `v1alpha1` expression tree; it distinguishes missing values from present JSON

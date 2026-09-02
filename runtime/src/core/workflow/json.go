@@ -252,6 +252,7 @@ func decodeNode(data []byte) (Node, error) {
 		Terminal       *bool             `json:"terminal"`
 		Inputs         json.RawMessage   `json:"inputs"`
 		Outputs        json.RawMessage   `json:"outputs"`
+		Readiness      json.RawMessage   `json:"readiness"`
 		Reasoning      json.RawMessage   `json:"reasoning"`
 		Gate           json.RawMessage   `json:"gate"`
 		Command        json.RawMessage   `json:"command"`
@@ -288,6 +289,10 @@ func decodeNode(data []byte) (Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("outputs: %w", err)
 	}
+	readiness, err := decodeReadiness(wire.Readiness)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: %w", err)
+	}
 	validators, err := decodeValidators(wire.Validators)
 	if err != nil {
 		return nil, fmt.Errorf("validators: %w", err)
@@ -320,7 +325,7 @@ func decodeNode(data []byte) (Node, error) {
 	}
 	common := NodeFields{
 		DisplayName: displayName, Entry: *wire.Entry, Terminal: *wire.Terminal,
-		Inputs: inputs, Outputs: outputs, Validators: validators, Retry: retry,
+		Inputs: inputs, Outputs: outputs, Readiness: readiness, Validators: validators, Retry: retry,
 		Checkpoint: checkpoint, TransitionMode: transitionMode, Join: join,
 		Permissions: wire.Permissions, Transitions: transitions,
 	}
@@ -372,6 +377,69 @@ func decodeNode(data []byte) (Node, error) {
 	default:
 		panic("node type validated above")
 	}
+}
+
+func decodeReadiness(data []byte) (*ReadinessContract, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var contract ReadinessContract
+	if err := strictDecode(data, &contract); err != nil {
+		return nil, err
+	}
+	if contract.RecommendedEvidence == nil || contract.PolicyGates == nil || contract.Invariants == nil || contract.Remedies == nil {
+		return nil, errors.New("recommendedEvidence, policyGates, invariants, and remedies are required arrays")
+	}
+	seenEvidence := make(map[Identifier]struct{}, len(contract.RecommendedEvidence))
+	for index, evidence := range contract.RecommendedEvidence {
+		if err := validateIdentifier(evidence.Role); err != nil || strings.TrimSpace(evidence.Description) == "" {
+			return nil, fmt.Errorf("recommendedEvidence[%d] requires a valid role and description", index)
+		}
+		if _, exists := seenEvidence[evidence.Role]; exists {
+			return nil, fmt.Errorf("recommendedEvidence role %q is duplicated", evidence.Role)
+		}
+		seenEvidence[evidence.Role] = struct{}{}
+	}
+	seenGates := make(map[Identifier]struct{}, len(contract.PolicyGates))
+	for index, gate := range contract.PolicyGates {
+		if err := validateIdentifier(gate.Policy); err != nil || strings.TrimSpace(gate.Description) == "" {
+			return nil, fmt.Errorf("policyGates[%d] requires a valid policy and description", index)
+		}
+		switch gate.Enforcement {
+		case ReadinessGateAdvisory, ReadinessGateBlocking, ReadinessGateExternal:
+		default:
+			return nil, fmt.Errorf("policyGates[%d] has unsupported enforcement %q", index, gate.Enforcement)
+		}
+		if _, exists := seenGates[gate.Policy]; exists {
+			return nil, fmt.Errorf("policy gate %q is duplicated", gate.Policy)
+		}
+		seenGates[gate.Policy] = struct{}{}
+	}
+	if err := validateUniqueStrings(contract.Invariants); err != nil {
+		return nil, fmt.Errorf("invariants: %w", err)
+	}
+	seenRemedies := make(map[Identifier]struct{}, len(contract.Remedies))
+	for index, remedy := range contract.Remedies {
+		if err := validateIdentifier(remedy.Code); err != nil {
+			return nil, fmt.Errorf("remedies[%d].code: %w", index, err)
+		}
+		if err := validateIdentifier(remedy.Target); err != nil {
+			return nil, fmt.Errorf("remedies[%d].target: %w", index, err)
+		}
+		switch remedy.Action {
+		case ReadinessSupplyInput, ReadinessReviseArtifact, ReadinessClarifyDecision, ReadinessInstallCapability, ReadinessRerunValidation:
+		default:
+			return nil, fmt.Errorf("remedies[%d] has unsupported action %q", index, remedy.Action)
+		}
+		if strings.TrimSpace(remedy.Description) == "" {
+			return nil, fmt.Errorf("remedies[%d].description is required", index)
+		}
+		if _, exists := seenRemedies[remedy.Code]; exists {
+			return nil, fmt.Errorf("remedy code %q is duplicated", remedy.Code)
+		}
+		seenRemedies[remedy.Code] = struct{}{}
+	}
+	return &contract, nil
 }
 
 func decodeReasoning(data []byte) (ReasoningExecutor, error) {
@@ -1023,6 +1091,9 @@ func nodeObject(common NodeFields, nodeType NodeType, executorName string, execu
 	}
 	if len(common.Validators) != 0 {
 		result["validators"] = common.Validators
+	}
+	if common.Readiness != nil {
+		result["readiness"] = common.Readiness
 	}
 	if common.Retry != nil {
 		result["retry"] = common.Retry

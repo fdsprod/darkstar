@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/story-execution",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "displayName": "Default story execution sub-workflow"
   },
   "spec": {
@@ -29,6 +29,7 @@
           "repository": {"from": "run.input.repository", "type": "string"}
         },
         "outputs": {"readiness": {"type": "object"}},
+        "readiness": {"recommendedEvidence": [{"role": "accepted_story", "description": "Story outcome, acceptance criteria, dependencies, and relevant accepted artifacts."}], "policyGates": [{"policy": "story_readiness", "enforcement": "advisory", "description": "Missing recommended context produces guidance; required policy inputs still block."}], "invariants": ["The story terminal boundary and explicit human instructions remain authoritative."], "remedies": [{"code": "story_context_missing", "target": "s0_readiness", "action": "supply_input", "description": "Supply the missing story, repository, acceptance, or dependency context."}]},
         "reasoning": {"agent": "story-readiness", "skills": ["darkstar:readiness"]},
         "transitions": [
           {
@@ -80,6 +81,7 @@
         "terminal": true,
         "inputs": {"work_item": {"from": "run.input.work_item", "type": "object"}},
         "outputs": {"answers": {"type": "object"}},
+        "readiness": {"recommendedEvidence": [{"role": "blocking_questions", "description": "Only questions whose answers can change scope, design, permissions, or acceptance."}], "policyGates": [{"policy": "owner_clarification", "enforcement": "blocking", "description": "The configured owner supplies load-bearing answers."}], "invariants": ["The workflow never invents an answer to continue execution."], "remedies": [{"code": "clarification_unresolved", "target": "s0_readiness", "action": "clarify_decision", "description": "Refine the blocking question and route it to the responsible owner."}]},
         "approval": {"actor": "work-item-owner"},
         "transitions": [
           {
@@ -124,6 +126,7 @@
         },
         "outputs": {"research": {"type": "object"}},
         "validators": [{"output": "research", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
+        "readiness": {"recommendedEvidence": [{"role": "focused_uncertainty", "description": "A named uncertainty that can change the implementation plan."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "Activated story research is accepted before local design or planning."}], "invariants": ["Research remains focused, sourced, and read-only."], "remedies": [{"code": "story_evidence_missing", "target": "s2_research", "action": "supply_input", "description": "Gather the specific repository or dependency evidence needed by the plan."}]},
         "reasoning": {"agent": "story-researcher", "skills": ["darkstar:evidence-research"]},
         "checkpoint": "approve",
         "transitions": [
@@ -152,6 +155,7 @@
         },
         "outputs": {"design": {"type": "object"}},
         "validators": [{"output": "design", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
+        "readiness": {"recommendedEvidence": [{"role": "local_design_context", "description": "Accepted story intent plus the focused research that informs this decision."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "Activated story design is accepted before implementation planning."}], "invariants": ["Local design does not contradict accepted product or initiative-level technical decisions."], "remedies": [{"code": "story_design_blocked", "target": "s2_research", "action": "revise_artifact", "description": "Resolve the focused uncertainty that prevents the local design decision."}]},
         "reasoning": {"agent": "story-designer", "skills": ["darkstar:technical-design"]},
         "checkpoint": "approve",
         "transitions": [{"id": "s3_to_s4", "to": "s4_plan"}]
@@ -169,6 +173,7 @@
         },
         "outputs": {"implementation_plan": {"type": "object"}},
         "validators": [{"output": "implementation_plan", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
+        "readiness": {"recommendedEvidence": [{"role": "accepted_story_design", "description": "The accepted story, relevant research, and local design decisions."}], "policyGates": [{"policy": "implementation_plan_approval", "enforcement": "blocking", "description": "The ordered implementation points are approved before repository writes."}], "invariants": ["Each point is an atomic vertical slice with acceptance, tests, rollback, and a commit boundary."], "remedies": [{"code": "implementation_plan_incomplete", "target": "s3_design", "action": "revise_artifact", "description": "Resolve the missing design decision or revise the affected implementation point."}]},
         "reasoning": {"agent": "implementation-planner", "skills": ["darkstar:tracer-bullets"]},
         "checkpoint": "approve",
         "transitions": [{"id": "s4_to_s5", "to": "s5_implementation"}]
@@ -189,6 +194,7 @@
           "changeset": {"type": "object"},
           "progress": {"type": "object"}
         },
+        "readiness": {"recommendedEvidence": [{"role": "approved_implementation_plan", "description": "The approved point, clean baseline, required capabilities, and validation commands."}], "policyGates": [{"policy": "implementation_point", "enforcement": "blocking", "description": "Repository write authority and point preconditions must be satisfied."}], "invariants": ["Only the active point changes; validation precedes its atomic commit."], "remedies": [{"code": "implementation_point_failed", "target": "s4_plan", "action": "revise_artifact", "description": "Revise the affected point when its scope or validation plan is unsound."}]},
         "reasoning": {"agent": "implementer", "tools": ["darkstar:repository-write", "darkstar:validation"]},
         "permissions": ["workspace.write", "process.run"],
         "transitions": [{"id": "s5_to_progress_gate", "to": "s5_progress_gate"}]
@@ -205,6 +211,7 @@
           "passed": {"type": "boolean"},
           "gate_evidence": {"type": "object"}
         },
+        "readiness": {"recommendedEvidence": [{"role": "point_progress", "description": "Committed point evidence and the remaining approved point count."}], "policyGates": [{"policy": "point_progress", "enforcement": "blocking", "description": "The deterministic gate decides whether another bounded point iteration is required."}], "invariants": ["The point loop cannot exceed its authored traversal budget."], "remedies": [{"code": "point_progress_invalid", "target": "s5_implementation", "action": "rerun_validation", "description": "Correct or revalidate the point progress record before continuing."}]},
         "gate": {
           "policy": "darkstar/implementation-points-complete-v1",
           "condition": {
@@ -238,6 +245,7 @@
           "changeset": {"from": "node.s5_implementation.output.changeset", "type": "object", "required": false}
         },
         "outputs": {"validation": {"type": "object"}},
+        "readiness": {"recommendedEvidence": [{"role": "validated_changeset", "description": "All atomic point commits and their focused validation evidence."}], "policyGates": [{"policy": "story_validation", "enforcement": "blocking", "description": "Integrated story checks and acceptance coverage must pass."}], "invariants": ["Completion is based on observed validation and acceptance coverage."], "remedies": [{"code": "story_validation_failed", "target": "s5_implementation", "action": "rerun_validation", "description": "Repair the failing point or acceptance gap and rerun story validation."}]},
         "command": {"argv": ["darkstar-project", "validate", "--json"], "timeoutSeconds": 1800},
         "transitions": []
       }

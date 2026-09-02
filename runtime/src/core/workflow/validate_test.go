@@ -179,6 +179,35 @@ func TestValidationResultsAreDeterministicallySorted(t *testing.T) {
 	}
 }
 
+func TestReadinessRemediesMustTargetUpstreamNodes(t *testing.T) {
+	t.Parallel()
+
+	document := basicWorkflow()
+	start := document.Spec.Nodes["start"].(workflow.CommandNode)
+	start.Common.Readiness = &workflow.ReadinessContract{
+		RecommendedEvidence: []workflow.EvidenceRequirement{},
+		PolicyGates:         []workflow.ReadinessPolicyGate{},
+		Invariants:          []string{"test invariant"},
+		Remedies: []workflow.ReadinessRemedy{{
+			Code: "wrong_direction", Target: "end", Action: workflow.ReadinessReviseArtifact, Description: "target is downstream",
+		}},
+	}
+	document.Spec.Nodes["start"] = start
+	assertValidationCode(t, workflow.Validate(document), workflow.ValidationReadinessInvalid)
+
+	end := document.Spec.Nodes["end"].(workflow.CommandNode)
+	end.Common.Readiness = &workflow.ReadinessContract{
+		RecommendedEvidence: []workflow.EvidenceRequirement{},
+		PolicyGates:         []workflow.ReadinessPolicyGate{},
+		Invariants:          []string{"test invariant"},
+		Remedies: []workflow.ReadinessRemedy{{
+			Code: "missing_target", Target: "ghost", Action: workflow.ReadinessSupplyInput, Description: "target does not exist",
+		}},
+	}
+	document.Spec.Nodes["end"] = end
+	assertValidationCode(t, workflow.Validate(document), workflow.ValidationReferenceMissing)
+}
+
 func TestCanonicalizeRejectsSemanticWorkflowErrors(t *testing.T) {
 	t.Parallel()
 	document := basicWorkflow()

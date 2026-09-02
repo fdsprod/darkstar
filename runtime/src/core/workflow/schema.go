@@ -88,6 +88,7 @@ type NodeFields struct {
 	Terminal       bool
 	Inputs         map[Identifier]Binding
 	Outputs        map[Identifier]OutputDeclaration
+	Readiness      *ReadinessContract
 	Validators     []Validator
 	Retry          *RetryPolicy
 	Checkpoint     Checkpoint
@@ -95,6 +96,52 @@ type NodeFields struct {
 	Join           *Join
 	Permissions    []string
 	Transitions    []Transition
+}
+
+// ReadinessContract keeps advisory evidence and remedies separate from the
+// executable input, checkpoint, and transition contract. Required inputs are
+// derived from the node's closed Binding variants rather than repeated here.
+type ReadinessContract struct {
+	RecommendedEvidence []EvidenceRequirement `json:"recommendedEvidence"`
+	PolicyGates         []ReadinessPolicyGate `json:"policyGates"`
+	Invariants          []string              `json:"invariants"`
+	Remedies            []ReadinessRemedy     `json:"remedies"`
+}
+
+type EvidenceRequirement struct {
+	Role        Identifier `json:"role"`
+	Description string     `json:"description"`
+}
+
+type ReadinessGateEnforcement string
+
+const (
+	ReadinessGateAdvisory ReadinessGateEnforcement = "advisory"
+	ReadinessGateBlocking ReadinessGateEnforcement = "blocking"
+	ReadinessGateExternal ReadinessGateEnforcement = "external"
+)
+
+type ReadinessPolicyGate struct {
+	Policy      Identifier               `json:"policy"`
+	Enforcement ReadinessGateEnforcement `json:"enforcement"`
+	Description string                   `json:"description"`
+}
+
+type ReadinessRemedyAction string
+
+const (
+	ReadinessSupplyInput       ReadinessRemedyAction = "supply_input"
+	ReadinessReviseArtifact    ReadinessRemedyAction = "revise_artifact"
+	ReadinessClarifyDecision   ReadinessRemedyAction = "clarify_decision"
+	ReadinessInstallCapability ReadinessRemedyAction = "install_capability"
+	ReadinessRerunValidation   ReadinessRemedyAction = "rerun_validation"
+)
+
+type ReadinessRemedy struct {
+	Code        Identifier            `json:"code"`
+	Target      Identifier            `json:"target"`
+	Action      ReadinessRemedyAction `json:"action"`
+	Description string                `json:"description"`
 }
 
 type ReasoningNode struct {

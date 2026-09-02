@@ -56,6 +56,10 @@ test("invalid workflow state combinations are rejected", () => {
     invalidCheckpoint.spec.nodes.technical_design.checkpoint = checkpoint;
     assert.ok(validateWorkflow(invalidCheckpoint, path).some((error) => error.code === "WF_SCHEMA_INVALID"));
   }
+
+  const downstreamRemedy = loadJson(workflowPath("software-delivery.json"));
+  downstreamRemedy.spec.nodes.p8_technical_design.readiness.remedies[0].target = "p9_decomposition";
+  assert.ok(validateWorkflow(downstreamRemedy, path).some((error) => error.code === "WF_READINESS_INVALID"));
 });
 
 test("MVP checkpoint revisions preserve the final approved candidate", () => {

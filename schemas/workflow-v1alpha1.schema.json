@@ -287,6 +287,57 @@
         }
       }
     },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recommendedEvidence", "policyGates", "invariants", "remedies"],
+      "properties": {
+        "recommendedEvidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "description"],
+            "properties": {
+              "role": {"$ref": "#/$defs/identifier"},
+              "description": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "policyGates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["policy", "enforcement", "description"],
+            "properties": {
+              "policy": {"$ref": "#/$defs/identifier"},
+              "enforcement": {"enum": ["advisory", "blocking", "external"]},
+              "description": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "invariants": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "remedies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "target", "action", "description"],
+            "properties": {
+              "code": {"$ref": "#/$defs/identifier"},
+              "target": {"$ref": "#/$defs/identifier"},
+              "action": {"enum": ["supply_input", "revise_artifact", "clarify_decision", "install_capability", "rerun_validation"]},
+              "description": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
     "node": {
       "type": "object",
       "additionalProperties": false,
@@ -306,6 +357,7 @@
           "propertyNames": {"$ref": "#/$defs/identifier"},
           "additionalProperties": {"$ref": "#/$defs/outputDeclaration"}
         },
+        "readiness": {"$ref": "#/$defs/readiness"},
         "reasoning": {"$ref": "#/$defs/reasoningExecutor"},
         "gate": {"$ref": "#/$defs/gateExecutor"},
         "command": {"$ref": "#/$defs/commandExecutor"},

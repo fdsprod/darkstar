@@ -256,6 +256,29 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
     for (const [outputName, declaration] of Object.entries(node.outputs)) {
       if (!ID_RE.test(outputName) || !declaration || !VALUE_TYPES.has(declaration.type)) errors.push(fail("WF_SCHEMA_INVALID", `invalid output '${outputName}'`, `${location}/outputs/${outputName}`));
     }
+    if (node.readiness !== undefined) {
+      const readiness = node.readiness;
+      const categories = ["recommendedEvidence", "policyGates", "invariants", "remedies"];
+      if (!readiness || typeof readiness !== "object" || Array.isArray(readiness) || categories.some((name) => !Array.isArray(readiness[name]))) {
+        errors.push(fail("WF_SCHEMA_INVALID", "readiness requires four explicit arrays", `${location}/readiness`));
+      } else {
+        readiness.recommendedEvidence.forEach((evidence, index) => {
+          if (!evidence || !ID_RE.test(String(evidence.role ?? "")) || typeof evidence.description !== "string" || evidence.description.length === 0) {
+            errors.push(fail("WF_SCHEMA_INVALID", "recommended evidence requires role and description", `${location}/readiness/recommendedEvidence/${index}`));
+          }
+        });
+        readiness.policyGates.forEach((gate, index) => {
+          if (!gate || !ID_RE.test(String(gate.policy ?? "")) || !["advisory", "blocking", "external"].includes(gate.enforcement) || typeof gate.description !== "string" || gate.description.length === 0) {
+            errors.push(fail("WF_SCHEMA_INVALID", "policy gate is invalid", `${location}/readiness/policyGates/${index}`));
+          }
+        });
+        readiness.remedies.forEach((remedy, index) => {
+          if (!remedy || !ID_RE.test(String(remedy.code ?? "")) || !ID_RE.test(String(remedy.target ?? "")) || !["supply_input", "revise_artifact", "clarify_decision", "install_capability", "rerun_validation"].includes(remedy.action) || typeof remedy.description !== "string" || remedy.description.length === 0) {
+            errors.push(fail("WF_SCHEMA_INVALID", "readiness remedy is invalid", `${location}/readiness/remedies/${index}`));
+          }
+        });
+      }
+    }
     const transitions = node.transitions ?? [];
     if (!Array.isArray(transitions)) {
       errors.push(fail("WF_SCHEMA_INVALID", "transitions must be an array", `${location}/transitions`));
@@ -363,6 +386,25 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
   for (const { source, target, edge } of edges) {
     adjacency[source].add(target);
     if ((edge.kind ?? "normal") !== "bounded") normalAdjacency[source].add(target);
+  }
+  const nodeReaches = (start, target) => {
+    const pending = [start];
+    const visited = new Set();
+    while (pending.length) {
+      const current = pending.pop();
+      if (current === target) return true;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      pending.push(...(adjacency[current] ?? []));
+    }
+    return false;
+  };
+  for (const [nodeId, node] of Object.entries(nodes)) {
+    (node.readiness?.remedies ?? []).forEach((remedy, index) => {
+      const location = `/spec/nodes/${nodeId}/readiness/remedies/${index}/target`;
+      if (!Object.hasOwn(nodes, remedy.target)) errors.push(fail("WF_REFERENCE_MISSING", `readiness remedy targets unknown node '${remedy.target}'`, location));
+      else if (remedy.target !== nodeId && !nodeReaches(remedy.target, nodeId)) errors.push(fail("WF_READINESS_INVALID", `readiness remedy target '${remedy.target}' is not upstream of node '${nodeId}'`, location));
+    });
   }
   const reachable = new Set();
   const stack = [...entries];

@@ -108,6 +108,13 @@ func TestPublishedEnumsMatchTypedContract(t *testing.T) {
 		string(workflow.RetryProcessFailure), string(workflow.RetryValidatorFailure),
 		string(workflow.RetryTimeout), string(workflow.RetryInterrupted),
 	})
+	assertStringSet(t, schemaEnum(t, schema, "$defs", "readiness", "properties", "policyGates", "items", "properties", "enforcement", "enum"), []string{
+		string(workflow.ReadinessGateAdvisory), string(workflow.ReadinessGateBlocking), string(workflow.ReadinessGateExternal),
+	})
+	assertStringSet(t, schemaEnum(t, schema, "$defs", "readiness", "properties", "remedies", "items", "properties", "action", "enum"), []string{
+		string(workflow.ReadinessSupplyInput), string(workflow.ReadinessReviseArtifact), string(workflow.ReadinessClarifyDecision),
+		string(workflow.ReadinessInstallCapability), string(workflow.ReadinessRerunValidation),
+	})
 }
 
 func TestGatePredicatesAndBoundedTransitionsAreTyped(t *testing.T) {
@@ -141,6 +148,31 @@ func TestGatePredicatesAndBoundedTransitionsAreTyped(t *testing.T) {
 	}
 	if bounded.MaxTraversals != 20 {
 		t.Fatalf("max traversals = %d", bounded.MaxTraversals)
+	}
+}
+
+func TestShippedDefaultNodesHaveTypedReadinessContracts(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"software-delivery.json", "story-execution.json"} {
+		document := decodeExample(t, name)
+		for nodeID, node := range document.Spec.Nodes {
+			readiness := node.Fields().Readiness
+			if readiness == nil {
+				t.Errorf("%s node %s has no readiness contract", name, nodeID)
+				continue
+			}
+			if readiness.RecommendedEvidence == nil || readiness.PolicyGates == nil || readiness.Invariants == nil || readiness.Remedies == nil {
+				t.Errorf("%s node %s readiness categories are not explicit", name, nodeID)
+			}
+			for inputID, binding := range node.Fields().Inputs {
+				switch binding.(type) {
+				case workflow.RequiredBinding, workflow.OptionalBinding:
+				default:
+					t.Errorf("%s node %s input %s has untyped requirement state %T", name, nodeID, inputID, binding)
+				}
+			}
+		}
 	}
 }
 

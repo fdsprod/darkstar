@@ -22,6 +22,7 @@ const (
 	ValidationJoinInvalid          ValidationCode = "WF_JOIN_INVALID"
 	ValidationDefaultRouteInvalid  ValidationCode = "WF_DEFAULT_ROUTE_INVALID"
 	ValidationCapabilityMissing    ValidationCode = "CAPABILITY_REQUIRED_MISSING"
+	ValidationReadinessInvalid     ValidationCode = "WF_READINESS_INVALID"
 )
 
 // ValidationError is one deterministic semantic error. Detail values are
@@ -190,11 +191,48 @@ func (state *validationState) validateNodes(nodeIDs []Identifier) {
 		node := state.nodes[nodeID]
 		fields := node.Fields()
 		state.validateBindings(nodeID, fields)
+		state.validateReadiness(nodeID, fields)
 		state.validateValidators(nodeID, fields)
 		state.validatePredicates(nodeID, node, fields)
 		state.validateSubworkflow(nodeID, node, fields)
 		state.validateCapabilities(nodeID, node)
 	}
+}
+
+func (state *validationState) validateReadiness(nodeID Identifier, fields NodeFields) {
+	if fields.Readiness == nil {
+		return
+	}
+	for index, remedy := range fields.Readiness.Remedies {
+		location := fmt.Sprintf("/spec/nodes/%s/readiness/remedies/%d/target", nodeID, index)
+		if _, exists := state.nodes[remedy.Target]; !exists {
+			state.add(ValidationReferenceMissing, fmt.Sprintf("readiness remedy targets unknown node %q", remedy.Target), location, nil)
+			continue
+		}
+		if remedy.Target != nodeID && !state.nodeReaches(remedy.Target, nodeID) {
+			state.add(ValidationReadinessInvalid,
+				fmt.Sprintf("readiness remedy target %q is not upstream of node %q", remedy.Target, nodeID), location, nil)
+		}
+	}
+}
+
+func (state *validationState) nodeReaches(start, target Identifier) bool {
+	stack := []Identifier{start}
+	visited := make(map[Identifier]bool)
+	for len(stack) != 0 {
+		last := len(stack) - 1
+		current := stack[last]
+		stack = stack[:last]
+		if current == target {
+			return true
+		}
+		if visited[current] {
+			continue
+		}
+		visited[current] = true
+		stack = append(stack, state.adjacency[current]...)
+	}
+	return false
 }
 
 func (state *validationState) validateBindings(nodeID Identifier, fields NodeFields) {
