@@ -26,6 +26,7 @@ The project is currently in the contract and walking-skeleton phase. The reposit
 | [`docs/`](docs/) | Product, architecture, decisions, and planning documentation |
 | [`schemas/`](schemas/) | Versioned workflow, API, event, provider, and artifact contracts plus their generated catalog |
 | [`examples/`](examples/) | Valid workflows, route patches, and execution scenarios |
+| [`skills/builtin/`](skills/builtin/) | Versioned, fingerprinted provider-neutral skills shipped with DARKSTAR |
 | [`scripts/`](scripts/) | Executable reference and project utilities |
 | [`tests/`](tests/) | Deterministic contract tests |
 | [`probes/`](probes/) | Provider and host compatibility probes with versioned evidence |
@@ -54,6 +55,8 @@ node scripts/runtime-reference.mjs examples/runtime/fake-run.json
 node --test tests/runtime-reference.test.mjs
 node scripts/capability-reference.mjs examples/capabilities/capability-scenarios.json
 node --test tests/capability-reference.test.mjs
+node scripts/builtin-skills.mjs check
+node --test tests/builtin-skills.test.mjs
 node scripts/threat-model-reference.mjs examples/security/threat-negative-tests.json
 node --test tests/threat-model-reference.test.mjs
 ./probes/codex-host/Test-CodexHostFixtures.ps1

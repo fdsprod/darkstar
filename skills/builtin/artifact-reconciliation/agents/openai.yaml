@@ -1,0 +1,4 @@
+interface:
+  display_name: "Artifact Reconciliation"
+  short_description: "Reconcile revisions and target downstream impact"
+  default_prompt: "Use $artifact-reconciliation to assess how this new evidence changes existing artifacts."

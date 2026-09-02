@@ -1,0 +1,4 @@
+interface:
+  display_name: "Route Assessment"
+  short_description: "Recommend the smallest safe workflow route"
+  default_prompt: "Use $route-assessment to recommend a safe route for this work item."

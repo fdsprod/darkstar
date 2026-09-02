@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "kind": "darkstar_builtin_skills",
+  "version": "1.0.0",
+  "skills": [
+    {
+      "name": "darkstar:artifact-reconciliation",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "artifact-reconciliation/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "artifact-reconciliation/SKILL.md"
+      },
+      "fingerprint": "519df1748507704d9d391ae80dbb37c74fe9068a1df89639f345dcc985dea50c",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
+      "name": "darkstar:change-inspection",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "change-inspection/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "change-inspection/SKILL.md"
+      },
+      "fingerprint": "707a8d0abbf50a251b5cb72d218cd4c9730599d61c38fe5a86aa01bc8b0d7c42",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
+      "name": "darkstar:evidence-research",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "evidence-research/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "evidence-research/SKILL.md"
+      },
+      "fingerprint": "5da554df3a7d5e0fcaaa786e0a6c651ba24c2b7749b18ec4fa1a9dc6f2aa174c",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
+      "name": "darkstar:pr-authoring",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "pr-authoring/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "pr-authoring/SKILL.md"
+      },
+      "fingerprint": "335b09c6d819f97a9302671674171d04ede204b09817245dfe44a1f29de60325",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
+      "name": "darkstar:questions",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "questions/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "questions/SKILL.md"
+      },
+      "fingerprint": "eff381843b64bea27eb6ea787dcbe675a5b84f64af62a2722d65ae3226bc9bab",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
+      "name": "darkstar:readiness",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "readiness/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "readiness/SKILL.md"
+      },
+      "fingerprint": "cba2f8ffaffad377484a122c75e8293acf3135db91bfb52137eb5f2c8b3da2b3",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
+      "name": "darkstar:route-assessment",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "route-assessment/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "route-assessment/SKILL.md"
+      },
+      "fingerprint": "0773f40144497807be0ebe9b1847fba4c92bbd45e2590045102e7863edd2ef58",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
+      "name": "darkstar:story-decomposition",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "story-decomposition/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "story-decomposition/SKILL.md"
+      },
+      "fingerprint": "53948a742bad10d9eb5fbaa1e02ea5f388da3703c40bb4a0f9968ec2d5ec2339",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
+      "name": "darkstar:technical-design",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "technical-design/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "technical-design/SKILL.md"
+      },
+      "fingerprint": "c0f82d5789cc8726ab80cfb5c63153c45b90cbaf86f360cb14328697c6ee6748",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
+      "name": "darkstar:tracer-bullets",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "tracer-bullets/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "tracer-bullets/SKILL.md"
+      },
+      "fingerprint": "021a877749799a515076d13092824a093d0793b82744b1f586fe966dea858aeb",
+      "dependencies": [],
+      "permissions": []
+    }
+  ]
+}

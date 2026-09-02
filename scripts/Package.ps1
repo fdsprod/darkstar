@@ -38,7 +38,13 @@ $files = @(
     [pscustomobject]@{ Source = $BinaryPath; Entry = "darkstar.exe" }
     [pscustomobject]@{ Source = (Join-Path $repositoryRoot "LICENSE"); Entry = "LICENSE" }
     [pscustomobject]@{ Source = (Join-Path $repositoryRoot "README.md"); Entry = "README.md" }
-) | Sort-Object Entry
+)
+$skillRoot = Join-Path $repositoryRoot "skills/builtin"
+$files += Get-ChildItem -LiteralPath $skillRoot -Recurse -File | ForEach-Object {
+    $relative = [IO.Path]::GetRelativePath($skillRoot, $_.FullName).Replace('\', '/')
+    [pscustomobject]@{ Source = $_.FullName; Entry = "skills/$relative" }
+}
+$files = $files | Sort-Object Entry
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 Remove-Item -LiteralPath $archivePath, $checksumPath -Force -ErrorAction SilentlyContinue

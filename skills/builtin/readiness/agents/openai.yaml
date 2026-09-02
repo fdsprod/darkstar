@@ -1,0 +1,4 @@
+interface:
+  display_name: "Readiness"
+  short_description: "Assess stage readiness from supplied evidence"
+  default_prompt: "Use $readiness to assess whether this work is ready for the requested stage."

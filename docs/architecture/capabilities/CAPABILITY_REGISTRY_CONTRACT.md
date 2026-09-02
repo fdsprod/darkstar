@@ -114,6 +114,17 @@ interfaces once their implementation stories land:
 “Guaranteed” means available when the relevant DARKSTAR component reports healthy;
 it does not bypass workspace, approval, artifact, or threat-model controls.
 
+The MVP provider-neutral skill package is published in
+[`skills/builtin/`](../../../skills/builtin/) with a versioned, deterministic
+[`manifest.json`](../../../skills/builtin/manifest.json). It guarantees
+`darkstar:route-assessment`, `darkstar:readiness`, `darkstar:questions`,
+`darkstar:evidence-research`, `darkstar:technical-design`,
+`darkstar:story-decomposition`, `darkstar:tracer-bullets`,
+`darkstar:change-inspection`, `darkstar:artifact-reconciliation`, and
+`darkstar:pr-authoring`. Each manifest fingerprint covers the skill instructions
+and UI metadata as one closed package; changing either requires regenerating the
+manifest and advancing the skill version when compatibility changes.
+
 ## 5. Skills
 
 The stable DARKSTAR skill path is explicit supply, not implicit activation:

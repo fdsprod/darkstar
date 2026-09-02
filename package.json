@@ -9,7 +9,9 @@
     "check": "npm run check --workspace @darkstar/dashboard",
     "schemas:generate": "node scripts/schema-tool.mjs generate",
     "schemas:check": "node scripts/schema-tool.mjs check",
-    "schemas:compatibility": "node scripts/schema-tool.mjs compatibility"
+    "schemas:compatibility": "node scripts/schema-tool.mjs compatibility",
+    "skills:generate": "node scripts/builtin-skills.mjs generate",
+    "skills:check": "node scripts/builtin-skills.mjs check"
   },
   "engines": {
     "node": ">=22.12.0",

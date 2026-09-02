@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Authoring"
+  short_description: "Author evidence-backed pull request content"
+  default_prompt: "Use $pr-authoring to draft the pull request for this validated change."

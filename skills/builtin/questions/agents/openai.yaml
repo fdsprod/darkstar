@@ -1,0 +1,4 @@
+interface:
+  display_name: "Questions"
+  short_description: "Ask only questions that unlock a decision"
+  default_prompt: "Use $questions to identify the minimum questions needed to proceed."

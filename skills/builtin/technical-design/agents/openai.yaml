@@ -1,0 +1,4 @@
+interface:
+  display_name: "Technical Design"
+  short_description: "Create implementation-ready technical designs"
+  default_prompt: "Use $technical-design to design this change against the current system."

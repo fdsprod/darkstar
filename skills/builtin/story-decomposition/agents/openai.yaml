@@ -1,0 +1,4 @@
+interface:
+  display_name: "Story Decomposition"
+  short_description: "Create traceable, independently testable stories"
+  default_prompt: "Use $story-decomposition to turn this design into a delivery-ready story set."

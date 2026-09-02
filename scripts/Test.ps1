@@ -44,6 +44,11 @@ try {
         throw "Schema validation or generation check failed with exit code $LASTEXITCODE."
     }
 
+    & node scripts/builtin-skills.mjs check
+    if ($LASTEXITCODE -ne 0) {
+        throw "Built-in skill validation failed with exit code $LASTEXITCODE."
+    }
+
     $schemaBaseRef = [Environment]::GetEnvironmentVariable("DARKSTAR_SCHEMA_BASE_REF", "Process")
     if ($schemaBaseRef -and $schemaBaseRef -notmatch "^0+$") {
         & node scripts/schema-tool.mjs compatibility --base $schemaBaseRef

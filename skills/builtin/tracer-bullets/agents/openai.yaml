@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tracer Bullets"
+  short_description: "Plan thin end-to-end implementation points"
+  default_prompt: "Use $tracer-bullets to create an atomic implementation plan for this story."

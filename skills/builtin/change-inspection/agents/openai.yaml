@@ -1,0 +1,4 @@
+interface:
+  display_name: "Change Inspection"
+  short_description: "Inspect changes for concrete defects and risks"
+  default_prompt: "Use $change-inspection to review this change against its intended outcome."

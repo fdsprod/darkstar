@@ -17,6 +17,14 @@
       "version": "v1alpha1"
     },
     {
+      "file": "builtin-skills-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/builtin-skills-v1alpha1.schema.json",
+      "name": "builtin-skills-v1alpha1",
+      "sha256": "7b91f0c7ebac8ce76038a0f5c87b0d0aed882029597747d02853495594db06e7",
+      "version": "v1alpha1"
+    },
+    {
       "file": "cli-error-v1alpha1.schema.json",
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/cli-error-v1alpha1.schema.json",

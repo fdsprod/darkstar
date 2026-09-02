@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evidence Research"
+  short_description: "Research focused questions with traceable evidence"
+  default_prompt: "Use $evidence-research to investigate this question and report sourced findings."
