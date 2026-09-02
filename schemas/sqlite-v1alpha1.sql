@@ -14,13 +14,15 @@ INSERT INTO global_positions(singleton, last_position) VALUES (1, 0);
 
 CREATE TABLE aggregates (
   aggregate_id TEXT PRIMARY KEY,
-  aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('project', 'work', 'run', 'visit', 'attempt', 'artifact', 'approval', 'operation')),
+  aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('project', 'work', 'story', 'point', 'run', 'visit', 'attempt', 'artifact', 'approval', 'operation')),
   revision INTEGER NOT NULL CHECK (revision >= 0),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK (
     (aggregate_type = 'project' AND aggregate_id GLOB 'project_*') OR
     (aggregate_type = 'work' AND aggregate_id GLOB 'work_*') OR
+    (aggregate_type = 'story' AND aggregate_id GLOB 'story_*') OR
+    (aggregate_type = 'point' AND aggregate_id GLOB 'point_*') OR
     (aggregate_type = 'run' AND aggregate_id GLOB 'run_*') OR
     (aggregate_type = 'visit' AND aggregate_id GLOB 'visit_*') OR
     (aggregate_type = 'attempt' AND aggregate_id GLOB 'attempt_*') OR
@@ -109,18 +111,97 @@ CREATE TABLE run_projection (
   work_item_id TEXT NOT NULL,
   workflow_id TEXT NOT NULL,
   workflow_version TEXT NOT NULL,
+  workflow_digest TEXT NOT NULL DEFAULT '',
+  route_digest TEXT NOT NULL DEFAULT '',
+  route_snapshot_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(route_snapshot_json) AND json_type(route_snapshot_json) = 'object'),
+  priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
   status TEXT NOT NULL CHECK (status IN ('draft', 'ready', 'queued', 'running', 'waiting', 'blocked', 'completed', 'failed', 'cancelled', 'reconcile_required')),
+  resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
+  last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (
+    (workflow_digest = '' AND route_digest = '' AND route_snapshot_json = '{}') OR
+    (length(workflow_digest) = 64 AND workflow_digest NOT GLOB '*[^0-9a-f]*' AND
+     length(route_digest) = 64 AND route_digest NOT GLOB '*[^0-9a-f]*' AND route_snapshot_json <> '{}')
+  )
+) STRICT;
+
+CREATE TABLE project_projection (
+  project_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL CHECK (name <> ''),
+  source_hash TEXT NOT NULL CHECK (length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'),
+  status TEXT NOT NULL CHECK (status IN ('active', 'archived')),
   resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
   last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 ) STRICT;
 
+CREATE TABLE work_item_projection (
+  work_item_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES project_projection(project_id),
+  title TEXT NOT NULL CHECK (title <> ''),
+  source_hash TEXT NOT NULL CHECK (length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'),
+  priority INTEGER NOT NULL CHECK (priority >= 0),
+  status TEXT NOT NULL CHECK (status IN ('open', 'active', 'completed', 'cancelled')),
+  resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
+  last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX work_item_projection_project ON work_item_projection(project_id, priority DESC, created_at, work_item_id);
+
+CREATE TABLE story_projection (
+  story_id TEXT PRIMARY KEY,
+  work_item_id TEXT NOT NULL REFERENCES work_item_projection(work_item_id),
+  title TEXT NOT NULL CHECK (title <> ''),
+  source_hash TEXT NOT NULL CHECK (length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'),
+  priority INTEGER NOT NULL CHECK (priority >= 0),
+  position INTEGER NOT NULL CHECK (position >= 0),
+  status TEXT NOT NULL CHECK (status IN ('planned', 'ready', 'running', 'completed', 'cancelled', 'retired')),
+  resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
+  last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX story_projection_work_item ON story_projection(work_item_id, position, priority DESC, story_id);
+
+CREATE TABLE point_projection (
+  point_id TEXT PRIMARY KEY,
+  story_id TEXT NOT NULL REFERENCES story_projection(story_id),
+  revision INTEGER NOT NULL CHECK (revision >= 1),
+  title TEXT NOT NULL CHECK (title <> ''),
+  source_hash TEXT NOT NULL CHECK (length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'),
+  priority INTEGER NOT NULL CHECK (priority >= 0),
+  position INTEGER NOT NULL CHECK (position >= 0),
+  status TEXT NOT NULL CHECK (status IN ('planned', 'ready', 'running', 'validating', 'awaiting_approval', 'accepted', 'committed', 'published', 'failed', 'rejected', 'superseded', 'reconcile_required')),
+  resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
+  last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX point_projection_story ON point_projection(story_id, position, priority DESC, point_id);
+
+CREATE TABLE point_dependencies (
+  point_id TEXT NOT NULL REFERENCES point_projection(point_id),
+  depends_on_point_id TEXT NOT NULL REFERENCES point_projection(point_id),
+  source_revision INTEGER NOT NULL CHECK (source_revision >= 1),
+  PRIMARY KEY(point_id, depends_on_point_id),
+  CHECK (point_id <> depends_on_point_id)
+) STRICT;
+
 CREATE TABLE attempt_projection (
   attempt_id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL,
   visit_id TEXT NOT NULL DEFAULT '',
-  node_id TEXT NOT NULL,
+  node_id TEXT NOT NULL DEFAULT '',
+  point_id TEXT REFERENCES point_projection(point_id),
+  point_revision INTEGER,
+  priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
   scenario TEXT NOT NULL,
   provider TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('created', 'starting', 'running', 'validating', 'succeeded', 'failed', 'cancelled', 'interrupted', 'reconcile_required')),
@@ -134,6 +215,10 @@ CREATE TABLE attempt_projection (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK (
+    (point_id IS NULL AND point_revision IS NULL AND node_id <> '') OR
+    (point_id IS NOT NULL AND point_revision IS NOT NULL AND point_revision >= 1 AND visit_id = '' AND node_id = '')
+  ),
+  CHECK (
     (provider_thread_id = '' AND provider_turn_id = '' AND process_owner_id = '' AND last_sequence = 0) OR
     (provider_thread_id <> '' AND provider_turn_id <> '' AND process_owner_id <> '')
   ),
@@ -141,6 +226,7 @@ CREATE TABLE attempt_projection (
 ) STRICT;
 
 CREATE INDEX attempt_projection_run ON attempt_projection(run_id, created_at, attempt_id);
+CREATE INDEX attempt_projection_point ON attempt_projection(point_id, point_revision, created_at, attempt_id);
 CREATE INDEX attempt_projection_active ON attempt_projection(status, updated_at);
 
 CREATE TABLE node_projection (

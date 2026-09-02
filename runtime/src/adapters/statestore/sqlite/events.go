@@ -23,6 +23,7 @@ var (
 	kindPattern      = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 	aggregateTypes   = map[statestore.AggregateType]string{
 		statestore.AggregateProject: "project_", statestore.AggregateWork: "work_",
+		statestore.AggregateStory: "story_", statestore.AggregatePoint: "point_",
 		statestore.AggregateRun: "run_", statestore.AggregateVisit: "visit_",
 		statestore.AggregateAttempt: "attempt_", statestore.AggregateArtifact: "artifact_",
 		statestore.AggregateApproval: "approval_", statestore.AggregateOperation: "operation_",
@@ -408,7 +409,7 @@ func (d *Database) RebuildProjections(ctx context.Context) (err error) {
 	if closeErr != nil {
 		return fmt.Errorf("close replay events: %w", closeErr)
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM attempt_projection; DELETE FROM approval_projection; DELETE FROM projection_checkpoints`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM point_dependencies; DELETE FROM attempt_projection; DELETE FROM point_projection; DELETE FROM story_projection; DELETE FROM work_item_projection; DELETE FROM project_projection; DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM approval_projection; DELETE FROM projection_checkpoints`); err != nil {
 		return fmt.Errorf("clear projections: %w", err)
 	}
 	for _, event := range events {
@@ -541,6 +542,58 @@ func applyProjection(ctx context.Context, tx *sql.Tx, event statestore.Event) er
 		return &projection.UnsupportedSchemaVersionError{EventID: event.ID, Version: event.SchemaVersion}
 	}
 	switch event.AggregateType {
+	case statestore.AggregateProject:
+		current, err := readProjectProjection(ctx, tx, event.AggregateID)
+		var existing *statestore.ProjectProjection
+		if err == nil {
+			existing = &current
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		next, applies, err := projection.ReduceProject(existing, event)
+		if err != nil || !applies {
+			return err
+		}
+		return writeProjectProjection(ctx, tx, next)
+	case statestore.AggregateWork:
+		current, err := readWorkItemProjection(ctx, tx, event.AggregateID)
+		var existing *statestore.WorkItemProjection
+		if err == nil {
+			existing = &current
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		next, applies, err := projection.ReduceWorkItem(existing, event)
+		if err != nil || !applies {
+			return err
+		}
+		return writeWorkItemProjection(ctx, tx, next)
+	case statestore.AggregateStory:
+		current, err := readStoryProjection(ctx, tx, event.AggregateID)
+		var existing *statestore.StoryProjection
+		if err == nil {
+			existing = &current
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		next, applies, err := projection.ReduceStory(existing, event)
+		if err != nil || !applies {
+			return err
+		}
+		return writeStoryProjection(ctx, tx, next)
+	case statestore.AggregatePoint:
+		current, err := readPointProjection(ctx, tx, event.AggregateID)
+		var existing *statestore.PointProjection
+		if err == nil {
+			existing = &current
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		next, applies, err := projection.ReducePoint(existing, event)
+		if err != nil || !applies {
+			return err
+		}
+		return writePointProjection(ctx, tx, next)
 	case statestore.AggregateRun:
 		current, err := readRunProjection(ctx, tx, event.AggregateID)
 		var existing *statestore.RunProjection
@@ -626,12 +679,17 @@ type rowQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-func readRunProjection(ctx context.Context, query rowQueryer, id string) (statestore.RunProjection, error) {
+const runSelect = `SELECT run_id, work_item_id, workflow_id, workflow_version,
+	workflow_digest, route_digest, route_snapshot_json, priority, status,
+	resource_version, last_global_position, created_at, updated_at FROM run_projection`
+
+type runRowScanner interface{ Scan(...any) error }
+
+func scanRunProjection(row runRowScanner) (statestore.RunProjection, error) {
 	var result statestore.RunProjection
 	var createdAt, updatedAt string
-	err := query.QueryRowContext(ctx, `SELECT run_id, work_item_id, workflow_id, workflow_version, status,
-		resource_version, last_global_position, created_at, updated_at FROM run_projection WHERE run_id = ?`, id).Scan(
-		&result.RunID, &result.WorkItemID, &result.WorkflowID, &result.WorkflowVersion, &result.Status,
+	err := row.Scan(&result.RunID, &result.WorkItemID, &result.WorkflowID, &result.WorkflowVersion,
+		&result.WorkflowDigest, &result.RouteDigest, &result.RouteSnapshot, &result.Priority, &result.Status,
 		&result.ResourceVersion, &result.LastGlobalPosition, &createdAt, &updatedAt)
 	if err != nil {
 		return statestore.RunProjection{}, err
@@ -642,6 +700,10 @@ func readRunProjection(ctx context.Context, query rowQueryer, id string) (states
 	}
 	result.UpdatedAt, err = parseTime(updatedAt)
 	return result, err
+}
+
+func readRunProjection(ctx context.Context, query rowQueryer, id string) (statestore.RunProjection, error) {
+	return scanRunProjection(query.QueryRowContext(ctx, runSelect+` WHERE run_id = ?`, id))
 }
 
 func readApprovalProjection(ctx context.Context, query rowQueryer, id string) (statestore.ApprovalProjection, error) {
@@ -662,7 +724,7 @@ func readApprovalProjection(ctx context.Context, query rowQueryer, id string) (s
 	return result, err
 }
 
-const attemptSelect = `SELECT attempt_id, run_id, visit_id, node_id, scenario, provider, status,
+const attemptSelect = `SELECT attempt_id, run_id, visit_id, node_id, point_id, point_revision, priority, scenario, provider, status,
 	provider_thread_id, provider_turn_id, process_owner_id, last_sequence, log_reference,
 	resource_version, last_global_position, created_at, updated_at FROM attempt_projection`
 
@@ -671,11 +733,17 @@ type attemptRowScanner interface{ Scan(...any) error }
 func scanAttemptProjection(row attemptRowScanner) (statestore.AttemptProjection, error) {
 	var value statestore.AttemptProjection
 	var createdAt, updatedAt string
-	err := row.Scan(&value.AttemptID, &value.RunID, &value.VisitID, &value.NodeID, &value.Scenario, &value.Provider, &value.Status,
+	var pointID sql.NullString
+	var pointRevision sql.NullInt64
+	err := row.Scan(&value.AttemptID, &value.RunID, &value.VisitID, &value.NodeID, &pointID, &pointRevision, &value.Priority, &value.Scenario, &value.Provider, &value.Status,
 		&value.ProviderThreadID, &value.ProviderTurnID, &value.ProcessOwnerID, &value.LastSequence, &value.LogReference,
 		&value.ResourceVersion, &value.LastGlobalPosition, &createdAt, &updatedAt)
 	if err != nil {
 		return statestore.AttemptProjection{}, err
+	}
+	if pointID.Valid {
+		value.PointID = pointID.String
+		value.PointRevision = uint64(pointRevision.Int64)
 	}
 	value.CreatedAt, err = parseTime(createdAt)
 	if err == nil {
@@ -689,10 +757,17 @@ func readAttemptProjection(ctx context.Context, query rowQueryer, id string) (st
 }
 
 func writeRunProjection(ctx context.Context, tx *sql.Tx, value statestore.RunProjection) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO run_projection VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(run_id) DO UPDATE SET status=excluded.status, resource_version=excluded.resource_version,
+	routeSnapshot := value.RouteSnapshot
+	if len(routeSnapshot) == 0 {
+		routeSnapshot = statestore.JSONSnapshot(`{}`)
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO run_projection VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(run_id) DO UPDATE SET workflow_digest=excluded.workflow_digest,
+		route_digest=excluded.route_digest, route_snapshot_json=excluded.route_snapshot_json,
+		status=excluded.status, resource_version=excluded.resource_version,
 		last_global_position=excluded.last_global_position, updated_at=excluded.updated_at`,
-		value.RunID, value.WorkItemID, value.WorkflowID, value.WorkflowVersion, value.Status,
+		value.RunID, value.WorkItemID, value.WorkflowID, value.WorkflowVersion, value.WorkflowDigest,
+		value.RouteDigest, string(routeSnapshot), value.Priority, value.Status,
 		value.ResourceVersion, value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("write run projection %s: %w", value.RunID, err)
@@ -725,13 +800,22 @@ func writeApprovalProjection(ctx context.Context, tx *sql.Tx, value statestore.A
 }
 
 func writeAttemptProjection(ctx context.Context, tx *sql.Tx, value statestore.AttemptProjection) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO attempt_projection VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	var pointID, pointRevision any
+	if value.PointID != "" {
+		pointID, pointRevision = value.PointID, value.PointRevision
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO attempt_projection(
+		attempt_id, run_id, visit_id, node_id, point_id, point_revision, priority, scenario, provider, status,
+		provider_thread_id, provider_turn_id, process_owner_id, last_sequence, log_reference,
+		resource_version, last_global_position, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(attempt_id) DO UPDATE SET status=excluded.status,
 		provider_thread_id=excluded.provider_thread_id, provider_turn_id=excluded.provider_turn_id,
 		process_owner_id=excluded.process_owner_id, last_sequence=excluded.last_sequence,
 		resource_version=excluded.resource_version, last_global_position=excluded.last_global_position,
 		updated_at=excluded.updated_at`,
-		value.AttemptID, value.RunID, value.VisitID, value.NodeID, value.Scenario, value.Provider, value.Status,
+		value.AttemptID, value.RunID, value.VisitID, value.NodeID, pointID, pointRevision, value.Priority,
+		value.Scenario, value.Provider, value.Status,
 		value.ProviderThreadID, value.ProviderTurnID, value.ProcessOwnerID, value.LastSequence, value.LogReference,
 		value.ResourceVersion, value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
 	if err != nil {
