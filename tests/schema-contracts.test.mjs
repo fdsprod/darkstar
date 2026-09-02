@@ -49,6 +49,20 @@ test("project and work command contracts publish exact request variants and aggr
   assert.deepEqual(api.components.schemas.WorkItem.properties.status.enum, ["open", "active", "completed", "cancelled"]);
 });
 
+test("run controls publish the complete optimistic-concurrency surface", () => {
+  const api = JSON.parse(readFileSync(resolve(root, "schemas", "openapi-v1alpha1.json"), "utf8"));
+  for (const action of ["pause", "resume", "retry", "continue", "cancel"]) {
+    const operation = api.paths[`/api/v1/runs/{runId}/${action}`].post;
+    assert.equal(operation.operationId, `${action}Run`);
+    assert.deepEqual(operation.parameters.map((parameter) => parameter.$ref), [
+      "#/components/parameters/RunId", "#/components/parameters/IdempotencyKey", "#/components/parameters/IfMatch"
+    ]);
+    assert.equal(operation.responses["200"].content["application/json"].schema.$ref, "#/components/schemas/Run");
+  }
+  assert.equal(api.components.schemas.RetryRunRequest.additionalProperties, false);
+  assert.deepEqual(api.components.schemas.ContinueRunRequest.required, ["until"]);
+});
+
 test("provider and artifact boundaries are published as strict schemas", () => {
   for (const name of ["provider-v1alpha1.schema.json", "artifact-v1alpha1.schema.json"]) {
     const schema = JSON.parse(readFileSync(resolve(root, "schemas", name), "utf8"));

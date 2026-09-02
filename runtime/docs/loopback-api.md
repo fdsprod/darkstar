@@ -89,6 +89,15 @@ scenario, provider identity, and last sequence and resumes strictly after the
 last durable event, so provider events and terminal transitions are not
 duplicated.
 
+Run controls are `POST /api/v1/runs/{runId}/{pause|resume|retry|continue|cancel}`.
+Every control requires `Idempotency-Key` and a quoted positive `If-Match`
+resource version. Pause, resume, and cancel have no body; retry accepts an
+optional `nodeId`; continue requires an `until` terminal boundary. Successful
+commands return the updated run and `ETag`. A stale version returns
+`RUN_VERSION_CONFLICT`, an illegal lifecycle edge returns
+`RUN_CONTROL_INVALID_TRANSITION`, and exact command retries replay their durable
+response without applying the transition twice.
+
 `GET /api/v1/runs/{runId}/export` returns a finite `application/zip` support
 bundle. It contains `run.json`, correlated `events.jsonl`, `commands.json`, an
 `artifacts/index.json`, and every discovered log that remains locally available.

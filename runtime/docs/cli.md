@@ -36,6 +36,24 @@ is optional for interactive use and lets automation safely repeat the same start
 `darkstar run watch <run-id>` replays the authenticated event stream until the
 run reaches a terminal event, then prints the final persisted projection.
 
+Run controls have direct CLI/API parity:
+
+```text
+darkstar run pause <run-id>
+darkstar run resume <run-id>
+darkstar run retry <run-id> [--node <id>]
+darkstar run continue <run-id> --until <node>
+darkstar run cancel <run-id>
+```
+
+Each command reads the current resource version and submits it as an optimistic
+concurrency precondition. Pause moves queued or running work to `waiting` while
+preserving the active attempt cursor; resume requeues waiting or blocked work;
+retry creates a fresh attempt without rewriting the failed attempt; continue
+strictly extends a completed frozen route; and cancel closes active children and
+terminates a live provider handle. Every control accepts `--idempotency-key` for
+safe automation retries, and stale or illegal transitions fail explicitly.
+
 `darkstar run export <run-id> --output <file>` downloads the daemon-created ZIP
 without duplicating export or redaction logic in the client. The CLI resolves the
 output to an absolute path, writes a protected temporary file in the destination
