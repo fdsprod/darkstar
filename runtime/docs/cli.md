@@ -33,11 +33,41 @@ directory, and atomically publishes it. It refuses to overwrite an existing
 file. With `--json`, stdout contains the run ID, absolute output path, and byte
 size while the bundle remains at the requested path.
 
+## Artifact commands
+
+Artifact commands use the same daemon-owned application service as the HTTP API:
+
+```text
+darkstar artifact ingest (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--role <role>]... [--tag <tag>]... [--sensitivity <level>]
+darkstar artifact revise <artifact-id> (--file <path> | --paste <text> | --stdin) [metadata options]
+darkstar artifact attach <artifact-id>@<version> --to <kind>:<id>
+darkstar artifact detach <binding-id>
+darkstar artifact list [--target <kind>:<id>]
+darkstar artifact show <artifact-id>@<version>
+darkstar artifact diff <artifact-id> --from <version> --to <version>
+darkstar artifact extract <artifact-id>@<version>
+darkstar artifact lint <artifact-id>@<version>
+darkstar artifact representations <artifact-id>@<version>
+darkstar artifact impact <artifact-id>@<version> --target <kind>:<id> [--run <run-id>]
+```
+
+Ingestion accepts exactly one source and reads at most 25 MiB. File media type is
+inferred from its extension unless overridden. Sensitivity is one of `unknown`,
+`public`, `internal`, `sensitive`, or `secret`; target kind is one of `project`,
+`work`, `run`, `node`, `checkpoint`, `decision`, `story`, or
+`implementation_point`. Mutations generate a fresh idempotency key, while all
+version-sensitive reads require an exact `<artifact-id>@<version>` reference.
+
+Human `artifact lint` exits with class 7 when findings exist. In machine mode,
+every successful artifact command returns `{"schemaVersion":1,"result":...}`;
+the `result` value is the same resource returned by the HTTP operation.
+
 ## Machine output
 
 Every finite human-readable command accepts `--json` as its final argument. A
 successful command writes exactly one JSON value to stdout and includes
-`"schemaVersion": 1`; it writes no progress prose to either stream. A failed
+`"schemaVersion": 1`; artifact commands place their resource under `result`.
+It writes no progress prose to either stream. A failed
 machine-mode command writes exactly one error value to stdout and uses its process
 exit class for branching. Stderr is reserved for failures that prevent JSON from
 being encoded or written.

@@ -34,6 +34,37 @@
     },
     "/api/v1/logs/{reference}": {
       "get": {"operationId":"readLog","parameters":[{"$ref":"#/components/parameters/LogReference"},{"$ref":"#/components/parameters/LogAfter"},{"$ref":"#/components/parameters/LogLimit"}],"responses":{"200":{"description":"Bounded log bytes","headers":{"X-Darkstar-Log-Offset":{"schema":{"type":"integer","minimum":0}},"X-Darkstar-Log-Next-Offset":{"schema":{"type":"integer","minimum":0}},"X-Darkstar-Log-Size":{"schema":{"type":"integer","minimum":0}},"X-Darkstar-Log-Complete":{"schema":{"type":"boolean"}}},"content":{"application/octet-stream":{"schema":{"type":"string","format":"binary"}}}},"416":{"description":"Log cursor is beyond the current size","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifacts": {
+      "get": {"operationId":"listArtifacts","parameters":[{"name":"targetKind","in":"query","schema":{"$ref":"#/components/schemas/ArtifactTargetKind"}},{"name":"targetId","in":"query","schema":{"type":"string"}}],"responses":{"200":{"description":"Latest artifacts, optionally restricted to an exact attachment target","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/ArtifactView"}}}}},"default":{"$ref":"#/components/responses/Error"}}},
+      "post": {"operationId":"ingestArtifact","parameters":[{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactIngestRequest"}}}},"responses":{"201":{"description":"Immutable artifact version stored","headers":{"Location":{"schema":{"type":"string"}}},"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactIngestResult"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifacts/{artifactId}": {
+      "get": {"operationId":"getArtifact","parameters":[{"$ref":"#/components/parameters/ArtifactId"},{"$ref":"#/components/parameters/OptionalArtifactVersion"}],"responses":{"200":{"description":"Exact or latest artifact view","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactView"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifacts/{artifactId}/revisions": {
+      "post": {"operationId":"reviseArtifact","parameters":[{"$ref":"#/components/parameters/ArtifactId"},{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactIngestRequest"}}}},"responses":{"201":{"description":"New immutable artifact version stored","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactIngestResult"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifacts/{artifactId}/diff": {
+      "get": {"operationId":"diffArtifactVersions","parameters":[{"$ref":"#/components/parameters/ArtifactId"},{"$ref":"#/components/parameters/FromArtifactVersion"},{"$ref":"#/components/parameters/ToArtifactVersion"}],"responses":{"200":{"description":"Metadata and representation differences between exact versions","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactVersionDiff"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifacts/{artifactId}/extract": {
+      "post": {"operationId":"extractArtifact","parameters":[{"$ref":"#/components/parameters/ArtifactId"},{"$ref":"#/components/parameters/ArtifactVersion"},{"$ref":"#/components/parameters/IdempotencyKey"}],"responses":{"200":{"description":"Derived representations","content":{"application/json":{"schema":{"type":"object"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifacts/{artifactId}/lint": {
+      "get": {"operationId":"lintArtifact","parameters":[{"$ref":"#/components/parameters/ArtifactId"},{"$ref":"#/components/parameters/ArtifactVersion"}],"responses":{"200":{"description":"Artifact validation findings","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactLintResult"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifacts/{artifactId}/representations": {
+      "get": {"operationId":"listArtifactRepresentations","parameters":[{"$ref":"#/components/parameters/ArtifactId"},{"$ref":"#/components/parameters/ArtifactVersion"}],"responses":{"200":{"description":"Derived representations for an exact artifact version","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/ArtifactRepresentation"}}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifacts/{artifactId}/impact": {
+      "post": {"operationId":"assessArtifactImpact","parameters":[{"$ref":"#/components/parameters/ArtifactId"},{"$ref":"#/components/parameters/ArtifactVersion"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactImpactRequest"}}}},"responses":{"200":{"description":"Late-evidence impact assessment","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactImpactAssessment"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifact-bindings": {
+      "post": {"operationId":"attachArtifact","parameters":[{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactAttachRequest"}}}},"responses":{"201":{"description":"Artifact attached to an exact target","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactBinding"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/artifact-bindings/{bindingId}": {
+      "delete": {"operationId":"detachArtifact","parameters":[{"name":"bindingId","in":"path","required":true,"schema":{"type":"string"}},{"$ref":"#/components/parameters/IdempotencyKey"}],"responses":{"200":{"description":"Artifact attachment deactivated","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ArtifactBinding"}}}},"default":{"$ref":"#/components/responses/Error"}}}
     }
   },
   "components": {
@@ -45,6 +76,11 @@
       "LogReference":{"name":"reference","in":"path","required":true,"schema":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}},
       "LogAfter":{"name":"after","in":"query","required":false,"schema":{"type":"integer","minimum":0,"default":0}},
       "LogLimit":{"name":"limit","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":1048576,"default":65536}},
+      "ArtifactId":{"name":"artifactId","in":"path","required":true,"schema":{"type":"string","pattern":"^artifact_"}},
+      "ArtifactVersion":{"name":"version","in":"query","required":true,"schema":{"type":"integer","minimum":1}},
+      "OptionalArtifactVersion":{"name":"version","in":"query","required":false,"schema":{"type":"integer","minimum":1}},
+      "FromArtifactVersion":{"name":"from","in":"query","required":true,"schema":{"type":"integer","minimum":1}},
+      "ToArtifactVersion":{"name":"to","in":"query","required":true,"schema":{"type":"integer","minimum":1}},
       "IdempotencyKey":{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":128}},
       "IfMatch":{"name":"If-Match","in":"header","required":true,"schema":{"type":"string"}}
     },
@@ -55,6 +91,20 @@
       "Health":{"type":"object","additionalProperties":false,"required":["schemaVersion","status","apiVersions"],"properties":{"schemaVersion":{"const":1},"status":{"const":"ok"},"apiVersions":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["v1"]}},"recovery":{"$ref":"#/components/schemas/RecoveryStatus"}}},
       "ApiRoot":{"type":"object","additionalProperties":false,"required":["schemaVersion","apiVersion"],"properties":{"schemaVersion":{"const":1},"apiVersion":{"const":"v1"},"recovery":{"$ref":"#/components/schemas/RecoveryStatus"}}},
       "DoctorReport":{"$ref":"./health-report-v1alpha1.schema.json"},
+      "Artifact":{"$ref":"./artifact-v1alpha1.schema.json#/$defs/artifact"},
+      "ArtifactRepresentation":{"$ref":"./artifact-v1alpha1.schema.json#/$defs/representation"},
+      "ArtifactBinding":{"$ref":"./artifact-v1alpha1.schema.json#/$defs/artifactBinding"},
+      "ArtifactImpactAssessment":{"$ref":"./artifact-v1alpha1.schema.json#/$defs/impactAssessment"},
+      "ArtifactTargetKind":{"enum":["project","work","run","node","checkpoint","decision","story","implementation_point"]},
+      "ArtifactVersionRef":{"type":"object","additionalProperties":false,"required":["artifactId","version"],"properties":{"artifactId":{"type":"string","pattern":"^artifact_"},"version":{"type":"integer","minimum":1}}},
+      "ArtifactTarget":{"type":"object","additionalProperties":false,"required":["kind","id"],"properties":{"kind":{"$ref":"#/components/schemas/ArtifactTargetKind"},"id":{"type":"string","minLength":1}}},
+      "ArtifactIngestRequest":{"type":"object","additionalProperties":false,"required":["sourceKind","sourceName","mediaType","content"],"properties":{"artifactId":{"type":"string","pattern":"^artifact_"},"sourceKind":{"enum":["file","paste","stdin","generated","external"]},"sourceName":{"type":"string"},"mediaType":{"type":"string"},"content":{"type":"string","contentEncoding":"base64"},"sensitivity":{"enum":["unknown","public","internal","sensitive","secret"]},"creator":{"type":"string"},"roles":{"type":"array","items":{"type":"string"},"uniqueItems":true},"tags":{"type":"array","items":{"type":"string"},"uniqueItems":true}}},
+      "ArtifactIngestResult":{"type":"object","required":["artifact","created","capability","diagnostics"],"properties":{"artifact":{"$ref":"#/components/schemas/Artifact"},"created":{"type":"boolean"},"duplicateOf":{"$ref":"#/components/schemas/ArtifactVersionRef"},"capability":{"type":"object"},"diagnostics":{"type":"array","items":{"type":"string"}}}},
+      "ArtifactView":{"type":"object","additionalProperties":false,"required":["artifact","freshness","representations"],"properties":{"artifact":{"$ref":"#/components/schemas/Artifact"},"freshness":{"enum":["current","stale","invalid"]},"representations":{"type":"array","items":{"$ref":"#/components/schemas/ArtifactRepresentation"}}}},
+      "ArtifactAttachRequest":{"type":"object","additionalProperties":false,"required":["artifact","target"],"properties":{"bindingId":{"type":"string"},"artifact":{"$ref":"#/components/schemas/ArtifactVersionRef"},"target":{"$ref":"#/components/schemas/ArtifactTarget"}}},
+      "ArtifactImpactRequest":{"type":"object","additionalProperties":false,"required":["target"],"properties":{"target":{"$ref":"#/components/schemas/ArtifactTarget"},"runId":{"type":"string"}}},
+      "ArtifactLintResult":{"type":"object","additionalProperties":false,"required":["artifact","valid","issues"],"properties":{"artifact":{"$ref":"#/components/schemas/ArtifactVersionRef"},"valid":{"type":"boolean"},"issues":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["code","message"],"properties":{"code":{"type":"string"},"message":{"type":"string"}}}}}},
+      "ArtifactVersionDiff":{"type":"object","additionalProperties":false,"required":["artifactId","from","to","changed","fromDigest","toDigest","representations"],"properties":{"artifactId":{"type":"string"},"from":{"type":"integer","minimum":1},"to":{"type":"integer","minimum":1},"changed":{"type":"array","items":{"enum":["content","mediaType","sensitivity","roles","tags"]},"uniqueItems":true},"fromDigest":{"type":"string"},"toDigest":{"type":"string"},"representations":{"type":"object","required":["from","to"],"properties":{"from":{"type":"array","items":{"type":"string"}},"to":{"type":"array","items":{"type":"string"}}}}}},
       "RunExportManifest":{"$ref":"./run-export-manifest-v1alpha1.schema.json"},
       "CreateRunRequest":{"type":"object","additionalProperties":false,"required":["workItemId","workflowId","workflowVersion"],"properties":{"workItemId":{"type":"string"},"workflowId":{"type":"string"},"workflowVersion":{"type":"string"}}},
       "StartFakeRunRequest":{"type":"object","additionalProperties":false,"required":["scenario"],"properties":{"scenario":{"enum":["fake-success","fake-restart"]}}},

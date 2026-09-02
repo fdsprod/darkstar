@@ -16,11 +16,18 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/fdsprod/darkstar/runtime/src/adapters/artifactstore/folder"
+	"github.com/fdsprod/darkstar/runtime/src/adapters/contentprocessor/common"
+	"github.com/fdsprod/darkstar/runtime/src/adapters/contentprocessor/commonimage"
 	"github.com/fdsprod/darkstar/runtime/src/adapters/provider/fake"
 	"github.com/fdsprod/darkstar/runtime/src/adapters/statestore/sqlite"
 	localapi "github.com/fdsprod/darkstar/runtime/src/api"
 	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
+	"github.com/fdsprod/darkstar/runtime/src/core/artifactderive"
+	"github.com/fdsprod/darkstar/runtime/src/core/artifactingest"
+	"github.com/fdsprod/darkstar/runtime/src/core/artifactops"
 	"github.com/fdsprod/darkstar/runtime/src/core/health"
+	"github.com/fdsprod/darkstar/runtime/src/core/lateevidence"
 	"github.com/fdsprod/darkstar/runtime/src/core/recovery"
 	"github.com/fdsprod/darkstar/runtime/src/core/runexecution"
 	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
@@ -38,6 +45,7 @@ Usage:
 
 Commands:
   api        Inspect the autostarted local API
+  artifact   Ingest, bind, inspect, derive, lint, and revise artifacts
   daemon     Run and control the per-user daemon
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
@@ -52,6 +60,17 @@ Run commands:
   run show <run-id> [--json]
   run watch <run-id> [--json]
   run export <run-id> --output <file> [--json]
+
+Artifact commands:
+  artifact ingest (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--role <role>] [--json]
+  artifact attach <artifact-id>@<version> --to <kind>:<id> [--json]
+  artifact detach <binding-id> [--json]
+  artifact list [--target <kind>:<id>] [--json]
+  artifact show <artifact-id>@<version> [--json]
+  artifact diff <artifact-id> --from <version> --to <version> [--json]
+  artifact extract|lint|representations <artifact-id>@<version> [--json]
+  artifact revise <artifact-id> (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--json]
+  artifact impact <artifact-id>@<version> --target <kind>:<id> [--run <run-id>] [--json]
 
 Daemon commands:
   daemon run [--json]      Run in the foreground
@@ -116,6 +135,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runDaemon(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "api":
 		return runAPI(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "artifact":
+		return runArtifact(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "doctor":
 		return runDoctor(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "run":
@@ -261,6 +282,40 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		service.executions = nil
 		return err
+	}
+	closeArtifactSetup := func(cause error) error {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		service.executions = nil
+		return cause
+	}
+	artifactRoot, err := folder.ResolveRoot("", service.projectRoot)
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	artifactStore, err := folder.New(artifactRoot)
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	derivation, err := artifactderive.New(artifactStore, database, database, common.New(), commonimage.New())
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	ingestion, err := artifactingest.New(artifactStore, database, derivation)
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	impact, err := lateevidence.New(database, database, database, database, database)
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	artifacts, err := artifactops.New(database, database, database, database, ingestion, derivation, impact)
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	if err := service.server.SetArtifacts(artifacts); err != nil {
+		return closeArtifactSetup(err)
 	}
 	exporter, err := runexport.New(database, logs)
 	if err != nil {

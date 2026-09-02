@@ -1,0 +1,343 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"path"
+	"strconv"
+	"strings"
+
+	"github.com/fdsprod/darkstar/runtime/src/core/artifactderive"
+	"github.com/fdsprod/darkstar/runtime/src/core/artifactingest"
+	"github.com/fdsprod/darkstar/runtime/src/core/artifactops"
+	"github.com/fdsprod/darkstar/runtime/src/core/lateevidence"
+	"github.com/fdsprod/darkstar/runtime/src/ports/artifactbinding"
+	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
+	"github.com/fdsprod/darkstar/runtime/src/ports/impactassessment"
+	"github.com/fdsprod/darkstar/runtime/src/ports/representationregistry"
+)
+
+const maxArtifactRequestBytes = 36 << 20
+
+type ArtifactService interface {
+	Ingest(context.Context, artifactops.IngestInput, string) (artifactingest.Result, error)
+	Revise(context.Context, string, artifactops.IngestInput, string) (artifactingest.Result, error)
+	Attach(context.Context, artifactops.AttachInput, string) (artifactbinding.Version, error)
+	Detach(context.Context, string, string) (artifactbinding.Version, error)
+	List(context.Context, artifactops.ListInput) ([]artifactops.ArtifactView, error)
+	Show(context.Context, string, uint64) (artifactops.ArtifactView, error)
+	Representations(context.Context, artifactregistry.VersionRef) ([]representationregistry.Representation, error)
+	Extract(context.Context, artifactregistry.VersionRef, string) (artifactderive.Result, error)
+	Diff(context.Context, string, uint64, uint64) (artifactops.VersionDiff, error)
+	Lint(context.Context, artifactregistry.VersionRef) (artifactops.LintResult, error)
+	Impact(context.Context, lateevidence.Request) (impactassessment.Assessment, error)
+}
+
+func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Request, requestID string) {
+	s.mu.RLock()
+	service := s.artifacts
+	s.mu.RUnlock()
+	if service == nil {
+		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "ARTIFACT_SERVICE_UNAVAILABLE", Message: "Artifact operations are not configured.", RequestID: requestID, Retryable: true})
+		return
+	}
+	clean := strings.Trim(path.Clean(request.URL.Path), "/")
+	segments := strings.Split(clean, "/")
+	if len(segments) < 3 {
+		writeArtifactError(response, requestID, errors.New("invalid artifact route"))
+		return
+	}
+	if segments[2] == "artifact-bindings" {
+		s.serveArtifactBindings(response, request, requestID, service, segments[3:])
+		return
+	}
+	if segments[2] != "artifacts" {
+		writeArtifactError(response, requestID, errors.New("invalid artifact route"))
+		return
+	}
+	if len(segments) == 3 {
+		s.serveArtifactCollection(response, request, requestID, service)
+		return
+	}
+	artifactID := segments[3]
+	if !strings.HasPrefix(artifactID, "artifact_") {
+		writeArtifactError(response, requestID, artifactregistry.ErrNotFound)
+		return
+	}
+	if len(segments) == 4 {
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writeArtifactMethod(response, requestID, "GET, HEAD")
+			return
+		}
+		version, err := queryVersion(request.URL.Query(), "version", false)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		value, err := service.Show(request.Context(), artifactID, version)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
+		return
+	}
+	if len(segments) != 5 {
+		writeArtifactError(response, requestID, artifactregistry.ErrNotFound)
+		return
+	}
+	switch segments[4] {
+	case "revisions":
+		if request.Method != http.MethodPost {
+			writeArtifactMethod(response, requestID, "POST")
+			return
+		}
+		var input artifactops.IngestInput
+		if err := decodeArtifactJSON(request, &input); err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		key, err := artifactIdempotencyKey(request)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		value, err := service.Revise(request.Context(), artifactID, input, key)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusCreated, value)
+	case "diff":
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writeArtifactMethod(response, requestID, "GET, HEAD")
+			return
+		}
+		from, err := queryVersion(request.URL.Query(), "from", true)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		to, err := queryVersion(request.URL.Query(), "to", true)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		value, err := service.Diff(request.Context(), artifactID, from, to)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
+	case "extract":
+		if request.Method != http.MethodPost {
+			writeArtifactMethod(response, requestID, "POST")
+			return
+		}
+		version, err := queryVersion(request.URL.Query(), "version", true)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		key, err := artifactIdempotencyKey(request)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		value, err := service.Extract(request.Context(), artifactregistry.VersionRef{ArtifactID: artifactID, Version: version}, key)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
+	case "lint":
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writeArtifactMethod(response, requestID, "GET, HEAD")
+			return
+		}
+		version, err := queryVersion(request.URL.Query(), "version", true)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		value, err := service.Lint(request.Context(), artifactregistry.VersionRef{ArtifactID: artifactID, Version: version})
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
+	case "representations":
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writeArtifactMethod(response, requestID, "GET, HEAD")
+			return
+		}
+		version, err := queryVersion(request.URL.Query(), "version", true)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		value, err := service.Representations(request.Context(), artifactregistry.VersionRef{ArtifactID: artifactID, Version: version})
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
+	case "impact":
+		if request.Method != http.MethodPost {
+			writeArtifactMethod(response, requestID, "POST")
+			return
+		}
+		version, err := queryVersion(request.URL.Query(), "version", true)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		var input struct {
+			Target artifactbinding.Target `json:"target"`
+			RunID  string                 `json:"runId,omitempty"`
+		}
+		if err := decodeArtifactJSON(request, &input); err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		value, err := service.Impact(request.Context(), lateevidence.Request{Evidence: artifactregistry.VersionRef{ArtifactID: artifactID, Version: version}, Target: input.Target, RunID: input.RunID})
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
+	default:
+		writeArtifactError(response, requestID, artifactregistry.ErrNotFound)
+	}
+}
+
+func (s *Server) serveArtifactCollection(response http.ResponseWriter, request *http.Request, requestID string, service ArtifactService) {
+	switch request.Method {
+	case http.MethodPost:
+		var input artifactops.IngestInput
+		if err := decodeArtifactJSON(request, &input); err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		key, err := artifactIdempotencyKey(request)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		value, err := service.Ingest(request.Context(), input, key)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		response.Header().Set("Location", "/api/v1/artifacts/"+value.Artifact.ArtifactID+"?version="+strconv.FormatUint(value.Artifact.Version, 10))
+		writeJSON(response, http.StatusCreated, value)
+	case http.MethodGet, http.MethodHead:
+		query := request.URL.Query()
+		var input artifactops.ListInput
+		if query.Has("targetKind") || query.Has("targetId") {
+			if query.Get("targetKind") == "" || query.Get("targetId") == "" {
+				writeArtifactError(response, requestID, errors.New("targetKind and targetId must be provided together"))
+				return
+			}
+			target := artifactbinding.Target{Kind: artifactbinding.TargetKind(query.Get("targetKind")), ID: query.Get("targetId")}
+			input.Target = &target
+		}
+		value, err := service.List(request.Context(), input)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
+	default:
+		writeArtifactMethod(response, requestID, "GET, HEAD, POST")
+	}
+}
+
+func (s *Server) serveArtifactBindings(response http.ResponseWriter, request *http.Request, requestID string, service ArtifactService, remainder []string) {
+	if len(remainder) == 0 {
+		if request.Method != http.MethodPost {
+			writeArtifactMethod(response, requestID, "POST")
+			return
+		}
+		var input artifactops.AttachInput
+		if err := decodeArtifactJSON(request, &input); err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		key, err := artifactIdempotencyKey(request)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		value, err := service.Attach(request.Context(), input, key)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusCreated, value)
+		return
+	}
+	if len(remainder) != 1 || request.Method != http.MethodDelete {
+		writeArtifactMethod(response, requestID, "DELETE")
+		return
+	}
+	key, err := artifactIdempotencyKey(request)
+	if err != nil {
+		writeArtifactError(response, requestID, err)
+		return
+	}
+	value, err := service.Detach(request.Context(), remainder[0], key)
+	if err != nil {
+		writeArtifactError(response, requestID, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, value)
+}
+
+func decodeArtifactJSON(request *http.Request, destination any) error {
+	decoder := json.NewDecoder(io.LimitReader(request.Body, maxArtifactRequestBytes+1))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil || decoder.Decode(new(any)) != io.EOF {
+		return errors.New("request must contain one valid JSON object")
+	}
+	return nil
+}
+
+func artifactIdempotencyKey(request *http.Request) (string, error) {
+	key := request.Header.Get("Idempotency-Key")
+	if len(key) < 8 || len(key) > 128 || strings.TrimSpace(key) != key {
+		return "", errors.New("Idempotency-Key must contain 8 to 128 non-padding characters")
+	}
+	return key, nil
+}
+
+func queryVersion(query url.Values, name string, required bool) (uint64, error) {
+	value := query.Get(name)
+	if value == "" && !required {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || parsed == 0 {
+		return 0, errors.New(name + " must be a positive artifact version")
+	}
+	return parsed, nil
+}
+
+func writeArtifactMethod(response http.ResponseWriter, requestID, allow string) {
+	response.Header().Set("Allow", allow)
+	writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
+}
+
+func writeArtifactError(response http.ResponseWriter, requestID string, err error) {
+	status, code, message := http.StatusBadRequest, "VALIDATION_FAILED", err.Error()
+	if errors.Is(err, artifactregistry.ErrNotFound) || errors.Is(err, artifactbinding.ErrNotFound) || errors.Is(err, representationregistry.ErrNotFound) {
+		status, code, message = http.StatusNotFound, "NOT_FOUND", "The requested artifact resource was not found."
+	} else if errors.Is(err, artifactregistry.ErrVersionConflict) || errors.Is(err, artifactbinding.ErrConflict) || errors.Is(err, artifactbinding.ErrStateConflict) || errors.Is(err, lateevidence.ErrEvidenceNotBound) {
+		status, code = http.StatusConflict, "ARTIFACT_CONFLICT"
+	}
+	writeAPIError(response, status, apiError{SchemaVersion: 1, Code: code, Message: message, RequestID: requestID})
+}

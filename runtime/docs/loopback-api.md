@@ -87,6 +87,33 @@ locators, bearer values, and common credential assignments are redacted again at
 the export boundary; logs receive the same value redaction. The manifest itself
 is not listed in its entries because it cannot contain its own digest.
 
+## Artifact operations
+
+The authenticated artifact surface is a transport over the daemon's shared
+artifact operation service. Mutation endpoints require `Idempotency-Key` and
+accept or return JSON:
+
+| Method and route | Operation |
+|---|---|
+| `POST /api/v1/artifacts` | Ingest one file, paste, or stdin payload as an immutable artifact version. |
+| `GET /api/v1/artifacts` | List latest versions, optionally filtering by exact `targetKind` and `targetId`. |
+| `GET /api/v1/artifacts/{artifactId}?version=N` | Show an exact version; omit `version` only to request latest. |
+| `POST /api/v1/artifacts/{artifactId}/revisions` | Add a new immutable version to an existing artifact identity. |
+| `GET /api/v1/artifacts/{artifactId}/diff?from=N&to=M` | Compare content, media type, sensitivity, roles, tags, and representation kinds. |
+| `POST /api/v1/artifacts/{artifactId}/extract?version=N` | Derive safe representations with the configured processor set. |
+| `GET /api/v1/artifacts/{artifactId}/lint?version=N` | Report storage, freshness, representation, and diagnostic findings. |
+| `GET /api/v1/artifacts/{artifactId}/representations?version=N` | Inspect all representations for an exact artifact version. |
+| `POST /api/v1/artifacts/{artifactId}/impact?version=N` | Assess late-evidence coverage and return closed action proposals. |
+| `POST /api/v1/artifact-bindings` | Attach an exact artifact version to one supported target. |
+| `DELETE /api/v1/artifact-bindings/{bindingId}` | Append an unbound state without deleting binding history. |
+
+Request bodies reject unknown fields and multiple JSON values. Artifact content
+is base64 in JSON and bounded to 36 MiB at the transport boundary. Exact version
+queries are positive integers. Attachments name one closed target kind:
+`project`, `work`, `run`, `node`, `checkpoint`, `decision`, `story`, or
+`implementation_point`. Validation, missing resources, and attachment or
+version conflicts use the ordinary stable API error envelope.
+
 The CLI client performs this discovery and negotiation once per finite command.
 For missing or unreachable endpoint state it idempotently autostarts the daemon,
 then performs one fresh discovery attempt. It never replays an application

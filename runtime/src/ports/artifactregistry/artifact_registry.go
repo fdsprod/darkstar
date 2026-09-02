@@ -138,4 +138,5 @@ type Registry interface {
 	LatestVersion(context.Context, string) (ArtifactVersion, error)
 	Versions(context.Context, string) ([]ArtifactVersion, error)
 	VersionsByDigest(context.Context, string) ([]ArtifactVersion, error)
+	Artifacts(context.Context) ([]ArtifactVersion, error)
 }

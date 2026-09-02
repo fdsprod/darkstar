@@ -147,6 +147,9 @@ func (fake fakeArtifacts) Versions(context.Context, string) ([]artifactregistry.
 func (fake fakeArtifacts) VersionsByDigest(context.Context, string) ([]artifactregistry.ArtifactVersion, error) {
 	return nil, nil
 }
+func (fake fakeArtifacts) Artifacts(context.Context) ([]artifactregistry.ArtifactVersion, error) {
+	return []artifactregistry.ArtifactVersion{fake.version}, nil
+}
 
 type fakeBindings struct {
 	target   artifactbinding.Target

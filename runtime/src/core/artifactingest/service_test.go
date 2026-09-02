@@ -247,3 +247,17 @@ func (registry *memoryRegistry) VersionsByDigest(_ context.Context, digest strin
 	}
 	return result, nil
 }
+
+func (registry *memoryRegistry) Artifacts(_ context.Context) ([]artifactregistry.ArtifactVersion, error) {
+	latest := make(map[string]artifactregistry.ArtifactVersion)
+	for _, value := range registry.versions {
+		if value.Version > latest[value.ArtifactID].Version {
+			latest[value.ArtifactID] = value
+		}
+	}
+	result := make([]artifactregistry.ArtifactVersion, 0, len(latest))
+	for _, value := range latest {
+		result = append(result, value)
+	}
+	return result, nil
+}

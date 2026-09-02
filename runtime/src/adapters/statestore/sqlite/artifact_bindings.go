@@ -92,7 +92,7 @@ func (d *Database) Unbind(ctx context.Context, request artifactbinding.UnbindReq
 		bindingVersionSelect+` WHERE binding_id = ? AND idempotency_key = ?`,
 		normalized.BindingID, normalized.IdempotencyKey))
 	if err == nil {
-		if existingKey != normalized.IdempotencyKey || existing.State != artifactbinding.StateUnbound || !existing.CreatedAt.Equal(normalized.CreatedAt) {
+		if existingKey != normalized.IdempotencyKey || existing.State != artifactbinding.StateUnbound {
 			return artifactbinding.Version{}, false, fmt.Errorf("%w: binding %s key %s", artifactbinding.ErrConflict, normalized.BindingID, normalized.IdempotencyKey)
 		}
 		if err := tx.Commit(); err != nil {
@@ -231,7 +231,7 @@ func validateBindingTarget(target artifactbinding.Target) error {
 func sameBind(value artifactbinding.Version, key string, request artifactbinding.BindRequest) bool {
 	return key == request.IdempotencyKey && value.State == artifactbinding.StateBound &&
 		value.BindingID == request.BindingID && value.Artifact == request.Artifact &&
-		value.Target == request.Target && value.CreatedAt.Equal(request.CreatedAt)
+		value.Target == request.Target
 }
 
 func classifyBindingRead(value artifactbinding.Version, err error, bindingID string) (artifactbinding.Version, error) {

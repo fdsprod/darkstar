@@ -35,15 +35,16 @@ type Server struct {
 	endpointPath string
 	now          func() time.Time
 
-	mu       sync.RWMutex
-	state    serverState
-	endpoint Endpoint
-	http     *http.Server
-	recovery RecoveryStatus
-	doctor   DoctorReporter
-	streams  *StreamServices
-	exporter RunExporter
-	runs     RunService
+	mu        sync.RWMutex
+	state     serverState
+	endpoint  Endpoint
+	http      *http.Server
+	recovery  RecoveryStatus
+	doctor    DoctorReporter
+	streams   *StreamServices
+	exporter  RunExporter
+	runs      RunService
+	artifacts ArtifactService
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
@@ -149,6 +150,20 @@ func (s *Server) SetRuns(runs RunService) error {
 		return errors.New("API run service is required")
 	}
 	s.runs = runs
+	return nil
+}
+
+// SetArtifacts installs the artifact command/query capability before Start.
+func (s *Server) SetArtifacts(artifacts ArtifactService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API artifact service can only be set before start")
+	}
+	if artifacts == nil {
+		return errors.New("API artifact service is required")
+	}
+	s.artifacts = artifacts
 	return nil
 }
 
@@ -334,6 +349,11 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/runs" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/runs/") {
 		s.serveRuns(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/artifacts" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifacts/") ||
+		path.Clean(request.URL.Path) == "/api/v1/artifact-bindings" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifact-bindings/") {
+		s.serveArtifacts(response, request, requestID)
 		return
 	}
 

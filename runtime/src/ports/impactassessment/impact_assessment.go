@@ -2,7 +2,11 @@
 package impactassessment
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 
 	"github.com/fdsprod/darkstar/runtime/src/ports/artifactbinding"
 	"github.com/fdsprod/darkstar/runtime/src/ports/artifactlineage"
@@ -144,4 +148,58 @@ func (value Assessment) MarshalJSON() ([]byte, error) {
 		Coverage      []AttemptCoverage           `json:"coverage"`
 		Proposals     []Proposal                  `json:"proposals"`
 	}{"impact_assessment", 1, value.Evidence, value.Target, value.RunID, value.Roles, value.Coverage, value.Proposals})
+}
+
+func (value *Assessment) UnmarshalJSON(content []byte) error {
+	var wire struct {
+		Kind          string                      `json:"kind"`
+		SchemaVersion int                         `json:"schemaVersion"`
+		Evidence      artifactregistry.VersionRef `json:"evidence"`
+		Target        artifactbinding.Target      `json:"target"`
+		RunID         string                      `json:"runId"`
+		Roles         []string                    `json:"roles"`
+		Coverage      []AttemptCoverage           `json:"coverage"`
+		Proposals     []json.RawMessage           `json:"proposals"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wire); err != nil {
+		return err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return errors.New("impact assessment must contain one JSON object")
+	}
+	if wire.Kind != "impact_assessment" || wire.SchemaVersion != 1 {
+		return errors.New("unsupported impact assessment boundary")
+	}
+	proposals := make([]Proposal, 0, len(wire.Proposals))
+	for index, raw := range wire.Proposals {
+		var discriminator struct {
+			Action Action `json:"action"`
+		}
+		if err := json.Unmarshal(raw, &discriminator); err != nil {
+			return err
+		}
+		var proposal Proposal
+		switch discriminator.Action {
+		case ActionContinue:
+			proposal = &ContinueProposal{}
+		case ActionRefresh:
+			proposal = &RefreshProposal{}
+		case ActionRevise:
+			proposal = &ReviseProposal{}
+		case ActionInsert:
+			proposal = &InsertProposal{}
+		case ActionInvalidate:
+			proposal = &InvalidateProposal{}
+		default:
+			return fmt.Errorf("proposals[%d] has unsupported action %q", index, discriminator.Action)
+		}
+		if err := json.Unmarshal(raw, proposal); err != nil {
+			return err
+		}
+		proposals = append(proposals, proposal)
+	}
+	*value = Assessment{Evidence: wire.Evidence, Target: wire.Target, RunID: wire.RunID, Roles: wire.Roles, Coverage: wire.Coverage, Proposals: proposals}
+	return nil
 }

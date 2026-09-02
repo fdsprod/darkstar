@@ -133,6 +133,14 @@ func (d *Database) VersionsByDigest(ctx context.Context, digest string) ([]artif
 	return d.queryArtifactVersions(ctx, artifactVersionSelect+` WHERE blob_digest = ? ORDER BY created_at, artifact_id, version`, digest)
 }
 
+// Artifacts returns the latest immutable version of every artifact identity.
+func (d *Database) Artifacts(ctx context.Context) ([]artifactregistry.ArtifactVersion, error) {
+	return d.queryArtifactVersions(ctx, artifactVersionSelect+` current
+		WHERE version = (SELECT MAX(candidate.version) FROM artifact_versions candidate
+			WHERE candidate.artifact_id = current.artifact_id)
+		ORDER BY created_at, artifact_id`)
+}
+
 func (d *Database) queryArtifactVersions(ctx context.Context, statement string, args ...any) ([]artifactregistry.ArtifactVersion, error) {
 	rows, err := d.sql.QueryContext(ctx, statement, args...)
 	if err != nil {
