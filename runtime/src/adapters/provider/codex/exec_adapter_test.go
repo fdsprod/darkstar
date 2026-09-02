@@ -66,6 +66,13 @@ func TestExecAdapterStreamsValidatesAndRecordsSelection(t *testing.T) {
 	if len(captured.Arguments) < len(wantPrefix) || !reflect.DeepEqual(captured.Arguments[:len(wantPrefix)], wantPrefix) {
 		t.Fatalf("arguments = %#v, want prefix %#v", captured.Arguments, wantPrefix)
 	}
+	if argumentIndex(captured.Arguments, "--ask-for-approval") >= 0 {
+		t.Fatalf("arguments retained rejected legacy approval flag: %#v", captured.Arguments)
+	}
+	cdIndex := argumentIndex(captured.Arguments, "--cd")
+	if cdIndex < 0 || cdIndex+1 >= len(captured.Arguments) || captured.Arguments[cdIndex+1] != request.Workspace {
+		t.Fatalf("arguments omitted the exact bounded workspace: %#v", captured.Arguments)
+	}
 	if captured.Directory != request.Workspace || !strings.Contains(captured.Arguments[len(captured.Arguments)-1], "Prepared immutable context") {
 		t.Fatalf("command did not retain bounded workspace and prepared input: %#v", captured)
 	}
@@ -108,28 +115,33 @@ func TestExecAdapterStreamsValidatesAndRecordsSelection(t *testing.T) {
 }
 
 func TestExecAdapterReplaysReviewedWindowsFixture(t *testing.T) {
-	fixture := loadExecFixture(t, "exec-read-only.jsonl")
-	request := testAttemptRequest(t.TempDir())
-	request.Timeout = time.Second
-	request.OutputSchema = json.RawMessage(`{
-		"type":"object","additionalProperties":false,
-		"properties":{"probe":{"const":"exec-read-only"},"success":{"const":true},"detail":{"type":"string"}},
-		"required":["probe","success","detail"]
-	}`)
-	adapter := newExecTestAdapter(t, NewMemoryExecRecoveryStore(), func(ExecCommand) (ExecProcess, error) {
-		return execFixtureProcess(fixture), nil
-	})
-	handle, err := adapter.StartAttempt(context.Background(), request)
-	if err != nil {
-		t.Fatalf("StartAttempt() error = %v", err)
-	}
-	result, err := adapter.GetResult(context.Background(), providerport.ResultRequest{Handle: handle})
-	if err != nil {
-		t.Fatalf("GetResult() error = %v", err)
-	}
-	succeeded, ok := result.(providerport.SucceededResult)
-	if !ok || succeeded.Recovery.ProviderThreadID != "01a053c7-a9c5-7032-bb84-d9051d72076d" || succeeded.Usage.InputTokens != 31539 {
-		t.Fatalf("reviewed fixture result = %#v", result)
+	for _, version := range defaultSupportedExecVersions {
+		version := version
+		t.Run(version, func(t *testing.T) {
+			fixture := loadExecFixture(t, version, "exec-read-only.jsonl")
+			request := testAttemptRequest(t.TempDir())
+			request.Timeout = time.Second
+			request.OutputSchema = json.RawMessage(`{
+				"type":"object","additionalProperties":false,
+				"properties":{"probe":{"const":"exec-read-only"},"success":{"const":true},"detail":{"type":"string"}},
+				"required":["probe","success","detail"]
+			}`)
+			adapter := newExecTestAdapterVersion(t, version, NewMemoryExecRecoveryStore(), func(ExecCommand) (ExecProcess, error) {
+				return execFixtureProcess(fixture), nil
+			})
+			handle, err := adapter.StartAttempt(context.Background(), request)
+			if err != nil {
+				t.Fatalf("StartAttempt() error = %v", err)
+			}
+			result, err := adapter.GetResult(context.Background(), providerport.ResultRequest{Handle: handle})
+			if err != nil {
+				t.Fatalf("GetResult() error = %v", err)
+			}
+			succeeded, ok := result.(providerport.SucceededResult)
+			if !ok || succeeded.Recovery.ProviderThreadID == "" || succeeded.Usage.InputTokens == 0 {
+				t.Fatalf("reviewed fixture result = %#v", result)
+			}
+		})
 	}
 }
 
@@ -317,6 +329,10 @@ func TestDirectoryExecRecoveryStorePersistsImmutableRecord(t *testing.T) {
 }
 
 func newExecTestAdapter(t *testing.T, store ExecRecoveryStore, factory ExecProcessFactory) *ExecAdapter {
+	return newExecTestAdapterVersion(t, "0.151.0-alpha.7.2", store, factory)
+}
+
+func newExecTestAdapterVersion(t *testing.T, version string, store ExecRecoveryStore, factory ExecProcessFactory) *ExecAdapter {
 	t.Helper()
 	if store == nil {
 		store = NewMemoryExecRecoveryStore()
@@ -326,7 +342,7 @@ func newExecTestAdapter(t *testing.T, store ExecRecoveryStore, factory ExecProce
 		t.Fatalf("NewDirectoryEvidenceRecorder() error = %v", err)
 	}
 	adapter, err := NewExecAdapter(ExecAdapterOptions{
-		Executable: "codex.exe", ProviderVersion: "0.151.0-alpha.7.2", Factory: factory,
+		Executable: "codex.exe", ProviderVersion: version, Factory: factory,
 		EvidenceRecorder: recorder, RecoveryStore: store,
 		Clock: func() time.Time { return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC) },
 	})
@@ -386,7 +402,7 @@ func argumentIndex(arguments []string, value string) int {
 	return -1
 }
 
-func loadExecFixture(t *testing.T, name string) string {
+func loadExecFixture(t *testing.T, version, name string) string {
 	t.Helper()
 	workingDirectory, err := os.Getwd()
 	if err != nil {
@@ -403,7 +419,7 @@ func loadExecFixture(t *testing.T, name string) string {
 		}
 		root = parent
 	}
-	file, err := os.Open(filepath.Join(filepath.Dir(root), "probes", "codex-host", "fixtures", "0.151.0-alpha.7.2", name))
+	file, err := os.Open(filepath.Join(filepath.Dir(root), "probes", "codex-host", "fixtures", version, name))
 	if err != nil {
 		t.Fatal(err)
 	}

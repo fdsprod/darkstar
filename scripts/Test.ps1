@@ -34,6 +34,11 @@ try {
         throw "Go tests failed with exit code $LASTEXITCODE."
     }
 
+    & (Join-Path $repositoryRoot "probes/codex-host/Test-CodexHostFixtures.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Codex host fixture conformance failed with exit code $LASTEXITCODE."
+    }
+
     & node scripts/schema-tool.mjs check
     if ($LASTEXITCODE -ne 0) {
         throw "Schema validation or generation check failed with exit code $LASTEXITCODE."

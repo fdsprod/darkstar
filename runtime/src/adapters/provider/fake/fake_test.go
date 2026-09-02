@@ -11,7 +11,48 @@ import (
 	"darkstar/src/adapters/provider/fake"
 	"darkstar/src/ports"
 	"darkstar/src/ports/provider"
+	"darkstar/tests/providerconformance"
 )
+
+func TestProviderConformance(t *testing.T) {
+	fixed := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
+	providerconformance.Run(t, providerconformance.Suite{
+		NewProvider: func(t *testing.T) provider.Provider {
+			t.Helper()
+			return newProvider(t, fake.Scenario{
+				Health: provider.Health{
+					State: provider.HealthAvailable, Provider: "fake", ProviderVersion: "scenario-v1",
+					Authentication: provider.AuthenticationUnknown, Usage: provider.UsageUnknown,
+					InstructionSources: []string{}, Diagnostics: []string{},
+				},
+				Capabilities: provider.CapabilityManifest{
+					Provider: "fake", Fingerprint: "b39f745931d2d84853895e6d9302fb16f52023d680f6ad4f4ab5038ac059bfb9",
+					Features: map[string]provider.Capability{
+						"text_input":        provider.AvailableCapability{Version: "v1"},
+						"structured_output": provider.AvailableCapability{Version: "json-schema"},
+					},
+					ObservedAt: fixed,
+				},
+				Attempts: []fake.AttemptScenario{{
+					AttemptID: "attempt-conformance",
+					Steps: []fake.Step{
+						fake.Emit(provider.Event{Sequence: 1, Kind: provider.EventAttemptStarted, Payload: json.RawMessage(`{}`)}),
+						fake.Emit(provider.Event{Sequence: 2, Kind: provider.EventTurnCompleted, Payload: json.RawMessage(`{}`)}),
+					},
+					Result: provider.SucceededResult{StructuredOutput: json.RawMessage(`{"answer":"conformant"}`)},
+				}},
+			})
+		},
+		Request: func(*testing.T) provider.AttemptRequest {
+			return provider.AttemptRequest{
+				AttemptID: "attempt-conformance", RunID: "run-conformance", NodeID: "node-conformance",
+				IdempotencyKey: "start-conformance", Access: provider.AccessReadOnly, Network: provider.NetworkDenied,
+				CommandPolicy: provider.InteractionDeny, FilePolicy: provider.InteractionDeny, ToolPolicy: provider.InteractionDeny,
+				Prompt: "Return a structured answer.", OutputSchema: json.RawMessage(`{"type":"object"}`),
+			}
+		},
+	})
+}
 
 func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 	t.Parallel()

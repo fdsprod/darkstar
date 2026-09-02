@@ -22,18 +22,6 @@ func TestEventNormalizerReplaysVersionedAppServerFixtures(t *testing.T) {
 	t.Parallel()
 
 	fixed := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
-	normalizer, err := NewEventNormalizer(NormalizerOptions{
-		AttemptID:       "attempt-fixture",
-		ProviderVersion: "0.151.0-alpha.7.2",
-		Clock:           func() time.Time { return fixed },
-		EvidenceRef: func(sequence uint64, _ string) string {
-			return "evidence/codex/frame-" + strconv.FormatUint(sequence, 10) + ".json"
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewEventNormalizer() error = %v", err)
-	}
-
 	wantKinds := map[provider.EventKind]bool{
 		provider.EventAttemptStarted:             false,
 		provider.EventTurnStarted:                false,
@@ -53,18 +41,29 @@ func TestEventNormalizerReplaysVersionedAppServerFixtures(t *testing.T) {
 		provider.EventUnknownProvider:            false,
 	}
 
-	var sequence uint64
-	for _, path := range fixturePaths(t) {
-		file, err := os.Open(path)
+	for _, fixture := range fixturePaths(t) {
+		normalizer, err := NewEventNormalizer(NormalizerOptions{
+			AttemptID:       "attempt-fixture",
+			ProviderVersion: fixture.version,
+			Clock:           func() time.Time { return fixed },
+			EvidenceRef: func(sequence uint64, _ string) string {
+				return "evidence/codex/frame-" + strconv.FormatUint(sequence, 10) + ".json"
+			},
+		})
 		if err != nil {
-			t.Fatalf("open fixture %s: %v", path, err)
+			t.Fatalf("NewEventNormalizer(%s) error = %v", fixture.version, err)
+		}
+		file, err := os.Open(fixture.path)
+		if err != nil {
+			t.Fatalf("open fixture %s: %v", fixture.path, err)
 		}
 		scanner := bufio.NewScanner(file)
 		scanner.Buffer(make([]byte, 64*1024), defaultMaxMessageBytes)
+		var sequence uint64
 		for scanner.Scan() {
 			var frame fixtureFrame
 			if err := json.Unmarshal(scanner.Bytes(), &frame); err != nil {
-				t.Fatalf("decode fixture %s: %v", path, err)
+				t.Fatalf("decode fixture %s: %v", fixture.path, err)
 			}
 			if frame.Direction != "server-to-client" || frame.Message.Method == "" {
 				continue
@@ -77,10 +76,10 @@ func TestEventNormalizerReplaysVersionedAppServerFixtures(t *testing.T) {
 			}
 			event, err := normalizer.Normalize(incoming)
 			if err != nil {
-				t.Fatalf("normalize %s from %s: %v", frame.Message.Method, path, err)
+				t.Fatalf("normalize %s from %s: %v", frame.Message.Method, fixture.path, err)
 			}
 			sequence++
-			if event.Sequence != sequence || event.AttemptID != "attempt-fixture" || event.RawEvidenceRef == "" {
+			if event.Sequence != sequence || event.AttemptID != "attempt-fixture" || event.ProviderVersion != fixture.version || event.RawEvidenceRef == "" {
 				t.Fatalf("event envelope = %#v", event)
 			}
 			if err := event.Validate(); err != nil {
@@ -91,7 +90,7 @@ func TestEventNormalizerReplaysVersionedAppServerFixtures(t *testing.T) {
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			t.Fatalf("scan fixture %s: %v", path, err)
+			t.Fatalf("scan fixture %s: %v", fixture.path, err)
 		}
 		_ = file.Close()
 	}
@@ -269,7 +268,12 @@ func TestEventNormalizerRejectsMalformedProviderParams(t *testing.T) {
 	}
 }
 
-func fixturePaths(t *testing.T) []string {
+type versionedFixture struct {
+	path    string
+	version string
+}
+
+func fixturePaths(t *testing.T) []versionedFixture {
 	t.Helper()
 	workingDirectory, err := os.Getwd()
 	if err != nil {
@@ -286,11 +290,15 @@ func fixturePaths(t *testing.T) []string {
 		}
 		root = parent
 	}
-	paths, err := filepath.Glob(filepath.Join(filepath.Dir(root), "probes", "codex-host", "fixtures", "0.151.0-alpha.7.2", "app-server-*.jsonl"))
+	paths, err := filepath.Glob(filepath.Join(filepath.Dir(root), "probes", "codex-host", "fixtures", "*", "app-server-*.jsonl"))
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("find App Server fixtures: paths=%v error=%v", paths, err)
 	}
-	return paths
+	fixtures := make([]versionedFixture, 0, len(paths))
+	for _, path := range paths {
+		fixtures = append(fixtures, versionedFixture{path: path, version: filepath.Base(filepath.Dir(path))})
+	}
+	return fixtures
 }
 
 func assertNativePayload(t *testing.T, raw json.RawMessage, method, requestID string, params json.RawMessage) {

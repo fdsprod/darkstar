@@ -19,6 +19,7 @@ independent from dashboard build tooling.
 | `src/adapters/provider/fake` | Deterministic provider scenarios for stream, interaction, recovery, failure, and cancellation tests. |
 | `src/platform` | Operating-system strategy implementations. |
 | `tests` | Black-box and cross-package runtime tests. |
+| `tests/providerconformance` | Shared provider health, capability, idempotency, event, result, and recovery contracts. |
 
 At a high level, deterministic behavior belongs in `core`, external contracts in
 `ports`, and concrete side effects in `adapters` or `platform`.

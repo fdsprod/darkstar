@@ -33,9 +33,11 @@ contains a redacted JSONL transcript and manifest. Generated protocol schemas
 may be stored under `probes/codex-host/generated/<exact-version>/` as supporting
 evidence, but observed wire fixtures are authoritative for behavior.
 
-CI replays every supported fixture through the normalized adapter contract.
-A new Codex version is admitted only after Windows probes cover required
-read-only and write-capable scenarios and the fixture diff is reviewed.
+CI runs Fake, App Server, and exec through the shared provider conformance
+suite, replays every supported App Server fixture through normalization, and
+validates the full versioned Windows fixture corpus. A new Codex version is
+admitted only after Windows probes cover its declared scenarios, the adapter's
+exact CLI arguments are tested, and the fixture diff is reviewed.
 
 The `.7.1` and `.7.2` sample generated 413 App Server schema files each with no
 added, removed, or changed SHA-256 hashes. In the same patch transition,
