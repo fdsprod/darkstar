@@ -10,7 +10,7 @@ import (
 )
 
 // ReducerVersion changes whenever replay semantics change incompatibly.
-const ReducerVersion = "3"
+const ReducerVersion = "4"
 
 // UnsupportedSchemaVersionError means replay cannot safely interpret an event.
 type UnsupportedSchemaVersionError struct {
@@ -53,6 +53,7 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 			WorkItemID      string `json:"workItemId"`
 			WorkflowID      string `json:"workflowId"`
 			WorkflowVersion string `json:"workflowVersion"`
+			Priority        int    `json:"priority"`
 		}
 		if err := decodeData(event, &data); err != nil {
 			return statestore.RunProjection{}, true, err
@@ -62,7 +63,7 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 		}
 		return statestore.RunProjection{
 			RunID: event.AggregateID, WorkItemID: data.WorkItemID, WorkflowID: data.WorkflowID,
-			WorkflowVersion: data.WorkflowVersion, Status: statestore.RunDraft,
+			WorkflowVersion: data.WorkflowVersion, Priority: data.Priority, Status: statestore.RunDraft,
 			ResourceVersion: event.AggregateRevision, LastGlobalPosition: event.GlobalPosition,
 			CreatedAt: event.RecordedAt, UpdatedAt: event.RecordedAt,
 		}, true, nil
@@ -86,6 +87,31 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 		if err := requireRunState(current, event, statestore.RunDraft); err != nil {
 			return statestore.RunProjection{}, true, err
 		}
+		var data struct {
+			WorkflowDigest string          `json:"workflowDigest"`
+			RouteDigest    string          `json:"routeDigest"`
+			RouteSnapshot  json.RawMessage `json:"routeSnapshot"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		completeSnapshot := data.WorkflowDigest != "" && data.RouteDigest != "" && len(data.RouteSnapshot) != 0
+		emptySnapshot := data.WorkflowDigest == "" && data.RouteDigest == "" && len(data.RouteSnapshot) == 0
+		if !completeSnapshot && !emptySnapshot {
+			return statestore.RunProjection{}, true, errors.New("run.route_frozen requires workflowDigest, routeDigest, and routeSnapshot together")
+		}
+		if completeSnapshot && (!validSourceHash(data.WorkflowDigest) || !validSourceHash(data.RouteDigest)) {
+			return statestore.RunProjection{}, true, errors.New("run.route_frozen digests must be SHA-256 hashes")
+		}
+		var boundaries struct {
+			Entry     string   `json:"entry"`
+			Terminals []string `json:"terminals"`
+		}
+		if completeSnapshot && (json.Unmarshal(data.RouteSnapshot, &boundaries) != nil || boundaries.Entry == "" || len(boundaries.Terminals) == 0) {
+			return statestore.RunProjection{}, true, errors.New("run.route_frozen routeSnapshot requires an entry and at least one terminal boundary")
+		}
+		next.WorkflowDigest, next.RouteDigest = data.WorkflowDigest, data.RouteDigest
+		next.RouteSnapshot = statestore.JSONSnapshot(string(data.RouteSnapshot))
 		next.Status = statestore.RunReady
 	case "run.started":
 		if err := requireRunState(current, event, statestore.RunDraft, statestore.RunReady); err != nil {
@@ -255,22 +281,28 @@ func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event
 			return statestore.AttemptProjection{}, true, fmt.Errorf("attempt %s first event is %s, want attempt.created", event.AggregateID, event.Kind)
 		}
 		var data struct {
-			RunID    string `json:"runId"`
-			VisitID  string `json:"visitId"`
-			NodeID   string `json:"nodeId"`
-			Scenario string `json:"scenario"`
-			Provider string `json:"provider"`
-			LogRef   string `json:"logReference"`
+			RunID         string `json:"runId"`
+			VisitID       string `json:"visitId"`
+			NodeID        string `json:"nodeId"`
+			Scenario      string `json:"scenario"`
+			Provider      string `json:"provider"`
+			LogRef        string `json:"logReference"`
+			PointID       string `json:"pointId"`
+			PointRevision uint64 `json:"pointRevision"`
+			Priority      int    `json:"priority"`
 		}
 		if err := decodeData(event, &data); err != nil {
 			return statestore.AttemptProjection{}, true, err
 		}
-		if data.RunID == "" || data.NodeID == "" || data.Scenario == "" || data.Provider == "" || data.LogRef == "" {
-			return statestore.AttemptProjection{}, true, errors.New("attempt.created requires runId, nodeId, scenario, provider, and logReference")
+		visitOwned := data.NodeID != "" && data.PointID == "" && data.PointRevision == 0
+		pointOwned := data.NodeID == "" && data.VisitID == "" && data.PointID != "" && data.PointRevision > 0
+		if data.RunID == "" || data.Scenario == "" || data.Provider == "" || data.LogRef == "" || data.Priority < 0 || (!visitOwned && !pointOwned) {
+			return statestore.AttemptProjection{}, true, errors.New("attempt.created requires runId, provider data, non-negative priority, and exactly one visit or point-revision owner")
 		}
 		return statestore.AttemptProjection{
 			AttemptID: event.AggregateID, RunID: data.RunID, VisitID: data.VisitID, NodeID: data.NodeID,
-			Scenario: data.Scenario, Provider: data.Provider, Status: statestore.AttemptCreated,
+			Scenario: data.Scenario, Provider: data.Provider, PointID: data.PointID, PointRevision: data.PointRevision,
+			Priority: data.Priority, Status: statestore.AttemptCreated,
 			LogReference: data.LogRef, ResourceVersion: event.AggregateRevision,
 			LastGlobalPosition: event.GlobalPosition, CreatedAt: event.RecordedAt, UpdatedAt: event.RecordedAt,
 		}, true, nil

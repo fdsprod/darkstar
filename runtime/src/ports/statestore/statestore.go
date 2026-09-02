@@ -17,6 +17,8 @@ type AggregateType string
 const (
 	AggregateProject   AggregateType = "project"
 	AggregateWork      AggregateType = "work"
+	AggregateStory     AggregateType = "story"
+	AggregatePoint     AggregateType = "point"
 	AggregateRun       AggregateType = "run"
 	AggregateVisit     AggregateType = "visit"
 	AggregateAttempt   AggregateType = "attempt"
@@ -87,6 +89,33 @@ type EventBounds struct {
 	Latest uint64
 }
 
+// JSONSnapshot stores immutable JSON bytes while remaining comparable in views
+// and tests. Its JSON representation is the contained value, not a quoted string.
+type JSONSnapshot string
+
+func (snapshot JSONSnapshot) MarshalJSON() ([]byte, error) {
+	if snapshot == "" {
+		return []byte("null"), nil
+	}
+	encoded := []byte(snapshot)
+	if !json.Valid(encoded) {
+		return nil, errors.New("snapshot contains invalid JSON")
+	}
+	return encoded, nil
+}
+
+func (snapshot *JSONSnapshot) UnmarshalJSON(encoded []byte) error {
+	if !json.Valid(encoded) {
+		return errors.New("snapshot contains invalid JSON")
+	}
+	if string(encoded) == "null" {
+		*snapshot = ""
+		return nil
+	}
+	*snapshot = JSONSnapshot(string(encoded))
+	return nil
+}
+
 // RunStatus is the closed set of persisted workflow-run states.
 type RunStatus string
 
@@ -115,15 +144,19 @@ func (status RunStatus) Terminal() bool {
 
 // RunProjection is the rebuildable query representation of a run.
 type RunProjection struct {
-	RunID              string    `json:"id"`
-	WorkItemID         string    `json:"workItemId"`
-	WorkflowID         string    `json:"workflowId"`
-	WorkflowVersion    string    `json:"workflowVersion"`
-	Status             RunStatus `json:"status"`
-	ResourceVersion    uint64    `json:"resourceVersion"`
-	LastGlobalPosition uint64    `json:"lastGlobalPosition"`
-	CreatedAt          time.Time `json:"createdAt"`
-	UpdatedAt          time.Time `json:"updatedAt"`
+	RunID              string       `json:"id"`
+	WorkItemID         string       `json:"workItemId"`
+	WorkflowID         string       `json:"workflowId"`
+	WorkflowVersion    string       `json:"workflowVersion"`
+	WorkflowDigest     string       `json:"workflowDigest,omitempty"`
+	RouteDigest        string       `json:"routeDigest,omitempty"`
+	RouteSnapshot      JSONSnapshot `json:"routeSnapshot,omitempty"`
+	Priority           int          `json:"priority,omitempty"`
+	Status             RunStatus    `json:"status"`
+	ResourceVersion    uint64       `json:"resourceVersion"`
+	LastGlobalPosition uint64       `json:"lastGlobalPosition"`
+	CreatedAt          time.Time    `json:"createdAt"`
+	UpdatedAt          time.Time    `json:"updatedAt"`
 }
 
 // NodeStatus is the closed lifecycle of one activated workflow node visit.
@@ -204,6 +237,9 @@ type AttemptProjection struct {
 	RunID              string        `json:"runId"`
 	VisitID            string        `json:"visitId,omitempty"`
 	NodeID             string        `json:"nodeId"`
+	PointID            string        `json:"pointId,omitempty"`
+	PointRevision      uint64        `json:"pointRevision,omitempty"`
+	Priority           int           `json:"priority,omitempty"`
 	Scenario           string        `json:"scenario"`
 	Provider           string        `json:"provider"`
 	Status             AttemptStatus `json:"status"`
