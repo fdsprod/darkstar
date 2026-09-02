@@ -291,22 +291,31 @@ func (client *AppServerClient) call(ctx context.Context, method string, params a
 		client.removePending(key)
 		return ctx.Err()
 	case <-client.done:
+		select {
+		case reply := <-response:
+			return decodeCallResult(method, target, reply)
+		default:
+		}
 		return client.protocolError()
 	case reply := <-response:
-		if reply.err != nil {
-			return reply.err
-		}
-		if target == nil {
-			return nil
-		}
-		if len(reply.result) == 0 {
-			return fmt.Errorf("codex App Server %s response omitted result", method)
-		}
-		if err := json.Unmarshal(reply.result, target); err != nil {
-			return fmt.Errorf("decode Codex App Server %s result: %w", method, err)
-		}
+		return decodeCallResult(method, target, reply)
+	}
+}
+
+func decodeCallResult(method string, target any, reply callResult) error {
+	if reply.err != nil {
+		return reply.err
+	}
+	if target == nil {
 		return nil
 	}
+	if len(reply.result) == 0 {
+		return fmt.Errorf("codex App Server %s response omitted result", method)
+	}
+	if err := json.Unmarshal(reply.result, target); err != nil {
+		return fmt.Errorf("decode Codex App Server %s result: %w", method, err)
+	}
+	return nil
 }
 
 // Notify sends one client-to-server notification.

@@ -51,9 +51,12 @@ type Adapter struct {
 }
 
 type codexAttempt struct {
-	mu      sync.Mutex
-	ready   chan struct{}
-	changed chan struct{}
+	mu          sync.Mutex
+	ready       chan struct{}
+	changed     chan struct{}
+	done        chan struct{}
+	pumpDone    chan struct{}
+	interrupted chan struct{}
 
 	operation         attemptOperation
 	operationDigest   string
@@ -75,7 +78,22 @@ type codexAttempt struct {
 	terminalEvidence  string
 	requests          map[string]interactionRequest
 	responses         map[string]*attemptResponse
-	cancelRequested   bool
+	stop              *attemptStop
+}
+
+type attemptStopCause string
+
+const (
+	attemptStopCancelled attemptStopCause = "cancelled"
+	attemptStopTimeout   attemptStopCause = "timeout"
+)
+
+type attemptStop struct {
+	cause          attemptStopCause
+	idempotencyKey string
+	ready          chan struct{}
+	result         providerport.CancelResult
+	err            error
 }
 
 type attemptOperation string
@@ -262,6 +280,9 @@ func (adapter *Adapter) StartAttempt(ctx context.Context, request providerport.A
 	state := &codexAttempt{
 		ready:             make(chan struct{}),
 		changed:           make(chan struct{}),
+		done:              make(chan struct{}),
+		pumpDone:          make(chan struct{}),
+		interrupted:       make(chan struct{}),
 		operation:         attemptOperationStart,
 		operationDigest:   digest,
 		attemptID:         normalized.AttemptID,
@@ -283,6 +304,9 @@ func (adapter *Adapter) StartAttempt(ctx context.Context, request providerport.A
 		return providerport.AttemptHandle{}, startErr
 	}
 	go adapter.pump(state)
+	if normalized.Timeout > 0 {
+		go adapter.enforceTimeout(state, normalized.Timeout)
+	}
 	return handle, nil
 }
 
@@ -352,6 +376,9 @@ func (adapter *Adapter) ResumeAttempt(ctx context.Context, request providerport.
 	state := &codexAttempt{
 		ready:           make(chan struct{}),
 		changed:         make(chan struct{}),
+		done:            make(chan struct{}),
+		pumpDone:        make(chan struct{}),
+		interrupted:     make(chan struct{}),
 		operation:       attemptOperationResume,
 		operationDigest: digest,
 		attemptID:       request.AttemptID,
@@ -497,23 +524,18 @@ func (adapter *Adapter) Respond(ctx context.Context, response providerport.Inter
 }
 
 func (adapter *Adapter) CancelAttempt(ctx context.Context, request providerport.CancelRequest) (providerport.CancelResult, error) {
+	if strings.TrimSpace(request.IdempotencyKey) == "" || strings.TrimSpace(request.IdempotencyKey) != request.IdempotencyKey {
+		return providerport.CancelResult{}, adapterFailure(ports.FailureInvalidRequest, "cancellation idempotency key is required without surrounding whitespace", false)
+	}
+	if request.GracePeriod < 0 {
+		return providerport.CancelResult{}, adapterFailure(ports.FailureInvalidRequest, "cancellation grace period cannot be negative", false)
+	}
 	state, err := adapter.attempt(request.Handle.AttemptID)
 	if err != nil {
 		return providerport.CancelResult{}, err
 	}
 	if err := validateHandle(state, request.Handle); err != nil {
 		return providerport.CancelResult{}, err
-	}
-	state.mu.Lock()
-	if state.terminal {
-		evidenceRef := state.terminalEvidence
-		state.mu.Unlock()
-		return providerport.CancelResult{Disposition: providerport.CancelAlreadyDone, EvidenceRef: evidenceRef}, nil
-	}
-	state.cancelRequested = true
-	state.mu.Unlock()
-	if err := state.client.InterruptTurn(ctx, state.handle.ProviderThreadID, state.handle.ProviderTurnID); err != nil {
-		return providerport.CancelResult{}, classifyAdapterError(err)
 	}
 	grace := request.GracePeriod
 	if grace <= 0 {
@@ -522,29 +544,174 @@ func (adapter *Adapter) CancelAttempt(ctx context.Context, request providerport.
 	if grace <= 0 {
 		grace = 5 * time.Second
 	}
-	timer := time.NewTimer(grace)
-	defer timer.Stop()
-	for {
-		state.mu.Lock()
-		if state.terminal {
-			evidenceRef := state.terminalEvidence
-			state.mu.Unlock()
-			return providerport.CancelResult{Disposition: providerport.CancelGraceful, EvidenceRef: evidenceRef}, nil
-		}
-		changed := state.changed
-		state.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return providerport.CancelResult{}, ctx.Err()
-		case <-changed:
-		case <-timer.C:
-			if err := state.client.KillOwnedProcess(); err != nil {
-				return providerport.CancelResult{Disposition: providerport.CancelUncertain}, classifyAdapterError(err)
-			}
-			adapter.complete(state, providerport.CancelledResult{AttemptResultMetadata: adapter.metadata(state)})
-			return providerport.CancelResult{Disposition: providerport.CancelForced}, nil
-		}
+	stop, leader, err := adapter.beginStop(state, attemptStopCancelled, request.IdempotencyKey)
+	if err != nil {
+		return providerport.CancelResult{}, err
 	}
+	if stop == nil {
+		state.mu.Lock()
+		evidenceRef := state.terminalEvidence
+		state.mu.Unlock()
+		return providerport.CancelResult{Disposition: providerport.CancelAlreadyDone, EvidenceRef: evidenceRef}, nil
+	}
+	if leader {
+		go adapter.executeStop(state, stop, grace)
+	}
+	select {
+	case <-ctx.Done():
+		return providerport.CancelResult{}, ctx.Err()
+	case <-stop.ready:
+		return stop.result, stop.err
+	}
+}
+
+func (adapter *Adapter) enforceTimeout(state *codexAttempt, timeout time.Duration) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-state.done:
+		return
+	case <-timer.C:
+	}
+	stop, leader, _ := adapter.beginStop(state, attemptStopTimeout, "")
+	if !leader {
+		return
+	}
+	grace := state.cancellationGrace
+	if grace <= 0 {
+		grace = 5 * time.Second
+	}
+	adapter.executeStop(state, stop, grace)
+}
+
+func (adapter *Adapter) beginStop(state *codexAttempt, cause attemptStopCause, idempotencyKey string) (*attemptStop, bool, error) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.stop != nil {
+		if cause == attemptStopCancelled && state.stop.cause == attemptStopCancelled && state.stop.idempotencyKey != idempotencyKey {
+			return nil, false, adapterFailure(ports.FailureConflict, "attempt cancellation already uses a different idempotency key", false)
+		}
+		if cause == attemptStopCancelled && state.stop.cause == attemptStopTimeout {
+			return nil, false, nil
+		}
+		return state.stop, false, nil
+	}
+	if state.terminal {
+		return nil, false, nil
+	}
+	state.stop = &attemptStop{cause: cause, idempotencyKey: idempotencyKey, ready: make(chan struct{})}
+	return state.stop, true, nil
+}
+
+func (adapter *Adapter) executeStop(state *codexAttempt, stop *attemptStop, grace time.Duration) {
+	deadline := time.Now().Add(grace)
+	interruptContext, cancel := context.WithDeadline(context.Background(), deadline)
+	_ = state.client.InterruptTurn(interruptContext, state.handle.ProviderThreadID, state.handle.ProviderTurnID)
+	cancel()
+	switch adapter.waitForStopObservation(state, time.Until(deadline)) {
+	case stopObservedTerminal:
+		state.mu.Lock()
+		result := providerport.CancelResult{Disposition: providerport.CancelGraceful, EvidenceRef: state.terminalEvidence}
+		state.mu.Unlock()
+		adapter.finishStop(stop, result, nil)
+		return
+	case stopObservedInterrupted:
+		if err := shutdownClientBefore(state.client, deadline); err == nil {
+			metadata := adapter.metadata(state)
+			if stop.cause == attemptStopTimeout {
+				failure := ports.Failure{Code: ports.FailureTimeout, Message: "Codex attempt exceeded its timeout", Retryable: true}
+				adapter.complete(state, providerport.InterruptedResult{AttemptResultMetadata: metadata, Failure: failure})
+			} else {
+				adapter.complete(state, providerport.CancelledResult{AttemptResultMetadata: metadata})
+			}
+			adapter.finishStop(stop, providerport.CancelResult{Disposition: providerport.CancelGraceful, EvidenceRef: metadata.Recovery.EvidenceRef}, nil)
+			return
+		}
+	case stopObservationExpired:
+	}
+	if err := state.client.KillOwnedProcess(); err != nil {
+		failure := ports.Failure{Code: ports.FailureUncertain, Message: "Codex interruption did not converge and the owned process tree could not be terminated", Details: map[string]string{"cause": err.Error()}}
+		adapter.complete(state, providerport.UnknownResult{AttemptResultMetadata: adapter.metadata(state), Failure: failure})
+		adapter.finishStop(stop, providerport.CancelResult{Disposition: providerport.CancelUncertain, EvidenceRef: adapter.metadata(state).Recovery.EvidenceRef}, &failure)
+		return
+	}
+	select {
+	case <-state.pumpDone:
+	case <-time.After(defaultShutdownTimeout):
+		failure := ports.Failure{Code: ports.FailureUncertain, Message: "Codex owned process tree terminated but the event stream did not close"}
+		adapter.complete(state, providerport.UnknownResult{AttemptResultMetadata: adapter.metadata(state), Failure: failure})
+		adapter.finishStop(stop, providerport.CancelResult{Disposition: providerport.CancelUncertain, EvidenceRef: adapter.metadata(state).Recovery.EvidenceRef}, &failure)
+		return
+	}
+	evidenceRef, err := adapter.recordStopOutcome(state, stop.cause, providerport.CancelForced)
+	if err != nil {
+		failure := ports.Failure{Code: ports.FailureUncertain, Message: "Codex stopped but its terminal cancellation evidence could not be persisted", Details: map[string]string{"cause": err.Error()}}
+		adapter.complete(state, providerport.UnknownResult{AttemptResultMetadata: adapter.metadata(state), Failure: failure})
+		adapter.finishStop(stop, providerport.CancelResult{Disposition: providerport.CancelUncertain, EvidenceRef: adapter.metadata(state).Recovery.EvidenceRef}, &failure)
+		return
+	}
+	metadata := adapter.metadata(state)
+	if stop.cause == attemptStopTimeout {
+		failure := ports.Failure{Code: ports.FailureTimeout, Message: "Codex attempt exceeded its timeout", Retryable: true}
+		adapter.complete(state, providerport.InterruptedResult{AttemptResultMetadata: metadata, Failure: failure})
+	} else {
+		adapter.complete(state, providerport.CancelledResult{AttemptResultMetadata: metadata})
+	}
+	adapter.finishStop(stop, providerport.CancelResult{Disposition: providerport.CancelForced, EvidenceRef: evidenceRef}, nil)
+}
+
+type stopObservation uint8
+
+const (
+	stopObservationExpired stopObservation = iota
+	stopObservedTerminal
+	stopObservedInterrupted
+)
+
+func (adapter *Adapter) waitForStopObservation(state *codexAttempt, wait time.Duration) stopObservation {
+	if wait <= 0 {
+		return stopObservationExpired
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-state.done:
+		return stopObservedTerminal
+	case <-state.interrupted:
+		return stopObservedInterrupted
+	case <-timer.C:
+		return stopObservationExpired
+	}
+}
+
+func (adapter *Adapter) finishStop(stop *attemptStop, result providerport.CancelResult, err error) {
+	stop.result = result
+	stop.err = err
+	close(stop.ready)
+}
+
+func (adapter *Adapter) recordStopOutcome(state *codexAttempt, cause attemptStopCause, disposition providerport.CancelDisposition) (string, error) {
+	kind := providerport.EventAttemptCancelled
+	if cause == attemptStopTimeout {
+		kind = providerport.EventAttemptFailed
+	}
+	payload, err := json.Marshal(map[string]string{"reason": string(cause), "disposition": string(disposition)})
+	if err != nil {
+		return "", err
+	}
+	event, err := state.normal.Emit(kind, payload, state.handle.ProviderThreadID, state.handle.ProviderTurnID, "")
+	if err != nil {
+		return "", err
+	}
+	evidence, err := adapter.evidence.Record(context.Background(), EvidenceRecord{
+		AttemptID: state.attemptID, Sequence: event.Sequence, Kind: string(event.Kind), MediaType: "application/json", Data: payload,
+	})
+	if err != nil {
+		return "", err
+	}
+	event.RawEvidenceRef = evidence.Ref
+	adapter.appendEvent(state, event, evidence)
+	return evidence.Ref, nil
 }
 
 func (adapter *Adapter) GetResult(ctx context.Context, request providerport.ResultRequest) (providerport.AttemptResult, error) {
@@ -573,6 +740,7 @@ func (adapter *Adapter) GetResult(ctx context.Context, request providerport.Resu
 }
 
 func (adapter *Adapter) pump(state *codexAttempt) {
+	defer close(state.pumpDone)
 	for message := range state.client.Messages() {
 		event, err := state.normal.Normalize(message)
 		if err != nil {
@@ -602,7 +770,10 @@ func (adapter *Adapter) pump(state *codexAttempt) {
 	state.mu.Lock()
 	terminal := state.terminal
 	state.mu.Unlock()
-	if !terminal {
+	state.mu.Lock()
+	stopping := state.stop != nil
+	state.mu.Unlock()
+	if !terminal && !stopping {
 		adapter.failPump(state, ports.FailureUncertain, "Codex App Server closed before a terminal turn event", io.EOF)
 	}
 }
@@ -634,6 +805,15 @@ func (adapter *Adapter) observeEvent(state *codexAttempt, event providerport.Eve
 			state.mu.Unlock()
 		}
 	case providerport.EventTurnInterrupted:
+		state.mu.Lock()
+		stopping := state.stop != nil
+		if stopping {
+			close(state.interrupted)
+		}
+		state.mu.Unlock()
+		if stopping {
+			return true
+		}
 		adapter.finishInterrupted(state)
 		return true
 	case providerport.EventTurnCompleted:
@@ -694,12 +874,9 @@ func (adapter *Adapter) finishTurn(state *codexAttempt, params map[string]json.R
 }
 
 func (adapter *Adapter) finishInterrupted(state *codexAttempt) {
-	_ = shutdownClient(state.client)
-	state.mu.Lock()
-	cancelled := state.cancelRequested
-	state.mu.Unlock()
-	if cancelled {
-		adapter.complete(state, providerport.CancelledResult{AttemptResultMetadata: adapter.metadata(state)})
+	if err := shutdownClient(state.client); err != nil {
+		failure := ports.Failure{Code: ports.FailureUncertain, Message: "Codex turn was interrupted but process ownership release failed", Details: map[string]string{"shutdown": err.Error()}}
+		adapter.complete(state, providerport.UnknownResult{AttemptResultMetadata: adapter.metadata(state), Failure: failure})
 		return
 	}
 	failure := ports.Failure{Code: ports.FailureInterrupted, Message: "Codex turn was interrupted", Retryable: true}
@@ -723,6 +900,7 @@ func (adapter *Adapter) complete(state *codexAttempt, result providerport.Attemp
 		state.result = result
 		state.terminal = true
 		signalAttempt(state)
+		close(state.done)
 	}
 	state.mu.Unlock()
 }
@@ -824,6 +1002,10 @@ func validateAttemptRequest(request providerport.AttemptRequest) (providerport.A
 		return request, nil, adapterFailure(ports.FailureInvalidRequest, "idempotency key is required", false)
 	case strings.TrimSpace(request.Prompt) == "":
 		return request, nil, adapterFailure(ports.FailureInvalidRequest, "structured node prompt is required", false)
+	case request.Timeout < 0:
+		return request, nil, adapterFailure(ports.FailureInvalidRequest, "attempt timeout cannot be negative", false)
+	case request.CancellationGrace < 0:
+		return request, nil, adapterFailure(ports.FailureInvalidRequest, "attempt cancellation grace period cannot be negative", false)
 	case request.Access != providerport.AccessReadOnly && request.Access != providerport.AccessWorkspaceWrite:
 		return request, nil, adapterFailure(ports.FailureInvalidRequest, "unsupported Codex access class", false)
 	case request.Network != providerport.NetworkDenied:
@@ -1261,6 +1443,15 @@ func shutdownClient(client *AppServerClient) error {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
+	defer cancel()
+	return client.Shutdown(ctx)
+}
+
+func shutdownClientBefore(client *AppServerClient, deadline time.Time) error {
+	if client == nil {
+		return nil
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 	return client.Shutdown(ctx)
 }

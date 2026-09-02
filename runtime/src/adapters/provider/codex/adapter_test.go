@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -30,6 +31,49 @@ type resumeAppServerScript struct {
 	turnStatus   string
 	resumeParams chan json.RawMessage
 	done         chan error
+}
+
+type stopAppServerScript struct {
+	graceful        bool
+	interruptParams chan json.RawMessage
+	turnReady       chan struct{}
+	done            chan error
+	owner           *scriptedProcessOwner
+}
+
+type scriptedProcessOwner struct {
+	killed   chan struct{}
+	exited   chan struct{}
+	killOnce atomic.Bool
+	exitOnce atomic.Bool
+}
+
+func newStopAppServerScript(graceful bool) *stopAppServerScript {
+	owner := &scriptedProcessOwner{killed: make(chan struct{}), exited: make(chan struct{})}
+	return &stopAppServerScript{
+		graceful: graceful, interruptParams: make(chan json.RawMessage, 1), turnReady: make(chan struct{}), done: make(chan error, 1), owner: owner,
+	}
+}
+
+func (owner *scriptedProcessOwner) Wait() error {
+	<-owner.exited
+	return nil
+}
+
+func (owner *scriptedProcessOwner) Kill() error {
+	if owner.killOnce.CompareAndSwap(false, true) {
+		close(owner.killed)
+	}
+	owner.exit()
+	return nil
+}
+
+func (owner *scriptedProcessOwner) PID() int { return 4242 }
+
+func (owner *scriptedProcessOwner) exit() {
+	if owner.exitOnce.CompareAndSwap(false, true) {
+		close(owner.exited)
+	}
 }
 
 func newResumeAppServerScript(turnStatus string) *resumeAppServerScript {
@@ -284,6 +328,120 @@ func (script *resumeAppServerScript) run(reader *io.PipeReader, writer *io.PipeW
 		return errors.New("resume script expected thread/unsubscribe")
 	}
 	return send(map[string]any{"id": unsubscribe.ID, "result": map[string]string{"status": "unsubscribed"}})
+}
+
+func (script *stopAppServerScript) factory(ctx context.Context) (*AppServerClient, InitializeResult, error) {
+	serverReads, clientWrites := io.Pipe()
+	clientReads, serverWrites := io.Pipe()
+	client, err := newAppServerClient(clientWrites, clientReads, script.owner, AppServerOptions{
+		ClientInfo: ClientInfo{Name: "darkstar-test", Version: "1.0.0"}, SupportedVersions: []string{"0.151.0-alpha.7.2"},
+	})
+	if err != nil {
+		return nil, InitializeResult{}, err
+	}
+	go func() { script.done <- script.run(serverReads, serverWrites) }()
+	initialized, err := client.Initialize(ctx)
+	if err != nil {
+		return nil, InitializeResult{}, err
+	}
+	return client, initialized, nil
+}
+
+func (script *stopAppServerScript) run(reader *io.PipeReader, writer *io.PipeWriter) error {
+	defer func() { _ = reader.Close() }()
+	defer func() { _ = writer.Close() }()
+	scanner := bufio.NewScanner(reader)
+	receive := func() (wireMessage, error) {
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return wireMessage{}, err
+			}
+			return wireMessage{}, io.EOF
+		}
+		var message wireMessage
+		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
+			return wireMessage{}, err
+		}
+		return message, nil
+	}
+	send := func(value any) error {
+		payload, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		_, err = writer.Write(append(payload, '\n'))
+		return err
+	}
+	require := func(method string) (wireMessage, error) {
+		message, err := receive()
+		if err != nil {
+			return wireMessage{}, err
+		}
+		if message.Method != method {
+			return wireMessage{}, fmt.Errorf("stop script expected %s, got %s", method, message.Method)
+		}
+		return message, nil
+	}
+
+	initialize, err := require("initialize")
+	if err != nil {
+		return err
+	}
+	if err := send(map[string]any{"id": initialize.ID, "result": map[string]any{
+		"userAgent": "Codex Desktop/0.151.0-alpha.7.2 (Windows 10; x86_64)", "platformFamily": "windows", "platformOs": "windows",
+	}}); err != nil {
+		return err
+	}
+	if _, err := require("initialized"); err != nil {
+		return err
+	}
+	thread, err := require("thread/start")
+	if err != nil {
+		return err
+	}
+	if err := send(map[string]any{"id": thread.ID, "result": map[string]any{"thread": map[string]string{"id": "thread-stop"}}}); err != nil {
+		return err
+	}
+	turn, err := require("turn/start")
+	if err != nil {
+		return err
+	}
+	if err := send(map[string]any{"id": turn.ID, "result": map[string]any{"turn": map[string]string{"id": "turn-stop"}}}); err != nil {
+		return err
+	}
+	if err := send(map[string]any{"method": "thread/started", "params": map[string]any{"thread": map[string]string{"id": "thread-stop"}}}); err != nil {
+		return err
+	}
+	if err := send(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "thread-stop", "turn": map[string]string{"id": "turn-stop", "status": "inProgress"}}}); err != nil {
+		return err
+	}
+	close(script.turnReady)
+	interrupt, err := require("turn/interrupt")
+	if err != nil {
+		return err
+	}
+	script.interruptParams <- cloneRaw(interrupt.Params)
+	if err := send(map[string]any{"id": interrupt.ID, "result": map[string]any{}}); err != nil {
+		return err
+	}
+	if !script.graceful {
+		<-script.owner.killed
+		return nil
+	}
+	if err := send(map[string]any{
+		"method": "turn/completed", "params": map[string]any{"threadId": "thread-stop", "turn": map[string]string{"id": "turn-stop", "status": "interrupted"}},
+	}); err != nil {
+		return err
+	}
+	unsubscribe, err := require("thread/unsubscribe")
+	if err != nil {
+		return err
+	}
+	if err := send(map[string]any{"id": unsubscribe.ID, "result": map[string]string{"status": "unsubscribed"}}); err != nil {
+		return err
+	}
+	script.owner.exit()
+	return nil
 }
 
 func TestAdapterExecutesStructuredReadOnlyNode(t *testing.T) {
@@ -554,6 +712,122 @@ func TestAdapterFailsClosedWhenRecordedTurnIsNotActive(t *testing.T) {
 	}
 }
 
+func TestAdapterCancelsGracefullyAndDeduplicatesTheRequest(t *testing.T) {
+	script := newStopAppServerScript(true)
+	adapter := newStopTestAdapter(t, script)
+	request := testAttemptRequest(t.TempDir())
+	request.CancellationGrace = 3 * time.Second
+	handle, err := adapter.StartAttempt(context.Background(), request)
+	if err != nil {
+		t.Fatalf("StartAttempt() error = %v", err)
+	}
+	<-script.turnReady
+	cancelRequest := providerport.CancelRequest{Handle: handle, IdempotencyKey: "cancel-1", GracePeriod: 3 * time.Second}
+	first, err := adapter.CancelAttempt(context.Background(), cancelRequest)
+	if err != nil || first.Disposition != providerport.CancelGraceful || first.EvidenceRef == "" {
+		t.Fatalf("CancelAttempt() = (%#v, %v)", first, err)
+	}
+	if params := <-script.interruptParams; !strings.Contains(string(params), `"threadId":"thread-stop"`) || !strings.Contains(string(params), `"turnId":"turn-stop"`) {
+		t.Fatalf("turn/interrupt params = %s", params)
+	}
+	repeated, err := adapter.CancelAttempt(context.Background(), cancelRequest)
+	if err != nil || repeated != first {
+		t.Fatalf("repeated CancelAttempt() = (%#v, %v), want %#v", repeated, err, first)
+	}
+	changed := cancelRequest
+	changed.IdempotencyKey = "cancel-2"
+	_, err = adapter.CancelAttempt(context.Background(), changed)
+	var conflict *ports.Failure
+	if !errors.As(err, &conflict) || conflict.Code != ports.FailureConflict {
+		t.Fatalf("conflicting CancelAttempt() error = %#v", err)
+	}
+	events := collectEvents(t, adapter, handle, nil)
+	if !hasEventKind(events, providerport.EventTurnInterrupted) {
+		t.Fatalf("events = %#v, want turn interruption", events)
+	}
+	result := getResult(t, adapter, handle)
+	cancelled, ok := result.(providerport.CancelledResult)
+	if !ok || cancelled.Recovery.ProviderThreadID != "thread-stop" || cancelled.Recovery.ProviderTurnID != "turn-stop" || cancelled.Recovery.EvidenceRef == "" {
+		t.Fatalf("result = %#v", result)
+	}
+	if err := <-script.done; err != nil {
+		t.Fatalf("stop App Server script error = %v", err)
+	}
+}
+
+func TestAdapterForcesOwnedProcessTerminationAfterCancellationGrace(t *testing.T) {
+	script := newStopAppServerScript(false)
+	adapter := newStopTestAdapter(t, script)
+	handle, err := adapter.StartAttempt(context.Background(), testAttemptRequest(t.TempDir()))
+	if err != nil {
+		t.Fatalf("StartAttempt() error = %v", err)
+	}
+	<-script.turnReady
+	result, err := adapter.CancelAttempt(context.Background(), providerport.CancelRequest{
+		Handle: handle, IdempotencyKey: "cancel-force", GracePeriod: 20 * time.Millisecond,
+	})
+	if err != nil || result.Disposition != providerport.CancelForced || result.EvidenceRef == "" {
+		t.Fatalf("CancelAttempt() = (%#v, %v)", result, err)
+	}
+	select {
+	case <-script.owner.killed:
+	default:
+		t.Fatal("owned process was not terminated")
+	}
+	events := collectEvents(t, adapter, handle, nil)
+	if !hasEventKind(events, providerport.EventAttemptCancelled) {
+		t.Fatalf("events = %#v, want forced cancellation event", events)
+	}
+	if _, ok := getResult(t, adapter, handle).(providerport.CancelledResult); !ok {
+		t.Fatal("forced cancellation did not produce CancelledResult")
+	}
+	if err := <-script.done; err != nil {
+		t.Fatalf("stop App Server script error = %v", err)
+	}
+}
+
+func TestAdapterTimeoutInterruptsThenClassifiesAForcedStop(t *testing.T) {
+	script := newStopAppServerScript(false)
+	adapter := newStopTestAdapter(t, script)
+	request := testAttemptRequest(t.TempDir())
+	request.Timeout = 20 * time.Millisecond
+	request.CancellationGrace = 20 * time.Millisecond
+	handle, err := adapter.StartAttempt(context.Background(), request)
+	if err != nil {
+		t.Fatalf("StartAttempt() error = %v", err)
+	}
+	<-script.turnReady
+	result := getResult(t, adapter, handle)
+	interrupted, ok := result.(providerport.InterruptedResult)
+	if !ok || interrupted.Failure.Code != ports.FailureTimeout || !interrupted.Failure.Retryable {
+		t.Fatalf("result = %#v", result)
+	}
+	if interrupted.Recovery.ProviderThreadID != "thread-stop" || interrupted.Recovery.ProviderTurnID != "turn-stop" ||
+		interrupted.Recovery.ProcessOwnerID != "4242" || interrupted.Recovery.EvidenceRef == "" || !interrupted.Recovery.Resumable {
+		t.Fatalf("recovery = %#v", interrupted.Recovery)
+	}
+	select {
+	case params := <-script.interruptParams:
+		if !strings.Contains(string(params), `"turnId":"turn-stop"`) {
+			t.Fatalf("turn/interrupt params = %s", params)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout did not request turn/interrupt")
+	}
+	select {
+	case <-script.owner.killed:
+	default:
+		t.Fatal("timeout did not terminate the owned process")
+	}
+	events := collectEvents(t, adapter, handle, nil)
+	if !hasEventKind(events, providerport.EventAttemptFailed) {
+		t.Fatalf("events = %#v, want timeout failure event", events)
+	}
+	if err := <-script.done; err != nil {
+		t.Fatalf("stop App Server script error = %v", err)
+	}
+}
+
 func TestInteractionPayloadsMatchDistinctCodexRequestTypes(t *testing.T) {
 	t.Parallel()
 	context := providerport.InteractionContext{
@@ -641,6 +915,22 @@ func newTestAdapter(t *testing.T, script *appServerScript) *Adapter {
 }
 
 func newResumeTestAdapter(t *testing.T, script *resumeAppServerScript) *Adapter {
+	t.Helper()
+	recorder, err := NewDirectoryEvidenceRecorder(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewDirectoryEvidenceRecorder() error = %v", err)
+	}
+	adapter, err := NewAdapter(AdapterOptions{
+		Factory: script.factory, EvidenceRecorder: recorder,
+		Clock: func() time.Time { return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("NewAdapter() error = %v", err)
+	}
+	return adapter
+}
+
+func newStopTestAdapter(t *testing.T, script *stopAppServerScript) *Adapter {
 	t.Helper()
 	recorder, err := NewDirectoryEvidenceRecorder(t.TempDir())
 	if err != nil {

@@ -285,3 +285,26 @@ func TestAppServerClientFailsPendingCallOnMalformedFrame(t *testing.T) {
 		t.Fatal("pending call did not fail after malformed frame")
 	}
 }
+
+func TestAppServerClientAcceptsResponseImmediatelyBeforeEOF(t *testing.T) {
+	for range 50 {
+		client, server := newTestClient(t, "0.151.0-alpha.7.2")
+		completed := make(chan error, 1)
+		go func() {
+			var target struct {
+				Value string `json:"value"`
+			}
+			err := client.Call(context.Background(), "test/final", struct{}{}, &target)
+			if err == nil && target.Value != "accepted" {
+				err = errors.New("final response was not decoded")
+			}
+			completed <- err
+		}()
+		request := server.receive(t)
+		server.send(t, map[string]any{"id": request.ID, "result": map[string]string{"value": "accepted"}})
+		server.close()
+		if err := <-completed; err != nil {
+			t.Fatalf("Call() error = %v", err)
+		}
+	}
+}
