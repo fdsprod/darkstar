@@ -79,12 +79,20 @@ type ServerNotification struct {
 	EmittedAtMS int64
 }
 
+func (ServerNotification) isIncomingMessage() {}
+
 // ServerRequest is an ID-bearing request that requires one correlated reply.
 type ServerRequest struct {
 	ID     json.RawMessage
 	Method string
 	Params json.RawMessage
 }
+
+func (ServerRequest) isIncomingMessage() {}
+
+// IncomingMessage is the closed request/notification union in original wire
+// order. The typed projection channels remain available for direct consumers.
+type IncomingMessage interface{ isIncomingMessage() }
 
 // ThreadRef and TurnRef retain the opaque provider identities returned by Codex.
 type ThreadRef struct{ ID string }
@@ -134,6 +142,8 @@ type AppServerClient struct {
 	notifications     chan ServerNotification
 	requestInput      chan ServerRequest
 	requests          chan ServerRequest
+	incomingInput     chan IncomingMessage
+	incoming          chan IncomingMessage
 	done              chan struct{}
 	terminalOnce      sync.Once
 	terminalErr       error
@@ -172,11 +182,14 @@ func newAppServerClient(stdin io.WriteCloser, stdout io.ReadCloser, owner proces
 		notifications:     make(chan ServerNotification),
 		requestInput:      make(chan ServerRequest),
 		requests:          make(chan ServerRequest),
+		incomingInput:     make(chan IncomingMessage),
+		incoming:          make(chan IncomingMessage),
 		done:              make(chan struct{}),
 	}
 	client.providerVers.Store("")
 	go relay(client.notificationInput, client.notifications)
 	go relay(client.requestInput, client.requests)
+	go relay(client.incomingInput, client.incoming)
 	go client.readLoop()
 	return client, nil
 }
@@ -232,6 +245,9 @@ func (client *AppServerClient) Notifications() <-chan ServerNotification { retur
 
 // Requests returns every ID-bearing server request in wire order.
 func (client *AppServerClient) Requests() <-chan ServerRequest { return client.requests }
+
+// Messages returns server notifications and requests in their original wire order.
+func (client *AppServerClient) Messages() <-chan IncomingMessage { return client.incoming }
 
 // Call sends one JSON-RPC request and waits for its correlated response.
 func (client *AppServerClient) Call(ctx context.Context, method string, params any, target any) error {
@@ -475,7 +491,9 @@ func (client *AppServerClient) readLoop() {
 			return
 		}
 		if len(message.ID) > 0 && message.Method != "" {
-			client.requestInput <- ServerRequest{ID: cloneRaw(message.ID), Method: message.Method, Params: cloneRaw(message.Params)}
+			request := ServerRequest{ID: cloneRaw(message.ID), Method: message.Method, Params: cloneRaw(message.Params)}
+			client.incomingInput <- request
+			client.requestInput <- request
 			continue
 		}
 		if len(message.ID) > 0 {
@@ -486,7 +504,9 @@ func (client *AppServerClient) readLoop() {
 			client.terminate(errors.New("Codex App Server message has neither ID nor method"))
 			return
 		}
-		client.notificationInput <- ServerNotification{Method: message.Method, Params: cloneRaw(message.Params), EmittedAtMS: message.EmittedAtMS}
+		notification := ServerNotification{Method: message.Method, Params: cloneRaw(message.Params), EmittedAtMS: message.EmittedAtMS}
+		client.incomingInput <- notification
+		client.notificationInput <- notification
 	}
 	if err := scanner.Err(); err != nil {
 		client.terminate(fmt.Errorf("read Codex App Server stdout: %w", err))
@@ -536,6 +556,7 @@ func (client *AppServerClient) terminate(err error) {
 		client.stateMu.Unlock()
 		close(client.notificationInput)
 		close(client.requestInput)
+		close(client.incomingInput)
 		close(client.done)
 	})
 }

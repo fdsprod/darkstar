@@ -139,6 +139,14 @@ func TestAppServerClientCorrelatesCallsAndSeparatesRequestsFromNotifications(t *
 	if request.Method != "item/tool/requestUserInput" || string(request.ID) != "0" {
 		t.Fatalf("request = %#v", request)
 	}
+	firstIncoming := <-client.Messages()
+	secondIncoming := <-client.Messages()
+	if _, ok := firstIncoming.(ServerNotification); !ok {
+		t.Fatalf("first incoming message = %T, want notification", firstIncoming)
+	}
+	if _, ok := secondIncoming.(ServerRequest); !ok {
+		t.Fatalf("second incoming message = %T, want request", secondIncoming)
+	}
 	responded := make(chan error, 1)
 	go func() { responded <- client.Respond(request.ID, map[string]any{"answers": map[string]any{}}) }()
 	response := server.receive(t)
