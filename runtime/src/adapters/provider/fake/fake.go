@@ -224,7 +224,6 @@ func (fake *Fake) Respond(ctx context.Context, response provider.InteractionResp
 	}
 	receipt := provider.InteractionReceipt{
 		ProviderRequestID: interaction.ProviderRequestID,
-		Recorded:          true,
 		RecordedAt:        fake.clock.Now(),
 	}
 	state.responses[interaction.ProviderRequestID] = responseRecord{key: interaction.IdempotencyKey, receipt: receipt}

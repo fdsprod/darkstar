@@ -21,13 +21,13 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 	adapter := newProvider(t, fake.Scenario{Attempts: []fake.AttemptScenario{{
 		AttemptID: "attempt-scripted",
 		Steps: []fake.Step{
-			fake.Emit(event(1, "agent.message", `{"text":"working"}`)),
-			fake.Emit(event(2, "tool.call", `{"requestId":"tool-1","name":"inspect"}`)),
+			fake.Emit(event(1, provider.EventMessageDelta, `{"text":"working"}`)),
+			fake.Emit(event(2, provider.EventToolStarted, `{"requestId":"tool-1","name":"inspect"}`)),
 			fake.AwaitResponse("tool-1"),
 			fake.Pause(5 * time.Minute),
-			fake.Emit(event(3, "approval.request", `{"requestId":"approval-1"}`)),
+			fake.Emit(event(3, provider.EventPermissionRequested, `{"requestId":"approval-1"}`)),
 			fake.AwaitResponse("approval-1"),
-			fake.Emit(event(4, "turn.completed", `{}`)),
+			fake.Emit(event(4, provider.EventTurnCompleted, `{}`)),
 		},
 		Result: provider.SucceededResult{
 			StructuredOutput: json.RawMessage(`{"summary":"done"}`),
@@ -49,8 +49,8 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 
 	first := receive(t, stream)
 	second := receive(t, stream)
-	if first.Kind != "agent.message" || second.Kind != "tool.call" {
-		t.Fatalf("event kinds = %q, %q, want agent.message, tool.call", first.Kind, second.Kind)
+	if first.Kind != provider.EventMessageDelta || second.Kind != provider.EventToolStarted {
+		t.Fatalf("event kinds = %q, %q, want message.delta, tool.started", first.Kind, second.Kind)
 	}
 	if !first.OccurredAt.Equal(start) || !second.OccurredAt.Equal(start) {
 		t.Fatalf("initial event timestamps = %v, %v, want %v", first.OccurredAt, second.OccurredAt, start)
@@ -62,8 +62,8 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 	waitFor(t, func() bool { return clock.Pending() == 1 }, "scripted delay to become pending")
 	clock.Advance(5 * time.Minute)
 	third := awaitEvent(t, approvalEvent)
-	if third.Kind != "approval.request" {
-		t.Fatalf("event kind = %q, want approval.request", third.Kind)
+	if third.Kind != provider.EventPermissionRequested {
+		t.Fatalf("event kind = %q, want permission.requested", third.Kind)
 	}
 	if want := start.Add(5 * time.Minute); !third.OccurredAt.Equal(want) {
 		t.Fatalf("approval timestamp = %v, want %v", third.OccurredAt, want)
@@ -72,7 +72,7 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 	completedEvent := receiveAsync(stream)
 	assertBlocked(t, completedEvent)
 	respondPermission(t, adapter, handle, "approval-1", "approval-response-1", provider.PermissionAllowOnce)
-	if got := awaitEvent(t, completedEvent); got.Kind != "turn.completed" {
+	if got := awaitEvent(t, completedEvent); got.Kind != provider.EventTurnCompleted {
 		t.Fatalf("event kind = %q, want turn.completed", got.Kind)
 	}
 	if _, err := stream.Receive(); !errors.Is(err, io.EOF) {
@@ -100,7 +100,7 @@ func TestScenarioPreservesMalformedEventAndInjectsFailure(t *testing.T) {
 	adapter := newProvider(t, fake.Scenario{Attempts: []fake.AttemptScenario{{
 		AttemptID: "attempt-malformed",
 		Steps: []fake.Step{
-			fake.Emit(event(1, "provider.unknown", `{`)),
+			fake.Emit(event(1, provider.EventUnknownProvider, `{`)),
 			fake.Fail(&ports.Failure{Code: ports.FailureProtocolDrift, Message: "malformed provider frame"}),
 		},
 		Result: provider.FailedResult{
@@ -136,10 +136,10 @@ func TestResumeStartsAfterLastDurableSequence(t *testing.T) {
 	adapter := newProvider(t, fake.Scenario{Attempts: []fake.AttemptScenario{{
 		AttemptID: "attempt-resume",
 		Steps: []fake.Step{
-			fake.Emit(event(1, "turn.started", `{}`)),
-			fake.Emit(event(2, "agent.message", `{"text":"before restart"}`)),
+			fake.Emit(event(1, provider.EventTurnStarted, `{}`)),
+			fake.Emit(event(2, provider.EventMessageDelta, `{"text":"before restart"}`)),
 			fake.Pause(time.Hour),
-			fake.Emit(event(3, "turn.completed", `{}`)),
+			fake.Emit(event(3, provider.EventTurnCompleted, `{}`)),
 		},
 	}}})
 
@@ -256,8 +256,8 @@ func TestNewRejectsAmbiguousScenarios(t *testing.T) {
 	_, err = fake.New(fake.Scenario{Attempts: []fake.AttemptScenario{{
 		AttemptID: "unordered",
 		Steps: []fake.Step{
-			fake.Emit(event(2, "agent.message", `{}`)),
-			fake.Emit(event(1, "agent.message", `{}`)),
+			fake.Emit(event(2, provider.EventMessageDelta, `{}`)),
+			fake.Emit(event(1, provider.EventMessageDelta, `{}`)),
 		},
 	}}})
 	if err == nil {
@@ -294,7 +294,7 @@ func start(t *testing.T, adapter *fake.Fake, attemptID string) provider.AttemptH
 	return handle
 }
 
-func event(sequence uint64, kind, payload string) provider.Event {
+func event(sequence uint64, kind provider.EventKind, payload string) provider.Event {
 	return provider.Event{Sequence: sequence, Kind: kind, Payload: json.RawMessage(payload)}
 }
 

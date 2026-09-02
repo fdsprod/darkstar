@@ -161,7 +161,18 @@
         "attemptId": {"$ref": "#/$defs/identifier"},
         "sequence": {"type": "integer", "minimum": 1},
         "occurredAt": {"type": "string", "format": "date-time"},
-        "eventKind": {"type": "string", "minLength": 1},
+        "eventKind": {
+          "type": "string",
+          "minLength": 1,
+          "x-darkstar-canonicalValues": [
+            "attempt.started", "attempt.waiting", "attempt.completed", "attempt.failed", "attempt.cancelled",
+            "turn.started", "turn.completed", "turn.interrupted",
+            "message.delta", "message.completed", "plan.updated", "structured_output.completed",
+            "command.started", "command.output", "command.completed", "file_change.started", "file_change.completed", "tool.started", "tool.completed",
+            "permission.requested", "permission.response_recorded", "user_input.requested", "user_input.response_recorded",
+            "usage.updated", "warning", "error", "unknown.provider_event"
+          ]
+        },
         "provider": {"type": "string", "minLength": 1},
         "providerVersion": {"type": "string"},
         "providerThreadId": {"type": "string"},

@@ -174,7 +174,7 @@ type Event struct {
 	AttemptID        string
 	Sequence         uint64
 	OccurredAt       time.Time
-	Kind             string
+	Kind             EventKind
 	Provider         string
 	ProviderVersion  string
 	ProviderThreadID string
@@ -220,7 +220,6 @@ func (AnswerResponse) isInteractionResponse() {}
 
 type InteractionReceipt struct {
 	ProviderRequestID string
-	Recorded          bool
 	RecordedAt        time.Time
 }
 

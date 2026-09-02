@@ -52,18 +52,19 @@ Every event has:
 
 ```json
 {
+  "kind": "provider_event",
   "schemaVersion": 1,
   "attemptId": "opaque-darkstar-id",
   "sequence": 1,
   "occurredAt": "provider timestamp or host receive time",
-  "kind": "attempt.started",
+  "eventKind": "attempt.started",
   "provider": "codex",
   "providerVersion": "exact codex-cli version",
   "providerThreadId": "optional opaque id",
   "providerTurnId": "optional opaque id",
   "providerItemId": "optional opaque id",
   "payload": {},
-  "rawFixtureRef": "optional durable evidence reference"
+  "rawEvidenceRef": "optional durable evidence reference"
 }
 ```
 
@@ -84,6 +85,14 @@ Required event kinds are:
 
 Unknown provider messages are retained and surfaced as
 `unknown.provider_event`; they are never silently discarded.
+
+The Go adapter boundary uses the closed `provider.EventKind` vocabulary. A
+transport-specific name is never passed through as an event kind: adapters map a
+known frame to its normalized kind and wrap every unrecognized frame as
+`unknown.provider_event`, retaining its payload and protected evidence reference.
+The versioned JSON schema keeps `eventKind` open to additive future normalized
+kinds; adding a Go kind requires updating the adapter contract and conformance
+suite before an adapter may emit it.
 
 ## Interaction invariants
 

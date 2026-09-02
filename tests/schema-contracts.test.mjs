@@ -52,6 +52,19 @@ test("provider state combinations are encoded as tagged variants", () => {
   assert.equal(schema.$defs.attemptResult.oneOf.length, 3);
 });
 
+test("provider events publish the normalized adapter vocabulary", () => {
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "provider-v1alpha1.schema.json"), "utf8"));
+  assert.deepEqual(schema.$defs.providerEvent.properties.eventKind["x-darkstar-canonicalValues"], [
+    "attempt.started", "attempt.waiting", "attempt.completed", "attempt.failed", "attempt.cancelled",
+    "turn.started", "turn.completed", "turn.interrupted",
+    "message.delta", "message.completed", "plan.updated", "structured_output.completed",
+    "command.started", "command.output", "command.completed", "file_change.started", "file_change.completed", "tool.started", "tool.completed",
+    "permission.requested", "permission.response_recorded", "user_input.requested", "user_input.response_recorded",
+    "usage.updated", "warning", "error", "unknown.provider_event"
+  ]);
+  assert.equal(schema.$defs.providerEvent.properties.eventKind.enum, undefined);
+});
+
 test("artifact provenance and context order have one source of truth", () => {
   const schema = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha1.schema.json"), "utf8"));
   assert.deepEqual(schema.$defs.provenance.oneOf.map((variant) => variant.properties.origin.const), ["attempt", "operation"]);

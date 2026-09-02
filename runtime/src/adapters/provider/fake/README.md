@@ -27,10 +27,10 @@ clock := fake.NewManualClock(time.Unix(0, 0).UTC())
 adapter, err := fake.New(fake.Scenario{Attempts: []fake.AttemptScenario{{
     AttemptID: "attempt-1",
     Steps: []fake.Step{
-        fake.Emit(provider.Event{Sequence: 1, Kind: "tool.call"}),
+        fake.Emit(provider.Event{Sequence: 1, Kind: provider.EventToolStarted, Payload: json.RawMessage(`{}`)}),
         fake.AwaitResponse("tool-request-1"),
         fake.Pause(time.Minute),
-        fake.Emit(provider.Event{Sequence: 2, Kind: "turn.completed"}),
+        fake.Emit(provider.Event{Sequence: 2, Kind: provider.EventTurnCompleted, Payload: json.RawMessage(`{}`)}),
     },
 }}}, fake.WithClock(clock))
 ```

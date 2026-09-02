@@ -295,7 +295,11 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 			}
 			return
 		}
-		if event.AttemptID != current.AttemptID || event.Provider != current.Provider || event.Sequence == 0 {
+		if err = event.Validate(); err != nil {
+			s.failAttempt(current.AttemptID, current.RunID, err)
+			return
+		}
+		if event.AttemptID != current.AttemptID || event.Provider != current.Provider {
 			s.failAttempt(current.AttemptID, current.RunID, errors.New("provider event identity or sequence is invalid"))
 			return
 		}
