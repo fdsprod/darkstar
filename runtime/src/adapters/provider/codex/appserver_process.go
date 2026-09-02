@@ -66,7 +66,7 @@ func StartAppServer(ctx context.Context, executable string, options AppServerOpt
 
 func canonicalExecutable(executable string) (string, error) {
 	if executable == "" {
-		return "", fmt.Errorf("Codex executable path is required")
+		return "", fmt.Errorf("codex executable path is required")
 	}
 	resolved, err := exec.LookPath(executable)
 	if err != nil {

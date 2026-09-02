@@ -44,10 +44,10 @@ type EventNormalizer struct {
 // NewEventNormalizer creates an attempt-scoped normalizer.
 func NewEventNormalizer(options NormalizerOptions) (*EventNormalizer, error) {
 	if strings.TrimSpace(options.AttemptID) == "" {
-		return nil, errors.New("Codex event normalizer attempt ID is required")
+		return nil, errors.New("codex event normalizer attempt ID is required")
 	}
 	if strings.TrimSpace(options.ProviderVersion) == "" {
-		return nil, errors.New("Codex event normalizer provider version is required")
+		return nil, errors.New("codex event normalizer provider version is required")
 	}
 	if options.Clock == nil {
 		options.Clock = time.Now
@@ -74,6 +74,25 @@ func (normalizer *EventNormalizer) Normalize(message IncomingMessage) (provider.
 	default:
 		return provider.Event{}, fmt.Errorf("unsupported Codex incoming message %T", message)
 	}
+}
+
+// Emit appends one adapter-derived event to the same ordered sequence as native
+// messages. It is used for facts such as schema-validated structured output.
+func (normalizer *EventNormalizer) Emit(kind provider.EventKind, payload json.RawMessage, threadID, turnID, itemID string) (provider.Event, error) {
+	normalizer.mu.Lock()
+	defer normalizer.mu.Unlock()
+	if !kind.IsCanonical() || kind == provider.EventUnknownProvider {
+		return provider.Event{}, fmt.Errorf("invalid derived Codex event kind %q", kind)
+	}
+	if len(bytes.TrimSpace(payload)) == 0 || !json.Valid(payload) {
+		return provider.Event{}, errors.New("derived Codex event payload must be valid JSON")
+	}
+	params := map[string]json.RawMessage{
+		"threadId": mustRawString(threadID),
+		"turnId":   mustRawString(turnID),
+		"itemId":   mustRawString(itemID),
+	}
+	return normalizer.event("darkstar/derived", cloneRaw(payload), nil, kind, normalizer.clock().UTC(), params)
 }
 
 func (normalizer *EventNormalizer) normalizeNotification(notification ServerNotification) (provider.Event, error) {
@@ -318,4 +337,9 @@ func rawIDKey(raw json.RawMessage) string {
 		return string(encoded)
 	}
 	return string(trimmed)
+}
+
+func mustRawString(value string) json.RawMessage {
+	payload, _ := json.Marshal(value)
+	return payload
 }

@@ -157,10 +157,10 @@ func NewAppServerClient(stdin io.WriteCloser, stdout io.ReadCloser, options AppS
 
 func newAppServerClient(stdin io.WriteCloser, stdout io.ReadCloser, owner processOwner, options AppServerOptions) (*AppServerClient, error) {
 	if stdin == nil || stdout == nil {
-		return nil, errors.New("Codex App Server stdin and stdout are required")
+		return nil, errors.New("codex App Server stdin and stdout are required")
 	}
 	if strings.TrimSpace(options.ClientInfo.Name) == "" || strings.TrimSpace(options.ClientInfo.Version) == "" {
-		return nil, errors.New("Codex App Server client name and version are required")
+		return nil, errors.New("codex App Server client name and version are required")
 	}
 	if len(options.SupportedVersions) == 0 {
 		options.SupportedVersions = append([]string(nil), supportedAppServerVersions...)
@@ -198,7 +198,7 @@ func newAppServerClient(stdin io.WriteCloser, stdout io.ReadCloser, owner proces
 // admission before any thread operation is allowed.
 func (client *AppServerClient) Initialize(ctx context.Context) (InitializeResult, error) {
 	if client.initialized.Load() {
-		return InitializeResult{}, errors.New("Codex App Server client is already initialized")
+		return InitializeResult{}, errors.New("codex App Server client is already initialized")
 	}
 	params := struct {
 		ClientInfo   ClientInfo      `json:"clientInfo"`
@@ -212,7 +212,7 @@ func (client *AppServerClient) Initialize(ctx context.Context) (InitializeResult
 		return InitializeResult{}, err
 	}
 	if strings.TrimSpace(result.UserAgent) == "" || strings.TrimSpace(result.PlatformFamily) == "" {
-		return InitializeResult{}, errors.New("Codex App Server initialize response omitted required identity fields")
+		return InitializeResult{}, errors.New("codex App Server initialize response omitted required identity fields")
 	}
 	version := versionFromUserAgent(result.UserAgent)
 	if !contains(client.options.SupportedVersions, version) {
@@ -256,10 +256,10 @@ func (client *AppServerClient) Call(ctx context.Context, method string, params a
 
 func (client *AppServerClient) call(ctx context.Context, method string, params any, target any, allowClosing bool) error {
 	if strings.TrimSpace(method) == "" {
-		return errors.New("Codex App Server method is required")
+		return errors.New("codex App Server method is required")
 	}
 	if client.closing.Load() && !allowClosing {
-		return errors.New("Codex App Server client is closing")
+		return errors.New("codex App Server client is closing")
 	}
 	payload, err := marshalValue(params)
 	if err != nil {
@@ -291,7 +291,7 @@ func (client *AppServerClient) call(ctx context.Context, method string, params a
 			return nil
 		}
 		if len(reply.result) == 0 {
-			return fmt.Errorf("Codex App Server %s response omitted result", method)
+			return fmt.Errorf("codex App Server %s response omitted result", method)
 		}
 		if err := json.Unmarshal(reply.result, target); err != nil {
 			return fmt.Errorf("decode Codex App Server %s result: %w", method, err)
@@ -303,7 +303,7 @@ func (client *AppServerClient) call(ctx context.Context, method string, params a
 // Notify sends one client-to-server notification.
 func (client *AppServerClient) Notify(method string, params any) error {
 	if strings.TrimSpace(method) == "" {
-		return errors.New("Codex App Server notification method is required")
+		return errors.New("codex App Server notification method is required")
 	}
 	payload, err := marshalValue(params)
 	if err != nil {
@@ -315,7 +315,7 @@ func (client *AppServerClient) Notify(method string, params any) error {
 // Respond sends a successful reply to one server-initiated request.
 func (client *AppServerClient) Respond(requestID json.RawMessage, result any) error {
 	if len(bytes.TrimSpace(requestID)) == 0 {
-		return errors.New("Codex App Server request ID is required")
+		return errors.New("codex App Server request ID is required")
 	}
 	payload, err := marshalValue(result)
 	if err != nil {
@@ -327,7 +327,7 @@ func (client *AppServerClient) Respond(requestID json.RawMessage, result any) er
 // RespondError sends an error reply to one server-initiated request.
 func (client *AppServerClient) RespondError(requestID json.RawMessage, rpcError RPCError) error {
 	if len(bytes.TrimSpace(requestID)) == 0 {
-		return errors.New("Codex App Server request ID is required")
+		return errors.New("codex App Server request ID is required")
 	}
 	return client.write(wireMessage{ID: cloneRaw(requestID), Error: &rpcError})
 }
@@ -378,7 +378,7 @@ func (client *AppServerClient) StartTurn(ctx context.Context, params any) (TurnR
 		return TurnRef{}, err
 	}
 	if strings.TrimSpace(response.Turn.ID) == "" {
-		return TurnRef{}, errors.New("Codex App Server turn/start response omitted turn ID")
+		return TurnRef{}, errors.New("codex App Server turn/start response omitted turn ID")
 	}
 	return TurnRef{ID: response.Turn.ID}, nil
 }
@@ -395,7 +395,7 @@ func (client *AppServerClient) Unsubscribe(ctx context.Context, threadID string)
 
 func (client *AppServerClient) unsubscribe(ctx context.Context, threadID string, allowClosing bool) error {
 	if strings.TrimSpace(threadID) == "" {
-		return errors.New("Codex App Server thread ID is required")
+		return errors.New("codex App Server thread ID is required")
 	}
 	var response struct {
 		Status string `json:"status"`
@@ -404,7 +404,7 @@ func (client *AppServerClient) unsubscribe(ctx context.Context, threadID string,
 		return err
 	}
 	if response.Status != "unsubscribed" {
-		return fmt.Errorf("Codex App Server thread/unsubscribe returned status %q", response.Status)
+		return fmt.Errorf("codex App Server thread/unsubscribe returned status %q", response.Status)
 	}
 	client.stateMu.Lock()
 	delete(client.threads, threadID)
@@ -471,7 +471,7 @@ func (client *AppServerClient) Close() error {
 // higher-level cancellation grace policy expires.
 func (client *AppServerClient) KillOwnedProcess() error {
 	if client.owner == nil {
-		return errors.New("Codex App Server client does not own a process")
+		return errors.New("codex App Server client does not own a process")
 	}
 	client.closing.Store(true)
 	return client.owner.Kill()
@@ -501,7 +501,7 @@ func (client *AppServerClient) readLoop() {
 			continue
 		}
 		if message.Method == "" {
-			client.terminate(errors.New("Codex App Server message has neither ID nor method"))
+			client.terminate(errors.New("codex App Server message has neither ID nor method"))
 			return
 		}
 		notification := ServerNotification{Method: message.Method, Params: cloneRaw(message.Params), EmittedAtMS: message.EmittedAtMS}
@@ -586,14 +586,14 @@ func (client *AppServerClient) removePending(key string) {
 
 func (client *AppServerClient) requireInitialized() error {
 	if !client.initialized.Load() {
-		return errors.New("Codex App Server client is not initialized")
+		return errors.New("codex App Server client is not initialized")
 	}
 	return nil
 }
 
 func (client *AppServerClient) rememberThread(threadID, method string) (ThreadRef, error) {
 	if strings.TrimSpace(threadID) == "" {
-		return ThreadRef{}, fmt.Errorf("Codex App Server %s response omitted thread ID", method)
+		return ThreadRef{}, fmt.Errorf("codex App Server %s response omitted thread ID", method)
 	}
 	client.stateMu.Lock()
 	client.threads[threadID] = struct{}{}
