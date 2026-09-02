@@ -464,7 +464,7 @@ func TestAdapterExecutesStructuredReadOnlyNode(t *testing.T) {
 	if err := json.Unmarshal(threadParams, &thread); err != nil {
 		t.Fatalf("decode thread params: %v", err)
 	}
-	if thread.CWD != workspace || thread.Sandbox != "read-only" || thread.ApprovalPolicy != "never" {
+	if !pathsReferToSameFile(thread.CWD, workspace) || thread.Sandbox != "read-only" || thread.ApprovalPolicy != "never" {
 		t.Fatalf("thread params = %#v", thread)
 	}
 	turnParams := <-script.turnParams
@@ -534,10 +534,10 @@ func TestAdapterSuppliesModelUsableImageAndSelectedSkill(t *testing.T) {
 		t.Fatalf("turn params = %#v, error = %v", turn, err)
 	}
 	imageInput, skillInput := turn.Input[2], turn.Input[3]
-	if imageInput.Type != "localImage" || imageInput.Path != imagePath || imageInput.Detail != providerport.ImageDetailOriginal {
+	if imageInput.Type != "localImage" || !pathsReferToSameFile(imageInput.Path, imagePath) || imageInput.Detail != providerport.ImageDetailOriginal {
 		t.Fatalf("image input = %#v", imageInput)
 	}
-	if skillInput.Type != "skill" || skillInput.Name != "review" || skillInput.Path != skillPath {
+	if skillInput.Type != "skill" || skillInput.Name != "review" || !pathsReferToSameFile(skillInput.Path, skillPath) {
 		t.Fatalf("skill input = %#v", skillInput)
 	}
 
@@ -1133,6 +1133,12 @@ func hasEventKind(events []providerport.Event, kind providerport.EventKind) bool
 		}
 	}
 	return false
+}
+
+func pathsReferToSameFile(left, right string) bool {
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }
 
 func assertEvidenceFiles(t *testing.T, evidence []providerport.Evidence) {

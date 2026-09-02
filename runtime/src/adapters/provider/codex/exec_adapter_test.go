@@ -70,10 +70,10 @@ func TestExecAdapterStreamsValidatesAndRecordsSelection(t *testing.T) {
 		t.Fatalf("arguments retained rejected legacy approval flag: %#v", captured.Arguments)
 	}
 	cdIndex := argumentIndex(captured.Arguments, "--cd")
-	if cdIndex < 0 || cdIndex+1 >= len(captured.Arguments) || captured.Arguments[cdIndex+1] != request.Workspace {
+	if cdIndex < 0 || cdIndex+1 >= len(captured.Arguments) || !pathsReferToSameFile(captured.Arguments[cdIndex+1], request.Workspace) {
 		t.Fatalf("arguments omitted the exact bounded workspace: %#v", captured.Arguments)
 	}
-	if captured.Directory != request.Workspace || !strings.Contains(captured.Arguments[len(captured.Arguments)-1], "Prepared immutable context") {
+	if !pathsReferToSameFile(captured.Directory, request.Workspace) || !strings.Contains(captured.Arguments[len(captured.Arguments)-1], "Prepared immutable context") {
 		t.Fatalf("command did not retain bounded workspace and prepared input: %#v", captured)
 	}
 
