@@ -35,6 +35,18 @@ test("v1 run evolution preserves legacy operations and models new requests as a 
   assert.equal(api.components.schemas.Run.required.includes("lastGlobalPosition"), false);
 });
 
+test("project and work command contracts publish exact request variants and aggregate views", () => {
+  const api = JSON.parse(readFileSync(resolve(root, "schemas", "openapi-v1alpha1.json"), "utf8"));
+  assert.equal(api.paths["/api/v1/projects"].post.operationId, "registerProject");
+  assert.equal(api.paths["/api/v1/projects/{projectId}"].get.operationId, "getProject");
+  assert.equal(api.paths["/api/v1/work-items"].post.operationId, "createWorkItem");
+  assert.equal(api.paths["/api/v1/work-items/import"].post.operationId, "importWorkItem");
+  assert.equal(api.components.schemas.ProjectRegistration.additionalProperties, false);
+  assert.equal(api.components.schemas.CreateWorkItemRequest.additionalProperties, false);
+  assert.equal(api.components.schemas.ImportWorkItemRequest.additionalProperties, false);
+  assert.deepEqual(api.components.schemas.WorkItem.properties.status.enum, ["open", "active", "completed", "cancelled"]);
+});
+
 test("provider and artifact boundaries are published as strict schemas", () => {
   for (const name of ["provider-v1alpha1.schema.json", "artifact-v1alpha1.schema.json"]) {
     const schema = JSON.parse(readFileSync(resolve(root, "schemas", name), "utf8"));

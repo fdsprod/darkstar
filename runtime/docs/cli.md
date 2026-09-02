@@ -36,6 +36,34 @@ directory, and atomically publishes it. It refuses to overwrite an existing
 file. With `--json`, stdout contains the run ID, absolute output path, and byte
 size while the bundle remains at the requested path.
 
+## Project and work commands
+
+Project and work commands use the same authenticated daemon boundary as other
+stateful commands:
+
+```text
+darkstar project add [path] [--name <name>]
+darkstar project register [path] [--name <name>]
+darkstar project list
+darkstar project show <project-id>
+darkstar work create <description> [--project <project-id>] [--priority <n>]
+darkstar work import <source-ref> [--project <project-id>] [--title <title>] [--priority <n>]
+darkstar work list [--project <project-id>]
+darkstar work show <work-id>
+```
+
+`project add` and `project register` are equivalent. The CLI canonicalizes an
+existing directory, sends it as registration source, and the daemon persists
+only its SHA-256 fingerprint. Re-registering the same source returns the same
+project instead of creating a second repository identity.
+
+Authored work fingerprints its description. Imported work fingerprints the
+external source reference and defaults its local title to that reference. When
+`--project` is omitted, exactly one active registered project must exist; an
+ambiguous selection fails explicitly. Successful JSON output uses the common
+`{"schemaVersion":1,"result":...}` envelope, while project and work show
+results include their directly owned aggregate projections.
+
 ## Artifact commands
 
 Artifact commands use the same daemon-owned application service as the HTTP API:

@@ -33,6 +33,7 @@ import (
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/runexport"
 	"darkstar/src/core/workflow"
+	"darkstar/src/core/workmanagement"
 	"darkstar/src/daemon"
 	"darkstar/src/doctor"
 	"darkstar/src/platform/windows"
@@ -52,12 +53,25 @@ Commands:
   daemon     Run and control the per-user daemon
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
+  project    Register, list, and inspect projects
   run        Start, inspect, watch, and export runs
+  work       Create, import, list, and inspect work
   workflow   List, show, validate, install, graph, and preview workflows
   version    Show version information
 
 API commands:
   api status [--json]      Discover or autostart the daemon and verify its API
+
+Project commands:
+  project add|register [path] [--name <name>] [--idempotency-key <key>] [--json]
+  project list [--json]
+  project show <project-id> [--json]
+
+Work commands:
+  work create <description> [--project <project-id>] [--priority <n>] [--idempotency-key <key>] [--json]
+  work import <source-ref> [--project <project-id>] [--title <title>] [--priority <n>] [--idempotency-key <key>] [--json]
+  work list [--project <project-id>] [--json]
+  work show <work-id> [--json]
 
 Run commands:
   run start --scenario <fake-success|fake-restart> [--idempotency-key <key>] [--json]
@@ -151,8 +165,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runArtifact(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "doctor":
 		return runDoctor(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "project":
+		return runProject(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "run":
 		return runRun(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "work":
+		return runWork(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "workflow":
 		return runWorkflow(cleanArgs[1:], jsonOutput, stdout, stderr)
 	default:
@@ -292,6 +310,17 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return err
 	}
 	if err := service.server.SetStreams(localapi.StreamServices{Events: database, Logs: logs}); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	work, err := workmanagement.New(database)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.server.SetWork(work); err != nil {
 		_ = database.Close()
 		service.database = nil
 		return err

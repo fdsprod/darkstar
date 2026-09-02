@@ -92,6 +92,28 @@ locators, bearer values, and common credential assignments are redacted again at
 the export boundary; logs receive the same value redaction. The manifest itself
 is not listed in its entries because it cannot contain its own digest.
 
+## Project and work operations
+
+Project and work mutations require `Idempotency-Key`, reject unknown request
+fields, and return canonical opaque IDs. Repository locations and external work
+references are command inputs; current projections expose only their SHA-256
+source fingerprints.
+
+| Method and route | Operation |
+|---|---|
+| `GET /api/v1/projects` | List registered project projections. |
+| `POST /api/v1/projects` | Register one named project source. |
+| `GET /api/v1/projects/{projectId}` | Show a project and its directly owned work items. |
+| `GET /api/v1/work-items?projectId=...` | List all work or filter by one exact project. |
+| `POST /api/v1/work-items` | Create authored work from a title and priority. |
+| `POST /api/v1/work-items/import` | Import an external source reference with an optional local title. |
+| `GET /api/v1/work-items/{workItemId}` | Show work with its run and story projections. |
+
+The create and import request shapes are distinct so a request cannot be both
+authored and externally sourced. Project and work lifecycle status remains the
+single durable state; list and show responses do not store a second derived
+active or terminal flag.
+
 ## Artifact operations
 
 The authenticated artifact surface is a transport over the daemon's shared

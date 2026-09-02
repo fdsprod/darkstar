@@ -85,10 +85,18 @@ func (d *Database) WorkItem(ctx context.Context, id string) (statestore.WorkItem
 	return value, projectionReadError("work item", id, err)
 }
 
+func (d *Database) WorkItems(ctx context.Context) ([]statestore.WorkItemProjection, error) {
+	return queryWorkItems(ctx, d.sql, "", nil)
+}
+
 func (d *Database) WorkItemsForProject(ctx context.Context, projectID string) ([]statestore.WorkItemProjection, error) {
-	rows, err := d.sql.QueryContext(ctx, workItemSelect+` WHERE project_id = ? ORDER BY priority DESC, created_at, work_item_id`, projectID)
+	return queryWorkItems(ctx, d.sql, ` WHERE project_id = ?`, []any{projectID})
+}
+
+func queryWorkItems(ctx context.Context, query workQueryer, where string, arguments []any) ([]statestore.WorkItemProjection, error) {
+	rows, err := query.QueryContext(ctx, workItemSelect+where+` ORDER BY priority DESC, created_at, work_item_id`, arguments...)
 	if err != nil {
-		return nil, fmt.Errorf("query project work items: %w", err)
+		return nil, fmt.Errorf("query work items: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	values := make([]statestore.WorkItemProjection, 0)
@@ -103,9 +111,17 @@ func (d *Database) WorkItemsForProject(ctx context.Context, projectID string) ([
 }
 
 func (d *Database) RunsForWorkItem(ctx context.Context, workItemID string) ([]statestore.RunProjection, error) {
-	rows, err := d.sql.QueryContext(ctx, runSelect+` WHERE work_item_id = ? ORDER BY priority DESC, created_at, run_id`, workItemID)
+	return queryRuns(ctx, d.sql, ` WHERE work_item_id = ?`, []any{workItemID})
+}
+
+func (d *Database) Runs(ctx context.Context) ([]statestore.RunProjection, error) {
+	return queryRuns(ctx, d.sql, "", nil)
+}
+
+func queryRuns(ctx context.Context, query workQueryer, where string, arguments []any) ([]statestore.RunProjection, error) {
+	rows, err := query.QueryContext(ctx, runSelect+where+` ORDER BY priority DESC, created_at, run_id`, arguments...)
 	if err != nil {
-		return nil, fmt.Errorf("query work-item runs: %w", err)
+		return nil, fmt.Errorf("query runs: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	values := make([]statestore.RunProjection, 0)

@@ -46,6 +46,7 @@ type Server struct {
 	streams   *StreamServices
 	exporter  RunExporter
 	runs      RunService
+	work      WorkService
 	artifacts ArtifactService
 	workflows WorkflowService
 
@@ -153,6 +154,20 @@ func (s *Server) SetRuns(runs RunService) error {
 		return errors.New("API run service is required")
 	}
 	s.runs = runs
+	return nil
+}
+
+// SetWork installs project and work-item operations before Start.
+func (s *Server) SetWork(work WorkService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API work service can only be set before start")
+	}
+	if work == nil {
+		return errors.New("API work service is required")
+	}
+	s.work = work
 	return nil
 }
 
@@ -376,6 +391,14 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/runs" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/runs/") {
 		s.serveRuns(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/projects" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/projects/") {
+		s.serveProjects(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/work-items" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/work-items/") {
+		s.serveWorkItems(response, request, requestID)
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/artifacts" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifacts/") ||
