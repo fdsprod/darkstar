@@ -66,4 +66,5 @@ type Store interface {
 	Dependents(context.Context, artifactregistry.VersionRef) ([]Dependency, error)
 	Freshness(context.Context, artifactregistry.VersionRef) (Freshness, error)
 	Invalidations(context.Context, artifactregistry.VersionRef) ([]Invalidation, error)
+	AffectedBy(context.Context, artifactregistry.VersionRef) ([]Invalidation, error)
 }

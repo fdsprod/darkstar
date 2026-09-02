@@ -64,6 +64,17 @@ test("artifact provenance and context order have one source of truth", () => {
     assert.ok(schema.$defs.contextManifest.properties[field], `context manifest is missing ${field}`);
 });
 
+test("late-evidence impact uses closed coverage and proposal variants", () => {
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha1.schema.json"), "utf8"));
+  assert.deepEqual(
+    schema.$defs.impactProposal.oneOf.map((variant) => variant.properties.action.const),
+    ["continue", "refresh", "revise", "insert", "invalidate"]
+  );
+  assert.deepEqual(schema.$defs.attemptCoverage.oneOf[0].properties.state.enum, ["supplied", "not_supplied"]);
+  assert.deepEqual(schema.$defs.attemptCoverage.oneOf[1].properties.state.enum, ["pending_freeze", "unavailable"]);
+  assert.equal(schema.$defs.impactAssessment.properties.sawLateEvidence, undefined);
+});
+
 test("compatibility permits additive optional fields", () => {
   const before = { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", additionalProperties: false, properties: { id: { type: "string" } } };
   const after = structuredClone(before);

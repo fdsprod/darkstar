@@ -5,6 +5,7 @@
   "oneOf": [
     {"$ref": "#/$defs/artifact"},
     {"$ref": "#/$defs/representation"},
+    {"$ref": "#/$defs/impactAssessment"},
     {"$ref": "#/$defs/artifactBinding"},
     {"$ref": "#/$defs/contextManifest"}
   ],
@@ -97,6 +98,141 @@
         "diagnostics": {"type": "array", "items": {"type": "string"}},
         "metadata": {"type": "object", "additionalProperties": {"type": "string"}},
         "createdAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "artifactVersionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactId", "version"],
+      "properties": {
+        "artifactId": {"$ref": "#/$defs/identifier"},
+        "version": {"type": "integer", "minimum": 1}
+      }
+    },
+    "bindingTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {"enum": ["project", "work", "run", "node", "checkpoint", "decision", "story", "implementation_point"]},
+        "id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "attemptCoverage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["attemptId", "nodeId", "manifestId", "state"],
+          "properties": {
+            "attemptId": {"$ref": "#/$defs/identifier"},
+            "nodeId": {"$ref": "#/$defs/identifier"},
+            "manifestId": {"$ref": "#/$defs/identifier"},
+            "state": {"enum": ["supplied", "not_supplied"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["attemptId", "nodeId", "state"],
+          "properties": {
+            "attemptId": {"$ref": "#/$defs/identifier"},
+            "nodeId": {"$ref": "#/$defs/identifier"},
+            "state": {"enum": ["pending_freeze", "unavailable"]}
+          }
+        }
+      ]
+    },
+    "artifactEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "freshness"],
+      "properties": {
+        "artifact": {"$ref": "#/$defs/artifactVersionRef"},
+        "freshness": {"enum": ["potentially_stale", "invalidated"]}
+      }
+    },
+    "impactProposal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "reason"],
+          "properties": {"action": {"const": "continue"}, "reason": {"type": "string", "minLength": 1}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "attemptId", "reason"],
+          "properties": {
+            "action": {"const": "refresh"},
+            "attemptId": {"$ref": "#/$defs/identifier"},
+            "reason": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "artifacts", "reason"],
+          "properties": {
+            "action": {"const": "revise"},
+            "artifacts": {
+              "type": "array", "minItems": 1,
+              "items": {
+                "allOf": [
+                  {"$ref": "#/$defs/artifactEffect"},
+                  {"properties": {"freshness": {"const": "potentially_stale"}}}
+                ]
+              }
+            },
+            "reason": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "runId", "target", "roles", "reason"],
+          "properties": {
+            "action": {"const": "insert"},
+            "runId": {"$ref": "#/$defs/identifier"},
+            "target": {"$ref": "#/$defs/bindingTarget"},
+            "roles": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
+            "reason": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "artifacts", "reason"],
+          "properties": {
+            "action": {"const": "invalidate"},
+            "artifacts": {
+              "type": "array", "minItems": 1,
+              "items": {
+                "allOf": [
+                  {"$ref": "#/$defs/artifactEffect"},
+                  {"properties": {"freshness": {"const": "invalidated"}}}
+                ]
+              }
+            },
+            "reason": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "impactAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schemaVersion", "evidence", "target", "roles", "coverage", "proposals"],
+      "properties": {
+        "kind": {"const": "impact_assessment"},
+        "schemaVersion": {"const": 1},
+        "evidence": {"$ref": "#/$defs/artifactVersionRef"},
+        "target": {"$ref": "#/$defs/bindingTarget"},
+        "runId": {"$ref": "#/$defs/identifier"},
+        "roles": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
+        "coverage": {"type": "array", "items": {"$ref": "#/$defs/attemptCoverage"}},
+        "proposals": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/impactProposal"}}
       }
     },
     "artifactBinding": {

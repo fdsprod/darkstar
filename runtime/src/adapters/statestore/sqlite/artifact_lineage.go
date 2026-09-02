@@ -163,6 +163,40 @@ func (d *Database) Invalidations(ctx context.Context, reference artifactregistry
 	return result, nil
 }
 
+// AffectedBy lists the exact descendants affected by one upstream revision.
+func (d *Database) AffectedBy(ctx context.Context, trigger artifactregistry.VersionRef) ([]artifactlineage.Invalidation, error) {
+	if err := validateVersionRef(trigger); err != nil {
+		return nil, err
+	}
+	rows, err := d.sql.QueryContext(ctx, `SELECT trigger_artifact_id, trigger_artifact_version,
+		descendant_artifact_id, descendant_artifact_version, freshness, created_at
+		FROM artifact_invalidations WHERE trigger_artifact_id = ? AND trigger_artifact_version = ?
+		ORDER BY CASE freshness WHEN 'invalidated' THEN 0 ELSE 1 END,
+			descendant_artifact_id, descendant_artifact_version`, trigger.ArtifactID, trigger.Version)
+	if err != nil {
+		return nil, fmt.Errorf("list revision impact: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := make([]artifactlineage.Invalidation, 0)
+	for rows.Next() {
+		var value artifactlineage.Invalidation
+		var createdAt string
+		if err := rows.Scan(&value.Trigger.ArtifactID, &value.Trigger.Version,
+			&value.Descendant.ArtifactID, &value.Descendant.Version, &value.Freshness, &createdAt); err != nil {
+			return nil, fmt.Errorf("scan revision impact: %w", err)
+		}
+		value.CreatedAt, err = parseTime(createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse revision impact time: %w", err)
+		}
+		result = append(result, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate revision impact: %w", err)
+	}
+	return result, nil
+}
+
 func recordArtifactInvalidations(ctx context.Context, tx *sql.Tx, previous, current artifactregistry.VersionRef, createdAt string) error {
 	rows, err := tx.QueryContext(ctx, `WITH RECURSIVE affected(artifact_id, version, rank) AS (
 		SELECT dependent_artifact_id, dependent_artifact_version,

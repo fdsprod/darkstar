@@ -78,6 +78,10 @@ func TestArtifactRevisionInvalidatesOnlyReachableDescendants(t *testing.T) {
 	if err != nil || len(invalidations) != 1 || invalidations[0].Trigger != (artifactregistry.VersionRef{ArtifactID: upstream.ArtifactID, Version: 2}) || invalidations[0].Freshness != artifactlineage.FreshnessInvalidated {
 		t.Fatalf("Invalidations(invalid) = %#v, %v", invalidations, err)
 	}
+	affected, err := database.AffectedBy(ctx, artifactregistry.VersionRef{ArtifactID: upstream.ArtifactID, Version: 2})
+	if err != nil || len(affected) != 3 || affected[0].Freshness != artifactlineage.FreshnessInvalidated || affected[2].Freshness != artifactlineage.FreshnessPotentiallyStale {
+		t.Fatalf("AffectedBy(revision) = %#v, %v", affected, err)
+	}
 	inputs, err := database.Dependencies(ctx, invalid)
 	if err != nil || len(inputs) != 1 || inputs[0].Source != stale {
 		t.Fatalf("Dependencies(invalid) = %#v, %v", inputs, err)

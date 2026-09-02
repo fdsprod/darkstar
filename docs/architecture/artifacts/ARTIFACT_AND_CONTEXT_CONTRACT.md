@@ -153,6 +153,16 @@ The attempt manifest is immutable after `attempt.prepared`. New evidence emits
 `artifact.arrived` and `context.replan_required` where policy requires it. It
 never mutates a running provider turn.
 
+A late-evidence impact assessment is read-only and returns a closed proposal
+set: `continue`, `refresh`, `revise`, `insert`, or `invalidate`. It evaluates an
+exact actively bound artifact version, revision-driven descendant freshness,
+the binding scope, semantic roles, current node state, and active attempt
+manifests. Every scoped active attempt is explicitly classified as `supplied`,
+`pending_freeze`, `not_supplied`, or `unavailable`; `refresh` is proposed only
+for the latter missing-context states and means a new attempt with a new frozen
+manifest. `insert` remains subject to the route-patch proposal and approval
+contract, and assessment itself never changes a route or artifact.
+
 ## 7. Failure and recovery rules
 
 | Boundary | Durable fact before work | Reconciliation |
