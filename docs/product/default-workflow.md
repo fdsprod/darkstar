@@ -292,7 +292,7 @@ The artifact may be a TDD, one or more ADRs, an API specification, or another pr
 
 **Behavior:** Review findings may route to a targeted story/implementation point, design revision, or requirement clarification. Upstream changes trigger normal lineage invalidation rather than an untracked patch loop.
 
-**Default checkpoint:** External condition—required reviews and checks pass.
+**Default checkpoint:** External condition—required reviews and checks pass. Until a repository connector is installed, a human may satisfy the checkpoint by attaching a schema-valid `review_ci` evidence record; the record is evidence, not an assertion invented by the workflow.
 
 ### P15 — Release readiness
 
@@ -300,7 +300,7 @@ The artifact may be a TDD, one or more ADRs, an API specification, or another pr
 
 **Checks may include:** Release notes, feature flags, migrations, rollout and rollback plan, support/operations readiness, observability, change window, compliance, and environment health.
 
-**Artifact:** `release_readiness.md` or a structured external approval record.
+**Artifact:** A schema-valid `release_readiness` evidence record containing the decision, rollout and rollback plans, checks, and accountable decision maker.
 
 **Default checkpoint:** Approve for production-impacting changes; project policy may automate low-risk deployments.
 
@@ -310,7 +310,7 @@ The artifact may be a TDD, one or more ADRs, an API specification, or another pr
 
 **Behavior:** Merge, tag, package, release, deploy, or hand off to an external deployment system. Every action is idempotent, permission-scoped, and recorded.
 
-**Default checkpoint:** External policy. In the MVP, steps after PR may be represented by manual/external checkpoints until release connectors are installed.
+**Default checkpoint:** External policy. In the MVP, the node waits for a schema-valid `release` evidence record containing the release identity, environment, status, and source references. A human can record evidence from an external system until a release connector is installed.
 
 ### P17 — Production verification and learning
 
@@ -320,7 +320,7 @@ The artifact may be a TDD, one or more ADRs, an API specification, or another pr
 
 **Artifacts:** `production_verification` and optional follow-up work items.
 
-**Default checkpoint:** None when configured automated checks pass; alert/approval on anomalies.
+**Default checkpoint:** External evidence. The node waits for a schema-valid `production_verification` record containing observation time, health state, concrete checks, and source references; a human can supply it until an observability connector is installed.
 
 **Valid terminal:** Yes; this is the full delivery terminal.
 

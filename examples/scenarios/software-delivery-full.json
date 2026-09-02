@@ -21,10 +21,10 @@
     "p10_delivery_readiness": [{"delivery_readiness": {"approved": true}}],
     "p12_integrated_validation": [{"passed": true, "validation_report": {"checks": "passed"}}],
     "p13_pull_request": [{"pull_request": {"number": 42}}],
-    "p14_review_ci": [{"review_ci": {"passed": true}}],
-    "p15_release_readiness": [{"release_readiness": {"approved": true}}],
-    "p16_release": [{"deployment": {"environment": "production"}}],
-    "p17_verification": [{"production_verification": {"healthy": true}}]
+    "p14_review_ci": [{"review_ci": {"evidenceType": "review_ci", "schemaVersion": 1, "status": "satisfied", "reviews": [{"name": "code-owner", "status": "passed"}], "checks": [{"name": "required-ci", "status": "passed"}], "references": [{"label": "pull request checks", "uri": "https://example.invalid/pull/42/checks"}]}}],
+    "p15_release_readiness": [{"release_readiness": {"evidenceType": "release_readiness", "schemaVersion": 1, "decision": "approved", "rolloutPlan": "Deploy to the production environment.", "rollbackPlan": "Restore the prior release.", "checks": [{"name": "operations", "status": "passed"}], "decidedBy": "release-owner"}}],
+    "p16_release": [{"deployment": {"evidenceType": "release", "schemaVersion": 1, "status": "completed", "releaseId": "release-42", "environment": "production", "references": [{"label": "deployment record", "uri": "https://example.invalid/releases/42"}]}}],
+    "p17_verification": [{"production_verification": {"evidenceType": "production_verification", "schemaVersion": 1, "status": "healthy", "observedAt": "2026-09-02T12:00:00Z", "checks": [{"name": "smoke test", "status": "passed"}], "references": [{"label": "health dashboard", "uri": "https://example.invalid/health/42"}]}}]
   },
   "checkpoints": {
     "p2_product_discovery": ["approve"],

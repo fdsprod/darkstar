@@ -238,13 +238,14 @@
       "required": ["actor"],
       "properties": {
         "actor": {"type": "string", "minLength": 1},
-        "externalCondition": {"type": "string", "minLength": 1}
+        "externalCondition": {"type": "string", "minLength": 1},
+        "evidenceOutput": {"$ref": "#/$defs/identifier"}
       },
       "allOf": [
         {
           "if": {"properties": {"actor": {"const": "external"}}, "required": ["actor"]},
-          "then": {"required": ["externalCondition"]},
-          "else": {"not": {"required": ["externalCondition"]}}
+          "then": {"required": ["externalCondition", "evidenceOutput"]},
+          "else": {"not": {"anyOf": [{"required": ["externalCondition"]}, {"required": ["evidenceOutput"]}]}}
         }
       ]
     },

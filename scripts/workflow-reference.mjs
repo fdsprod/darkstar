@@ -322,7 +322,13 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
     if (node.type === "approval" && node.approval && typeof node.approval === "object") {
       const isExternal = node.approval.actor === "external";
       const hasExternalCondition = Object.hasOwn(node.approval, "externalCondition");
-      if (isExternal !== hasExternalCondition) errors.push(fail("WF_SCHEMA_INVALID", "external approval actor and condition must be declared together", `${location}/approval`));
+      const hasEvidenceOutput = Object.hasOwn(node.approval, "evidenceOutput");
+      if (isExternal !== hasExternalCondition || isExternal !== hasEvidenceOutput) errors.push(fail("WF_SCHEMA_INVALID", "external approval actor, condition, and evidence output must be declared together", `${location}/approval`));
+      if (isExternal && hasEvidenceOutput) {
+        const declaration = node.outputs?.[node.approval.evidenceOutput];
+        if (!declaration) errors.push(fail("WF_REFERENCE_MISSING", `external evidence references unknown output '${node.approval.evidenceOutput}'`, `${location}/approval/evidenceOutput`));
+        else if (declaration.type !== "object" || typeof declaration.schema !== "string") errors.push(fail("WF_BINDING_INCOMPATIBLE", "external evidence output must be an object with a schema", `${location}/approval/evidenceOutput`));
+      }
     }
     if (node.checkpoint && typeof node.checkpoint === "object") {
       const allowedFields = {
@@ -566,10 +572,10 @@ export class Runner {
     return snapshot;
   }
 
-  nextResult(nodeId) {
+  nextResult(nodeId, missingCode = "RUN_OUTPUT_INVALID") {
     const values = this.fixture.results?.[nodeId] ?? [];
     const index = this.count(this.resultIndexes, nodeId);
-    if (!values[index] || typeof values[index] !== "object" || Array.isArray(values[index])) throw fail("RUN_OUTPUT_INVALID", `fixture has no result for node '${nodeId}'`, `/fixture/results/${nodeId}/${index}`);
+    if (!values[index] || typeof values[index] !== "object" || Array.isArray(values[index])) throw fail(missingCode, `fixture has no result for node '${nodeId}'`, `/fixture/results/${nodeId}/${index}`);
     this.resultIndexes.set(nodeId, index + 1);
     return values[index];
   }
@@ -717,6 +723,7 @@ export class Runner {
     let candidate;
     if (node.type === "subworkflow") candidate = this.runSubworkflow(nodeId, node, inputs);
     else if (node.type === "gate") candidate = this.runGate(nodeId, node, inputs);
+    else if (node.type === "approval" && node.approval?.actor === "external") candidate = this.nextResult(nodeId, "RUN_EXTERNAL_EVIDENCE_REQUIRED");
     else candidate = this.nextResult(nodeId);
     candidate = this.applyCheckpoint(nodeId, node, candidate);
     this.outputs[nodeId] = candidate;

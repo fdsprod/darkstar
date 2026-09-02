@@ -42,6 +42,13 @@ and targeted remedies. Remedy targets must be the current node or one of its gra
 predecessors, so a failed check can route the user to the smallest relevant upstream
 correction without inventing a forward dependency.
 
+An approval with actor `external` must name both its external condition and one
+declared object output as `evidenceOutput`. That output must carry a schema, allowing
+the node to remain waiting until a human or connector records evidence with the same
+contract. The shipped post-PR review/CI, release, and production-verification nodes
+use the closed delivery-stage evidence union and therefore require no deployment
+connector to preserve their workflow meaning.
+
 At execution time, predicates receive one immutable snapshot containing candidate
 outputs, bound node inputs, and frozen run inputs. The evaluator supports only the
 typed `v1alpha1` expression tree; it distinguishes missing values from present JSON

@@ -176,6 +176,35 @@ func TestShippedDefaultNodesHaveTypedReadinessContracts(t *testing.T) {
 	}
 }
 
+func TestPostPRNodesUseStructuredExternalEvidence(t *testing.T) {
+	t.Parallel()
+
+	document := decodeExample(t, "software-delivery.json")
+	for _, nodeID := range []workflow.Identifier{"p14_review_ci", "p16_release", "p17_verification"} {
+		node, ok := document.Spec.Nodes[nodeID].(workflow.ApprovalNode)
+		if !ok {
+			t.Fatalf("%s has type %T", nodeID, document.Spec.Nodes[nodeID])
+		}
+		external, ok := node.Executor.(workflow.ExternalApproval)
+		if !ok {
+			t.Fatalf("%s executor has type %T", nodeID, node.Executor)
+		}
+		output := node.Common.Outputs[external.EvidenceOutput]
+		if output.Type != workflow.ValueObject || !strings.HasPrefix(output.Schema, "schemas/delivery-evidence-v1alpha1.schema.json#/") {
+			t.Errorf("%s evidence output = %#v", nodeID, output)
+		}
+		foundValidator := false
+		for _, validator := range node.Common.Validators {
+			if schema, ok := validator.(workflow.SchemaValidator); ok && schema.Output == external.EvidenceOutput && schema.Schema == output.Schema {
+				foundValidator = true
+			}
+		}
+		if !foundValidator {
+			t.Errorf("%s has no matching evidence schema validator", nodeID)
+		}
+	}
+}
+
 func TestBindingCheckpointAndValidatorVariantsAreTyped(t *testing.T) {
 	t.Parallel()
 
@@ -251,6 +280,15 @@ func TestContradictoryTaggedShapesFailDuringDecode(t *testing.T) {
 				node(document, "technical_design")["validators"] = []any{
 					map[string]any{"output": "technical_design", "schema": "schema.json", "command": []any{"validate"}},
 				}
+			},
+		},
+		{
+			name: "external approval without evidence output",
+			want: "external actor requires evidenceOutput",
+			edit: func(document map[string]any) {
+				node(document, "technical_design")["type"] = "approval"
+				delete(node(document, "technical_design"), "reasoning")
+				node(document, "technical_design")["approval"] = map[string]any{"actor": "external", "externalCondition": "checks pass"}
 			},
 		},
 		{

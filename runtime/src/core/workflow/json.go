@@ -494,8 +494,9 @@ func decodeCommand(data []byte) (CommandExecutor, error) {
 
 func decodeApproval(data []byte) (ApprovalExecutor, error) {
 	type approvalWire struct {
-		Actor             string `json:"actor"`
-		ExternalCondition string `json:"externalCondition"`
+		Actor             string     `json:"actor"`
+		ExternalCondition string     `json:"externalCondition"`
+		EvidenceOutput    Identifier `json:"evidenceOutput"`
 	}
 	var wire approvalWire
 	if err := strictDecode(data, &wire); err != nil {
@@ -508,10 +509,13 @@ func decodeApproval(data []byte) (ApprovalExecutor, error) {
 		if strings.TrimSpace(wire.ExternalCondition) == "" {
 			return nil, errors.New("external actor requires externalCondition")
 		}
-		return ExternalApproval{ExternalCondition: wire.ExternalCondition}, nil
+		if err := validateIdentifier(wire.EvidenceOutput); err != nil {
+			return nil, fmt.Errorf("external actor requires evidenceOutput: %w", err)
+		}
+		return ExternalApproval{ExternalCondition: wire.ExternalCondition, EvidenceOutput: wire.EvidenceOutput}, nil
 	}
-	if wire.ExternalCondition != "" {
-		return nil, errors.New("externalCondition is valid only for the external actor")
+	if wire.ExternalCondition != "" || wire.EvidenceOutput != "" {
+		return nil, errors.New("externalCondition and evidenceOutput are valid only for the external actor")
 	}
 	return NamedApproval{Name: wire.Actor}, nil
 }
@@ -1137,7 +1141,7 @@ func (node ApprovalNode) MarshalJSON() ([]byte, error) {
 	case NamedApproval:
 		executor = map[string]any{"actor": approval.Name}
 	case ExternalApproval:
-		executor = map[string]any{"actor": "external", "externalCondition": approval.ExternalCondition}
+		executor = map[string]any{"actor": "external", "externalCondition": approval.ExternalCondition, "evidenceOutput": approval.EvidenceOutput}
 	default:
 		return nil, fmt.Errorf("unsupported approval executor %T", node.Executor)
 	}

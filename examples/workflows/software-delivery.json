@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/software-delivery",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "displayName": "DARKSTAR default software delivery workflow"
   },
   "spec": {
@@ -315,9 +315,10 @@
         "entry": false,
         "terminal": false,
         "inputs": {"pull_request": {"from": "node.p13_pull_request.output.pull_request", "type": "object", "required": false}},
-        "outputs": {"review_ci": {"type": "object"}},
+        "outputs": {"review_ci": {"type": "object", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/reviewCi"}},
         "readiness": {"recommendedEvidence": [{"role": "repository_checks", "description": "Required reviews, status checks, policy scans, and merge requirements."}], "policyGates": [{"policy": "review_and_ci", "enforcement": "external", "description": "The authoritative repository reports all required conditions satisfied."}], "invariants": ["External evidence is observed and recorded without fabricating connector results."], "remedies": [{"code": "review_or_ci_failed", "target": "p13_pull_request", "action": "revise_artifact", "description": "Address the specific review finding or failed repository check."}]},
-        "approval": {"actor": "external", "externalCondition": "required reviews and checks pass"},
+        "approval": {"actor": "external", "externalCondition": "required reviews and checks pass", "evidenceOutput": "review_ci"},
+        "validators": [{"output": "review_ci", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/reviewCi"}],
         "transitions": [{"id": "p14_to_p15", "to": "p15_release_readiness"}]
       },
       "p15_release_readiness": {
@@ -329,9 +330,10 @@
           "work_item": {"from": "run.input.work_item", "type": "object"},
           "repository": {"from": "run.input.repository", "type": "string"}
         },
-        "outputs": {"release_readiness": {"type": "object"}},
+        "outputs": {"release_readiness": {"type": "object", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/releaseReadiness"}},
         "readiness": {"recommendedEvidence": [{"role": "release_evidence", "description": "Release notes, rollout, rollback, observability, approvals, and environment health."}], "policyGates": [{"policy": "release_readiness", "enforcement": "blocking", "description": "Production-impacting work requires an authorized release decision."}], "invariants": ["The release decision identifies rollback triggers and the responsible authority."], "remedies": [{"code": "release_evidence_missing", "target": "p14_review_ci", "action": "supply_input", "description": "Supply the missing review, CI, rollout, rollback, or operational evidence."}]},
         "reasoning": {"agent": "release-owner", "skills": ["darkstar:release-readiness"]},
+        "validators": [{"output": "release_readiness", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/releaseReadiness"}],
         "checkpoint": "approve",
         "transitions": [{"id": "p15_to_p16", "to": "p16_release"}]
       },
@@ -341,23 +343,25 @@
         "entry": false,
         "terminal": false,
         "inputs": {"release_readiness": {"from": "node.p15_release_readiness.output.release_readiness", "type": "object", "required": false}},
-        "outputs": {"deployment": {"type": "object"}},
+        "outputs": {"deployment": {"type": "object", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/release"}},
         "readiness": {"recommendedEvidence": [{"role": "release_authorization", "description": "The accepted release decision and configured external delivery conditions."}], "policyGates": [{"policy": "release_execution", "enforcement": "external", "description": "Merge, release, and deployment follow external authorization and policy."}], "invariants": ["Delivery actions are idempotent, permission-scoped, and recorded."], "remedies": [{"code": "release_not_authorized", "target": "p15_release_readiness", "action": "clarify_decision", "description": "Resolve the missing release authority or readiness decision."}]},
-        "approval": {"actor": "external", "externalCondition": "merge, release, and deployment complete"},
+        "approval": {"actor": "external", "externalCondition": "merge, release, and deployment complete", "evidenceOutput": "deployment"},
+        "validators": [{"output": "deployment", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/release"}],
         "transitions": [{"id": "p16_to_p17", "to": "p17_verification"}]
       },
       "p17_verification": {
         "displayName": "P17 — Production verification and learning",
-        "type": "command",
+        "type": "approval",
         "entry": false,
         "terminal": true,
         "inputs": {
           "work_item": {"from": "run.input.work_item", "type": "object"},
           "deployment": {"from": "node.p16_release.output.deployment", "type": "object", "required": false}
         },
-        "outputs": {"production_verification": {"type": "object"}},
+        "outputs": {"production_verification": {"type": "object", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/productionVerification"}},
         "readiness": {"recommendedEvidence": [{"role": "deployment_evidence", "description": "Deployment identity, environment health, smoke checks, and relevant outcome metrics."}], "policyGates": [{"policy": "production_verification", "enforcement": "blocking", "description": "Configured production checks determine completion or anomaly handling."}], "invariants": ["Verification records observed production state and does not infer deployment success."], "remedies": [{"code": "production_anomaly", "target": "p16_release", "action": "clarify_decision", "description": "Apply the configured rollback or incident decision for the observed anomaly."}]},
-        "command": {"argv": ["darkstar-project", "verify-production", "--json"]},
+        "approval": {"actor": "external", "externalCondition": "production health and configured outcome checks are observed", "evidenceOutput": "production_verification"},
+        "validators": [{"output": "production_verification", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/productionVerification"}],
         "transitions": []
       }
     }

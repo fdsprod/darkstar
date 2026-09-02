@@ -219,7 +219,10 @@ type NamedApproval struct{ Name string }
 func (a NamedApproval) Actor() string     { return a.Name }
 func (NamedApproval) isApprovalExecutor() {}
 
-type ExternalApproval struct{ ExternalCondition string }
+type ExternalApproval struct {
+	ExternalCondition string
+	EvidenceOutput    Identifier
+}
 
 func (ExternalApproval) Actor() string       { return "external" }
 func (ExternalApproval) isApprovalExecutor() {}

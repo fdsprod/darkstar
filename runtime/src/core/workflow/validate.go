@@ -192,10 +192,32 @@ func (state *validationState) validateNodes(nodeIDs []Identifier) {
 		fields := node.Fields()
 		state.validateBindings(nodeID, fields)
 		state.validateReadiness(nodeID, fields)
+		state.validateApproval(nodeID, node, fields)
 		state.validateValidators(nodeID, fields)
 		state.validatePredicates(nodeID, node, fields)
 		state.validateSubworkflow(nodeID, node, fields)
 		state.validateCapabilities(nodeID, node)
+	}
+}
+
+func (state *validationState) validateApproval(nodeID Identifier, node Node, fields NodeFields) {
+	approval, ok := node.(ApprovalNode)
+	if !ok {
+		return
+	}
+	external, ok := approval.Executor.(ExternalApproval)
+	if !ok {
+		return
+	}
+	location := fmt.Sprintf("/spec/nodes/%s/approval/evidenceOutput", nodeID)
+	declaration, exists := fields.Outputs[external.EvidenceOutput]
+	if !exists {
+		state.add(ValidationReferenceMissing, fmt.Sprintf("external evidence references unknown output %q", external.EvidenceOutput), location, nil)
+		return
+	}
+	if declaration.Type != ValueObject || declaration.Schema == "" {
+		state.add(ValidationBindingIncompatible,
+			fmt.Sprintf("external evidence output %q must be an object with a schema", external.EvidenceOutput), location, nil)
 	}
 }
 

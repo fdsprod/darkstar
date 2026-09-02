@@ -53,7 +53,9 @@ try {
     }
     $schemaDirectory = Join-Path $OutputDirectory "schemas"
     New-Item -ItemType Directory -Force -Path $schemaDirectory | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repositoryRoot "schemas/planning-artifact-v1alpha1.schema.json") -Destination $schemaDirectory -Force
+    foreach ($schemaName in @("planning-artifact-v1alpha1.schema.json", "delivery-evidence-v1alpha1.schema.json")) {
+        Copy-Item -LiteralPath (Join-Path $repositoryRoot "schemas/$schemaName") -Destination $schemaDirectory -Force
+    }
 
     if (-not $SkipDashboard) {
         & npm run build

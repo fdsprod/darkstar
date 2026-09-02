@@ -33,6 +33,14 @@
       "version": "v1alpha1"
     },
     {
+      "file": "delivery-evidence-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/delivery-evidence-v1alpha1.schema.json",
+      "name": "delivery-evidence-v1alpha1",
+      "sha256": "3146e0f02fb21841736f6e296dc68bb4ffd1445fab6a773b66b83575fd143a5e",
+      "version": "v1alpha1"
+    },
+    {
       "file": "endpoint-v1alpha1.schema.json",
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/endpoint-v1alpha1.schema.json",
@@ -101,7 +109,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/workflow-v1alpha1.schema.json",
       "name": "workflow-v1alpha1",
-      "sha256": "ce80e45762d8230cbda364ca42f29a2e6886a6f24088465c645274444308c0f6",
+      "sha256": "3ad16fbe3a78925a7fa5e6a4479c284f2b1f916831f0433fb39f057d907530ed",
       "version": "v1alpha1"
     }
   ],

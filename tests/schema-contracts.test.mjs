@@ -71,6 +71,23 @@ test("provider and artifact boundaries are published as strict schemas", () => {
   }
 });
 
+test("post-PR delivery evidence is a closed stage union", () => {
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "delivery-evidence-v1alpha1.schema.json"), "utf8"));
+  assert.deepEqual(schema.oneOf.map((variant) => variant.$ref), [
+    "#/$defs/reviewCi", "#/$defs/releaseReadiness", "#/$defs/release", "#/$defs/productionVerification"
+  ]);
+  assert.deepEqual(
+    schema.oneOf.map((variant) => schema.$defs[variant.$ref.split("/").at(-1)].properties.evidenceType.const),
+    ["review_ci", "release_readiness", "release", "production_verification"]
+  );
+  for (const variant of schema.oneOf) {
+    const contract = schema.$defs[variant.$ref.split("/").at(-1)];
+    assert.equal(contract.additionalProperties, false);
+    assert.ok(contract.required.includes("schemaVersion"));
+    assert.ok(contract.required.includes("status") || contract.required.includes("decision"));
+  }
+});
+
 test("provider state combinations are encoded as tagged variants", () => {
   const schema = JSON.parse(readFileSync(resolve(root, "schemas", "provider-v1alpha1.schema.json"), "utf8"));
   assert.equal(schema.$defs.health.properties.authenticated, undefined);

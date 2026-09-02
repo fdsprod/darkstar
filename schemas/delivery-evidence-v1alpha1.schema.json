@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/delivery-evidence-v1alpha1.schema.json",
+  "title": "DARKSTAR delivery-stage evidence v1alpha1",
+  "description": "Structured evidence accepted by manual or external post-PR workflow stages.",
+  "oneOf": [
+    {"$ref": "#/$defs/reviewCi"},
+    {"$ref": "#/$defs/releaseReadiness"},
+    {"$ref": "#/$defs/release"},
+    {"$ref": "#/$defs/productionVerification"}
+  ],
+  "$defs": {
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "uri"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "uri": {"type": "string", "minLength": 1}
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "status": {"enum": ["passed", "failed", "not_applicable"]},
+        "detail": {"type": "string"}
+      }
+    },
+    "reviewCi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceType", "schemaVersion", "status", "reviews", "checks", "references"],
+      "properties": {
+        "evidenceType": {"const": "review_ci"},
+        "schemaVersion": {"const": 1},
+        "status": {"enum": ["satisfied", "blocked"]},
+        "reviews": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/check"}},
+        "checks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/check"}},
+        "references": {"type": "array", "items": {"$ref": "#/$defs/evidenceRef"}}
+      }
+    },
+    "releaseReadiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceType", "schemaVersion", "decision", "rolloutPlan", "rollbackPlan", "checks", "decidedBy"],
+      "properties": {
+        "evidenceType": {"const": "release_readiness"},
+        "schemaVersion": {"const": 1},
+        "decision": {"enum": ["approved", "blocked"]},
+        "rolloutPlan": {"type": "string", "minLength": 1},
+        "rollbackPlan": {"type": "string", "minLength": 1},
+        "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
+        "decidedBy": {"type": "string", "minLength": 1}
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceType", "schemaVersion", "status", "releaseId", "environment", "references"],
+      "properties": {
+        "evidenceType": {"const": "release"},
+        "schemaVersion": {"const": 1},
+        "status": {"enum": ["completed", "failed"]},
+        "releaseId": {"type": "string", "minLength": 1},
+        "environment": {"type": "string", "minLength": 1},
+        "references": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidenceRef"}}
+      }
+    },
+    "productionVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceType", "schemaVersion", "status", "observedAt", "checks", "references"],
+      "properties": {
+        "evidenceType": {"const": "production_verification"},
+        "schemaVersion": {"const": 1},
+        "status": {"enum": ["healthy", "degraded", "failed"]},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "checks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/check"}},
+        "references": {"type": "array", "items": {"$ref": "#/$defs/evidenceRef"}}
+      }
+    }
+  }
+}

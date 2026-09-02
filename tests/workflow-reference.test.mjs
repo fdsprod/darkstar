@@ -84,6 +84,21 @@ test("full default route executes a pinned story sub-workflow", () => {
   assert.equal(result.visits.p7_technical_research, undefined);
 });
 
+test("post-PR external stages wait for structured evidence", () => {
+  const path = workflowPath("software-delivery.json");
+  const document = loadJson(path);
+  const fixture = loadJson(scenarioPath("software-delivery-full.json"));
+  delete fixture.results.p14_review_ci;
+  expectCode(() => new Runner(document, path, fixture, "p0_intake", ["p17_verification"]).run(), "RUN_EXTERNAL_EVIDENCE_REQUIRED");
+  for (const nodeId of ["p14_review_ci", "p16_release", "p17_verification"]) {
+    const node = document.spec.nodes[nodeId];
+    assert.equal(node.type, "approval");
+    assert.equal(node.approval.actor, "external");
+    assert.equal(node.outputs[node.approval.evidenceOutput].type, "object");
+    assert.match(node.outputs[node.approval.evidenceOutput].schema, /^schemas\/delivery-evidence-v1alpha1\.schema\.json#/);
+  }
+});
+
 test("recorded readiness score is evaluated by a deterministic gate before routing", () => {
   const path = workflowPath("software-delivery.json");
   const document = loadJson(path);
