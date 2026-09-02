@@ -33,6 +33,8 @@ test("v1 run evolution preserves legacy operations and models new requests as a 
   assert.equal(api.components.schemas.Health.required.includes("recovery"), false);
   assert.equal(api.components.schemas.ApiRoot.required.includes("recovery"), false);
   assert.equal(api.components.schemas.Run.required.includes("lastGlobalPosition"), false);
+  assert.ok(api.components.schemas.Run.properties.routeSnapshot);
+  assert.equal(api.components.schemas.CreateRunRequest.additionalProperties, false);
 });
 
 test("project and work command contracts publish exact request variants and aggregate views", () => {

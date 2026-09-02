@@ -20,8 +20,15 @@ returns the versioned report unchanged. A
 degraded or unhealthy report uses exit class 7 because the diagnostic completed
 successfully with findings; transport failures retain their ordinary exit class.
 
-`darkstar run start --scenario fake-success` creates the M1 deterministic
-fake-provider run through `POST /api/v1/runs`. `fake-restart` is the recovery
+`darkstar run start <work-id> --workflow <name> --version <version>` validates
+the work item, resolves an exact installed workflow, freezes its default route,
+and queues the run through `POST /api/v1/runs`. Omitting the workflow flags uses
+the shipped `darkstar/mvp-walking-skeleton` `1.0.0` identity.
+`darkstar run list` returns a bounded cursor page ordered by priority and
+creation time.
+
+`darkstar run start --scenario fake-success` preserves the M1 deterministic
+fake-provider acceptance path through the same endpoint. `fake-restart` is the recovery
 acceptance scenario: it persists its first provider event, waits for a daemon
 restart, and resumes from the durable sequence cursor. `--idempotency-key <key>`
 is optional for interactive use and lets automation safely repeat the same start.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -45,7 +46,7 @@ func TestWorkflowAPICoversInstallListShowGraphAndPreview(t *testing.T) {
 	if install.StatusCode != http.StatusCreated {
 		t.Fatalf("install status = %d", install.StatusCode)
 	}
-	_ = install.Body.Close()
+	drainWorkflowResponse(t, install)
 
 	list := workflowRequest(t, endpoint, http.MethodGet, "/api/v1/workflows", nil)
 	var summaries []workflow.VersionSummary
@@ -61,7 +62,7 @@ func TestWorkflowAPICoversInstallListShowGraphAndPreview(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("%s status = %d", action, response.StatusCode)
 		}
-		_ = response.Body.Close()
+		drainWorkflowResponse(t, response)
 	}
 	previewBody := []byte(`{"range":{},"context":{}}`)
 	preview := workflowRequest(t, endpoint, http.MethodPost, "/api/v1/workflows/preview"+query, previewBody)
@@ -70,6 +71,16 @@ func TestWorkflowAPICoversInstallListShowGraphAndPreview(t *testing.T) {
 	_ = preview.Body.Close()
 	if route.Route.Entry != "finish" || len(route.Route.Nodes) != 1 {
 		t.Fatalf("preview = %#v", route)
+	}
+}
+
+func drainWorkflowResponse(t *testing.T, response *http.Response) {
+	t.Helper()
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

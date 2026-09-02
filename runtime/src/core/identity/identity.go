@@ -24,16 +24,20 @@ func Random(prefix string) string {
 }
 
 func encode128(value []byte) string {
-	encoded := make([]byte, 26)
-	buffer, bits, position := uint32(0), uint(0), 0
-	for _, item := range append([]byte{0}, value...) {
-		buffer = buffer<<8 | uint32(item)
-		bits += 8
-		for bits >= 5 && position < len(encoded) {
-			bits -= 5
-			encoded[position] = crockford[(buffer>>bits)&31]
-			position++
+	result := make([]byte, 26)
+	result[0] = crockford[(value[0]&0xe0)>>5]
+	bit := 3
+	for index := 1; index < len(result); index++ {
+		var digit byte
+		for offset := 0; offset < 5; offset++ {
+			position := bit + offset
+			digit <<= 1
+			if position < 128 {
+				digit |= (value[position/8] >> (7 - uint(position%8))) & 1
+			}
 		}
+		result[index] = crockford[digit]
+		bit += 5
 	}
-	return string(encoded)
+	return string(result)
 }

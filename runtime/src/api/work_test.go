@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -15,7 +14,6 @@ import (
 )
 
 func TestProjectAndWorkAPICommands(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "work-api.db"), sqlite.Options{})
 	if err != nil {
@@ -76,7 +74,6 @@ func TestProjectAndWorkAPICommands(t *testing.T) {
 }
 
 func TestWorkAPIRejectsMixedOrUnidentifiedInput(t *testing.T) {
-	t.Parallel()
 	server, endpoint := startTestServer(t)
 	defer closeTestServer(t, server)
 
@@ -103,13 +100,4 @@ func workRequest(t *testing.T, endpoint Endpoint, method, resource, body, key st
 		t.Fatal(err)
 	}
 	return response
-}
-
-func encodeWorkBody(t *testing.T, value any) string {
-	t.Helper()
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(encoded)
 }

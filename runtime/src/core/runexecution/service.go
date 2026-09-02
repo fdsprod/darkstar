@@ -12,28 +12,56 @@ import (
 	"sync"
 	"time"
 
+	"darkstar/src/core/workflow"
 	"darkstar/src/ports"
 	"darkstar/src/ports/provider"
 	"darkstar/src/ports/statestore"
 )
 
 const (
-	ScenarioSuccess = "fake-success"
-	ScenarioRestart = "fake-restart"
-	commandScope    = "runs.start"
-	workflowID      = "darkstar/mvp-walking-skeleton"
-	workflowVersion = "1.0.0"
-	nodeID          = "technical_design"
+	ScenarioSuccess        = "fake-success"
+	ScenarioRestart        = "fake-restart"
+	commandScope           = "runs.start"
+	createScope            = "runs.create"
+	DefaultWorkflowID      = "darkstar/mvp-walking-skeleton"
+	DefaultWorkflowVersion = "1.0.0"
+	nodeID                 = "technical_design"
 )
 
 var (
-	ErrInvalidScenario   = errors.New("unsupported fake-provider scenario")
-	ErrCommandInProgress = errors.New("run start command is still being recovered")
+	ErrInvalidScenario     = errors.New("unsupported fake-provider scenario")
+	ErrCommandInProgress   = errors.New("run start command is still being recovered")
+	ErrInvalidRequest      = errors.New("invalid run request")
+	ErrWorkflowUnavailable = errors.New("workflow planning is not configured")
+	ErrPageCursor          = errors.New("run page cursor was not found")
 )
 
 // StartRequest is the closed public input for the M1 scenario-backed run.
 type StartRequest struct {
 	Scenario string `json:"scenario"`
+}
+
+// CreateRequest starts one work-backed run from an exact installed workflow.
+type CreateRequest struct {
+	WorkItemID      string `json:"workItemId"`
+	WorkflowID      string `json:"workflowId"`
+	WorkflowVersion string `json:"workflowVersion"`
+}
+
+// PageInfo describes the next stable run-list cursor.
+type PageInfo struct {
+	NextCursor *string `json:"nextCursor"`
+}
+
+// Page is one bounded run projection page.
+type Page struct {
+	Items    []statestore.RunProjection `json:"items"`
+	PageInfo PageInfo                   `json:"pageInfo"`
+}
+
+// WorkflowPlanner resolves and derives the immutable route for a new run.
+type WorkflowPlanner interface {
+	Preview(context.Context, string, string, workflow.RouteRequest, workflow.RouteContext) (workflow.RoutePreview, workflow.ValidationErrors, error)
 }
 
 // View combines the persisted run projection with its attempt projections.
@@ -65,6 +93,7 @@ type Service struct {
 	store   statestore.Store
 	factory ProviderFactory
 	logs    LogSink
+	planner WorkflowPlanner
 	now     func() time.Time
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -80,6 +109,170 @@ func New(parent context.Context, store statestore.Store, factory ProviderFactory
 	}
 	ctx, cancel := context.WithCancel(parent)
 	return &Service{store: store, factory: factory, logs: logs, now: time.Now, ctx: ctx, cancel: cancel, workers: map[string]struct{}{}}, nil
+}
+
+// SetWorkflowPlanner installs work-backed route planning before requests are served.
+func (s *Service) SetWorkflowPlanner(planner WorkflowPlanner) error {
+	if planner == nil {
+		return ErrWorkflowUnavailable
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.workers) != 0 {
+		return errors.New("workflow planner cannot change while runs are active")
+	}
+	s.planner = planner
+	return nil
+}
+
+// Create durably validates a work item, freezes an installed workflow route,
+// and queues the resulting run. Provider execution is owned by the scheduler.
+func (s *Service) Create(ctx context.Context, request CreateRequest, idempotencyKey string) (statestore.RunProjection, error) {
+	request.WorkItemID = strings.TrimSpace(request.WorkItemID)
+	request.WorkflowID = strings.TrimSpace(request.WorkflowID)
+	request.WorkflowVersion = strings.TrimSpace(request.WorkflowVersion)
+	if request.WorkItemID == "" || request.WorkflowID == "" || request.WorkflowVersion == "" {
+		return statestore.RunProjection{}, fmt.Errorf("%w: workItemId, workflowId, and workflowVersion are required", ErrInvalidRequest)
+	}
+	if strings.TrimSpace(idempotencyKey) != idempotencyKey || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
+		return statestore.RunProjection{}, fmt.Errorf("%w: idempotency key must be between 8 and 128 bytes without surrounding whitespace", ErrInvalidRequest)
+	}
+	work, err := s.store.WorkItem(ctx, request.WorkItemID)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if work.Status.Terminal() {
+		return statestore.RunProjection{}, fmt.Errorf("%w: work item %s is %s", ErrInvalidRequest, work.WorkItemID, work.Status)
+	}
+	project, err := s.store.Project(ctx, work.ProjectID)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if project.Status != statestore.ProjectActive {
+		return statestore.RunProjection{}, fmt.Errorf("%w: project %s is archived", ErrInvalidRequest, project.ProjectID)
+	}
+	s.mu.Lock()
+	planner := s.planner
+	s.mu.Unlock()
+	if planner == nil {
+		return statestore.RunProjection{}, ErrWorkflowUnavailable
+	}
+	preview, issues, err := planner.Preview(ctx, request.WorkflowID, request.WorkflowVersion, workflow.RouteRequest{}, workflow.RouteContext{})
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if len(issues) != 0 {
+		return statestore.RunProjection{}, issues
+	}
+	request.WorkflowID, request.WorkflowVersion = preview.Workflow.Name, preview.Workflow.Version
+	requestJSON, _ := json.Marshal(request)
+	requestDigest := fmt.Sprintf("%x", sha256.Sum256(requestJSON))
+	now := s.now().UTC().Round(0)
+	command, reused, err := s.store.BeginCommand(ctx, statestore.BeginCommandRequest{
+		Scope: createScope, IdempotencyKey: idempotencyKey, RequestDigest: requestDigest, CreatedAt: now,
+	})
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if reused && command.Status == "completed" {
+		var value statestore.RunProjection
+		if err := json.Unmarshal(command.Response, &value); err != nil {
+			return statestore.RunProjection{}, fmt.Errorf("decode replayed run creation: %w", err)
+		}
+		return s.store.Run(ctx, value.RunID)
+	}
+	runID := stableID("run_", createScope+"\x00"+idempotencyKey)
+	if reused {
+		value, getErr := s.store.Run(ctx, runID)
+		if getErr != nil {
+			return statestore.RunProjection{}, ErrCommandInProgress
+		}
+		if err := s.completeCreateCommand(ctx, idempotencyKey, value, nil); err != nil {
+			return statestore.RunProjection{}, err
+		}
+		return value, nil
+	}
+
+	routeJSON, err := json.Marshal(preview.Route)
+	if err != nil {
+		return statestore.RunProjection{}, fmt.Errorf("encode frozen route: %w", err)
+	}
+	routeDigest := fmt.Sprintf("%x", sha256.Sum256(routeJSON))
+	events := make([]statestore.PendingEvent, 0, 4)
+	if work.Status == statestore.WorkItemOpen {
+		events = append(events, pendingEvent("work.started", statestore.AggregateWork, work.WorkItemID, work.ResourceVersion, runID, "work-start:"+runID, statestore.ActorUser, "cli", now, map[string]any{}))
+	}
+	events = append(events,
+		pendingEvent("run.created", statestore.AggregateRun, runID, 0, runID, idempotencyKey, statestore.ActorUser, "cli", now, map[string]any{
+			"workItemId": work.WorkItemID, "workflowId": preview.Workflow.Name, "workflowVersion": preview.Workflow.Version, "priority": work.Priority,
+		}),
+		pendingEvent("run.route_frozen", statestore.AggregateRun, runID, 1, runID, "route-frozen:"+runID, statestore.ActorSystem, "daemon", now, map[string]any{
+			"workflowDigest": preview.Workflow.Digest, "routeDigest": routeDigest, "routeSnapshot": json.RawMessage(routeJSON),
+		}),
+		pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "cli", now, map[string]any{}),
+	)
+	committed, err := s.store.Append(ctx, events...)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	value, err := s.store.Run(ctx, runID)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if err := s.completeCreateCommand(ctx, idempotencyKey, value, committed); err != nil {
+		return statestore.RunProjection{}, err
+	}
+	return value, nil
+}
+
+// List returns a deterministic bounded page ordered by store priority and creation order.
+func (s *Service) List(ctx context.Context, limit int, after string) (Page, error) {
+	if limit < 1 || limit > 200 {
+		return Page{}, fmt.Errorf("%w: limit must be between 1 and 200", ErrInvalidRequest)
+	}
+	values, err := s.store.Runs(ctx)
+	if err != nil {
+		return Page{}, err
+	}
+	start := 0
+	if after != "" {
+		start = -1
+		for index := range values {
+			if values[index].RunID == after {
+				start = index + 1
+				break
+			}
+		}
+		if start < 0 {
+			return Page{}, ErrPageCursor
+		}
+	}
+	end := start + limit
+	if end > len(values) {
+		end = len(values)
+	}
+	items := make([]statestore.RunProjection, end-start)
+	copy(items, values[start:end])
+	page := Page{Items: items, PageInfo: PageInfo{}}
+	if end < len(values) && len(items) != 0 {
+		cursor := items[len(items)-1].RunID
+		page.PageInfo.NextCursor = &cursor
+	}
+	return page, nil
+}
+
+func (s *Service) completeCreateCommand(ctx context.Context, key string, value statestore.RunProjection, events []statestore.Event) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	request := statestore.CompleteCommandRequest{Scope: createScope, IdempotencyKey: key, ResponseStatus: 201, Response: encoded, CompletedAt: s.now().UTC().Round(0)}
+	if len(events) != 0 {
+		first, last := events[0].GlobalPosition, events[len(events)-1].GlobalPosition
+		request.FirstEventPosition, request.LastEventPosition = &first, &last
+	}
+	_, err = s.store.CompleteCommand(ctx, request)
+	return err
 }
 
 // Start durably creates one run and attempt, closes command evidence, then
@@ -129,7 +322,7 @@ func (s *Service) Start(ctx context.Context, request StartRequest, idempotencyKe
 	logReference := strings.TrimPrefix(attemptID, "attempt_") + ".log"
 	events, err := s.store.Append(ctx,
 		pendingEvent("run.created", statestore.AggregateRun, runID, 0, runID, idempotencyKey, statestore.ActorUser, "cli", now, map[string]any{
-			"workItemId": stableID("work_", runID), "workflowId": workflowID, "workflowVersion": workflowVersion,
+			"workItemId": stableID("work_", runID), "workflowId": DefaultWorkflowID, "workflowVersion": DefaultWorkflowVersion,
 		}),
 		pendingEvent("run.route_frozen", statestore.AggregateRun, runID, 1, runID, "route-frozen:"+runID, statestore.ActorSystem, "daemon", now, map[string]any{}),
 		pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "cli", now, map[string]any{}),

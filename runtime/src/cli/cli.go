@@ -74,7 +74,9 @@ Work commands:
   work show <work-id> [--json]
 
 Run commands:
+  run start <work-id> [--workflow <name>] [--version <version>] [--idempotency-key <key>] [--json]
   run start --scenario <fake-success|fake-restart> [--idempotency-key <key>] [--json]
+  run list [--limit <n>] [--after <run-id>] [--json]
   run show <run-id> [--json]
   run watch <run-id> [--json]
   run export <run-id> --output <file> [--json]
@@ -327,6 +329,12 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	}
 	executions, err := runexecution.New(ctx, database, runexecution.ProviderFactoryFunc(newFakeRunProvider), logs)
 	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := executions.SetWorkflowPlanner(workflowCatalog); err != nil {
+		_ = executions.Close()
 		_ = database.Close()
 		service.database = nil
 		return err
@@ -775,29 +783,45 @@ type runExportOutput struct {
 
 func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "a run command is required (start, show, watch, export)", false, ExitInvalidInput)
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "a run command is required (start, list, show, watch, export)", false, ExitInvalidInput)
 	}
 	command := "darkstar run " + args[0]
 	switch args[0] {
 	case "start":
-		if (len(args) != 3 && len(args) != 5) || args[1] != "--scenario" || args[2] == "" || (len(args) == 5 && (args[3] != "--idempotency-key" || args[4] == "")) {
-			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", "expected 'run start --scenario <fake-success|fake-restart> [--idempotency-key <key>]'", false, ExitInvalidInput)
-		}
-		key := ""
-		if len(args) == 5 {
-			key = args[4]
-		} else {
-			key = newIdempotencyKey()
+		request, scenario, key, err := parseRunStart(args[1:])
+		if err != nil {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
 		}
 		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
 		if session == nil {
 			return code
 		}
+		if scenario == "" {
+			var result statestore.RunProjection
+			if err := session.DoJSON(context.Background(), http.MethodPost, "runs", request, &result, clientapi.WithHeader("Idempotency-Key", key)); err != nil {
+				return writeClientError(stdout, stderr, jsonOutput, command, err)
+			}
+			return writeRunProjectionResult(result, jsonOutput, stdout, stderr, command)
+		}
 		var view runexecution.View
-		if err := session.DoJSON(context.Background(), http.MethodPost, "runs", runexecution.StartRequest{Scenario: args[2]}, &view, clientapi.WithHeader("Idempotency-Key", key)); err != nil {
+		if err := session.DoJSON(context.Background(), http.MethodPost, "runs", runexecution.StartRequest{Scenario: scenario}, &view, clientapi.WithHeader("Idempotency-Key", key)); err != nil {
 			return writeClientError(stdout, stderr, jsonOutput, command, err)
 		}
 		return writeRunView(view, jsonOutput, stdout, stderr, command, "Started")
+	case "list":
+		resource, err := parseRunList(args[1:])
+		if err != nil {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		var page runexecution.Page
+		if err := session.DoJSON(context.Background(), http.MethodGet, resource, nil, &page); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeRunPage(page, jsonOutput, stdout, stderr, command)
 	case "show":
 		if len(args) != 2 || !runIdentityPattern.MatchString(args[1]) {
 			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", "expected 'run show <run-id>' with a canonical run_ ULID", false, ExitInvalidInput)

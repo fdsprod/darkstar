@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"darkstar/src/core/runexecution"
 	"darkstar/src/core/workmanagement"
 	platformport "darkstar/src/ports/platform"
 	"darkstar/src/ports/statestore"
@@ -59,5 +60,43 @@ func TestProjectAndWorkCLICommandsUseStableMachineResults(t *testing.T) {
 	}{Result: &shown})
 	if shown.Work.WorkItemID != created.WorkItemID || shown.Runs == nil || shown.Stories == nil {
 		t.Fatalf("shown = %#v", shown)
+	}
+
+	workflowPath := filepath.Join(root, "workflow.json")
+	if err := os.WriteFile(workflowPath, []byte(cliWorkflowDocument()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runCLIJSON(t, []string{"workflow", "install", workflowPath, "--json"}, &struct {
+		SchemaVersion int `json:"schemaVersion"`
+		Result        any `json:"result"`
+	}{})
+	var started statestore.RunProjection
+	runCLIJSON(t, []string{"run", "start", created.WorkItemID, "--workflow", "cli-workflow", "--version", "1.0.0", "--idempotency-key", "run-cli-command", "--json"}, &struct {
+		SchemaVersion int                       `json:"schemaVersion"`
+		Result        *statestore.RunProjection `json:"result"`
+	}{Result: &started})
+	if started.WorkItemID != created.WorkItemID || started.Status != statestore.RunQueued || started.RouteDigest == "" {
+		t.Fatalf("started = %#v", started)
+	}
+	var replayed statestore.RunProjection
+	runCLIJSON(t, []string{"run", "start", created.WorkItemID, "--workflow", "cli-workflow", "--version", "1.0.0", "--idempotency-key", "run-cli-command", "--json"}, &struct {
+		SchemaVersion int                       `json:"schemaVersion"`
+		Result        *statestore.RunProjection `json:"result"`
+	}{Result: &replayed})
+	if replayed.RunID != started.RunID || replayed.ResourceVersion != started.ResourceVersion {
+		t.Fatalf("replayed = %#v, started = %#v", replayed, started)
+	}
+	var page runexecution.Page
+	runCLIJSON(t, []string{"run", "list", "--limit", "1", "--json"}, &struct {
+		SchemaVersion int                `json:"schemaVersion"`
+		Result        *runexecution.Page `json:"result"`
+	}{Result: &page})
+	if len(page.Items) != 1 || page.Items[0].RunID != started.RunID {
+		t.Fatalf("run page = %#v", page)
+	}
+	var runView runexecution.View
+	runCLIJSON(t, []string{"run", "show", started.RunID, "--json"}, &runView)
+	if runView.Run.RunID != started.RunID || len(runView.Attempts) != 0 {
+		t.Fatalf("run view = %#v", runView)
 	}
 }

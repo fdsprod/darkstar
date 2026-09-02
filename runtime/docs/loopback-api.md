@@ -72,8 +72,15 @@ The `after` byte cursor and bounded `limit` query return raw bytes plus
 `X-Darkstar-Log-Complete`. Following clients request successive offsets; the API
 never accepts a filesystem path or returns an unbounded log body.
 
-`POST /api/v1/runs` accepts the closed `fake-success` and `fake-restart`
-scenarios plus a required `Idempotency-Key`. It returns HTTP 202 only after the
+`POST /api/v1/runs` accepts exactly one of two request shapes plus a required
+`Idempotency-Key`. A work-backed request names `workItemId`, `workflowId`, and
+`workflowVersion`; the daemon validates the active project/work hierarchy,
+freezes the installed workflow's default route, marks open work active, and
+returns the queued run with HTTP 201. `GET /api/v1/runs` returns deterministic
+bounded pages using `limit` and an opaque `after` run cursor.
+
+The compatibility request accepts the closed `fake-success` and `fake-restart`
+scenarios. It returns HTTP 202 only after the
 run and attempt creation events and command response evidence are durable;
 provider execution then belongs to the daemon lifetime. `GET
 /api/v1/runs/{runId}` returns the rebuildable run projection and its attempt
