@@ -85,6 +85,53 @@ func TestPublicCLIFakeRunSurvivesRestartWithoutDuplicateEffectsAndExports(t *tes
 	}
 }
 
+func TestPublicCLIPausesResumesAndCancelsRuns(t *testing.T) {
+	root := t.TempDir()
+	paths := platformport.Paths{
+		Config: filepath.Join(root, "config"), Data: filepath.Join(root, "data"),
+		Cache: filepath.Join(root, "cache"), Logs: filepath.Join(root, "logs"), Runtime: filepath.Join(root, "runtime"),
+	}
+	for _, directory := range []string{paths.Config, paths.Data, paths.Cache, paths.Logs, paths.Runtime} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	originalResolver := resolveApplicationPaths
+	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) { return paths, nil }
+	t.Cleanup(func() { resolveApplicationPaths = originalResolver })
+	service := startAcceptanceService(t, paths, "33333333333333333333333333333333")
+	t.Cleanup(func() { _ = service.Close() })
+
+	var started runexecution.View
+	runCLIJSON(t, []string{"run", "start", "--scenario", runexecution.ScenarioRestart, "--idempotency-key", "cli-control-start", "--json"}, &started)
+	waitForRun(t, started.Run.RunID, func(view runexecution.View) bool {
+		return view.Run.Status == statestore.RunRunning && view.Attempts[0].LastSequence == 1
+	})
+	var paused runMachineOutput
+	runCLIJSON(t, []string{"run", "pause", started.Run.RunID, "--idempotency-key", "cli-pause-command", "--json"}, &paused)
+	pausedJSON, _ := json.Marshal(paused.Result)
+	var pausedRun statestore.RunProjection
+	_ = json.Unmarshal(pausedJSON, &pausedRun)
+	if pausedRun.Status != statestore.RunWaiting {
+		t.Fatalf("paused run = %#v", pausedRun)
+	}
+	var resumed runMachineOutput
+	runCLIJSON(t, []string{"run", "resume", started.Run.RunID, "--idempotency-key", "cli-resume-command", "--json"}, &resumed)
+	waitForRun(t, started.Run.RunID, func(view runexecution.View) bool { return view.Run.Status == statestore.RunCompleted })
+
+	var second runexecution.View
+	runCLIJSON(t, []string{"run", "start", "--scenario", runexecution.ScenarioRestart, "--idempotency-key", "cli-cancel-start", "--json"}, &second)
+	waitForRun(t, second.Run.RunID, func(view runexecution.View) bool {
+		return view.Run.Status == statestore.RunRunning && view.Attempts[0].Status == statestore.AttemptRunning
+	})
+	var cancelled runMachineOutput
+	runCLIJSON(t, []string{"run", "cancel", second.Run.RunID, "--idempotency-key", "cli-cancel-command", "--json"}, &cancelled)
+	final := waitForRun(t, second.Run.RunID, func(view runexecution.View) bool { return view.Run.Status == statestore.RunCancelled })
+	if final.Attempts[0].Status != statestore.AttemptCancelled {
+		t.Fatalf("cancelled attempt = %#v", final.Attempts[0])
+	}
+}
+
 func startAcceptanceService(t *testing.T, paths platformport.Paths, instanceID string) *daemonAPIService {
 	t.Helper()
 	server, err := localapi.NewServer(paths.Runtime)

@@ -55,7 +55,7 @@ Commands:
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
   project    Register, list, and inspect projects
-  run        Start, inspect, watch, and export runs
+  run        Start, inspect, control, watch, and export runs
   work       Create, import, list, and inspect work
   workflow   List, show, validate, install, graph, and preview workflows
   version    Show version information
@@ -80,6 +80,11 @@ Run commands:
   run list [--limit <n>] [--after <run-id>] [--json]
   run show <run-id> [--json]
   run watch <run-id> [--json]
+  run pause <run-id> [--idempotency-key <key>] [--json]
+  run resume <run-id> [--idempotency-key <key>] [--json]
+  run retry <run-id> [--node <id>] [--idempotency-key <key>] [--json]
+  run continue <run-id> --until <node> [--idempotency-key <key>] [--json]
+  run cancel <run-id> [--idempotency-key <key>] [--json]
   run export <run-id> --output <file> [--json]
 
 Artifact commands:
@@ -791,7 +796,7 @@ type runExportOutput struct {
 
 func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "a run command is required (start, list, show, watch, export)", false, ExitInvalidInput)
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "a run command is required (start, list, show, watch, pause, resume, retry, continue, cancel, export)", false, ExitInvalidInput)
 	}
 	command := "darkstar run " + args[0]
 	switch args[0] {
@@ -869,6 +874,28 @@ func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 			return writeClientError(stdout, stderr, jsonOutput, command, err)
 		}
 		return writeRunView(view, jsonOutput, stdout, stderr, command, "Completed")
+	case "pause", "resume", "cancel":
+		runID, key, err := parseSimpleRunControl(args[1:], args[0])
+		if err != nil {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
+		}
+		return runControl(command, args[0], runID, key, nil, jsonOutput, stdout, stderr)
+	case "retry":
+		runID, nodeID, key, err := parseRunRetry(args[1:])
+		if err != nil {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
+		}
+		var body any
+		if nodeID != "" {
+			body = map[string]string{"nodeId": nodeID}
+		}
+		return runControl(command, "retry", runID, key, body, jsonOutput, stdout, stderr)
+	case "continue":
+		runID, until, key, err := parseRunContinue(args[1:])
+		if err != nil {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
+		}
+		return runControl(command, "continue", runID, key, map[string]string{"until": until}, jsonOutput, stdout, stderr)
 	case "export":
 		if len(args) != 4 || args[2] != "--output" || args[1] == "" || args[3] == "" {
 			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", "expected 'run export <run-id> --output <file>'", false, ExitInvalidInput)
@@ -877,6 +904,24 @@ func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	default:
 		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", fmt.Sprintf("unknown run command %q", args[0]), false, ExitInvalidInput)
 	}
+}
+
+func runControl(command, action, runID, key string, body any, jsonOutput bool, stdout, stderr io.Writer) int {
+	session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+	if session == nil {
+		return code
+	}
+	var current runexecution.View
+	if err := session.DoJSON(context.Background(), http.MethodGet, "runs/"+runID, nil, &current); err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	var result statestore.RunProjection
+	if err := session.DoJSON(context.Background(), http.MethodPost, "runs/"+runID+"/"+action, body, &result,
+		clientapi.WithHeader("Idempotency-Key", key), clientapi.WithHeader("If-Match", fmt.Sprintf(`"%d"`, current.Run.ResourceVersion))); err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	labels := map[string]string{"pause": "Paused", "resume": "Resumed", "retry": "Retried", "continue": "Continued", "cancel": "Cancelled"}
+	return writeRunControlResult(result, labels[action], jsonOutput, stdout, stderr, command)
 }
 
 func runExport(runID, outputPath string, jsonOutput bool, stdout, stderr io.Writer) int {

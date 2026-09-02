@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"darkstar/src/core/runexecution"
 	"darkstar/src/ports/statestore"
 )
+
+var runNodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 type runMachineOutput struct {
 	SchemaVersion int `json:"schemaVersion"`
@@ -101,6 +104,86 @@ func parseRunList(args []string) (string, error) {
 	return "runs?" + values.Encode(), nil
 }
 
+func parseSimpleRunControl(args []string, action string) (string, string, error) {
+	if len(args) != 1 && len(args) != 3 {
+		return "", "", fmt.Errorf("expected run %s <run-id> [--idempotency-key <key>]", action)
+	}
+	if !runIdentityPattern.MatchString(args[0]) {
+		return "", "", fmt.Errorf("run %s requires a canonical run_ ULID", action)
+	}
+	key := newIdempotencyKey()
+	if len(args) == 3 {
+		if args[1] != "--idempotency-key" || args[2] == "" {
+			return "", "", fmt.Errorf("expected run %s <run-id> [--idempotency-key <key>]", action)
+		}
+		key = args[2]
+	}
+	return args[0], key, nil
+}
+
+func parseRunRetry(args []string) (string, string, string, error) {
+	if len(args) == 0 || !runIdentityPattern.MatchString(args[0]) {
+		return "", "", "", errors.New("run retry requires a canonical run_ ULID")
+	}
+	nodeID, key := "", ""
+	for index := 1; index < len(args); index += 2 {
+		if index+1 >= len(args) || args[index+1] == "" {
+			return "", "", "", fmt.Errorf("%s requires a value", args[index])
+		}
+		switch args[index] {
+		case "--node":
+			if nodeID != "" || !runNodePattern.MatchString(args[index+1]) {
+				return "", "", "", errors.New("--node requires one workflow node identifier")
+			}
+			nodeID = args[index+1]
+		case "--idempotency-key":
+			if key != "" {
+				return "", "", "", errors.New("--idempotency-key may be specified only once")
+			}
+			key = args[index+1]
+		default:
+			return "", "", "", fmt.Errorf("unknown run retry option %q", args[index])
+		}
+	}
+	if key == "" {
+		key = newIdempotencyKey()
+	}
+	return args[0], nodeID, key, nil
+}
+
+func parseRunContinue(args []string) (string, string, string, error) {
+	if len(args) == 0 || !runIdentityPattern.MatchString(args[0]) {
+		return "", "", "", errors.New("run continue requires a canonical run_ ULID")
+	}
+	until, key := "", ""
+	for index := 1; index < len(args); index += 2 {
+		if index+1 >= len(args) || args[index+1] == "" {
+			return "", "", "", fmt.Errorf("%s requires a value", args[index])
+		}
+		switch args[index] {
+		case "--until":
+			if until != "" || !runNodePattern.MatchString(args[index+1]) {
+				return "", "", "", errors.New("--until requires one workflow node identifier")
+			}
+			until = args[index+1]
+		case "--idempotency-key":
+			if key != "" {
+				return "", "", "", errors.New("--idempotency-key may be specified only once")
+			}
+			key = args[index+1]
+		default:
+			return "", "", "", fmt.Errorf("unknown run continue option %q", args[index])
+		}
+	}
+	if until == "" {
+		return "", "", "", errors.New("run continue requires --until <node>")
+	}
+	if key == "" {
+		key = newIdempotencyKey()
+	}
+	return args[0], until, key, nil
+}
+
 func writeRunProjectionResult(result statestore.RunProjection, jsonOutput bool, stdout, stderr io.Writer, command string) int {
 	if jsonOutput {
 		if err := writeJSON(stdout, runMachineOutput{SchemaVersion: machineSchemaVersion, Result: result}); err != nil {
@@ -108,6 +191,17 @@ func writeRunProjectionResult(result statestore.RunProjection, jsonOutput bool, 
 		}
 	} else {
 		_, _ = fmt.Fprintf(stdout, "Started %s for %s: %s.\n", result.RunID, result.WorkItemID, result.Status)
+	}
+	return int(ExitSuccess)
+}
+
+func writeRunControlResult(result statestore.RunProjection, action string, jsonOutput bool, stdout, stderr io.Writer, command string) int {
+	if jsonOutput {
+		if err := writeJSON(stdout, runMachineOutput{SchemaVersion: machineSchemaVersion, Result: result}); err != nil {
+			return writeCommandError(stdout, stderr, false, command, "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
+		}
+	} else {
+		_, _ = fmt.Fprintf(stdout, "%s %s: %s.\n", action, result.RunID, result.Status)
 	}
 	return int(ExitSuccess)
 }
