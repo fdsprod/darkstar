@@ -140,6 +140,40 @@ the bounded read-only probe. Exec does not supply the tested bidirectional
 approval/user-input bridge, so this recovery result does not widen its policy
 scope to interactive or write-capable nodes.
 
+### Bounded exec fallback
+
+The `ExecAdapter` implements the fallback as a separate provider transport. It
+admits an attempt only when all of the following are true:
+
+- access is `read_only` and network is denied;
+- command, file, and tool interaction policies are all `deny`;
+- a positive timeout and JSON output schema are supplied;
+- no additional workspace roots or unenforceable usage limits are requested;
+  and
+- the installed exact CLI version is present in the reviewed exec probe allowlist.
+
+The adapter starts an owned process tree with `codex exec --json`, requests the
+schema with `--output-schema`, and treats the JSONL `thread.started` identity as
+the durable provider thread ID. It maps every JSONL frame into the normalized
+event vocabulary, preserves raw evidence before exposing the event, validates
+the last agent message locally against the requested schema, and classifies CLI
+drift, authentication, exhaustion, permission, timeout, cancellation, and
+generic process exits separately.
+
+The initial transport-selection evidence records `exec-jsonl`, the exact CLI
+version, the bounded non-interactive selection reason, and that this transport
+is a fallback. Native event payloads repeat the transport and fallback marker,
+so a persisted attempt event stream never hides which transport ran.
+
+Before process launch, the adapter stores the workspace, prepared prompt/input,
+and output schema through a durable `ExecRecoveryStore`. A fresh adapter resumes
+with `codex exec resume --json`, the recorded session ID, the original schema,
+and a deterministic continuation instruction. A changed session ID, missing or
+invalid recovery material, or an unreviewed CLI version fails closed. Exec uses
+a stable synthetic turn identity because the JSONL interface exposes a session
+ID but no provider turn ID; the session ID remains the authoritative recovery
+identity.
+
 ## Error classes
 
 Adapters map provider details into: unavailable, unauthenticated, usage limit,

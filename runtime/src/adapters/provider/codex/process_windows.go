@@ -25,6 +25,12 @@ func configureAppServerProcess(command *exec.Cmd) {
 	}
 }
 
+func configureProbeProcess(command *exec.Cmd) {
+	command.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow: true, CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+	}
+}
+
 func newCommandOwner(command *exec.Cmd) (*commandOwner, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {

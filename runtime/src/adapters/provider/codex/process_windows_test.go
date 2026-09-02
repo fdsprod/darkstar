@@ -54,6 +54,17 @@ func TestCommandOwnerTerminatesWindowsProcessTree(t *testing.T) {
 	assertProcessExited(t, grandchild)
 }
 
+func TestProbeProcessIsHiddenButNotSuspended(t *testing.T) {
+	command := exec.Command(os.Args[0], "-test.run=^$")
+	configureProbeProcess(command)
+	if command.SysProcAttr == nil || !command.SysProcAttr.HideWindow {
+		t.Fatal("version probe process was not configured as hidden")
+	}
+	if command.SysProcAttr.CreationFlags&windows.CREATE_SUSPENDED != 0 {
+		t.Fatal("version probe process was left suspended without an owner to resume it")
+	}
+}
+
 func runProcessOwnerParent(t *testing.T) {
 	gate := os.Getenv("DARKSTAR_PROCESS_OWNER_GATE")
 	childPID := os.Getenv("DARKSTAR_PROCESS_OWNER_CHILD_PID")

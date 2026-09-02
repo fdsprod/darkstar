@@ -224,7 +224,7 @@ func (adapter *Adapter) ProbeHealth(ctx context.Context) (providerport.Health, e
 		return providerport.Health{State: providerport.HealthUnavailable, Provider: providerName, Diagnostics: []string{err.Error()}}, nil
 	}
 	command := exec.CommandContext(ctx, canonical, "--version")
-	configureAppServerProcess(command)
+	configureProbeProcess(command)
 	output, err := command.Output()
 	if err != nil {
 		return providerport.Health{State: providerport.HealthUnavailable, Provider: providerName, ExecutableIdentity: canonical, Diagnostics: []string{err.Error()}}, nil

@@ -51,6 +51,14 @@ only when policy allows it and the fallback can satisfy the node's output,
 permission, cancellation, evidence, and recovery contract. Fallback is visible
 in the attempt record; it is never silent.
 
+The implemented exec gate is exact-version only. The default allowlist contains
+`0.151.0-alpha.7.2`, whose Windows fixtures cover read-only structured output,
+fresh-process resume, forced process interruption, and the rejected legacy
+approval flag. Adding a version requires reviewing the corresponding exec
+fixtures and updating the allowlist; a successful `--version` response alone is
+not sufficient. Unreviewed versions report degraded health and cannot launch an
+exec fallback attempt.
+
 Authentication, permission denial, usage exhaustion, and an unsafe/unknown
 write recovery state do not trigger automatic fallback to a new provider turn.
 Doing so could duplicate cost or side effects.

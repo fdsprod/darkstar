@@ -7,6 +7,7 @@ import "os/exec"
 type commandOwner struct{ command *exec.Cmd }
 
 func configureAppServerProcess(_ *exec.Cmd) {}
+func configureProbeProcess(_ *exec.Cmd)     {}
 
 func newCommandOwner(command *exec.Cmd) (*commandOwner, error) {
 	return &commandOwner{command: command}, nil
