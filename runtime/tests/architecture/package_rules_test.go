@@ -27,6 +27,7 @@ func TestRequiredPortPackagesExist(t *testing.T) {
 		"executor",
 		"platform",
 		"provider",
+		"repository",
 		"workflowstore",
 	} {
 		name := name
