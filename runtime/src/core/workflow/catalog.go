@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/fdsprod/darkstar/runtime/src/core/config"
@@ -25,10 +26,62 @@ type LoadedDefinition struct {
 	SourceRef     string
 }
 
-// InstallResult reports whether installation created a new immutable version.
+type InstallDisposition string
+
+const (
+	InstallCreated          InstallDisposition = "created"
+	InstallAlreadyInstalled InstallDisposition = "already_installed"
+)
+
+// InstallResult reports the closed outcome of immutable installation.
 type InstallResult struct {
-	Version workflowstore.InstalledVersion
-	Created bool
+	Version     VersionSummary     `json:"version"`
+	Disposition InstallDisposition `json:"disposition"`
+}
+
+// ValidationReport is the stable result of validating one authored workflow.
+// Validity is derived from Issues so the payload cannot contradict itself.
+type ValidationReport struct {
+	Metadata *Metadata        `json:"metadata,omitempty"`
+	Digest   string           `json:"digest,omitempty"`
+	Issues   ValidationErrors `json:"issues"`
+}
+
+// Definition combines immutable installation metadata with its typed document.
+type Definition struct {
+	Version  VersionSummary `json:"version"`
+	Document Document       `json:"document"`
+}
+
+// VersionSummary is the finite list projection; the canonical document remains
+// available only from Definition.
+type VersionSummary struct {
+	Name        string              `json:"name"`
+	Version     string              `json:"version"`
+	Digest      string              `json:"digest"`
+	SourceScope workflowstore.Scope `json:"sourceScope"`
+	SourceRef   string              `json:"sourceReference"`
+	InstalledAt time.Time           `json:"installedAt"`
+}
+
+// Graph is a deterministic, presentation-neutral projection of a definition.
+type Graph struct {
+	Workflow WorkflowIdentity  `json:"workflow"`
+	Nodes    []GraphNode       `json:"nodes"`
+	Edges    []RouteTransition `json:"edges"`
+}
+
+type GraphNode struct {
+	ID       Identifier `json:"id"`
+	Type     NodeType   `json:"type"`
+	Entry    bool       `json:"entry,omitempty"`
+	Terminal bool       `json:"terminal,omitempty"`
+}
+
+// RoutePreview binds one installed workflow identity to its candidate frozen route.
+type RoutePreview struct {
+	Workflow WorkflowIdentity `json:"workflow"`
+	Route    Route            `json:"route"`
 }
 
 // Catalog coordinates scope-aware loading, version installation, and run snapshots.
@@ -189,6 +242,169 @@ func (c *Catalog) Install(ctx context.Context, candidate workflowstore.Candidate
 	return c.install(ctx, definition)
 }
 
+// ValidateCandidate reports structural and semantic findings without installing.
+func (c *Catalog) ValidateCandidate(candidate workflowstore.Candidate) ValidationReport {
+	definition, err := loadCandidate(candidate)
+	if err == nil {
+		metadata := definition.Document.Metadata
+		return ValidationReport{Metadata: &metadata, Digest: definition.Digest, Issues: ValidationErrors{}}
+	}
+	var issues ValidationErrors
+	if errors.As(err, &issues) {
+		return ValidationReport{Issues: issues}
+	}
+	return ValidationReport{Issues: ValidationErrors{{Code: ValidationSchemaInvalid, Message: err.Error()}}}
+}
+
+// List returns finite metadata without duplicating canonical document bytes.
+func (c *Catalog) List(ctx context.Context, name string) ([]VersionSummary, error) {
+	versions, err := c.store.InstalledVersions(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]VersionSummary, len(versions))
+	for index, version := range versions {
+		result[index] = versionSummary(version)
+	}
+	return result, nil
+}
+
+func versionSummary(version workflowstore.InstalledVersion) VersionSummary {
+	return VersionSummary{Name: version.Name, Version: version.Version, Digest: version.Digest, SourceScope: version.SourceScope, SourceRef: version.SourceRef, InstalledAt: version.InstalledAt}
+}
+
+// Definition returns one exact installed version, or the highest semantic
+// version when version is omitted.
+func (c *Catalog) Definition(ctx context.Context, name, version string) (Definition, error) {
+	if name == "" {
+		return Definition{}, errors.New("workflow name is required")
+	}
+	var installed workflowstore.InstalledVersion
+	var err error
+	if version != "" {
+		installed, err = c.store.InstalledVersion(ctx, name, version)
+	} else {
+		versions, listErr := c.store.InstalledVersions(ctx, name)
+		if listErr != nil {
+			return Definition{}, listErr
+		}
+		if len(versions) == 0 {
+			return Definition{}, fmt.Errorf("%w: workflow %s", workflowstore.ErrNotFound, name)
+		}
+		installed = versions[0]
+		for _, candidate := range versions[1:] {
+			if semanticVersionLess(installed.Version, candidate.Version) {
+				installed = candidate
+			}
+		}
+	}
+	if err != nil {
+		return Definition{}, err
+	}
+	document, err := Decode(installed.Document)
+	if err != nil {
+		return Definition{}, fmt.Errorf("decode installed workflow %s %s: %w", installed.Name, installed.Version, err)
+	}
+	return Definition{Version: versionSummary(installed), Document: document}, nil
+}
+
+func semanticVersionLess(left, right string) bool {
+	leftCore, leftPre, leftHasPre := strings.Cut(left, "-")
+	rightCore, rightPre, rightHasPre := strings.Cut(right, "-")
+	leftParts, rightParts := strings.Split(leftCore, "."), strings.Split(rightCore, ".")
+	for index := 0; index < 3; index++ {
+		if comparison := compareNumericIdentifier(leftParts[index], rightParts[index]); comparison != 0 {
+			return comparison < 0
+		}
+	}
+	if leftHasPre != rightHasPre {
+		return leftHasPre
+	}
+	if !leftHasPre {
+		return false
+	}
+	leftParts, rightParts = strings.Split(leftPre, "."), strings.Split(rightPre, ".")
+	for index := 0; index < len(leftParts) && index < len(rightParts); index++ {
+		leftNumeric, rightNumeric := numericIdentifier(leftParts[index]), numericIdentifier(rightParts[index])
+		if leftNumeric && rightNumeric {
+			if comparison := compareNumericIdentifier(leftParts[index], rightParts[index]); comparison != 0 {
+				return comparison < 0
+			}
+			continue
+		}
+		if leftNumeric != rightNumeric {
+			return leftNumeric
+		}
+		if leftParts[index] != rightParts[index] {
+			return leftParts[index] < rightParts[index]
+		}
+	}
+	return len(leftParts) < len(rightParts)
+}
+
+func compareNumericIdentifier(left, right string) int {
+	left, right = strings.TrimLeft(left, "0"), strings.TrimLeft(right, "0")
+	if left == "" {
+		left = "0"
+	}
+	if right == "" {
+		right = "0"
+	}
+	if len(left) < len(right) {
+		return -1
+	}
+	if len(left) > len(right) {
+		return 1
+	}
+	return strings.Compare(left, right)
+}
+
+func numericIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// Graph returns a stable node/edge projection of one installed definition.
+func (c *Catalog) Graph(ctx context.Context, name, version string) (Graph, error) {
+	definition, err := c.Definition(ctx, name, version)
+	if err != nil {
+		return Graph{}, err
+	}
+	nodes := make([]GraphNode, 0, len(definition.Document.Spec.Nodes))
+	edges := make([]RouteTransition, 0)
+	for _, id := range sortedNodeIDs(definition.Document.Spec.Nodes) {
+		node := definition.Document.Spec.Nodes[id]
+		fields := node.Fields()
+		nodes = append(nodes, GraphNode{ID: id, Type: node.Type(), Entry: fields.Entry, Terminal: fields.Terminal})
+		for _, transition := range fields.Transitions {
+			edges = append(edges, RouteTransition{ID: transition.ID(), From: id, To: transition.Target()})
+		}
+	}
+	identity := WorkflowIdentity{Name: definition.Version.Name, Version: definition.Version.Version, Digest: definition.Version.Digest}
+	return Graph{Workflow: identity, Nodes: nodes, Edges: edges}, nil
+}
+
+// Preview derives the route that would be frozen for the supplied boundaries and context.
+func (c *Catalog) Preview(ctx context.Context, name, version string, request RouteRequest, routeContext RouteContext) (RoutePreview, ValidationErrors, error) {
+	definition, err := c.Definition(ctx, name, version)
+	if err != nil {
+		return RoutePreview{}, nil, err
+	}
+	route, issues := CreateRoute(definition.Document, request, routeContext)
+	if len(issues) != 0 {
+		return RoutePreview{}, issues, nil
+	}
+	identity := WorkflowIdentity{Name: definition.Version.Name, Version: definition.Version.Version, Digest: definition.Version.Digest}
+	return RoutePreview{Workflow: identity, Route: route}, nil, nil
+}
+
 // InstallConfigured validates and installs every selected configured version.
 func (c *Catalog) InstallConfigured(ctx context.Context) ([]InstallResult, error) {
 	definitions, err := c.Load(ctx)
@@ -230,7 +446,11 @@ func (c *Catalog) install(ctx context.Context, definition LoadedDefinition) (Ins
 	if err != nil {
 		return InstallResult{}, fmt.Errorf("install workflow %s %s: %w", definition.Document.Metadata.Name, definition.Document.Metadata.Version, err)
 	}
-	return InstallResult{Version: version, Created: created}, nil
+	disposition := InstallAlreadyInstalled
+	if created {
+		disposition = InstallCreated
+	}
+	return InstallResult{Version: versionSummary(version), Disposition: disposition}, nil
 }
 
 // SnapshotRun freezes the installed workflow and complete effective

@@ -25,6 +25,19 @@ func TestCanonicalizeSortsNestedLiteralKeysAndRejectsDuplicates(t *testing.T) {
 	}
 }
 
+func TestSemanticVersionOrderingUsesNumericAndPrereleasePrecedence(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ older, newer string }{
+		{"2.0.0", "10.0.0"},
+		{"1.0.0-alpha.2", "1.0.0-alpha.10"},
+		{"1.0.0-rc.1", "1.0.0"},
+	} {
+		if !semanticVersionLess(test.older, test.newer) || semanticVersionLess(test.newer, test.older) {
+			t.Errorf("semantic order %s < %s was not preserved", test.older, test.newer)
+		}
+	}
+}
+
 func validCatalogWorkflow() string {
 	return `{"apiVersion":"darkstar.local/v1alpha1","kind":"Workflow","metadata":{"name":"catalog-test","version":"1.0.0"},"spec":{"inputs":{"request":{"type":"object"}},"routeDefaults":{"entry":"finish","terminals":["finish"]},"nodes":{"finish":{"type":"reasoning","entry":true,"terminal":true,"inputs":{"request":{"from":"run.input.request","type":"object","required":false,"default":null}},"outputs":{},"reasoning":{"agent":"fake"},"checkpoint":{"mode":"none"},"transitions":[]}}}}`
 }

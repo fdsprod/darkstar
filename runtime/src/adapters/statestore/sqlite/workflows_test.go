@@ -38,11 +38,11 @@ func TestWorkflowInstallationAndRunSnapshotsAreImmutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 1 || !results[0].Created || results[0].Version.SourceScope != workflowstore.ScopeProject {
+	if len(results) != 1 || results[0].Disposition != workflow.InstallCreated || results[0].Version.SourceScope != workflowstore.ScopeProject {
 		t.Fatalf("installation results = %#v", results)
 	}
 	repeated, err := catalog.InstallConfigured(ctx)
-	if err != nil || len(repeated) != 1 || repeated[0].Created {
+	if err != nil || len(repeated) != 1 || repeated[0].Disposition != workflow.InstallAlreadyInstalled {
 		t.Fatalf("repeated installation = %#v, %v", repeated, err)
 	}
 

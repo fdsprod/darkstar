@@ -62,6 +62,31 @@ Human `artifact lint` exits with class 7 when findings exist. In machine mode,
 every successful artifact command returns `{"schemaVersion":1,"result":...}`;
 the `result` value is the same resource returned by the HTTP operation.
 
+## Workflow commands
+
+Workflow commands use daemon-owned loading, validation, immutable installation,
+and route derivation rather than duplicating those rules in the CLI:
+
+```text
+darkstar workflow list
+darkstar workflow show <name> [--version <version>]
+darkstar workflow validate <file>
+darkstar workflow install <file>
+darkstar workflow graph <name> [--version <version>]
+darkstar workflow preview <name> [--version <version>] [--from <node>] [--until <node>]... [--input <json-file>]
+```
+
+JSON and YAML definition files receive the same size and safety checks as configured
+workflow discovery. Omitting `--version` selects the highest installed semantic
+version. Validation returns every stable issue and exits with class 7 when findings
+exist. Installation is immutable and idempotent for identical canonical bytes.
+
+`workflow graph` projects all authored nodes and transitions. `workflow preview`
+derives the exact route-shaped projection for the selected entry and terminal
+boundary, separating executable and excluded nodes and listing unresolved run
+inputs. Repeating `--until` selects multiple terminal boundaries; `--input` accepts
+one JSON object whose keys are workflow run-input names.
+
 ## Machine output
 
 Every finite human-readable command accepts `--json` as its final argument. A

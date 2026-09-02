@@ -99,7 +99,7 @@ func (s *Source) Load(ctx context.Context) ([]workflowstore.Candidate, error) {
 				continue
 			}
 			path := filepath.Join(directory.Path, entry.Name())
-			content, err := readDocument(path)
+			content, err := ReadDocument(path)
 			if err != nil {
 				return nil, fmt.Errorf("load %s workflow %q: %w", directory.Scope, path, err)
 			}
@@ -111,7 +111,9 @@ func (s *Source) Load(ctx context.Context) ([]workflowstore.Candidate, error) {
 	return candidates, nil
 }
 
-func readDocument(path string) (json.RawMessage, error) {
+// ReadDocument loads one JSON or YAML workflow file and normalizes it to JSON.
+// It applies the same size and YAML-safety limits as configured discovery.
+func ReadDocument(path string) (json.RawMessage, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err

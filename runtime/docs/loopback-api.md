@@ -119,6 +119,24 @@ For missing or unreachable endpoint state it idempotently autostarts the daemon,
 then performs one fresh discovery attempt. It never replays an application
 mutation automatically.
 
+## Workflow operations
+
+The authenticated workflow surface delegates to the daemon's workflow catalog:
+
+| Method and route | Operation |
+|---|---|
+| `GET /api/v1/workflows` | List installed immutable versions, optionally filtered by `name`. |
+| `POST /api/v1/workflows/validate` | Validate one normalized authored definition without installing it. |
+| `POST /api/v1/workflows/install` | Canonicalize and immutably install one definition. |
+| `GET /api/v1/workflows/show?name=...&version=...` | Return the typed definition and installation metadata; omitted version selects latest. |
+| `GET /api/v1/workflows/graph?name=...&version=...` | Return a stable authored node/edge projection. |
+| `POST /api/v1/workflows/preview?name=...&version=...` | Validate boundaries and derive the candidate frozen route. |
+
+List responses omit canonical document bytes; show is the single finite document
+representation. Validation reports carry one authoritative issue list rather than
+an independently stored validity flag. Invalid route boundaries return the normal
+422 `VALIDATION_FAILED` envelope with ordered workflow issue details.
+
 ## Stable errors
 
 All HTTP failures use the versioned API error envelope: `schemaVersion`, stable

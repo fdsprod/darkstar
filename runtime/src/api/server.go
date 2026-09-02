@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/fdsprod/darkstar/runtime/src/core/health"
+	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
+	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
 )
 
 const requestIDHeader = "X-Request-Id"
@@ -45,6 +47,7 @@ type Server struct {
 	exporter  RunExporter
 	runs      RunService
 	artifacts ArtifactService
+	workflows WorkflowService
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
@@ -164,6 +167,30 @@ func (s *Server) SetArtifacts(artifacts ArtifactService) error {
 		return errors.New("API artifact service is required")
 	}
 	s.artifacts = artifacts
+	return nil
+}
+
+// WorkflowService is the daemon-owned workflow command/query boundary.
+type WorkflowService interface {
+	List(context.Context, string) ([]workflow.VersionSummary, error)
+	Definition(context.Context, string, string) (workflow.Definition, error)
+	ValidateCandidate(workflowstore.Candidate) workflow.ValidationReport
+	Install(context.Context, workflowstore.Candidate) (workflow.InstallResult, error)
+	Graph(context.Context, string, string) (workflow.Graph, error)
+	Preview(context.Context, string, string, workflow.RouteRequest, workflow.RouteContext) (workflow.RoutePreview, workflow.ValidationErrors, error)
+}
+
+// SetWorkflows installs workflow operations before the endpoint is published.
+func (s *Server) SetWorkflows(service WorkflowService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API workflow service can only be set before start")
+	}
+	if service == nil {
+		return errors.New("API workflow service is required")
+	}
+	s.workflows = service
 	return nil
 }
 
@@ -354,6 +381,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	if path.Clean(request.URL.Path) == "/api/v1/artifacts" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifacts/") ||
 		path.Clean(request.URL.Path) == "/api/v1/artifact-bindings" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifact-bindings/") {
 		s.serveArtifacts(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/workflows" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/workflows/") {
+		s.serveWorkflows(response, request, requestID)
 		return
 	}
 

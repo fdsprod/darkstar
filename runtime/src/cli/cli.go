@@ -21,6 +21,7 @@ import (
 	"github.com/fdsprod/darkstar/runtime/src/adapters/contentprocessor/commonimage"
 	"github.com/fdsprod/darkstar/runtime/src/adapters/provider/fake"
 	"github.com/fdsprod/darkstar/runtime/src/adapters/statestore/sqlite"
+	workflowfilesystem "github.com/fdsprod/darkstar/runtime/src/adapters/workflowstore/filesystem"
 	localapi "github.com/fdsprod/darkstar/runtime/src/api"
 	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
 	"github.com/fdsprod/darkstar/runtime/src/core/artifactderive"
@@ -31,11 +32,13 @@ import (
 	"github.com/fdsprod/darkstar/runtime/src/core/recovery"
 	"github.com/fdsprod/darkstar/runtime/src/core/runexecution"
 	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
+	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
 	"github.com/fdsprod/darkstar/runtime/src/daemon"
 	"github.com/fdsprod/darkstar/runtime/src/doctor"
 	"github.com/fdsprod/darkstar/runtime/src/platform/windows"
 	platformport "github.com/fdsprod/darkstar/runtime/src/ports/platform"
 	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
 )
 
 const usage = `DARKSTAR
@@ -50,6 +53,7 @@ Commands:
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
   run        Start, inspect, watch, and export runs
+  workflow   List, show, validate, install, graph, and preview workflows
   version    Show version information
 
 API commands:
@@ -71,6 +75,14 @@ Artifact commands:
   artifact extract|lint|representations <artifact-id>@<version> [--json]
   artifact revise <artifact-id> (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--json]
   artifact impact <artifact-id>@<version> --target <kind>:<id> [--run <run-id>] [--json]
+
+Workflow commands:
+  workflow list [--json]
+  workflow show <name> [--version <version>] [--json]
+  workflow validate <file> [--json]
+  workflow install <file> [--json]
+  workflow graph <name> [--version <version>] [--json]
+  workflow preview <name> [--version <version>] [--from <node>] [--until <node>]... [--input <file>] [--json]
 
 Daemon commands:
   daemon run [--json]      Run in the foreground
@@ -141,6 +153,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runDoctor(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "run":
 		return runRun(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "workflow":
+		return runWorkflow(cleanArgs[1:], jsonOutput, stdout, stderr)
 	default:
 		message := fmt.Sprintf("unknown command %q; run 'darkstar help' for usage", cleanArgs[0])
 		return writeCommandError(stdout, stderr, jsonOutput, "darkstar", "ARGUMENT_INVALID", message, false, ExitInvalidInput)
@@ -214,6 +228,26 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return fmt.Errorf("open daemon state: %w", err)
 	}
 	service.database = database
+	workflowSource, err := workflowfilesystem.New(
+		workflowfilesystem.Directory{Scope: workflowstore.ScopeUser, Path: filepath.Join(service.paths.Config, "workflows")},
+		workflowfilesystem.Directory{Scope: workflowstore.ScopeProject, Path: filepath.Join(service.projectRoot, ".darkstar", "workflows")},
+	)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return fmt.Errorf("configure workflow sources: %w", err)
+	}
+	workflowCatalog, err := workflow.NewCatalog(workflowSource, database)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.server.SetWorkflows(workflowCatalog); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
 	reconciler, err := recovery.New(database, nil)
 	if err != nil {
 		_ = database.Close()
