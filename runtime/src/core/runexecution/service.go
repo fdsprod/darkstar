@@ -98,8 +98,20 @@ type Service struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	mu      sync.Mutex
-	workers map[string]struct{}
+	workers map[string]*worker
 	wait    sync.WaitGroup
+}
+
+// worker is the complete process-local ownership record for one provider
+// attempt. Durable attempt/run projections remain authoritative; this record
+// exists only so a control command can quiesce or terminate live work before
+// committing its state transition.
+type worker struct {
+	attempt statestore.AttemptProjection
+	cancel  context.CancelFunc
+	done    chan struct{}
+	adapter provider.Provider
+	handle  provider.AttemptHandle
 }
 
 // New creates a run service whose workers are cancelled together on Close.
@@ -108,7 +120,7 @@ func New(parent context.Context, store statestore.Store, factory ProviderFactory
 		return nil, errors.New("run execution requires state, provider factory, and log sink")
 	}
 	ctx, cancel := context.WithCancel(parent)
-	return &Service{store: store, factory: factory, logs: logs, now: time.Now, ctx: ctx, cancel: cancel, workers: map[string]struct{}{}}, nil
+	return &Service{store: store, factory: factory, logs: logs, now: time.Now, ctx: ctx, cancel: cancel, workers: map[string]*worker{}}, nil
 }
 
 // SetWorkflowPlanner installs work-backed route planning before requests are served.
@@ -374,7 +386,13 @@ func (s *Service) ResumeActive(ctx context.Context) error {
 		return err
 	}
 	for _, attempt := range attempts {
-		s.launch(attempt)
+		run, runErr := s.store.Run(ctx, attempt.RunID)
+		if runErr != nil {
+			return runErr
+		}
+		if run.Status == statestore.RunQueued || run.Status == statestore.RunRunning {
+			s.launch(attempt)
+		}
 	}
 	return nil
 }
@@ -392,41 +410,53 @@ func (s *Service) launch(attempt statestore.AttemptProjection) {
 		s.mu.Unlock()
 		return
 	}
-	s.workers[attempt.AttemptID] = struct{}{}
+	ctx, cancel := context.WithCancel(s.ctx)
+	active := &worker{attempt: attempt, cancel: cancel, done: make(chan struct{})}
+	s.workers[attempt.AttemptID] = active
 	s.wait.Add(1)
 	s.mu.Unlock()
 	go func() {
 		defer s.wait.Done()
-		defer func() { s.mu.Lock(); delete(s.workers, attempt.AttemptID); s.mu.Unlock() }()
-		s.execute(attempt)
+		defer func() {
+			s.mu.Lock()
+			delete(s.workers, attempt.AttemptID)
+			close(active.done)
+			s.mu.Unlock()
+		}()
+		s.execute(ctx, active, attempt)
 	}()
 }
 
-func (s *Service) execute(attempt statestore.AttemptProjection) {
+func (s *Service) execute(ctx context.Context, active *worker, attempt statestore.AttemptProjection) {
 	resume := attempt.Status == statestore.AttemptRunning
-	run, err := s.store.Run(s.ctx, attempt.RunID)
+	run, err := s.store.Run(ctx, attempt.RunID)
 	if err != nil {
 		return
 	}
 	if run.Status == statestore.RunQueued {
-		if _, err = s.store.Append(s.ctx, pendingEvent("run.visit_ready", statestore.AggregateRun, run.RunID, run.ResourceVersion,
-			run.RunID, "visit-ready:"+attempt.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"visitId": attempt.VisitID})); err != nil {
+		if _, err = s.store.Append(ctx, pendingEvent("run.visit_ready", statestore.AggregateRun, run.RunID, run.ResourceVersion,
+			run.RunID, fmt.Sprintf("visit-ready:%s:%d", attempt.AttemptID, run.ResourceVersion), statestore.ActorSystem, "daemon", s.now(), map[string]any{"visitId": attempt.VisitID})); err != nil {
 			return
 		}
 	}
 	adapter, err := s.factory.Provider(attempt.Scenario, attempt.AttemptID, resume)
 	if err != nil {
-		s.failAttempt(attempt.AttemptID, attempt.RunID, err)
+		if ctx.Err() == nil {
+			s.failAttempt(attempt.AttemptID, attempt.RunID, err)
+		}
 		return
 	}
+	s.mu.Lock()
+	active.adapter = adapter
+	s.mu.Unlock()
 	var handle provider.AttemptHandle
 	if resume {
-		handle, err = adapter.ResumeAttempt(s.ctx, provider.ResumeRequest{
+		handle, err = adapter.ResumeAttempt(ctx, provider.ResumeRequest{
 			AttemptID: attempt.AttemptID, IdempotencyKey: "resume:" + attempt.AttemptID,
 			ProviderThreadID: attempt.ProviderThreadID, ProviderTurnID: attempt.ProviderTurnID, LastSequence: attempt.LastSequence,
 		})
 	} else {
-		handle, err = adapter.StartAttempt(s.ctx, provider.AttemptRequest{
+		handle, err = adapter.StartAttempt(ctx, provider.AttemptRequest{
 			AttemptID: attempt.AttemptID, RunID: attempt.RunID, NodeID: attempt.NodeID,
 			IdempotencyKey: "start:" + attempt.AttemptID, Access: provider.AccessReadOnly,
 			Network: provider.NetworkDenied, CommandPolicy: provider.InteractionDeny,
@@ -435,27 +465,30 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 		})
 	}
 	if err != nil {
-		if s.ctx.Err() == nil {
+		if ctx.Err() == nil {
 			if resume {
-				s.pauseUnsafeResume(attempt, err)
+				s.pauseUnsafeResume(ctx, attempt, err)
 			} else {
 				s.failAttempt(attempt.AttemptID, attempt.RunID, err)
 			}
 		}
 		return
 	}
+	s.mu.Lock()
+	active.handle = handle
+	s.mu.Unlock()
 	identityChanged := resume && (handle.ProviderThreadID != attempt.ProviderThreadID || handle.ProviderTurnID != attempt.ProviderTurnID)
 	if handle.AttemptID != attempt.AttemptID || handle.Provider != attempt.Provider || handle.ProviderThreadID == "" ||
 		handle.ProviderTurnID == "" || handle.ProcessOwnerID == "" || identityChanged {
 		inconsistent := errors.New("provider returned an inconsistent recovery handle")
 		if resume {
-			s.pauseUnsafeResume(attempt, inconsistent)
+			s.pauseUnsafeResume(ctx, attempt, inconsistent)
 		} else {
 			s.failAttempt(attempt.AttemptID, attempt.RunID, inconsistent)
 		}
 		return
 	}
-	current, err := s.store.Attempt(s.ctx, attempt.AttemptID)
+	current, err := s.store.Attempt(ctx, attempt.AttemptID)
 	if err != nil {
 		return
 	}
@@ -474,14 +507,14 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 	}
 	startEvents = append(startEvents, pendingEvent(kind, statestore.AggregateAttempt, current.AttemptID, current.ResourceVersion,
 		current.RunID, kind+":"+current.AttemptID, statestore.ActorProvider, "fake", s.now(), identity))
-	started, err := s.store.Append(s.ctx, startEvents...)
+	started, err := s.store.Append(ctx, startEvents...)
 	if err != nil || len(started) == 0 {
 		return
 	}
 
-	stream, err := adapter.StreamEvents(s.ctx, provider.EventRequest{Handle: handle, AfterSequence: current.LastSequence})
+	stream, err := adapter.StreamEvents(ctx, provider.EventRequest{Handle: handle, AfterSequence: current.LastSequence})
 	if err != nil {
-		if s.ctx.Err() == nil {
+		if ctx.Err() == nil {
 			s.failAttempt(current.AttemptID, current.RunID, err)
 		}
 		return
@@ -495,7 +528,7 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 			break
 		}
 		if receiveErr != nil {
-			if s.ctx.Err() == nil {
+			if ctx.Err() == nil {
 				s.failAttempt(current.AttemptID, current.RunID, receiveErr)
 			}
 			return
@@ -508,7 +541,7 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 			s.failAttempt(current.AttemptID, current.RunID, errors.New("provider event identity or sequence is invalid"))
 			return
 		}
-		current, err = s.store.Attempt(s.ctx, current.AttemptID)
+		current, err = s.store.Attempt(ctx, current.AttemptID)
 		if err != nil {
 			return
 		}
@@ -517,25 +550,27 @@ func (s *Service) execute(attempt statestore.AttemptProjection) {
 			"providerVersion": event.ProviderVersion, "payload": json.RawMessage(event.Payload),
 			"logReference": current.LogReference,
 		}
-		if _, err = s.store.Append(s.ctx, pendingEvent("attempt.provider_event", statestore.AggregateAttempt, current.AttemptID,
+		if _, err = s.store.Append(ctx, pendingEvent("attempt.provider_event", statestore.AggregateAttempt, current.AttemptID,
 			current.ResourceVersion, current.RunID, fmt.Sprintf("provider:%s:%d", current.AttemptID, event.Sequence),
 			statestore.ActorProvider, "fake", event.OccurredAt, data)); err != nil {
 			return
 		}
 		line, _ := json.Marshal(map[string]any{"sequence": event.Sequence, "kind": event.Kind, "payload": json.RawMessage(event.Payload)})
-		_ = s.logs.AppendLog(s.ctx, current.LogReference, append(line, '\n'))
+		_ = s.logs.AppendLog(ctx, current.LogReference, append(line, '\n'))
 	}
-	result, err := adapter.GetResult(s.ctx, provider.ResultRequest{Handle: handle})
+	result, err := adapter.GetResult(ctx, provider.ResultRequest{Handle: handle})
 	if err != nil {
-		if s.ctx.Err() == nil {
+		if ctx.Err() == nil {
 			s.failAttempt(current.AttemptID, current.RunID, err)
 		}
 		return
 	}
-	s.completeAttempt(current.AttemptID, current.RunID, result)
+	if ctx.Err() == nil {
+		s.completeAttempt(ctx, current.AttemptID, current.RunID, result)
+	}
 }
 
-func (s *Service) pauseUnsafeResume(attempt statestore.AttemptProjection, cause error) {
+func (s *Service) pauseUnsafeResume(ctx context.Context, attempt statestore.AttemptProjection, cause error) {
 	failure := ports.Failure{
 		Code: ports.FailureUncertain, Message: "provider resume could not be proven safe", Retryable: false,
 	}
@@ -544,7 +579,7 @@ func (s *Service) pauseUnsafeResume(attempt statestore.AttemptProjection, cause 
 		failure = *classified
 		failure.Details = cloneStringMap(classified.Details)
 	}
-	s.completeAttempt(attempt.AttemptID, attempt.RunID, provider.UnknownResult{
+	s.completeAttempt(ctx, attempt.AttemptID, attempt.RunID, provider.UnknownResult{
 		AttemptResultMetadata: provider.AttemptResultMetadata{Recovery: provider.RecoveryMetadata{
 			ProviderThreadID: attempt.ProviderThreadID, ProviderTurnID: attempt.ProviderTurnID,
 			LastSequence: attempt.LastSequence, ProcessOwnerID: attempt.ProcessOwnerID, Resumable: true,
@@ -564,16 +599,16 @@ func cloneStringMap(source map[string]string) map[string]string {
 	return cloned
 }
 
-func (s *Service) completeAttempt(attemptID, runID string, result provider.AttemptResult) {
-	attempt, err := s.store.Attempt(s.ctx, attemptID)
+func (s *Service) completeAttempt(ctx context.Context, attemptID, runID string, result provider.AttemptResult) {
+	attempt, err := s.store.Attempt(ctx, attemptID)
 	if err != nil || attempt.Status.Terminal() {
 		return
 	}
-	run, err := s.store.Run(s.ctx, runID)
+	run, err := s.store.Run(ctx, runID)
 	if err != nil {
 		return
 	}
-	node, err := s.store.Node(s.ctx, attempt.VisitID)
+	node, err := s.store.Node(ctx, attempt.VisitID)
 	if err != nil {
 		return
 	}
@@ -599,17 +634,17 @@ func (s *Service) completeAttempt(attemptID, runID string, result provider.Attem
 		events = append(events,
 			pendingEvent("attempt.result_received", statestore.AggregateAttempt, attemptID, attempt.ResourceVersion, runID, "result:"+attemptID, statestore.ActorProvider, "fake", s.now(), data),
 			pendingEvent(attemptKind, statestore.AggregateAttempt, attemptID, attempt.ResourceVersion+1, runID, "terminal:"+attemptID, statestore.ActorSystem, "daemon", s.now(), data),
-			pendingEvent("visit.result_received", statestore.AggregateVisit, node.VisitID, node.ResourceVersion, runID, "result:"+node.VisitID, statestore.ActorProvider, "fake", s.now(), data),
-			pendingEvent(nodeKind, statestore.AggregateVisit, node.VisitID, node.ResourceVersion+1, runID, "terminal:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), data),
+			pendingEvent("visit.result_received", statestore.AggregateVisit, node.VisitID, node.ResourceVersion, runID, "result:"+node.VisitID+":"+attemptID, statestore.ActorProvider, "fake", s.now(), data),
+			pendingEvent(nodeKind, statestore.AggregateVisit, node.VisitID, node.ResourceVersion+1, runID, "terminal:"+node.VisitID+":"+attemptID, statestore.ActorSystem, "daemon", s.now(), data),
 		)
 	} else {
 		events = append(events,
 			pendingEvent(attemptKind, statestore.AggregateAttempt, attemptID, attempt.ResourceVersion, runID, "terminal:"+attemptID, statestore.ActorProvider, "fake", s.now(), data),
-			pendingEvent(nodeKind, statestore.AggregateVisit, node.VisitID, node.ResourceVersion, runID, "terminal:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), data),
+			pendingEvent(nodeKind, statestore.AggregateVisit, node.VisitID, node.ResourceVersion, runID, "terminal:"+node.VisitID+":"+attemptID, statestore.ActorSystem, "daemon", s.now(), data),
 		)
 	}
-	events = append(events, pendingEvent(runKind, statestore.AggregateRun, runID, run.ResourceVersion, runID, "terminal:"+runID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"attemptId": attemptID}))
-	_, _ = s.store.Append(s.ctx, events...)
+	events = append(events, pendingEvent(runKind, statestore.AggregateRun, runID, run.ResourceVersion, runID, "terminal:"+runID+":"+attemptID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"attemptId": attemptID}))
+	_, _ = s.store.Append(ctx, events...)
 }
 
 func (s *Service) failAttempt(attemptID, runID string, cause error) {
@@ -624,8 +659,8 @@ func (s *Service) failAttempt(attemptID, runID string, cause error) {
 	}
 	_, _ = s.store.Append(context.Background(),
 		pendingEvent("attempt.failed", statestore.AggregateAttempt, attemptID, attempt.ResourceVersion, runID, "failure:"+attemptID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"code": "PROVIDER_FAILED", "message": cause.Error(), "logReference": attempt.LogReference}),
-		pendingEvent("visit.failed", statestore.AggregateVisit, node.VisitID, node.ResourceVersion, runID, "failure:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"code": "PROVIDER_FAILED", "message": cause.Error()}),
-		pendingEvent("run.failed", statestore.AggregateRun, runID, run.ResourceVersion, runID, "failure:"+runID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"attemptId": attemptID}),
+		pendingEvent("visit.failed", statestore.AggregateVisit, node.VisitID, node.ResourceVersion, runID, "failure:"+node.VisitID+":"+attemptID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"code": "PROVIDER_FAILED", "message": cause.Error()}),
+		pendingEvent("run.failed", statestore.AggregateRun, runID, run.ResourceVersion, runID, "failure:"+runID+":"+attemptID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"attemptId": attemptID}),
 	)
 }
 

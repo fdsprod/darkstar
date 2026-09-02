@@ -19,12 +19,15 @@ func TestRunTransitionTable(t *testing.T) {
 		{statestore.RunReady, "run.started", statestore.RunQueued},
 		{statestore.RunQueued, "run.visit_ready", statestore.RunRunning},
 		{statestore.RunRunning, "run.waiting", statestore.RunWaiting},
+		{statestore.RunQueued, "run.paused", statestore.RunWaiting},
+		{statestore.RunRunning, "run.paused", statestore.RunWaiting},
 		{statestore.RunWaiting, "run.resumed", statestore.RunQueued},
 		{statestore.RunRunning, "run.blocked", statestore.RunBlocked},
 		{statestore.RunBlocked, "run.resumed", statestore.RunQueued},
 		{statestore.RunRunning, "run.completed", statestore.RunCompleted},
 		{statestore.RunRunning, "run.failed", statestore.RunFailed},
 		{statestore.RunFailed, "run.resumed", statestore.RunQueued},
+		{statestore.RunFailed, "run.retried", statestore.RunQueued},
 	}
 	for _, test := range tests {
 		t.Run(string(test.from)+"/"+test.event, func(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 )
 
 // ReducerVersion changes whenever replay semantics change incompatibly.
-const ReducerVersion = "4"
+const ReducerVersion = "5"
 
 // UnsupportedSchemaVersionError means replay cannot safely interpret an event.
 type UnsupportedSchemaVersionError struct {
@@ -133,6 +133,11 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 			return statestore.RunProjection{}, true, err
 		}
 		next.Status = statestore.RunWaiting
+	case "run.paused":
+		if err := requireRunState(current, event, statestore.RunQueued, statestore.RunRunning); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		next.Status = statestore.RunWaiting
 	case "run.blocked":
 		if err := requireRunState(current, event, statestore.RunRunning); err != nil {
 			return statestore.RunProjection{}, true, err
@@ -142,6 +147,37 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 		if err := requireRunState(current, event, statestore.RunWaiting, statestore.RunBlocked, statestore.RunFailed); err != nil {
 			return statestore.RunProjection{}, true, err
 		}
+		next.Status = statestore.RunQueued
+	case "run.retried":
+		if err := requireRunState(current, event, statestore.RunFailed); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		next.Status = statestore.RunQueued
+	case "run.continued":
+		if err := requireRunState(current, event, statestore.RunCompleted); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		var data struct {
+			WorkflowDigest string          `json:"workflowDigest"`
+			RouteDigest    string          `json:"routeDigest"`
+			RouteSnapshot  json.RawMessage `json:"routeSnapshot"`
+			Until          string          `json:"until"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		if !validSourceHash(data.WorkflowDigest) || !validSourceHash(data.RouteDigest) || len(data.RouteSnapshot) == 0 || data.Until == "" {
+			return statestore.RunProjection{}, true, errors.New("run.continued requires workflow and route digests, a route snapshot, and an until boundary")
+		}
+		var route struct {
+			Entry     string   `json:"entry"`
+			Terminals []string `json:"terminals"`
+		}
+		if json.Unmarshal(data.RouteSnapshot, &route) != nil || route.Entry == "" || len(route.Terminals) == 0 {
+			return statestore.RunProjection{}, true, errors.New("run.continued routeSnapshot requires an entry and at least one terminal boundary")
+		}
+		next.WorkflowDigest, next.RouteDigest = data.WorkflowDigest, data.RouteDigest
+		next.RouteSnapshot = statestore.JSONSnapshot(string(data.RouteSnapshot))
 		next.Status = statestore.RunQueued
 	case "run.completed":
 		if err := requireRunState(current, event, statestore.RunRunning); err != nil {
@@ -245,7 +281,7 @@ func ReduceNode(current *statestore.NodeProjection, event statestore.Event) (sta
 		}
 		next.Status = statestore.NodeRejected
 	case "visit.retrying":
-		if err := requireNodeState(current, event, statestore.NodeRunning, statestore.NodeValidating); err != nil {
+		if err := requireNodeState(current, event, statestore.NodeRunning, statestore.NodeValidating, statestore.NodeFailed); err != nil {
 			return statestore.NodeProjection{}, true, err
 		}
 		next.Status = statestore.NodeReady
