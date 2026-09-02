@@ -88,6 +88,26 @@ const (
 	InteractionAllow InteractionPolicy = "allow"
 )
 
+// InteractionKind is the closed checkpoint vocabulary exposed by provider
+// adapters. It keeps permission-bearing actions distinct from user questions
+// and client-executed tool calls without leaking provider method names.
+type InteractionKind string
+
+const (
+	InteractionCommand    InteractionKind = "command"
+	InteractionFile       InteractionKind = "file"
+	InteractionNetwork    InteractionKind = "network"
+	InteractionPermission InteractionKind = "permission"
+	InteractionTool       InteractionKind = "tool"
+	InteractionUser       InteractionKind = "user"
+)
+
+type InteractionCheckpoint struct {
+	Kind              InteractionKind `json:"kind"`
+	ProviderRequestID string          `json:"providerRequestId"`
+	ScopeDigest       string          `json:"scopeDigest"`
+}
+
 // AttemptRequest freezes everything an adapter may use for a new attempt.
 type AttemptRequest struct {
 	AttemptID             string

@@ -130,3 +130,38 @@ func TestEventValidateClassifiesContractDrift(t *testing.T) {
 		})
 	}
 }
+
+func TestInteractionCheckpointFromEventReturnsTypedCheckpoint(t *testing.T) {
+	t.Parallel()
+
+	event := provider.Event{Payload: json.RawMessage(`{"checkpoint":{"kind":"network","providerRequestId":"7","scopeDigest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`)}
+	checkpoint, present, err := provider.InteractionCheckpointFromEvent(event)
+	if err != nil || !present {
+		t.Fatalf("InteractionCheckpointFromEvent() present = %t, error = %v", present, err)
+	}
+	if checkpoint.Kind != provider.InteractionNetwork || checkpoint.ProviderRequestID != "7" || checkpoint.ScopeDigest == "" {
+		t.Fatalf("InteractionCheckpointFromEvent() = %#v", checkpoint)
+	}
+
+	ordinary := provider.Event{Payload: json.RawMessage(`{"text":"done"}`)}
+	if _, present, err = provider.InteractionCheckpointFromEvent(ordinary); err != nil || present {
+		t.Fatalf("ordinary event checkpoint present = %t, error = %v", present, err)
+	}
+}
+
+func TestInteractionCheckpointFromEventRejectsMalformedCheckpoint(t *testing.T) {
+	t.Parallel()
+
+	tests := []json.RawMessage{
+		json.RawMessage(`{"checkpoint":{"kind":"approval","providerRequestId":"7","scopeDigest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`),
+		json.RawMessage(`{"checkpoint":{"kind":"command","providerRequestId":"","scopeDigest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`),
+		json.RawMessage(`{"checkpoint":{"kind":"command","providerRequestId":"7","scopeDigest":"not-a-digest"}}`),
+	}
+	for _, payload := range tests {
+		_, present, err := provider.InteractionCheckpointFromEvent(provider.Event{Payload: payload})
+		var failure *ports.Failure
+		if present || !errors.As(err, &failure) || failure.Code != ports.FailureProtocolDrift {
+			t.Fatalf("payload %s: present = %t, error = %#v", payload, present, err)
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 
@@ -118,6 +119,36 @@ func (event Event) Validate() error {
 	default:
 		return nil
 	}
+}
+
+// InteractionCheckpointFromEvent returns the durable checkpoint carried by an
+// interaction request or response event. Ordinary provider events return
+// present=false; malformed checkpoints are protocol drift and must not be
+// interpreted as an untyped provider payload by core.
+func InteractionCheckpointFromEvent(event Event) (checkpoint InteractionCheckpoint, present bool, err error) {
+	var envelope struct {
+		Checkpoint *InteractionCheckpoint `json:"checkpoint"`
+	}
+	if unmarshalErr := json.Unmarshal(event.Payload, &envelope); unmarshalErr != nil {
+		return InteractionCheckpoint{}, false, eventContractFailure("payload.checkpoint", "must be carried in a JSON object")
+	}
+	if envelope.Checkpoint == nil {
+		return InteractionCheckpoint{}, false, nil
+	}
+	checkpoint = *envelope.Checkpoint
+	switch checkpoint.Kind {
+	case InteractionCommand, InteractionFile, InteractionNetwork, InteractionPermission, InteractionTool, InteractionUser:
+	default:
+		return InteractionCheckpoint{}, false, eventContractFailure("payload.checkpoint.kind", "must be a canonical interaction kind")
+	}
+	if strings.TrimSpace(checkpoint.ProviderRequestID) == "" || strings.TrimSpace(checkpoint.ProviderRequestID) != checkpoint.ProviderRequestID {
+		return InteractionCheckpoint{}, false, eventContractFailure("payload.checkpoint.providerRequestId", "must be an opaque non-empty provider request identity")
+	}
+	digest, decodeErr := hex.DecodeString(checkpoint.ScopeDigest)
+	if decodeErr != nil || len(digest) != 32 {
+		return InteractionCheckpoint{}, false, eventContractFailure("payload.checkpoint.scopeDigest", "must be a SHA-256 digest")
+	}
+	return checkpoint, true, nil
 }
 
 func eventContractFailure(field, requirement string) *ports.Failure {

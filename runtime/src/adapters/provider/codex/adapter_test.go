@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -369,17 +370,63 @@ func TestAdapterExecutesWorkspaceWriteNodeWithExplicitApprovalEvidence(t *testin
 		if event.Kind != providerport.EventPermissionRequested {
 			return
 		}
-		_, err := adapter.Respond(context.Background(), providerport.PermissionResponse{
+		checkpoint, present, err := providerport.InteractionCheckpointFromEvent(event)
+		if err != nil || !present {
+			t.Fatalf("decode interaction checkpoint: present=%t error=%v", present, err)
+		}
+		response := providerport.PermissionResponse{
 			InteractionContext: providerport.InteractionContext{
 				AttemptID:         handle.AttemptID,
 				ProviderThreadID:  handle.ProviderThreadID,
-				ProviderRequestID: "0",
+				ProviderRequestID: checkpoint.ProviderRequestID,
 				IdempotencyKey:    "approval-1",
+				ScopeDigest:       checkpoint.ScopeDigest,
 			},
 			Decision: providerport.PermissionAllowOnce,
-		})
-		if err != nil {
-			t.Fatalf("Respond() error = %v", err)
+		}
+		unknown := response
+		unknown.ProviderRequestID = "99"
+		_, err = adapter.Respond(context.Background(), unknown)
+		var notFound *ports.Failure
+		if !errors.As(err, &notFound) || notFound.Code != ports.FailureNotFound {
+			t.Fatalf("unknown response error = %#v", err)
+		}
+		wrongScope := response
+		wrongScope.ScopeDigest = strings.Repeat("b", 64)
+		_, err = adapter.Respond(context.Background(), wrongScope)
+		var invalid *ports.Failure
+		if !errors.As(err, &invalid) || invalid.Code != ports.FailureInvalidRequest {
+			t.Fatalf("wrong-scope response error = %#v", err)
+		}
+		type responseResult struct {
+			receipt providerport.InteractionReceipt
+			err     error
+		}
+		results := make(chan responseResult, 8)
+		for range 8 {
+			go func() {
+				receipt, err := adapter.Respond(context.Background(), response)
+				results <- responseResult{receipt: receipt, err: err}
+			}()
+		}
+		var want providerport.InteractionReceipt
+		for range 8 {
+			result := <-results
+			if result.err != nil {
+				t.Fatalf("Respond() error = %v", result.err)
+			}
+			if want == (providerport.InteractionReceipt{}) {
+				want = result.receipt
+			} else if result.receipt != want {
+				t.Fatalf("concurrent response receipt = %#v, want %#v", result.receipt, want)
+			}
+		}
+		changed := response
+		changed.Decision = providerport.PermissionDenied
+		_, err = adapter.Respond(context.Background(), changed)
+		var conflict *ports.Failure
+		if !errors.As(err, &conflict) || conflict.Code != ports.FailureConflict {
+			t.Fatalf("changed response error = %#v", err)
 		}
 	})
 	for _, kind := range []providerport.EventKind{
@@ -504,6 +551,73 @@ func TestAdapterFailsClosedWhenRecordedTurnIsNotActive(t *testing.T) {
 	}
 	if err := <-script.done; err != nil {
 		t.Fatalf("resume App Server script error = %v", err)
+	}
+}
+
+func TestInteractionPayloadsMatchDistinctCodexRequestTypes(t *testing.T) {
+	t.Parallel()
+	context := providerport.InteractionContext{
+		AttemptID: "attempt-1", ProviderThreadID: "thread-1", ProviderRequestID: "1",
+		IdempotencyKey: "response-1", ScopeDigest: strings.Repeat("a", 64),
+	}
+	tests := []struct {
+		name     string
+		response providerport.InteractionResponse
+		request  interactionRequest
+		wantJSON string
+	}{
+		{
+			name: "command once", response: providerport.PermissionResponse{InteractionContext: context, Decision: providerport.PermissionAllowOnce},
+			request:  interactionRequest{checkpoint: providerport.InteractionCheckpoint{Kind: providerport.InteractionCommand}, providerMethod: "item/commandExecution/requestApproval"},
+			wantJSON: `{"decision":"accept"}`,
+		},
+		{
+			name: "file session", response: providerport.PermissionResponse{InteractionContext: context, Decision: providerport.PermissionAllowForSession},
+			request:  interactionRequest{checkpoint: providerport.InteractionCheckpoint{Kind: providerport.InteractionFile}, providerMethod: "item/fileChange/requestApproval"},
+			wantJSON: `{"decision":"acceptForSession"}`,
+		},
+		{
+			name: "legacy command deny", response: providerport.PermissionResponse{InteractionContext: context, Decision: providerport.PermissionDenied},
+			request:  interactionRequest{checkpoint: providerport.InteractionCheckpoint{Kind: providerport.InteractionCommand}, providerMethod: "execCommandApproval"},
+			wantJSON: `{"decision":{"denied":{"rejection":"rejected by user"}}}`,
+		},
+		{
+			name: "permission once", response: providerport.PermissionResponse{InteractionContext: context, Decision: providerport.PermissionAllowOnce},
+			request:  interactionRequest{checkpoint: providerport.InteractionCheckpoint{Kind: providerport.InteractionPermission}, providerMethod: "item/permissions/requestApproval", params: json.RawMessage(`{"permissions":{"network":{"enabled":true},"fileSystem":null}}`)},
+			wantJSON: `{"permissions":{"network":{"enabled":true}},"scope":"turn"}`,
+		},
+		{
+			name: "permission deny", response: providerport.PermissionResponse{InteractionContext: context, Decision: providerport.PermissionDenied},
+			request:  interactionRequest{checkpoint: providerport.InteractionCheckpoint{Kind: providerport.InteractionPermission}, providerMethod: "item/permissions/requestApproval", params: json.RawMessage(`{"permissions":{"network":{"enabled":true},"fileSystem":null}}`)},
+			wantJSON: `{"permissions":{},"scope":"turn"}`,
+		},
+		{
+			name: "user answer", response: providerport.AnswerResponse{InteractionContext: context, Answer: json.RawMessage(`{"answers":{"choice":{"answers":["yes"]}}}`)},
+			request:  interactionRequest{checkpoint: providerport.InteractionCheckpoint{Kind: providerport.InteractionUser}, providerMethod: "item/tool/requestUserInput"},
+			wantJSON: `{"answers":{"choice":{"answers":["yes"]}}}`,
+		},
+		{
+			name: "tool result", response: providerport.AnswerResponse{InteractionContext: context, Answer: json.RawMessage(`{"contentItems":[],"success":true}`)},
+			request:  interactionRequest{checkpoint: providerport.InteractionCheckpoint{Kind: providerport.InteractionTool}, providerMethod: "item/tool/call"},
+			wantJSON: `{"contentItems":[],"success":true}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload, err := interactionPayload(test.response, test.request)
+			if err != nil {
+				t.Fatalf("interactionPayload() error = %v", err)
+			}
+			encoded, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatalf("marshal payload: %v", err)
+			}
+			var gotValue, wantValue any
+			if json.Unmarshal(encoded, &gotValue) != nil || json.Unmarshal([]byte(test.wantJSON), &wantValue) != nil ||
+				!reflect.DeepEqual(gotValue, wantValue) {
+				t.Fatalf("payload = %s, want %s", encoded, test.wantJSON)
+			}
+		})
 	}
 }
 

@@ -157,15 +157,69 @@ func TestEventNormalizerPreservesKnownUnknownAndRequestPayloads(t *testing.T) {
 		t.Fatalf("request event = %#v", requested)
 	}
 	var payload struct {
-		RequestID string          `json:"requestId"`
-		Params    json.RawMessage `json:"params"`
+		RequestID  string                         `json:"requestId"`
+		Checkpoint provider.InteractionCheckpoint `json:"checkpoint"`
+		Params     json.RawMessage                `json:"params"`
 	}
-	if err := json.Unmarshal(requested.Payload, &payload); err != nil || payload.RequestID != "request-1" || !json.Valid(payload.Params) {
+	if err := json.Unmarshal(requested.Payload, &payload); err != nil || payload.RequestID != "request-1" ||
+		payload.Checkpoint.Kind != provider.InteractionFile || payload.Checkpoint.ProviderRequestID != `"request-1"` ||
+		len(payload.Checkpoint.ScopeDigest) != 64 || !json.Valid(payload.Params) {
 		t.Fatalf("request payload = %s, error = %v", requested.Payload, err)
 	}
 	resolved, err := normalizer.Normalize(ServerNotification{Method: "serverRequest/resolved", Params: json.RawMessage(`{"requestId":"request-1"}`)})
 	if err != nil || resolved.Kind != provider.EventPermissionResponseRecorded {
 		t.Fatalf("resolved event = %#v, error = %v", resolved, err)
+	}
+	var resolvedPayload struct {
+		Checkpoint provider.InteractionCheckpoint `json:"checkpoint"`
+	}
+	if err := json.Unmarshal(resolved.Payload, &resolvedPayload); err != nil || resolvedPayload.Checkpoint != payload.Checkpoint {
+		t.Fatalf("resolved checkpoint payload = %s, error = %v", resolved.Payload, err)
+	}
+}
+
+func TestEventNormalizerEmitsDistinctInteractionCheckpoints(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		method    string
+		params    string
+		wantKind  provider.InteractionKind
+		wantEvent provider.EventKind
+	}{
+		{"command", "item/commandExecution/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"command-1","command":"go test"}`, provider.InteractionCommand, provider.EventPermissionRequested},
+		{"network", "item/commandExecution/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"command-2","networkApprovalContext":{"host":"example.com","protocol":"https"}}`, provider.InteractionNetwork, provider.EventPermissionRequested},
+		{"file", "item/fileChange/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"file-1"}`, provider.InteractionFile, provider.EventPermissionRequested},
+		{"permission", "item/permissions/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"permission-1","permissions":{"network":null,"fileSystem":{"read":["C:\\\\repo"]}}}`, provider.InteractionPermission, provider.EventPermissionRequested},
+		{"tool", "item/tool/call", `{"threadId":"thread-1","turnId":"turn-1","callId":"tool-1","tool":"lookup","arguments":{}}`, provider.InteractionTool, provider.EventToolStarted},
+		{"user", "item/tool/requestUserInput", `{"threadId":"thread-1","turnId":"turn-1","itemId":"question-1","questions":[],"isBlocking":true}`, provider.InteractionUser, provider.EventUserInputRequested},
+	}
+	digests := map[string]string{}
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			normalizer, err := NewEventNormalizer(NormalizerOptions{AttemptID: "attempt-1", ProviderVersion: "version-1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			event, err := normalizer.Normalize(ServerRequest{
+				ID: json.RawMessage(strconv.Itoa(index + 1)), Method: test.method, Params: json.RawMessage(test.params),
+			})
+			if err != nil {
+				t.Fatalf("Normalize() error = %v", err)
+			}
+			var payload struct {
+				Checkpoint provider.InteractionCheckpoint `json:"checkpoint"`
+			}
+			if err := json.Unmarshal(event.Payload, &payload); err != nil || event.Kind != test.wantEvent ||
+				payload.Checkpoint.Kind != test.wantKind || payload.Checkpoint.ProviderRequestID != strconv.Itoa(index+1) ||
+				len(payload.Checkpoint.ScopeDigest) != 64 {
+				t.Fatalf("checkpoint event = %#v payload=%s error=%v", event, event.Payload, err)
+			}
+			digests[test.name] = payload.Checkpoint.ScopeDigest
+		})
+	}
+	if digests["command"] == digests["network"] {
+		t.Fatal("command and network checkpoints shared a scope digest")
 	}
 }
 

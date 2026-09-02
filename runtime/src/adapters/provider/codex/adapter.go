@@ -73,7 +73,8 @@ type codexAttempt struct {
 	usage             providerport.Usage
 	workspaceEvidence []providerport.Evidence
 	terminalEvidence  string
-	responses         map[string]attemptResponse
+	requests          map[string]interactionRequest
+	responses         map[string]*attemptResponse
 	cancelRequested   bool
 }
 
@@ -106,8 +107,29 @@ type resumedOutputValidator struct{}
 func (resumedOutputValidator) validate(json.RawMessage) error { return nil }
 
 type attemptResponse struct {
-	key     string
+	idempotencyKey string
+	responseDigest string
+	ready          chan struct{}
+	result         attemptResponseResult
+}
+
+type attemptResponseResult interface{ isAttemptResponseResult() }
+
+type deliveredAttemptResponse struct {
 	receipt providerport.InteractionReceipt
+}
+
+func (deliveredAttemptResponse) isAttemptResponseResult() {}
+
+type failedAttemptResponse struct{ err error }
+
+func (failedAttemptResponse) isAttemptResponseResult() {}
+
+type interactionRequest struct {
+	checkpoint     providerport.InteractionCheckpoint
+	providerMethod string
+	params         json.RawMessage
+	threadID       string
 }
 
 type threadStartParams struct {
@@ -245,7 +267,8 @@ func (adapter *Adapter) StartAttempt(ctx context.Context, request providerport.A
 		attemptID:         normalized.AttemptID,
 		cancellationGrace: normalized.CancellationGrace,
 		outputValidator:   schemaOutputValidator{schema: schema},
-		responses:         make(map[string]attemptResponse),
+		requests:          make(map[string]interactionRequest),
+		responses:         make(map[string]*attemptResponse),
 	}
 	adapter.attempts[normalized.AttemptID] = state
 	adapter.mu.Unlock()
@@ -334,7 +357,8 @@ func (adapter *Adapter) ResumeAttempt(ctx context.Context, request providerport.
 		attemptID:       request.AttemptID,
 		initialSequence: request.LastSequence,
 		outputValidator: resumedOutputValidator{},
-		responses:       make(map[string]attemptResponse),
+		requests:        make(map[string]interactionRequest),
+		responses:       make(map[string]*attemptResponse),
 	}
 	adapter.attempts[request.AttemptID] = state
 	adapter.mu.Unlock()
@@ -409,7 +433,10 @@ func (adapter *Adapter) StreamEvents(ctx context.Context, request providerport.E
 }
 
 func (adapter *Adapter) Respond(ctx context.Context, response providerport.InteractionResponse) (providerport.InteractionReceipt, error) {
-	interaction, payload, err := interactionPayload(response)
+	if err := ctx.Err(); err != nil {
+		return providerport.InteractionReceipt{}, err
+	}
+	interaction, err := interactionContext(response)
 	if err != nil {
 		return providerport.InteractionReceipt{}, err
 	}
@@ -420,23 +447,52 @@ func (adapter *Adapter) Respond(ctx context.Context, response providerport.Inter
 	if interaction.ProviderThreadID != state.handle.ProviderThreadID {
 		return providerport.InteractionReceipt{}, adapterFailure(ports.FailureInvalidRequest, "interaction thread does not match attempt", false)
 	}
-	state.mu.Lock()
-	if existing, ok := state.responses[interaction.ProviderRequestID]; ok {
-		state.mu.Unlock()
-		if existing.key == interaction.IdempotencyKey {
-			return existing.receipt, nil
-		}
-		return providerport.InteractionReceipt{}, adapterFailure(ports.FailureConflict, "provider request already has a different response", false)
-	}
-	state.mu.Unlock()
 	requestID := providerRequestID(interaction.ProviderRequestID)
+	requestKey := requestIDKey(requestID)
+	responseDigest, err := interactionResponseDigest(response)
+	if err != nil {
+		return providerport.InteractionReceipt{}, adapterFailure(ports.FailureInternal, "interaction response could not be fingerprinted", false)
+	}
+
+	state.mu.Lock()
+	if existing := state.responses[requestKey]; existing != nil {
+		state.mu.Unlock()
+		if existing.idempotencyKey != interaction.IdempotencyKey || existing.responseDigest != responseDigest {
+			return providerport.InteractionReceipt{}, adapterFailure(ports.FailureConflict, "provider request already has a different response", false)
+		}
+		return waitForAttemptResponse(ctx, existing)
+	}
+	pending, ok := state.requests[requestKey]
+	if !ok {
+		state.mu.Unlock()
+		return providerport.InteractionReceipt{}, adapterFailure(ports.FailureNotFound, "provider interaction request is not pending", false)
+	}
+	if interaction.ScopeDigest != pending.checkpoint.ScopeDigest {
+		state.mu.Unlock()
+		return providerport.InteractionReceipt{}, adapterFailure(ports.FailureInvalidRequest, "interaction scope digest does not match the pending request", false)
+	}
+	if err := validateInteractionResponseKind(response, pending.checkpoint.Kind); err != nil {
+		state.mu.Unlock()
+		return providerport.InteractionReceipt{}, err
+	}
+	record := &attemptResponse{
+		idempotencyKey: interaction.IdempotencyKey, responseDigest: responseDigest, ready: make(chan struct{}),
+	}
+	state.responses[requestKey] = record
+	state.mu.Unlock()
+
+	payload, err := interactionPayload(response, pending)
+	if err != nil {
+		finishAttemptResponse(state, record, failedAttemptResponse{err: err})
+		return providerport.InteractionReceipt{}, err
+	}
 	if err := state.client.Respond(requestID, payload); err != nil {
-		return providerport.InteractionReceipt{}, classifyAdapterError(err)
+		classified := classifyAdapterError(err)
+		finishAttemptResponse(state, record, failedAttemptResponse{err: classified})
+		return providerport.InteractionReceipt{}, classified
 	}
 	receipt := providerport.InteractionReceipt{ProviderRequestID: interaction.ProviderRequestID, RecordedAt: adapter.clock().UTC()}
-	state.mu.Lock()
-	state.responses[interaction.ProviderRequestID] = attemptResponse{key: interaction.IdempotencyKey, receipt: receipt}
-	state.mu.Unlock()
+	finishAttemptResponse(state, record, deliveredAttemptResponse{receipt: receipt})
 	return receipt, nil
 }
 
@@ -521,6 +577,10 @@ func (adapter *Adapter) pump(state *codexAttempt) {
 		event, err := state.normal.Normalize(message)
 		if err != nil {
 			adapter.failPump(state, ports.FailureProtocolDrift, "Codex event normalization failed", err)
+			return
+		}
+		if err := trackInteraction(state, message); err != nil {
+			adapter.failPump(state, ports.FailureProtocolDrift, "Codex interaction checkpoint tracking failed", err)
 			return
 		}
 		record, err := nativeEvidenceRecord(state.attemptID, event.Sequence, message)
@@ -933,29 +993,205 @@ func validateHandle(state *codexAttempt, handle providerport.AttemptHandle) erro
 	return nil
 }
 
-func interactionPayload(response providerport.InteractionResponse) (providerport.InteractionContext, any, error) {
+func interactionContext(response providerport.InteractionResponse) (providerport.InteractionContext, error) {
+	var interaction providerport.InteractionContext
 	switch response := response.(type) {
 	case providerport.PermissionResponse:
-		var decision string
+		interaction = response.InteractionContext
+		switch response.Decision {
+		case providerport.PermissionAllowOnce, providerport.PermissionAllowForSession, providerport.PermissionDenied,
+			providerport.PermissionCancelled, providerport.PermissionExpired:
+		default:
+			return interaction, adapterFailure(ports.FailureInvalidRequest, "unsupported permission decision", false)
+		}
+	case providerport.AnswerResponse:
+		interaction = response.InteractionContext
+		if len(bytes.TrimSpace(response.Answer)) == 0 || !json.Valid(response.Answer) {
+			return interaction, adapterFailure(ports.FailureInvalidRequest, "interaction answer must be valid JSON", false)
+		}
+	default:
+		return interaction, adapterFailure(ports.FailureInvalidRequest, fmt.Sprintf("unsupported interaction response %T", response), false)
+	}
+	if strings.TrimSpace(interaction.AttemptID) == "" || strings.TrimSpace(interaction.ProviderThreadID) == "" ||
+		strings.TrimSpace(interaction.ProviderRequestID) == "" || strings.TrimSpace(interaction.IdempotencyKey) == "" ||
+		strings.TrimSpace(interaction.AttemptID) != interaction.AttemptID || strings.TrimSpace(interaction.ProviderThreadID) != interaction.ProviderThreadID ||
+		strings.TrimSpace(interaction.ProviderRequestID) != interaction.ProviderRequestID || strings.TrimSpace(interaction.IdempotencyKey) != interaction.IdempotencyKey {
+		return interaction, adapterFailure(ports.FailureInvalidRequest, "interaction identity fields are required without surrounding whitespace", false)
+	}
+	digest, err := hex.DecodeString(interaction.ScopeDigest)
+	if err != nil || len(digest) != sha256.Size {
+		return interaction, adapterFailure(ports.FailureInvalidRequest, "interaction scope digest must be a SHA-256 digest", false)
+	}
+	return interaction, nil
+}
+
+func validateInteractionResponseKind(response providerport.InteractionResponse, kind providerport.InteractionKind) error {
+	switch response.(type) {
+	case providerport.PermissionResponse:
+		if kind == providerport.InteractionCommand || kind == providerport.InteractionFile ||
+			kind == providerport.InteractionNetwork || kind == providerport.InteractionPermission {
+			return nil
+		}
+	case providerport.AnswerResponse:
+		if kind == providerport.InteractionTool || kind == providerport.InteractionUser {
+			return nil
+		}
+	}
+	return adapterFailure(ports.FailureInvalidRequest, "interaction response type does not match the pending checkpoint", false)
+}
+
+func interactionPayload(response providerport.InteractionResponse, request interactionRequest) (any, error) {
+	switch response := response.(type) {
+	case providerport.PermissionResponse:
+		if request.checkpoint.Kind == providerport.InteractionPermission {
+			return permissionGrantPayload(response.Decision, request.params)
+		}
+		if request.providerMethod == "execCommandApproval" || request.providerMethod == "applyPatchApproval" {
+			return map[string]any{"decision": legacyPermissionDecision(response.Decision)}, nil
+		}
+		decision := "cancel"
 		switch response.Decision {
 		case providerport.PermissionAllowOnce:
 			decision = "accept"
 		case providerport.PermissionAllowForSession:
-			return response.InteractionContext, nil, adapterFailure(ports.FailureUnsupported, "Codex App Server does not expose a portable session grant response", false)
-		case providerport.PermissionDenied, providerport.PermissionCancelled, providerport.PermissionExpired:
+			decision = "acceptForSession"
+		case providerport.PermissionDenied:
+			decision = "decline"
+		case providerport.PermissionCancelled, providerport.PermissionExpired:
 			decision = "cancel"
-		default:
-			return response.InteractionContext, nil, adapterFailure(ports.FailureInvalidRequest, "unsupported permission decision", false)
 		}
-		return response.InteractionContext, map[string]string{"decision": decision}, nil
+		return map[string]string{"decision": decision}, nil
 	case providerport.AnswerResponse:
-		if len(bytes.TrimSpace(response.Answer)) == 0 || !json.Valid(response.Answer) {
-			return response.InteractionContext, nil, adapterFailure(ports.FailureInvalidRequest, "interaction answer must be valid JSON", false)
-		}
-		return response.InteractionContext, cloneRaw(response.Answer), nil
+		return cloneRaw(response.Answer), nil
 	default:
-		return providerport.InteractionContext{}, nil, adapterFailure(ports.FailureInvalidRequest, fmt.Sprintf("unsupported interaction response %T", response), false)
+		return nil, adapterFailure(ports.FailureInvalidRequest, fmt.Sprintf("unsupported interaction response %T", response), false)
 	}
+}
+
+func permissionGrantPayload(decision providerport.PermissionDecision, params json.RawMessage) (any, error) {
+	var request struct {
+		Permissions map[string]json.RawMessage `json:"permissions"`
+	}
+	if err := json.Unmarshal(params, &request); err != nil || request.Permissions == nil {
+		return nil, adapterFailure(ports.FailureProtocolDrift, "Codex permission request omitted its permission profile", false)
+	}
+	permissions := map[string]json.RawMessage{}
+	scope := "turn"
+	if decision == providerport.PermissionAllowOnce || decision == providerport.PermissionAllowForSession {
+		for _, key := range []string{"network", "fileSystem"} {
+			value := bytes.TrimSpace(request.Permissions[key])
+			if len(value) > 0 && string(value) != "null" {
+				permissions[key] = cloneRaw(value)
+			}
+		}
+		if decision == providerport.PermissionAllowForSession {
+			scope = "session"
+		}
+	}
+	return struct {
+		Permissions map[string]json.RawMessage `json:"permissions"`
+		Scope       string                     `json:"scope"`
+	}{Permissions: permissions, Scope: scope}, nil
+}
+
+func legacyPermissionDecision(decision providerport.PermissionDecision) any {
+	switch decision {
+	case providerport.PermissionAllowOnce:
+		return "approved"
+	case providerport.PermissionAllowForSession:
+		return "approved_for_session"
+	case providerport.PermissionDenied:
+		return map[string]map[string]string{"denied": {"rejection": "rejected by user"}}
+	case providerport.PermissionExpired:
+		return "timed_out"
+	default:
+		return "abort"
+	}
+}
+
+func interactionResponseDigest(response providerport.InteractionResponse) (string, error) {
+	payload, err := json.Marshal(response)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func waitForAttemptResponse(ctx context.Context, response *attemptResponse) (providerport.InteractionReceipt, error) {
+	select {
+	case <-ctx.Done():
+		return providerport.InteractionReceipt{}, ctx.Err()
+	case <-response.ready:
+		switch result := response.result.(type) {
+		case deliveredAttemptResponse:
+			return result.receipt, nil
+		case failedAttemptResponse:
+			return providerport.InteractionReceipt{}, result.err
+		default:
+			return providerport.InteractionReceipt{}, adapterFailure(ports.FailureInternal, "interaction response completed without a result", false)
+		}
+	}
+}
+
+func finishAttemptResponse(state *codexAttempt, response *attemptResponse, result attemptResponseResult) {
+	state.mu.Lock()
+	response.result = result
+	close(response.ready)
+	state.mu.Unlock()
+}
+
+func trackInteraction(state *codexAttempt, message IncomingMessage) error {
+	switch message := message.(type) {
+	case ServerRequest:
+		params, err := objectParams(message.Params)
+		if err != nil {
+			return err
+		}
+		kind, _ := requestKind(message.Method, params)
+		if kind == "" {
+			return nil
+		}
+		checkpoint, err := interactionCheckpoint(message.ID, message.Method, kind, message.Params)
+		if err != nil {
+			return err
+		}
+		threadID := rawString(params["threadId"])
+		if threadID == "" {
+			threadID = rawString(params["conversationId"])
+		}
+		if threadID != state.handle.ProviderThreadID {
+			return errors.New("interaction request thread does not match the active attempt")
+		}
+		key := requestIDKey(message.ID)
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		if state.responses[key] != nil {
+			return errors.New("provider reused a completed interaction request ID")
+		}
+		if existing, ok := state.requests[key]; ok {
+			if existing.checkpoint != checkpoint || existing.providerMethod != message.Method || !bytes.Equal(existing.params, message.Params) {
+				return errors.New("provider reused an interaction request ID with different content")
+			}
+			return nil
+		}
+		state.requests[key] = interactionRequest{
+			checkpoint: checkpoint, providerMethod: message.Method, params: cloneRaw(message.Params), threadID: threadID,
+		}
+	case ServerNotification:
+		if message.Method != "serverRequest/resolved" {
+			return nil
+		}
+		params, err := objectParams(message.Params)
+		if err != nil {
+			return err
+		}
+		key := rawIDKey(params["requestId"])
+		state.mu.Lock()
+		delete(state.requests, key)
+		state.mu.Unlock()
+	}
+	return nil
 }
 
 func providerRequestID(value string) json.RawMessage {

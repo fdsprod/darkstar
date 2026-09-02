@@ -2,6 +2,8 @@ package codex
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,15 +23,6 @@ type NormalizerOptions struct {
 	EvidenceRef     func(sequence uint64, method string) string
 }
 
-type interactionKind uint8
-
-const (
-	interactionUnknown interactionKind = iota
-	interactionPermission
-	interactionUserInput
-	interactionTool
-)
-
 // EventNormalizer is stateful because sequence numbers and resolved server
 // requests are meaningful only within one provider-backed attempt.
 type EventNormalizer struct {
@@ -39,7 +32,7 @@ type EventNormalizer struct {
 	clock           func() time.Time
 	evidenceRef     func(uint64, string) string
 	sequence        uint64
-	interactions    map[string]interactionKind
+	interactions    map[string]provider.InteractionCheckpoint
 }
 
 // NewEventNormalizer creates an attempt-scoped normalizer.
@@ -59,7 +52,7 @@ func NewEventNormalizer(options NormalizerOptions) (*EventNormalizer, error) {
 		clock:           options.Clock,
 		evidenceRef:     options.EvidenceRef,
 		sequence:        options.InitialSequence,
-		interactions:    make(map[string]interactionKind),
+		interactions:    make(map[string]provider.InteractionCheckpoint),
 	}, nil
 }
 
@@ -103,14 +96,15 @@ func (normalizer *EventNormalizer) normalizeNotification(notification ServerNoti
 		return provider.Event{}, fmt.Errorf("normalize Codex %s notification: %w", notification.Method, err)
 	}
 	kind := notificationKind(notification.Method, params)
+	var checkpoint *provider.InteractionCheckpoint
 	if notification.Method == "serverRequest/resolved" {
-		kind = normalizer.resolvedKind(params)
+		kind, checkpoint = normalizer.resolvedKind(params)
 	}
 	occurredAt := normalizer.clock().UTC()
 	if notification.EmittedAtMS > 0 {
 		occurredAt = time.UnixMilli(notification.EmittedAtMS).UTC()
 	}
-	payload, err := encodeNativePayload(notification.Method, nil, notification.Params)
+	payload, err := encodeNativePayload(notification.Method, nil, notification.Params, checkpoint)
 	if err != nil {
 		return provider.Event{}, err
 	}
@@ -122,24 +116,33 @@ func (normalizer *EventNormalizer) normalizeRequest(request ServerRequest) (prov
 	if err != nil {
 		return provider.Event{}, fmt.Errorf("normalize Codex %s request: %w", request.Method, err)
 	}
-	interaction, kind := requestKind(request.Method)
-	normalizer.interactions[requestIDKey(request.ID)] = interaction
-	payload, err := encodeNativePayload(request.Method, request.ID, request.Params)
+	interaction, kind := requestKind(request.Method, params)
+	var checkpoint *provider.InteractionCheckpoint
+	if interaction != "" {
+		value, digestErr := interactionCheckpoint(request.ID, request.Method, interaction, request.Params)
+		if digestErr != nil {
+			return provider.Event{}, fmt.Errorf("digest normalized Codex request: %w", digestErr)
+		}
+		checkpoint = &value
+		normalizer.interactions[requestIDKey(request.ID)] = value
+	}
+	payload, err := encodeNativePayload(request.Method, request.ID, request.Params, checkpoint)
 	if err != nil {
 		return provider.Event{}, fmt.Errorf("encode normalized Codex request: %w", err)
 	}
 	return normalizer.event(request.Method, payload, request.ID, kind, normalizer.clock().UTC(), params)
 }
 
-func encodeNativePayload(method string, requestID, params json.RawMessage) (json.RawMessage, error) {
+func encodeNativePayload(method string, requestID, params json.RawMessage, checkpoint *provider.InteractionCheckpoint) (json.RawMessage, error) {
 	if len(bytes.TrimSpace(params)) == 0 || bytes.Equal(bytes.TrimSpace(params), []byte("null")) {
 		params = json.RawMessage(`{}`)
 	}
 	payload, err := json.Marshal(struct {
-		ProviderMethod string          `json:"providerMethod"`
-		RequestID      json.RawMessage `json:"requestId,omitempty"`
-		Params         json.RawMessage `json:"params"`
-	}{ProviderMethod: method, RequestID: cloneRaw(requestID), Params: cloneRaw(params)})
+		ProviderMethod string                          `json:"providerMethod"`
+		RequestID      json.RawMessage                 `json:"requestId,omitempty"`
+		Checkpoint     *provider.InteractionCheckpoint `json:"checkpoint,omitempty"`
+		Params         json.RawMessage                 `json:"params"`
+	}{ProviderMethod: method, RequestID: cloneRaw(requestID), Checkpoint: checkpoint, Params: cloneRaw(params)})
 	if err != nil {
 		return nil, fmt.Errorf("encode normalized Codex payload: %w", err)
 	}
@@ -158,6 +161,12 @@ func (normalizer *EventNormalizer) event(
 	threadID := rawString(params["threadId"])
 	turnID := rawString(params["turnId"])
 	itemID := rawString(params["itemId"])
+	if threadID == "" {
+		threadID = rawString(params["conversationId"])
+	}
+	if itemID == "" {
+		itemID = rawString(params["callId"])
+	}
 	if item, ok := rawObject(params["item"]); ok {
 		if itemID == "" {
 			itemID = rawString(item["id"])
@@ -269,33 +278,64 @@ func itemKind(params map[string]json.RawMessage, started bool) provider.EventKin
 	}
 }
 
-func requestKind(method string) (interactionKind, provider.EventKind) {
+func requestKind(method string, params map[string]json.RawMessage) (provider.InteractionKind, provider.EventKind) {
 	switch method {
-	case "applyPatchApproval", "execCommandApproval", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval":
-		return interactionPermission, provider.EventPermissionRequested
+	case "execCommandApproval":
+		return provider.InteractionCommand, provider.EventPermissionRequested
+	case "item/commandExecution/requestApproval":
+		if context, present := params["networkApprovalContext"]; present && len(bytes.TrimSpace(context)) > 0 && string(bytes.TrimSpace(context)) != "null" {
+			return provider.InteractionNetwork, provider.EventPermissionRequested
+		}
+		return provider.InteractionCommand, provider.EventPermissionRequested
+	case "applyPatchApproval", "item/fileChange/requestApproval":
+		return provider.InteractionFile, provider.EventPermissionRequested
+	case "item/permissions/requestApproval":
+		return provider.InteractionPermission, provider.EventPermissionRequested
 	case "item/tool/requestUserInput", "mcpServer/elicitation/request":
-		return interactionUserInput, provider.EventUserInputRequested
+		return provider.InteractionUser, provider.EventUserInputRequested
 	case "item/tool/call":
-		return interactionTool, provider.EventToolStarted
+		return provider.InteractionTool, provider.EventToolStarted
 	default:
-		return interactionUnknown, provider.EventUnknownProvider
+		return "", provider.EventUnknownProvider
 	}
 }
 
-func (normalizer *EventNormalizer) resolvedKind(params map[string]json.RawMessage) provider.EventKind {
+func (normalizer *EventNormalizer) resolvedKind(params map[string]json.RawMessage) (provider.EventKind, *provider.InteractionCheckpoint) {
 	key := rawIDKey(params["requestId"])
-	interaction := normalizer.interactions[key]
+	checkpoint, ok := normalizer.interactions[key]
 	delete(normalizer.interactions, key)
-	switch interaction {
-	case interactionPermission:
-		return provider.EventPermissionResponseRecorded
-	case interactionUserInput:
-		return provider.EventUserInputResponseRecorded
-	case interactionTool:
-		return provider.EventToolCompleted
-	default:
-		return provider.EventUnknownProvider
+	if !ok {
+		return provider.EventUnknownProvider, nil
 	}
+	switch checkpoint.Kind {
+	case provider.InteractionCommand, provider.InteractionFile, provider.InteractionNetwork, provider.InteractionPermission:
+		return provider.EventPermissionResponseRecorded, &checkpoint
+	case provider.InteractionUser:
+		return provider.EventUserInputResponseRecorded, &checkpoint
+	case provider.InteractionTool:
+		return provider.EventToolCompleted, &checkpoint
+	default:
+		return provider.EventUnknownProvider, nil
+	}
+}
+
+func interactionCheckpoint(requestID json.RawMessage, method string, kind provider.InteractionKind, params json.RawMessage) (provider.InteractionCheckpoint, error) {
+	providerRequestID := requestIDKey(requestID)
+	if providerRequestID == "" || providerRequestID == "null" {
+		return provider.InteractionCheckpoint{}, errors.New("provider request ID is required")
+	}
+	payload, err := json.Marshal(struct {
+		Kind           provider.InteractionKind `json:"kind"`
+		ProviderMethod string                   `json:"providerMethod"`
+		Params         json.RawMessage          `json:"params"`
+	}{Kind: kind, ProviderMethod: method, Params: cloneRaw(params)})
+	if err != nil {
+		return provider.InteractionCheckpoint{}, err
+	}
+	digest := sha256.Sum256(payload)
+	return provider.InteractionCheckpoint{
+		Kind: kind, ProviderRequestID: providerRequestID, ScopeDigest: hex.EncodeToString(digest[:]),
+	}, nil
 }
 
 func objectParams(raw json.RawMessage) (map[string]json.RawMessage, error) {
