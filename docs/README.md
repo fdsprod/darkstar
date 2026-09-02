@@ -6,6 +6,7 @@ This directory separates documentation by the kind of decision or work it repres
 
 - [Product and technical specification](product/product-specification.md) — goals, requirements, architecture overview, user experience, and MVP scope.
 - [Default software-delivery workflow](product/default-workflow.md) — the shipped workflow, checkpoints, artifacts, and route behavior.
+- [Planning artifact templates and schemas](product/planning-artifacts.md) — typed default planning outputs and schema-driven Markdown templates.
 
 ## Architecture
 

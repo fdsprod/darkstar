@@ -10,6 +10,7 @@
     "schemas:generate": "node scripts/schema-tool.mjs generate",
     "schemas:check": "node scripts/schema-tool.mjs check",
     "schemas:compatibility": "node scripts/schema-tool.mjs compatibility",
+    "planning:check": "node scripts/planning-artifacts.mjs check",
     "skills:generate": "node scripts/builtin-skills.mjs generate",
     "skills:check": "node scripts/builtin-skills.mjs check"
   },

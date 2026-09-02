@@ -48,6 +48,14 @@ $workflowRoot = Join-Path $repositoryRoot "examples/workflows"
 $files += @("software-delivery.json", "story-execution.json") | ForEach-Object {
     [pscustomobject]@{ Source = (Join-Path $workflowRoot $_); Entry = "workflows/$_" }
 }
+$planningTemplateRoot = Join-Path $repositoryRoot "templates/planning"
+$files += Get-ChildItem -LiteralPath $planningTemplateRoot -File -Filter "*.md" | ForEach-Object {
+    [pscustomobject]@{ Source = $_.FullName; Entry = "templates/planning/$($_.Name)" }
+}
+$files += [pscustomobject]@{
+    Source = (Join-Path $repositoryRoot "schemas/planning-artifact-v1alpha1.schema.json")
+    Entry = "schemas/planning-artifact-v1alpha1.schema.json"
+}
 $files = $files | Sort-Object Entry
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null

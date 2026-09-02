@@ -62,7 +62,7 @@ func TestConfiguredWorkflowsIncludeAndInstallShippedDefaults(t *testing.T) {
 		t.Fatalf("installed workflows = %d, want 2", len(results))
 	}
 	for _, name := range []string{"darkstar/software-delivery", "darkstar/story-execution"} {
-		definition, err := catalog.Definition(context.Background(), name, "1.0.0")
+		definition, err := catalog.Definition(context.Background(), name, "")
 		if err != nil {
 			t.Fatalf("load %s: %v", name, err)
 		}

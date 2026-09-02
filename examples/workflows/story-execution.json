@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/story-execution",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "displayName": "Default story execution sub-workflow"
   },
   "spec": {
@@ -123,6 +123,7 @@
           "answers": {"from": "node.s1_clarification.output.answers", "type": "object", "required": false}
         },
         "outputs": {"research": {"type": "object"}},
+        "validators": [{"output": "research", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "story-researcher", "skills": ["darkstar:evidence-research"]},
         "checkpoint": "approve",
         "transitions": [
@@ -150,6 +151,7 @@
           "research": {"from": "node.s2_research.output.research", "type": "object", "required": false}
         },
         "outputs": {"design": {"type": "object"}},
+        "validators": [{"output": "design", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "story-designer", "skills": ["darkstar:technical-design"]},
         "checkpoint": "approve",
         "transitions": [{"id": "s3_to_s4", "to": "s4_plan"}]
@@ -166,6 +168,7 @@
           "design": {"from": "node.s3_design.output.design", "type": "object", "required": false}
         },
         "outputs": {"implementation_plan": {"type": "object"}},
+        "validators": [{"output": "implementation_plan", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "implementation-planner", "skills": ["darkstar:tracer-bullets"]},
         "checkpoint": "approve",
         "transitions": [{"id": "s4_to_s5", "to": "s5_implementation"}]

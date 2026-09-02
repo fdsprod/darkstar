@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/planning-artifact-v1alpha1.schema.json",
+  "title": "DARKSTAR planning artifact v1alpha1",
+  "oneOf": [
+    {"$ref": "#/$defs/productBrief"},
+    {"$ref": "#/$defs/pocFindings"},
+    {"$ref": "#/$defs/productRequirements"},
+    {"$ref": "#/$defs/experienceDesign"},
+    {"$ref": "#/$defs/technicalResearch"},
+    {"$ref": "#/$defs/technicalDesign"},
+    {"$ref": "#/$defs/deliveryPlan"},
+    {"$ref": "#/$defs/storyDesign"},
+    {"$ref": "#/$defs/storyResearch"},
+    {"$ref": "#/$defs/implementationPlan"}
+  ],
+  "$defs": {
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "stringList": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/nonEmptyString"}},
+    "risk": {
+      "type": "object", "additionalProperties": false, "required": ["risk", "mitigation"],
+      "properties": {"risk": {"$ref": "#/$defs/nonEmptyString"}, "mitigation": {"$ref": "#/$defs/nonEmptyString"}}
+    },
+    "riskList": {"type": "array", "items": {"$ref": "#/$defs/risk"}},
+    "evidence": {
+      "type": "object", "additionalProperties": false, "required": ["source", "finding"],
+      "properties": {"source": {"$ref": "#/$defs/nonEmptyString"}, "finding": {"$ref": "#/$defs/nonEmptyString"}}
+    },
+    "evidenceList": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}},
+    "decision": {
+      "type": "object", "additionalProperties": false, "required": ["decision", "rationale"],
+      "properties": {"decision": {"$ref": "#/$defs/nonEmptyString"}, "rationale": {"$ref": "#/$defs/nonEmptyString"}}
+    },
+    "decisionList": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/decision"}},
+    "artifactBase": {
+      "type": "object",
+      "required": ["artifactType", "schemaVersion"],
+      "properties": {"artifactType": {"type": "string"}, "schemaVersion": {"const": 1}}
+    },
+    "productBrief": {
+      "title": "Product Brief", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["problem", "users", "outcomes", "nonGoals", "constraints", "assumptions", "risks", "successMeasures", "openDecisions"],
+      "properties": {
+        "artifactType": {"const": "product_brief"}, "schemaVersion": {"const": 1},
+        "problem": {"title": "Problem", "$ref": "#/$defs/nonEmptyString"},
+        "users": {"title": "Users and Stakeholders", "$ref": "#/$defs/stringList"},
+        "outcomes": {"title": "Desired Outcomes", "$ref": "#/$defs/stringList"},
+        "nonGoals": {"title": "Non-Goals", "$ref": "#/$defs/stringList"},
+        "constraints": {"title": "Constraints", "$ref": "#/$defs/stringList"},
+        "assumptions": {"title": "Assumptions", "$ref": "#/$defs/stringList"},
+        "risks": {"title": "Risks", "$ref": "#/$defs/riskList"},
+        "successMeasures": {"title": "Success Measures", "$ref": "#/$defs/stringList"},
+        "openDecisions": {"title": "Open Decisions", "$ref": "#/$defs/stringList"}
+      }
+    },
+    "pocFindings": {
+      "title": "POC Findings", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["question", "method", "successCriteria", "evidence", "limitations", "recommendation", "productionDisposition"],
+      "properties": {
+        "artifactType": {"const": "poc_findings"}, "schemaVersion": {"const": 1},
+        "question": {"title": "Question", "$ref": "#/$defs/nonEmptyString"},
+        "method": {"title": "Method and Time Box", "$ref": "#/$defs/nonEmptyString"},
+        "successCriteria": {"title": "Success and Failure Criteria", "$ref": "#/$defs/stringList"},
+        "evidence": {"title": "Evidence", "$ref": "#/$defs/evidenceList"},
+        "limitations": {"title": "Limitations", "$ref": "#/$defs/stringList"},
+        "recommendation": {"title": "Recommendation", "$ref": "#/$defs/nonEmptyString"},
+        "productionDisposition": {"title": "Prototype Disposition", "enum": ["discard", "reuse_learning_only", "promote_after_validation"]}
+      }
+    },
+    "productRequirements": {
+      "title": "Product Requirements", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["objectives", "users", "useCases", "functionalRequirements", "businessRules", "nonFunctionalRequirements", "acceptanceCriteria", "measurement", "dependencies", "scope", "nonGoals", "rollout", "openDecisions"],
+      "properties": {
+        "artifactType": {"const": "product_requirements"}, "schemaVersion": {"const": 1},
+        "objectives": {"title": "Objectives", "$ref": "#/$defs/stringList"},
+        "users": {"title": "Users", "$ref": "#/$defs/stringList"},
+        "useCases": {"title": "Use Cases", "$ref": "#/$defs/stringList"},
+        "functionalRequirements": {"title": "Functional Requirements", "$ref": "#/$defs/stringList"},
+        "businessRules": {"title": "Business Rules", "$ref": "#/$defs/stringList"},
+        "nonFunctionalRequirements": {"title": "Non-Functional Requirements", "$ref": "#/$defs/stringList"},
+        "acceptanceCriteria": {"title": "Acceptance Criteria", "$ref": "#/$defs/stringList"},
+        "measurement": {"title": "Analytics and Measurement", "$ref": "#/$defs/stringList"},
+        "dependencies": {"title": "Dependencies", "$ref": "#/$defs/stringList"},
+        "scope": {"title": "Scope", "$ref": "#/$defs/stringList"},
+        "nonGoals": {"title": "Non-Goals", "$ref": "#/$defs/stringList"},
+        "rollout": {"title": "Rollout Expectations", "$ref": "#/$defs/nonEmptyString"},
+        "openDecisions": {"title": "Open Decisions", "$ref": "#/$defs/stringList"}
+      }
+    },
+    "experienceDesign": {
+      "title": "Experience Design", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["userFlows", "interfaceStates", "contentGuidance", "accessibilityRequirements", "responsiveBehavior", "designSystemMappings", "researchEvidence", "openDecisions"],
+      "properties": {
+        "artifactType": {"const": "experience_design"}, "schemaVersion": {"const": 1},
+        "userFlows": {"title": "User Flows", "$ref": "#/$defs/stringList"},
+        "interfaceStates": {"title": "Interface States", "$ref": "#/$defs/stringList"},
+        "contentGuidance": {"title": "Content Guidance", "$ref": "#/$defs/stringList"},
+        "accessibilityRequirements": {"title": "Accessibility Requirements", "$ref": "#/$defs/stringList"},
+        "responsiveBehavior": {"title": "Responsive Behavior", "$ref": "#/$defs/stringList"},
+        "designSystemMappings": {"title": "Design-System Mappings", "$ref": "#/$defs/stringList"},
+        "researchEvidence": {"title": "Research Evidence", "$ref": "#/$defs/evidenceList"},
+        "openDecisions": {"title": "Open Decisions", "$ref": "#/$defs/stringList"}
+      }
+    },
+    "technicalResearch": {
+      "title": "Technical Research", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["question", "sources", "findings", "codeLocations", "constraints", "reusablePatterns", "risks", "openQuestions", "recommendation"],
+      "properties": {
+        "artifactType": {"const": "technical_research"}, "schemaVersion": {"const": 1},
+        "question": {"title": "Research Question", "$ref": "#/$defs/nonEmptyString"},
+        "sources": {"title": "Sources", "$ref": "#/$defs/stringList"},
+        "findings": {"title": "Findings", "$ref": "#/$defs/stringList"},
+        "codeLocations": {"title": "Relevant Code Locations", "$ref": "#/$defs/stringList"},
+        "constraints": {"title": "Constraints", "$ref": "#/$defs/stringList"},
+        "reusablePatterns": {"title": "Reusable Patterns", "$ref": "#/$defs/stringList"},
+        "risks": {"title": "Risks", "$ref": "#/$defs/riskList"},
+        "openQuestions": {"title": "Open Questions", "$ref": "#/$defs/stringList"},
+        "recommendation": {"title": "Recommendation", "$ref": "#/$defs/nonEmptyString"}
+      }
+    },
+    "technicalDesign": {
+      "title": "Technical Design", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["architecture", "components", "boundaries", "interfaces", "dataModel", "dataFlow", "failureModes", "compatibility", "securityPrivacy", "observability", "testStrategy", "deployment", "rollback", "alternatives", "decisions", "openQuestions"],
+      "properties": {
+        "artifactType": {"const": "technical_design"}, "schemaVersion": {"const": 1},
+        "architecture": {"title": "Architecture", "$ref": "#/$defs/nonEmptyString"},
+        "components": {"title": "Affected Components", "$ref": "#/$defs/stringList"},
+        "boundaries": {"title": "Boundaries and Invariants", "$ref": "#/$defs/stringList"},
+        "interfaces": {"title": "Interfaces", "$ref": "#/$defs/stringList"},
+        "dataModel": {"title": "Data Model", "$ref": "#/$defs/nonEmptyString"},
+        "dataFlow": {"title": "Data Flow", "$ref": "#/$defs/nonEmptyString"},
+        "failureModes": {"title": "Failure and Recovery", "$ref": "#/$defs/stringList"},
+        "compatibility": {"title": "Compatibility and Migration", "$ref": "#/$defs/nonEmptyString"},
+        "securityPrivacy": {"title": "Security and Privacy", "$ref": "#/$defs/nonEmptyString"},
+        "observability": {"title": "Observability", "$ref": "#/$defs/stringList"},
+        "testStrategy": {"title": "Test Strategy", "$ref": "#/$defs/stringList"},
+        "deployment": {"title": "Deployment", "$ref": "#/$defs/nonEmptyString"},
+        "rollback": {"title": "Rollback", "$ref": "#/$defs/nonEmptyString"},
+        "alternatives": {"title": "Alternatives", "$ref": "#/$defs/stringList"},
+        "decisions": {"title": "Decisions", "$ref": "#/$defs/decisionList"},
+        "openQuestions": {"title": "Open Questions", "$ref": "#/$defs/stringList"}
+      }
+    },
+    "story": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "outcome", "scope", "acceptanceCriteria", "dependencies", "requiredContext"],
+      "properties": {
+        "id": {"$ref": "#/$defs/nonEmptyString"}, "outcome": {"$ref": "#/$defs/nonEmptyString"},
+        "scope": {"$ref": "#/$defs/stringList"}, "acceptanceCriteria": {"$ref": "#/$defs/stringList"},
+        "dependencies": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/nonEmptyString"}},
+        "requiredContext": {"$ref": "#/$defs/stringList"}
+      }
+    },
+    "deliveryPlan": {
+      "title": "Delivery and Story Plan", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["dependencyStrategy", "releaseSlices", "integrationStrategy", "sharedValidation", "stories"],
+      "properties": {
+        "artifactType": {"const": "delivery_plan"}, "schemaVersion": {"const": 1},
+        "dependencyStrategy": {"title": "Dependency and Ordering Strategy", "$ref": "#/$defs/nonEmptyString"},
+        "releaseSlices": {"title": "Release Slices", "$ref": "#/$defs/stringList"},
+        "integrationStrategy": {"title": "Integration Strategy", "$ref": "#/$defs/nonEmptyString"},
+        "sharedValidation": {"title": "Shared Validation", "$ref": "#/$defs/stringList"},
+        "stories": {"title": "Stories", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/story"}}
+      }
+    },
+    "storyDesign": {
+      "title": "Story Design", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["context", "decision", "options", "selectedOption", "consequences", "collaborators"],
+      "properties": {
+        "artifactType": {"const": "story_design"}, "schemaVersion": {"const": 1},
+        "context": {"title": "Context", "$ref": "#/$defs/nonEmptyString"},
+        "decision": {"title": "Decision", "$ref": "#/$defs/nonEmptyString"},
+        "options": {"title": "Options Considered", "$ref": "#/$defs/stringList"},
+        "selectedOption": {"title": "Selected Option and Rationale", "$ref": "#/$defs/nonEmptyString"},
+        "consequences": {"title": "Consequences", "$ref": "#/$defs/stringList"},
+        "collaborators": {"title": "Collaborators and Review", "$ref": "#/$defs/stringList"}
+      }
+    },
+    "storyResearch": {
+      "title": "Story Research", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["question", "sources", "findings", "codeLocations", "constraints", "openQuestions", "recommendation"],
+      "properties": {
+        "artifactType": {"const": "story_research"}, "schemaVersion": {"const": 1},
+        "question": {"title": "Research Question", "$ref": "#/$defs/nonEmptyString"},
+        "sources": {"title": "Sources", "$ref": "#/$defs/stringList"},
+        "findings": {"title": "Findings", "$ref": "#/$defs/stringList"},
+        "codeLocations": {"title": "Relevant Code Locations", "$ref": "#/$defs/stringList"},
+        "constraints": {"title": "Constraints", "$ref": "#/$defs/stringList"},
+        "openQuestions": {"title": "Open Questions", "$ref": "#/$defs/stringList"},
+        "recommendation": {"title": "Recommendation", "$ref": "#/$defs/nonEmptyString"}
+      }
+    },
+    "implementationPoint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "outcome", "scope", "dependencies", "acceptanceChecks", "tests", "rollback", "commitBoundary"],
+      "properties": {
+        "id": {"$ref": "#/$defs/nonEmptyString"}, "outcome": {"$ref": "#/$defs/nonEmptyString"},
+        "scope": {"$ref": "#/$defs/stringList"},
+        "dependencies": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/nonEmptyString"}},
+        "acceptanceChecks": {"$ref": "#/$defs/stringList"}, "tests": {"$ref": "#/$defs/stringList"},
+        "rollback": {"$ref": "#/$defs/nonEmptyString"}, "commitBoundary": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
+    "implementationPlan": {
+      "title": "Implementation Plan", "allOf": [{"$ref": "#/$defs/artifactBase"}], "unevaluatedProperties": false,
+      "required": ["points", "integratedValidation"],
+      "properties": {
+        "artifactType": {"const": "implementation_plan"}, "schemaVersion": {"const": 1},
+        "points": {"title": "Implementation Points", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/implementationPoint"}},
+        "integratedValidation": {"title": "Integrated Validation", "$ref": "#/$defs/stringList"}
+      }
+    }
+  }
+}

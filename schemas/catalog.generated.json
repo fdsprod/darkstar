@@ -57,6 +57,14 @@
       "version": "v1alpha1"
     },
     {
+      "file": "planning-artifact-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/planning-artifact-v1alpha1.schema.json",
+      "name": "planning-artifact-v1alpha1",
+      "sha256": "a666f2a4c2dcd5f4af48da8297fa473f8b169e3a63cfde5e3e0dbce11c294c65",
+      "version": "v1alpha1"
+    },
+    {
       "file": "provider-v1alpha1.schema.json",
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/provider-v1alpha1.schema.json",

@@ -46,6 +46,14 @@ try {
     foreach ($workflowName in @("software-delivery.json", "story-execution.json")) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot "examples/workflows/$workflowName") -Destination (Join-Path $workflowDirectory $workflowName) -Force
     }
+    $planningTemplateDirectory = Join-Path $OutputDirectory "templates/planning"
+    New-Item -ItemType Directory -Force -Path $planningTemplateDirectory | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "templates/planning") -File -Filter "*.md" | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $planningTemplateDirectory $_.Name) -Force
+    }
+    $schemaDirectory = Join-Path $OutputDirectory "schemas"
+    New-Item -ItemType Directory -Force -Path $schemaDirectory | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot "schemas/planning-artifact-v1alpha1.schema.json") -Destination $schemaDirectory -Force
 
     if (-not $SkipDashboard) {
         & npm run build

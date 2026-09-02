@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/software-delivery",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "displayName": "DARKSTAR default software delivery workflow"
   },
   "spec": {
@@ -91,6 +91,7 @@
         "join": {"mode": "one", "from": ["p1_gate_to_p2", "p1_review_to_p2"]},
         "inputs": {"work_item": {"from": "run.input.work_item", "type": "object"}},
         "outputs": {"product_brief": {"type": "object"}},
+        "validators": [{"output": "product_brief", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "product-designer", "skills": ["darkstar:product-discovery"]},
         "checkpoint": "approve",
         "transitions": [
@@ -109,6 +110,7 @@
           "product_brief": {"from": "node.p2_product_discovery.output.product_brief", "type": "object", "required": false}
         },
         "outputs": {"poc_findings": {"type": "object"}},
+        "validators": [{"output": "poc_findings", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "feasibility-researcher", "skills": ["darkstar:learning-tests"]},
         "checkpoint": "approve",
         "transitions": [{"id": "p3_to_p4", "to": "p4_requirements"}]
@@ -125,6 +127,7 @@
           "poc_findings": {"from": "node.p3_poc.output.poc_findings", "type": "object", "required": false}
         },
         "outputs": {"prd": {"type": "object"}},
+        "validators": [{"output": "prd", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "product-requirements", "skills": ["darkstar:prd"]},
         "checkpoint": "approve",
         "transitions": [
@@ -142,6 +145,7 @@
           "prd": {"from": "node.p4_requirements.output.prd", "type": "object", "required": false}
         },
         "outputs": {"experience_design": {"type": "object"}},
+        "validators": [{"output": "experience_design", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "experience-designer"},
         "checkpoint": "approve",
         "transitions": [{"id": "p5_to_p6", "to": "p6_product_readiness"}]
@@ -174,6 +178,7 @@
           "repository": {"from": "run.input.repository", "type": "string"}
         },
         "outputs": {"technical_research": {"type": "object"}},
+        "validators": [{"output": "technical_research", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "technical-researcher", "skills": ["darkstar:evidence-research"]},
         "checkpoint": "approve",
         "transitions": [{"id": "p7_to_p8", "to": "p8_technical_design"}]
@@ -190,6 +195,7 @@
           "technical_research": {"from": "node.p7_technical_research.output.technical_research", "type": "object", "required": false}
         },
         "outputs": {"technical_design": {"type": "object"}},
+        "validators": [{"output": "technical_design", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "technical-designer", "skills": ["darkstar:technical-design"]},
         "checkpoint": "approve",
         "transitions": [{"id": "p8_to_p9", "to": "p9_decomposition"}]
@@ -204,6 +210,7 @@
           "technical_design": {"from": "node.p8_technical_design.output.technical_design", "type": "object", "required": false}
         },
         "outputs": {"delivery_plan": {"type": "object"}, "story_set": {"type": "array"}},
+        "validators": [{"output": "delivery_plan", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
         "reasoning": {"agent": "delivery-planner", "skills": ["darkstar:story-decomposition"]},
         "checkpoint": "approve",
         "transitions": [{"id": "p9_to_p10", "to": "p10_delivery_readiness"}]
@@ -236,7 +243,7 @@
         },
         "outputs": {"story_validation": {"type": "object"}},
         "call": {
-          "workflow": {"name": "darkstar/story-execution", "version": "1.0.0", "path": "story-execution.json"},
+          "workflow": {"name": "darkstar/story-execution", "version": "1.1.0", "path": "story-execution.json"},
           "entry": "s0_readiness",
           "terminals": ["s6_validation"],
           "inputs": {
