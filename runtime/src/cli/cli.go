@@ -24,6 +24,7 @@ import (
 	workflowfilesystem "darkstar/src/adapters/workflowstore/filesystem"
 	localapi "darkstar/src/api"
 	clientapi "darkstar/src/api/client"
+	"darkstar/src/core/artifactcheckpoint"
 	"darkstar/src/core/artifactderive"
 	"darkstar/src/core/artifactingest"
 	"darkstar/src/core/artifactops"
@@ -386,6 +387,13 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return closeArtifactSetup(err)
 	}
 	if err := service.server.SetArtifacts(artifacts); err != nil {
+		return closeArtifactSetup(err)
+	}
+	checkpoints, err := artifactcheckpoint.New(database, database, database)
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	if err := service.server.SetApprovals(checkpoints); err != nil {
 		return closeArtifactSetup(err)
 	}
 	exporter, err := runexport.New(database, logs)

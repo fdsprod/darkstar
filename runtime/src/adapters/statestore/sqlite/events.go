@@ -384,6 +384,48 @@ func (d *Database) Approval(ctx context.Context, id string) (statestore.Approval
 	return projection, nil
 }
 
+// ApprovalsForCheckpoint returns immutable candidate requests in revision order.
+func (d *Database) ApprovalsForCheckpoint(ctx context.Context, checkpointID string) ([]statestore.ApprovalProjection, error) {
+	rows, err := d.sql.QueryContext(ctx, approvalSelect+` WHERE checkpoint_id = ? ORDER BY checkpoint_revision`, checkpointID)
+	if err != nil {
+		return nil, fmt.Errorf("query artifact checkpoint approvals: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	values := make([]statestore.ApprovalProjection, 0)
+	for rows.Next() {
+		value, scanErr := scanApprovalProjection(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan artifact checkpoint approval: %w", scanErr)
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate artifact checkpoint approvals: %w", err)
+	}
+	return values, nil
+}
+
+// EventByCommand returns the immutable event owned by one aggregate-scoped
+// command identity. It supports exact decision replay after a request resolves.
+func (d *Database) EventByCommand(ctx context.Context, aggregateID, commandID string) (statestore.Event, error) {
+	rows, err := d.sql.QueryContext(ctx, eventSelect+` WHERE aggregate_id = ? AND command_id = ?`, aggregateID, commandID)
+	if err != nil {
+		return statestore.Event{}, fmt.Errorf("query aggregate command: %w", err)
+	}
+	events, scanErr := scanEvents(rows)
+	closeErr := rows.Close()
+	if scanErr != nil {
+		return statestore.Event{}, scanErr
+	}
+	if closeErr != nil {
+		return statestore.Event{}, fmt.Errorf("close aggregate command query: %w", closeErr)
+	}
+	if len(events) == 0 {
+		return statestore.Event{}, &NotFoundError{Kind: "aggregate command", ID: aggregateID + "/" + commandID}
+	}
+	return events[0], nil
+}
+
 // RebuildProjections atomically replaces current-state projections by replaying
 // the authoritative event log from global position zero.
 func (d *Database) RebuildProjections(ctx context.Context) (err error) {
@@ -706,15 +748,43 @@ func readRunProjection(ctx context.Context, query rowQueryer, id string) (states
 	return scanRunProjection(query.QueryRowContext(ctx, runSelect+` WHERE run_id = ?`, id))
 }
 
+const approvalSelect = `SELECT approval_id, run_id, class, status, checkpoint_id, visit_id, node_id, attempt_id,
+	checkpoint_revision, candidate_artifact_id, candidate_artifact_version, candidate_digest, checkpoint_mode,
+	max_revisions, scope_digest, policy_digest, decision_action, decision_action_key, decision_comment,
+	decided_by_type, decided_by_id, decided_at, resource_version, last_global_position, created_at, updated_at
+	FROM approval_projection`
+
 func readApprovalProjection(ctx context.Context, query rowQueryer, id string) (statestore.ApprovalProjection, error) {
+	return scanApprovalProjection(query.QueryRowContext(ctx, approvalSelect+` WHERE approval_id = ?`, id))
+}
+
+func scanApprovalProjection(row rowScanner) (statestore.ApprovalProjection, error) {
 	var result statestore.ApprovalProjection
 	var createdAt, updatedAt string
-	err := query.QueryRowContext(ctx, `SELECT approval_id, run_id, class, status, scope_digest, policy_digest,
-		resource_version, last_global_position, created_at, updated_at FROM approval_projection WHERE approval_id = ?`, id).Scan(
-		&result.ApprovalID, &result.RunID, &result.Class, &result.Status, &result.ScopeDigest, &result.PolicyDigest,
-		&result.ResourceVersion, &result.LastGlobalPosition, &createdAt, &updatedAt)
+	var maxRevisions sql.NullInt64
+	var decisionAction, decisionActionKey, decisionComment, decidedByType, decidedByID, decidedAt sql.NullString
+	err := row.Scan(
+		&result.ApprovalID, &result.RunID, &result.Class, &result.Status, &result.CheckpointID, &result.VisitID,
+		&result.NodeID, &result.AttemptID, &result.CheckpointRevision, &result.CandidateArtifactID,
+		&result.CandidateArtifactVersion, &result.CandidateDigest, &result.CheckpointMode, &maxRevisions,
+		&result.ScopeDigest, &result.PolicyDigest, &decisionAction, &decisionActionKey, &decisionComment,
+		&decidedByType, &decidedByID, &decidedAt, &result.ResourceVersion, &result.LastGlobalPosition, &createdAt, &updatedAt)
 	if err != nil {
 		return statestore.ApprovalProjection{}, err
+	}
+	if maxRevisions.Valid {
+		value := uint64(maxRevisions.Int64)
+		result.MaxRevisions = &value
+	}
+	if decisionAction.Valid {
+		decisionTime, parseErr := parseTime(decidedAt.String)
+		if parseErr != nil {
+			return statestore.ApprovalProjection{}, parseErr
+		}
+		result.Decision = &statestore.ApprovalDecisionProjection{
+			Action: decisionAction.String, ActionKey: decisionActionKey.String, Comment: decisionComment.String,
+			Actor: statestore.Actor{Type: statestore.ActorType(decidedByType.String), ID: decidedByID.String}, DecidedAt: decisionTime,
+		}
 	}
 	result.CreatedAt, err = parseTime(createdAt)
 	if err != nil {
@@ -788,10 +858,28 @@ func writeNodeProjection(ctx context.Context, tx *sql.Tx, value statestore.NodeP
 }
 
 func writeApprovalProjection(ctx context.Context, tx *sql.Tx, value statestore.ApprovalProjection) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO approval_projection VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(approval_id) DO UPDATE SET status=excluded.status, resource_version=excluded.resource_version,
-		last_global_position=excluded.last_global_position, updated_at=excluded.updated_at`,
-		value.ApprovalID, value.RunID, value.Class, value.Status, value.ScopeDigest, value.PolicyDigest,
+	var maxRevisions, decisionAction, decisionActionKey, decisionComment, decidedByType, decidedByID, decidedAt any
+	if value.MaxRevisions != nil {
+		maxRevisions = *value.MaxRevisions
+	}
+	if value.Decision != nil {
+		decisionAction, decisionActionKey, decisionComment = value.Decision.Action, value.Decision.ActionKey, value.Decision.Comment
+		decidedByType, decidedByID, decidedAt = value.Decision.Actor.Type, value.Decision.Actor.ID, formatTime(value.Decision.DecidedAt)
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO approval_projection(
+		approval_id, run_id, class, status, checkpoint_id, visit_id, node_id, attempt_id,
+		checkpoint_revision, candidate_artifact_id, candidate_artifact_version, candidate_digest, checkpoint_mode,
+		max_revisions, scope_digest, policy_digest, decision_action, decision_action_key, decision_comment,
+		decided_by_type, decided_by_id, decided_at, resource_version, last_global_position, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(approval_id) DO UPDATE SET status=excluded.status, decision_action=excluded.decision_action,
+		decision_action_key=excluded.decision_action_key, decision_comment=excluded.decision_comment,
+		decided_by_type=excluded.decided_by_type, decided_by_id=excluded.decided_by_id, decided_at=excluded.decided_at,
+		resource_version=excluded.resource_version, last_global_position=excluded.last_global_position, updated_at=excluded.updated_at`,
+		value.ApprovalID, value.RunID, value.Class, value.Status, value.CheckpointID, value.VisitID, value.NodeID,
+		value.AttemptID, value.CheckpointRevision, value.CandidateArtifactID, value.CandidateArtifactVersion,
+		value.CandidateDigest, value.CheckpointMode, maxRevisions, value.ScopeDigest, value.PolicyDigest,
+		decisionAction, decisionActionKey, decisionComment, decidedByType, decidedByID, decidedAt,
 		value.ResourceVersion, value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("write approval projection %s: %w", value.ApprovalID, err)

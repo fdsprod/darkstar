@@ -454,10 +454,20 @@ func ReduceApproval(current *statestore.ApprovalProjection, event statestore.Eve
 			return statestore.ApprovalProjection{}, true, fmt.Errorf("approval %s first event is %s, want approval.requested", event.AggregateID, event.Kind)
 		}
 		var data struct {
-			RunID        string                   `json:"runId"`
-			Class        statestore.ApprovalClass `json:"class"`
-			ScopeDigest  string                   `json:"scopeDigest"`
-			PolicyDigest string                   `json:"policyDigest"`
+			RunID                    string                   `json:"runId"`
+			Class                    statestore.ApprovalClass `json:"class"`
+			CheckpointID             string                   `json:"checkpointId"`
+			VisitID                  string                   `json:"visitId"`
+			NodeID                   string                   `json:"nodeId"`
+			AttemptID                string                   `json:"attemptId"`
+			CheckpointRevision       uint64                   `json:"checkpointRevision"`
+			CandidateArtifactID      string                   `json:"candidateArtifactId"`
+			CandidateArtifactVersion uint64                   `json:"candidateArtifactVersion"`
+			CandidateDigest          string                   `json:"candidateDigest"`
+			CheckpointMode           string                   `json:"checkpointMode"`
+			MaxRevisions             *uint64                  `json:"maxRevisions"`
+			ScopeDigest              string                   `json:"scopeDigest"`
+			PolicyDigest             string                   `json:"policyDigest"`
 		}
 		if err := decodeData(event, &data); err != nil {
 			return statestore.ApprovalProjection{}, true, err
@@ -465,9 +475,26 @@ func ReduceApproval(current *statestore.ApprovalProjection, event statestore.Eve
 		if data.RunID == "" || data.ScopeDigest == "" || data.PolicyDigest == "" || !validApprovalClass(data.Class) {
 			return statestore.ApprovalProjection{}, true, errors.New("approval.requested requires runId, a valid class, scopeDigest, and policyDigest")
 		}
+		checkpointFields := data.CheckpointID != "" || data.VisitID != "" || data.NodeID != "" || data.AttemptID != "" ||
+			data.CheckpointRevision != 0 || data.CandidateArtifactID != "" || data.CandidateArtifactVersion != 0 ||
+			data.CandidateDigest != "" || data.CheckpointMode != "" || data.MaxRevisions != nil
+		if checkpointFields {
+			complete := data.Class == statestore.ApprovalWorkflowCheckpoint && data.CheckpointID != "" && data.VisitID != "" &&
+				data.NodeID != "" && data.AttemptID != "" && data.CheckpointRevision > 0 && data.CandidateArtifactID != "" &&
+				data.CandidateArtifactVersion > 0 && data.CandidateDigest != "" &&
+				(data.CheckpointMode == "approve" || data.CheckpointMode == "approve_on_change") &&
+				(data.MaxRevisions == nil || *data.MaxRevisions > 0)
+			if !complete {
+				return statestore.ApprovalProjection{}, true, errors.New("artifact checkpoint approval.requested requires one complete checkpoint subject")
+			}
+		}
 		return statestore.ApprovalProjection{
 			ApprovalID: event.AggregateID, RunID: data.RunID, Class: data.Class,
 			Status: statestore.ApprovalPending, ScopeDigest: data.ScopeDigest, PolicyDigest: data.PolicyDigest,
+			CheckpointID: data.CheckpointID, VisitID: data.VisitID, NodeID: data.NodeID, AttemptID: data.AttemptID,
+			CheckpointRevision: data.CheckpointRevision, CandidateArtifactID: data.CandidateArtifactID,
+			CandidateArtifactVersion: data.CandidateArtifactVersion, CandidateDigest: data.CandidateDigest,
+			CheckpointMode: data.CheckpointMode, MaxRevisions: data.MaxRevisions,
 			ResourceVersion: event.AggregateRevision, LastGlobalPosition: event.GlobalPosition,
 			CreatedAt: event.RecordedAt, UpdatedAt: event.RecordedAt,
 		}, true, nil
@@ -482,14 +509,25 @@ func ReduceApproval(current *statestore.ApprovalProjection, event statestore.Eve
 	next := *current
 	switch event.Kind {
 	case "approval.decided":
+		if current.Status != statestore.ApprovalPending {
+			return statestore.ApprovalProjection{}, true, invalidTransition("approval", current.ApprovalID, string(current.Status), event.Kind)
+		}
 		var data struct {
-			Action string `json:"action"`
+			Action       string `json:"action"`
+			ScopeDigest  string `json:"scopeDigest"`
+			PolicyDigest string `json:"policyDigest"`
+			Comment      string `json:"comment"`
 		}
 		if err := decodeData(event, &data); err != nil {
 			return statestore.ApprovalProjection{}, true, err
 		}
+		if current.CheckpointID != "" && (data.ScopeDigest != current.ScopeDigest || data.PolicyDigest != current.PolicyDigest) {
+			return statestore.ApprovalProjection{}, true, errors.New("approval.decided scope or policy digest does not match the pending request")
+		}
 		switch data.Action {
 		case "approve":
+			next.Status = statestore.ApprovalApproved
+		case "acknowledge", "satisfy_external", "allow_once", "allow_for_session":
 			next.Status = statestore.ApprovalApproved
 		case "request_changes":
 			next.Status = statestore.ApprovalChangesRequested
@@ -500,10 +538,22 @@ func ReduceApproval(current *statestore.ApprovalProjection, event statestore.Eve
 		default:
 			return statestore.ApprovalProjection{}, true, fmt.Errorf("approval.decided has invalid action %q", data.Action)
 		}
+		next.Decision = &statestore.ApprovalDecisionProjection{
+			Action: data.Action, ActionKey: event.CommandID, Comment: data.Comment,
+			Actor: event.Actor, DecidedAt: event.RecordedAt,
+		}
 	case "approval.cancelled":
+		if current.Status != statestore.ApprovalPending {
+			return statestore.ApprovalProjection{}, true, invalidTransition("approval", current.ApprovalID, string(current.Status), event.Kind)
+		}
 		next.Status = statestore.ApprovalCancelled
 	case "approval.expired":
+		if current.Status != statestore.ApprovalPending {
+			return statestore.ApprovalProjection{}, true, invalidTransition("approval", current.ApprovalID, string(current.Status), event.Kind)
+		}
 		next.Status = statestore.ApprovalExpired
+	default:
+		return statestore.ApprovalProjection{}, true, invalidTransition("approval", current.ApprovalID, string(current.Status), event.Kind)
 	}
 	next.ResourceVersion = event.AggregateRevision
 	next.LastGlobalPosition = event.GlobalPosition

@@ -48,6 +48,7 @@ type Server struct {
 	runs      RunService
 	work      WorkService
 	artifacts ArtifactService
+	approvals ApprovalService
 	workflows WorkflowService
 
 	streamPollInterval      time.Duration
@@ -182,6 +183,20 @@ func (s *Server) SetArtifacts(artifacts ArtifactService) error {
 		return errors.New("API artifact service is required")
 	}
 	s.artifacts = artifacts
+	return nil
+}
+
+// SetApprovals installs artifact checkpoint decisions before Start.
+func (s *Server) SetApprovals(approvals ApprovalService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API approval service can only be set before start")
+	}
+	if approvals == nil {
+		return errors.New("API approval service is required")
+	}
+	s.approvals = approvals
 	return nil
 }
 
@@ -404,6 +419,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	if path.Clean(request.URL.Path) == "/api/v1/artifacts" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifacts/") ||
 		path.Clean(request.URL.Path) == "/api/v1/artifact-bindings" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifact-bindings/") {
 		s.serveArtifacts(response, request, requestID)
+		return
+	}
+	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/approvals/") {
+		s.serveApprovals(response, request, requestID)
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/workflows" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/workflows/") {

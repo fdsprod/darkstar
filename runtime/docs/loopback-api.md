@@ -148,6 +148,16 @@ queries are positive integers. Attachments name one closed target kind:
 `implementation_point`. Validation, missing resources, and attachment or
 version conflicts use the ordinary stable API error envelope.
 
+Artifact review decisions use
+`POST /api/v1/approvals/{approvalId}/decisions` with both `Idempotency-Key` and
+a quoted `If-Match` resource version. The body binds `approve`,
+`request_changes`, or `reject` to the exact candidate `scopeDigest` and frozen
+`policyDigest`, with an optional bounded feedback comment. An exact retry
+returns the original round; a changed payload under the same key or a new
+decision against an already-resolved round returns a stable approval conflict.
+Each requested revision receives a new approval ID while retaining the stable
+checkpoint ID, prior draft, feedback, and revision-driven descendant effects.
+
 The CLI client performs this discovery and negotiation once per finite command.
 For missing or unreachable endpoint state it idempotently autostarts the daemon,
 then performs one fresh discovery attempt. It never replays an application

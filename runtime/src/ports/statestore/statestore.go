@@ -321,18 +321,38 @@ const (
 	ApprovalExpired          ApprovalStatus = "expired"
 )
 
+// ApprovalDecisionProjection is present only after an approval resolves.
+type ApprovalDecisionProjection struct {
+	Action    string    `json:"action"`
+	ActionKey string    `json:"actionKey"`
+	Comment   string    `json:"comment,omitempty"`
+	Actor     Actor     `json:"actor"`
+	DecidedAt time.Time `json:"decidedAt"`
+}
+
 // ApprovalProjection is the rebuildable query representation of an approval.
 type ApprovalProjection struct {
-	ApprovalID         string
-	RunID              string
-	Class              ApprovalClass
-	Status             ApprovalStatus
-	ScopeDigest        string
-	PolicyDigest       string
-	ResourceVersion    uint64
-	LastGlobalPosition uint64
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	ApprovalID               string                      `json:"id"`
+	RunID                    string                      `json:"runId"`
+	Class                    ApprovalClass               `json:"class"`
+	Status                   ApprovalStatus              `json:"status"`
+	CheckpointID             string                      `json:"checkpointId,omitempty"`
+	VisitID                  string                      `json:"visitId,omitempty"`
+	NodeID                   string                      `json:"nodeId,omitempty"`
+	AttemptID                string                      `json:"attemptId,omitempty"`
+	CheckpointRevision       uint64                      `json:"checkpointRevision,omitempty"`
+	CandidateArtifactID      string                      `json:"candidateArtifactId,omitempty"`
+	CandidateArtifactVersion uint64                      `json:"candidateArtifactVersion,omitempty"`
+	CandidateDigest          string                      `json:"candidateDigest,omitempty"`
+	CheckpointMode           string                      `json:"checkpointMode,omitempty"`
+	MaxRevisions             *uint64                     `json:"maxRevisions,omitempty"`
+	ScopeDigest              string                      `json:"scopeDigest"`
+	PolicyDigest             string                      `json:"policyDigest"`
+	Decision                 *ApprovalDecisionProjection `json:"decision,omitempty"`
+	ResourceVersion          uint64                      `json:"resourceVersion"`
+	LastGlobalPosition       uint64                      `json:"lastGlobalPosition"`
+	CreatedAt                time.Time                   `json:"createdAt"`
+	UpdatedAt                time.Time                   `json:"updatedAt"`
 }
 
 // LeaseScopeKind identifies the resource whose mutations are fenced.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -221,7 +222,7 @@ func TestProjectionRebuildMatchesLiveCurrentState(t *testing.T) {
 	if gotRun != wantRun {
 		t.Fatalf("rebuilt run = %#v, want %#v", gotRun, wantRun)
 	}
-	if gotApproval != wantApproval {
+	if !reflect.DeepEqual(gotApproval, wantApproval) {
 		t.Fatalf("rebuilt approval = %#v, want %#v", gotApproval, wantApproval)
 	}
 }
