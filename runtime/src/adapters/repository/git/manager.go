@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 
 	"darkstar/src/ports"
@@ -157,6 +158,199 @@ func (manager *Manager) Attach(ctx context.Context, request repository.AttachReq
 		}
 	}
 	return repository.Worktree{}, failure(ports.FailureUncertain, "created worktree does not match the requested attachment", false, nil)
+}
+
+// CaptureCandidate freezes the exact worktree tree without changing the real
+// index. The returned tree object and manifest are safe immutable validator input.
+func (manager *Manager) CaptureCandidate(ctx context.Context, request repository.CaptureCandidateRequest) (repository.Candidate, error) {
+	if err := validateCandidateLocation(request.RepositoryPath, request.WorktreePath, request.BranchName, request.ExpectedParentSHA); err != nil {
+		return repository.Candidate{}, err
+	}
+	identity, worktree, parent, err := manager.ownedCandidateWorktree(ctx, request.RepositoryPath, request.WorktreePath, request.BranchName, request.ExpectedParentSHA)
+	if err != nil {
+		return repository.Candidate{}, err
+	}
+	if _, dirty := worktree.Condition.(repository.Dirty); !dirty {
+		if _, clean := worktree.Condition.(repository.Clean); clean {
+			return repository.Candidate{}, invalid("point candidate has no changes")
+		}
+		return repository.Candidate{}, conflict("point candidate worktree is not an ordinary dirty workspace")
+	}
+
+	tree, manifest, err := manager.candidateTree(ctx, worktree, parent)
+	if err != nil {
+		return repository.Candidate{}, err
+	}
+	parentTree, err := manager.resolveTree(ctx, worktree.Path, parent)
+	if err != nil {
+		return repository.Candidate{}, err
+	}
+	if tree == parentTree || len(manifest) == 0 {
+		return repository.Candidate{}, invalid("point candidate has no committable changes")
+	}
+	return repository.Candidate{
+		Repository: identity, WorktreePath: worktree.Path, BranchName: request.BranchName,
+		ParentSHA: parent, TreeSHA: tree, Manifest: manifest,
+	}, nil
+}
+
+// CommitCandidate creates one owned commit and advances the branch with an
+// update-ref compare-and-swap. A retry adopts only an exact trailer/tree match.
+func (manager *Manager) CommitCandidate(ctx context.Context, request repository.CommitCandidateRequest) (repository.PointCommit, error) {
+	if err := validateCommitRequest(request); err != nil {
+		return repository.PointCommit{}, err
+	}
+	identity, worktree, parent, err := manager.ownedCandidateWorktree(ctx, request.Candidate.Repository.Root, request.Candidate.WorktreePath, request.Candidate.BranchName, request.Candidate.ParentSHA)
+	if err != nil {
+		// A changed HEAD is the expected retry shape, so reconcile it separately.
+		identity, worktree, err = manager.findCandidateWorktree(ctx, request.Candidate.Repository.Root, request.Candidate.WorktreePath, request.Candidate.BranchName)
+		if err != nil {
+			return repository.PointCommit{}, err
+		}
+		parent, err = manager.resolveCommit(ctx, identity.Root, request.Candidate.ParentSHA)
+		if err != nil {
+			return repository.PointCommit{}, err
+		}
+	}
+	if !sameRepository(identity, request.Candidate.Repository) {
+		return repository.PointCommit{}, conflict("point candidate belongs to a different repository")
+	}
+	tree, err := manager.resolveTree(ctx, worktree.Path, request.Candidate.TreeSHA)
+	if err != nil || tree != request.Candidate.TreeSHA {
+		return repository.PointCommit{}, invalid("point candidate tree is unavailable or invalid")
+	}
+	message := pointCommitMessage(request)
+	if worktree.HeadSHA != parent {
+		return manager.reconcilePointCommit(ctx, worktree, request, parent, message)
+	}
+
+	current, err := manager.CaptureCandidate(ctx, repository.CaptureCandidateRequest{
+		RepositoryPath: identity.Root, WorktreePath: worktree.Path, BranchName: request.Candidate.BranchName, ExpectedParentSHA: parent,
+	})
+	if err != nil {
+		return repository.PointCommit{}, err
+	}
+	if current.TreeSHA != request.Candidate.TreeSHA || !equalStrings(current.Manifest, request.Candidate.Manifest) {
+		return repository.PointCommit{}, conflict("point candidate changed after validation")
+	}
+
+	created, err := manager.runWith(ctx, worktree.Path, []byte(message), nil, "commit-tree", request.Candidate.TreeSHA, "-p", parent)
+	if err != nil {
+		return repository.PointCommit{}, failure(ports.FailureUnavailable, "Git could not create the point commit", true, nil)
+	}
+	commitSHA := strings.TrimSpace(string(created.stdout))
+	if commitSHA == "" || strings.ContainsAny(commitSHA, "\r\n \t") {
+		return repository.PointCommit{}, failure(ports.FailureProtocolDrift, "Git returned an invalid point commit identity", false, nil)
+	}
+	ref := "refs/heads/" + request.Candidate.BranchName
+	if _, err := manager.run(ctx, worktree.Path, "update-ref", "-m", "darkstar point "+request.OperationID, ref, commitSHA, parent); err != nil {
+		_, currentWorktree, inspectErr := manager.findCandidateWorktree(ctx, identity.Root, worktree.Path, request.Candidate.BranchName)
+		if inspectErr == nil {
+			observed, reconcileErr := manager.reconcilePointCommit(ctx, currentWorktree, request, parent, message)
+			if reconcileErr == nil {
+				return observed, nil
+			}
+		}
+		return repository.PointCommit{}, failure(ports.FailureUncertain, "Git could not prove the point commit ref update", false, nil)
+	}
+	if err := manager.synchronizeCommittedWorktree(ctx, worktree.Path, request.Candidate.BranchName, commitSHA, request.Candidate.TreeSHA); err != nil {
+		return repository.PointCommit{}, err
+	}
+	return repository.PointCommit{CommitSHA: commitSHA, ParentSHA: parent, TreeSHA: request.Candidate.TreeSHA}, nil
+}
+
+func (manager *Manager) reconcilePointCommit(ctx context.Context, worktree repository.Worktree, request repository.CommitCandidateRequest, parent, message string) (repository.PointCommit, error) {
+	ancestor, err := manager.run(ctx, worktree.Path, "merge-base", "--is-ancestor", parent, worktree.HeadSHA)
+	if err != nil {
+		if ancestor.exitCode == 1 {
+			return repository.PointCommit{}, conflict("owned branch no longer descends from the candidate parent")
+		}
+		return repository.PointCommit{}, failure(ports.FailureUnavailable, "owned branch ancestry cannot be inspected", true, nil)
+	}
+	listed, err := manager.run(ctx, worktree.Path, "rev-list", "--first-parent", worktree.HeadSHA, "^"+parent)
+	if err != nil {
+		return repository.PointCommit{}, failure(ports.FailureUnavailable, "owned point commits cannot be inspected", true, nil)
+	}
+	var match string
+	for _, commitSHA := range strings.Fields(string(listed.stdout)) {
+		record, inspectErr := manager.run(ctx, worktree.Path, "show", "-s", "--format=%P%x00%T%x00%B", commitSHA)
+		if inspectErr != nil {
+			return repository.PointCommit{}, failure(ports.FailureUnavailable, "owned point commit cannot be inspected", true, nil)
+		}
+		parts := strings.SplitN(string(record.stdout), "\x00", 3)
+		if len(parts) != 3 || strings.TrimSpace(parts[0]) != parent || strings.TrimSpace(parts[1]) != request.Candidate.TreeSHA || strings.TrimSpace(parts[2]) != strings.TrimSpace(message) {
+			continue
+		}
+		if match != "" {
+			return repository.PointCommit{}, conflict("multiple commits match the point operation identity")
+		}
+		match = commitSHA
+	}
+	if match == "" {
+		return repository.PointCommit{}, conflict("owned branch advanced without the expected point commit")
+	}
+	if worktree.HeadSHA == match {
+		if err := manager.synchronizeCommittedWorktree(ctx, worktree.Path, request.Candidate.BranchName, match, request.Candidate.TreeSHA); err != nil {
+			return repository.PointCommit{}, err
+		}
+	}
+	return repository.PointCommit{CommitSHA: match, ParentSHA: parent, TreeSHA: request.Candidate.TreeSHA, AlreadyPresent: true}, nil
+}
+
+func (manager *Manager) synchronizeCommittedWorktree(ctx context.Context, path, branch, commitSHA, treeSHA string) error {
+	if _, err := manager.run(ctx, path, "read-tree", treeSHA); err != nil {
+		return failure(ports.FailureUncertain, "point commit exists but its worktree index requires reconciliation", false, nil)
+	}
+	observation, err := manager.Inspect(ctx, repository.InspectRequest{Path: path})
+	if err != nil {
+		return failure(ports.FailureUncertain, "point commit worktree cannot be reconciled", false, nil)
+	}
+	for _, current := range observation.Worktrees {
+		if pathsEqual(current.Path, path) && checkoutBranch(current.Checkout) == branch && current.HeadSHA == commitSHA {
+			if _, clean := current.Condition.(repository.Clean); clean {
+				return nil
+			}
+		}
+	}
+	return failure(ports.FailureUncertain, "point commit worktree is not clean at the committed tree", false, nil)
+}
+
+func (manager *Manager) candidateTree(ctx context.Context, worktree repository.Worktree, parent string) (string, []string, error) {
+	temporary, err := os.CreateTemp(worktree.GitDir, ".darkstar-index-*")
+	if err != nil {
+		return "", nil, failure(ports.FailureUnavailable, "temporary candidate index cannot be created", true, nil)
+	}
+	indexPath := temporary.Name()
+	if closeErr := temporary.Close(); closeErr != nil {
+		_ = os.Remove(indexPath)
+		return "", nil, failure(ports.FailureUnavailable, "temporary candidate index cannot be closed", true, nil)
+	}
+	if removeErr := os.Remove(indexPath); removeErr != nil {
+		return "", nil, failure(ports.FailureUnavailable, "temporary candidate index cannot be initialized", true, nil)
+	}
+	defer func() { _ = os.Remove(indexPath) }()
+	environment := []string{"GIT_INDEX_FILE=" + indexPath}
+	if _, err := manager.runWith(ctx, worktree.Path, nil, environment, "read-tree", parent); err != nil {
+		return "", nil, failure(ports.FailureUnavailable, "candidate parent tree cannot be loaded", true, nil)
+	}
+	if _, err := manager.runWith(ctx, worktree.Path, nil, environment, "add", "--all", "--", "."); err != nil {
+		return "", nil, failure(ports.FailureUnavailable, "point candidate cannot be inventoried", true, nil)
+	}
+	written, err := manager.runWith(ctx, worktree.Path, nil, environment, "write-tree")
+	if err != nil {
+		return "", nil, failure(ports.FailureUnavailable, "point candidate tree cannot be frozen", true, nil)
+	}
+	tree := strings.TrimSpace(string(written.stdout))
+	if tree == "" || strings.ContainsAny(tree, "\r\n \t") {
+		return "", nil, failure(ports.FailureProtocolDrift, "Git returned an invalid candidate tree identity", false, nil)
+	}
+	changed, err := manager.run(ctx, worktree.Path, "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", parent, tree)
+	if err != nil {
+		return "", nil, failure(ports.FailureUnavailable, "point candidate manifest cannot be created", true, nil)
+	}
+	manifest := splitNUL(changed.stdout)
+	sort.Strings(manifest)
+	return tree, manifest, nil
 }
 
 // Remove detaches only an exact, clean, unlocked worktree and preserves its branch.
@@ -401,6 +595,131 @@ func validateMutation(repositoryPath, worktreePath, operationID string, owner re
 	return nil
 }
 
+func validateCandidateLocation(repositoryPath, worktreePath, branchName, parent string) error {
+	if strings.TrimSpace(repositoryPath) != repositoryPath || repositoryPath == "" || !filepath.IsAbs(repositoryPath) {
+		return invalid("repository path must be absolute")
+	}
+	if strings.TrimSpace(worktreePath) != worktreePath || worktreePath == "" || !filepath.IsAbs(worktreePath) {
+		return invalid("worktree path must be absolute")
+	}
+	if strings.TrimSpace(branchName) != branchName || branchName == "" || strings.TrimSpace(parent) != parent || parent == "" {
+		return invalid("branch name and expected parent commit are required")
+	}
+	return nil
+}
+
+func validateCommitRequest(request repository.CommitCandidateRequest) error {
+	if err := validateCandidateLocation(request.Candidate.Repository.Root, request.Candidate.WorktreePath, request.Candidate.BranchName, request.Candidate.ParentSHA); err != nil {
+		return err
+	}
+	if strings.TrimSpace(request.Candidate.Repository.CommonGitDir) == "" || strings.TrimSpace(request.Candidate.TreeSHA) != request.Candidate.TreeSHA || request.Candidate.TreeSHA == "" || len(request.Candidate.Manifest) == 0 {
+		return invalid("candidate repository, tree, and manifest are required")
+	}
+	if err := validateMutation(request.Candidate.Repository.Root, request.Candidate.WorktreePath, request.OperationID, request.Owner); err != nil {
+		return err
+	}
+	for _, field := range []struct{ name, value string }{
+		{"operation ID", request.OperationID}, {"work-item ID", request.Owner.WorkItemID}, {"run ID", request.Point.RunID},
+		{"story ID", request.Point.StoryID}, {"point ID", request.Point.PointID}, {"commit subject", request.Subject},
+	} {
+		if strings.TrimSpace(field.value) != field.value || field.value == "" || strings.ContainsAny(field.value, "\r\n\x00") {
+			return invalid(field.name + " is required, must be trimmed, and cannot contain line breaks")
+		}
+	}
+	if request.Point.Revision == 0 {
+		return invalid("point revision must be greater than zero")
+	}
+	for index, value := range request.Candidate.Manifest {
+		if value == "" || strings.ContainsRune(value, '\x00') || (index > 0 && request.Candidate.Manifest[index-1] >= value) {
+			return invalid("candidate manifest must be non-empty, unique, and sorted")
+		}
+	}
+	return nil
+}
+
+func (manager *Manager) ownedCandidateWorktree(ctx context.Context, repositoryPath, worktreePath, branchName, parent string) (repository.Identity, repository.Worktree, string, error) {
+	identity, worktree, err := manager.findCandidateWorktree(ctx, repositoryPath, worktreePath, branchName)
+	if err != nil {
+		return repository.Identity{}, repository.Worktree{}, "", err
+	}
+	parentSHA, err := manager.resolveCommit(ctx, identity.Root, parent)
+	if err != nil {
+		return repository.Identity{}, repository.Worktree{}, "", err
+	}
+	if worktree.HeadSHA != parentSHA {
+		return repository.Identity{}, repository.Worktree{}, "", conflict("point candidate parent does not match the owned worktree HEAD")
+	}
+	return identity, worktree, parentSHA, nil
+}
+
+func (manager *Manager) findCandidateWorktree(ctx context.Context, repositoryPath, worktreePath, branchName string) (repository.Identity, repository.Worktree, error) {
+	identity, err := manager.discover(ctx, repositoryPath)
+	if err != nil {
+		return repository.Identity{}, repository.Worktree{}, err
+	}
+	if err := manager.checkBranchName(ctx, identity.Root, branchName); err != nil {
+		return repository.Identity{}, repository.Worktree{}, err
+	}
+	target, err := canonicalExistingPath(worktreePath)
+	if err != nil {
+		return repository.Identity{}, repository.Worktree{}, failure(ports.FailureNotFound, "owned point worktree is unavailable", false, nil)
+	}
+	observation, err := manager.Inspect(ctx, repository.InspectRequest{Path: identity.Root})
+	if err != nil {
+		return repository.Identity{}, repository.Worktree{}, err
+	}
+	for _, current := range observation.Worktrees {
+		if !pathsEqual(current.Path, target) {
+			continue
+		}
+		if checkoutBranch(current.Checkout) != branchName {
+			return repository.Identity{}, repository.Worktree{}, conflict("point candidate branch does not match the owned worktree")
+		}
+		if _, unlocked := current.Lock.(repository.Unlocked); !unlocked || current.PrunableReason != "" {
+			return repository.Identity{}, repository.Worktree{}, conflict("point candidate worktree is locked or unavailable")
+		}
+		return identity, current, nil
+	}
+	return repository.Identity{}, repository.Worktree{}, failure(ports.FailureNotFound, "owned point worktree is not registered", false, nil)
+}
+
+func (manager *Manager) resolveTree(ctx context.Context, root, revision string) (string, error) {
+	if strings.TrimSpace(revision) != revision || revision == "" {
+		return "", invalid("tree or commit is required")
+	}
+	result, err := manager.run(ctx, root, "rev-parse", "--verify", "--end-of-options", revision+"^{tree}")
+	if err != nil {
+		return "", failure(ports.FailureNotFound, "tree or commit cannot be resolved", false, nil)
+	}
+	tree := strings.TrimSpace(string(result.stdout))
+	if tree == "" || strings.ContainsAny(tree, "\r\n \t") {
+		return "", failure(ports.FailureProtocolDrift, "Git returned an invalid tree identity", false, nil)
+	}
+	return tree, nil
+}
+
+func pointCommitMessage(request repository.CommitCandidateRequest) string {
+	return request.Subject + "\n\n" +
+		"Darkstar-Work-Item: " + request.Owner.WorkItemID + "\n" +
+		"Darkstar-Run: " + request.Point.RunID + "\n" +
+		"Darkstar-Story: " + request.Point.StoryID + "\n" +
+		"Darkstar-Point: " + request.Point.PointID + "\n" +
+		"Darkstar-Point-Revision: " + strconv.FormatUint(request.Point.Revision, 10) + "\n" +
+		"Darkstar-Operation: " + request.OperationID + "\n"
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
 func exactAttachment(worktree repository.Worktree, branchName, head string) bool {
 	if checkoutBranch(worktree.Checkout) != branchName || worktree.HeadSHA != head || worktree.PrunableReason != "" {
 		return false
@@ -544,13 +863,19 @@ type commandResult struct {
 }
 
 func (manager *Manager) run(ctx context.Context, directory string, arguments ...string) (commandResult, error) {
+	return manager.runWith(ctx, directory, nil, nil, arguments...)
+}
+
+func (manager *Manager) runWith(ctx context.Context, directory string, input []byte, environment []string, arguments ...string) (commandResult, error) {
 	if manager == nil || manager.executable == "" {
 		return commandResult{}, errors.New("git repository manager is not configured")
 	}
 	command := exec.CommandContext(ctx, manager.executable, arguments...)
 	command.Dir = directory
-	command.Stdin = nil
-	command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
+	if input != nil {
+		command.Stdin = bytes.NewReader(input)
+	}
+	command.Env = append(os.Environ(), append([]string{"GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never"}, environment...)...)
 	configureCommand(command)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout

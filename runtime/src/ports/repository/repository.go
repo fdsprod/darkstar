@@ -9,6 +9,8 @@ type Manager interface {
 	Inspect(context.Context, InspectRequest) (Observation, error)
 	ResolveBase(context.Context, ResolveBaseRequest) (BaseRevision, error)
 	Attach(context.Context, AttachRequest) (Worktree, error)
+	CaptureCandidate(context.Context, CaptureCandidateRequest) (Candidate, error)
+	CommitCandidate(context.Context, CommitCandidateRequest) (PointCommit, error)
 	Remove(context.Context, RemoveRequest) (Removal, error)
 }
 
@@ -104,6 +106,53 @@ type Removal struct {
 	Repository    Identity
 	WorktreePath  string
 	AlreadyAbsent bool
+}
+
+// CaptureCandidateRequest freezes the exact tree produced by one point attempt.
+// The expected branch and parent are ownership preconditions, not hints.
+type CaptureCandidateRequest struct {
+	RepositoryPath    string
+	WorktreePath      string
+	BranchName        string
+	ExpectedParentSHA string
+}
+
+// Candidate is immutable validation input. TreeSHA covers tracked and untracked
+// candidate content; Manifest is a deterministic, repository-relative path list.
+type Candidate struct {
+	Repository   Identity
+	WorktreePath string
+	BranchName   string
+	ParentSHA    string
+	TreeSHA      string
+	Manifest     []string
+}
+
+// PointRevision identifies the one accepted point revision that owns a commit.
+type PointRevision struct {
+	RunID    string
+	StoryID  string
+	PointID  string
+	Revision uint64
+}
+
+// CommitCandidateRequest advances the owned branch from Candidate.ParentSHA to
+// exactly Candidate.TreeSHA. OperationID is the durable idempotency identity.
+type CommitCandidateRequest struct {
+	Candidate   Candidate
+	OperationID string
+	Owner       Ownership
+	Point       PointRevision
+	Subject     string
+}
+
+// PointCommit is the reconciled Git fact for one point revision. AlreadyPresent
+// means a prior invocation created the same owned commit and this call adopted it.
+type PointCommit struct {
+	CommitSHA      string
+	ParentSHA      string
+	TreeSHA        string
+	AlreadyPresent bool
 }
 
 // Checkout is a closed representation of a worktree's checked-out ref state.

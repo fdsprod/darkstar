@@ -22,7 +22,7 @@ The required external-effect port families are:
 | `ports/contentprocessor` | Bounded, isolated derivation of immutable artifact representations. |
 | `ports/platform` | Paths, locks, endpoint publication, process ownership, terminal, atomic-file, and executable-resolution strategy. |
 | `ports/executor` | Scheduler-facing start/resume/events/result/cancel lifecycle for a node attempt. |
-| `ports/repository` | Canonical repository identity, frozen base revisions, deterministic branch names, worktree inspection, conservative attachment, and non-destructive cleanup. |
+| `ports/repository` | Canonical repository identity, frozen base revisions, deterministic branch names, worktree inspection, immutable point-candidate capture, owned atomic commits, conservative attachment, and non-destructive cleanup. |
 | `ports/workflowstore` | Configured workflow discovery plus immutable installed-version and per-run snapshot persistence. |
 
 Ports define capabilities and application vocabulary, not adapter mechanics.
@@ -38,6 +38,13 @@ acquires one closed read/write resource plan, freezes one context snapshot,
 starts or resumes the selected `ports/executor`, journals its ordered events,
 validates candidate output, and commits accepted output plus terminal state in
 one idempotent transaction before releasing resources.
+
+`core/pointfinalization` is the repository success boundary for implementation
+points. It captures an immutable candidate tree, resolves and runs the completion
+contract's validation profile, and exposes closed accepted/rejected outcomes.
+Only an explicit acceptance reaches the repository adapter, which verifies the
+validated tree again and advances the owned branch with a compare-and-swap ref
+update and the required ownership trailers.
 
 `core/agentprofile` owns DS-115's immutable agent profile and deterministic
 provider-admission policy. A profile groups role instructions, required and

@@ -224,6 +224,110 @@ func TestRemoveRefusesLockedWorktree(t *testing.T) {
 	assertFailureCode(t, err, ports.FailureConflict)
 }
 
+func TestCaptureAndCommitCandidateCreatesOneOwnedAtomicCommit(t *testing.T) {
+	t.Parallel()
+	fixture := newRepository(t)
+	manager := newManager(t)
+	base, worktreePath := attachPointWorktree(t, fixture, manager, "darkstar/point-atomic")
+	if err := os.WriteFile(filepath.Join(worktreePath, "tracked.txt"), []byte("point change\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktreePath, "new.txt"), []byte("new candidate\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	candidate, err := manager.CaptureCandidate(context.Background(), repository.CaptureCandidateRequest{
+		RepositoryPath: fixture.repository, WorktreePath: worktreePath, BranchName: "darkstar/point-atomic", ExpectedParentSHA: base.CommitSHA,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(candidate.Manifest, ","); got != "new.txt,tracked.txt" {
+		t.Fatalf("candidate manifest = %q", got)
+	}
+	request := repository.CommitCandidateRequest{
+		Candidate: candidate, OperationID: "operation_point_1", Owner: testOwner(), Subject: "feat: implement point",
+		Point: repository.PointRevision{RunID: "run_test", StoryID: "story_test", PointID: "point_test", Revision: 2},
+	}
+	committed, err := manager.CommitCandidate(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.AlreadyPresent || committed.ParentSHA != base.CommitSHA || committed.TreeSHA != candidate.TreeSHA {
+		t.Fatalf("commit = %#v", committed)
+	}
+	if got := strings.TrimSpace(gitOutput(t, worktreePath, "rev-list", "--count", base.CommitSHA+"..HEAD")); got != "1" {
+		t.Fatalf("point commit count = %q, want 1", got)
+	}
+	message := gitOutput(t, worktreePath, "show", "-s", "--format=%B", committed.CommitSHA)
+	for _, trailer := range []string{
+		"Darkstar-Work-Item: work_test", "Darkstar-Run: run_test", "Darkstar-Story: story_test",
+		"Darkstar-Point: point_test", "Darkstar-Point-Revision: 2", "Darkstar-Operation: operation_point_1",
+	} {
+		if !strings.Contains(message, trailer) {
+			t.Fatalf("commit message missing %q:\n%s", trailer, message)
+		}
+	}
+	if status := gitOutput(t, worktreePath, "status", "--porcelain=v1", "--untracked-files=all"); status != "" {
+		t.Fatalf("committed worktree is dirty: %q", status)
+	}
+
+	reconciled, err := manager.CommitCandidate(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reconciled.AlreadyPresent || reconciled.CommitSHA != committed.CommitSHA {
+		t.Fatalf("reconciled commit = %#v, want existing %s", reconciled, committed.CommitSHA)
+	}
+	if err := os.WriteFile(filepath.Join(worktreePath, "later.txt"), []byte("later point\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, worktreePath, "add", "--all")
+	gitRun(t, worktreePath, "commit", "--no-verify", "-m", "test: later point")
+	laterHead := strings.TrimSpace(gitOutput(t, worktreePath, "rev-parse", "HEAD"))
+	reconciled, err = manager.CommitCandidate(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reconciled.AlreadyPresent || reconciled.CommitSHA != committed.CommitSHA {
+		t.Fatalf("advanced reconciliation = %#v, want existing %s", reconciled, committed.CommitSHA)
+	}
+	if got := strings.TrimSpace(gitOutput(t, worktreePath, "rev-parse", "HEAD")); got != laterHead {
+		t.Fatalf("advanced reconciliation moved HEAD from %s to %s", laterHead, got)
+	}
+}
+
+func TestCommitCandidateRejectsChangesAfterValidation(t *testing.T) {
+	t.Parallel()
+	fixture := newRepository(t)
+	manager := newManager(t)
+	base, worktreePath := attachPointWorktree(t, fixture, manager, "darkstar/point-changed")
+	target := filepath.Join(worktreePath, "tracked.txt")
+	if err := os.WriteFile(target, []byte("validated bytes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := manager.CaptureCandidate(context.Background(), repository.CaptureCandidateRequest{
+		RepositoryPath: fixture.repository, WorktreePath: worktreePath, BranchName: "darkstar/point-changed", ExpectedParentSHA: base.CommitSHA,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("changed after validation\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.CommitCandidate(context.Background(), repository.CommitCandidateRequest{
+		Candidate: candidate, OperationID: "operation_point_changed", Owner: testOwner(), Subject: "feat: changed point",
+		Point: repository.PointRevision{RunID: "run_test", StoryID: "story_test", PointID: "point_changed", Revision: 1},
+	})
+	assertFailureCode(t, err, ports.FailureConflict)
+	if got := strings.TrimSpace(gitOutput(t, worktreePath, "rev-parse", "HEAD")); got != base.CommitSHA {
+		t.Fatalf("HEAD moved to %q after candidate conflict", got)
+	}
+	if content, readErr := os.ReadFile(target); readErr != nil || string(content) != "changed after validation\n" {
+		t.Fatalf("changed candidate was not preserved: content=%q err=%v", content, readErr)
+	}
+}
+
 func TestParseWorktreeListPreservesSpacesAndClosedStates(t *testing.T) {
 	t.Parallel()
 	lockedReason := "active owner"
@@ -244,6 +348,23 @@ func TestParseWorktreeListPreservesSpacesAndClosedStates(t *testing.T) {
 type repositoryFixture struct {
 	root       string
 	repository string
+}
+
+func attachPointWorktree(t *testing.T, fixture repositoryFixture, manager *Manager, branch string) (repository.BaseRevision, string) {
+	t.Helper()
+	base, err := manager.ResolveBase(context.Background(), repository.ResolveBaseRequest{RepositoryPath: fixture.repository, BaseRef: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktreePath := filepath.Join(fixture.root, "worktrees", strings.TrimPrefix(branch, "darkstar/"))
+	_, err = manager.Attach(context.Background(), repository.AttachRequest{
+		RepositoryPath: fixture.repository, WorktreePath: worktreePath, OperationID: "attach_" + strings.ReplaceAll(branch, "/", "_"),
+		Owner: testOwner(), Branch: repository.CreateBranch{Name: branch, Base: base},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base, worktreePath
 }
 
 func newRepository(t *testing.T) repositoryFixture {
