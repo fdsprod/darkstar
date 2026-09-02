@@ -40,7 +40,6 @@ import (
 	"darkstar/src/platform/windows"
 	platformport "darkstar/src/ports/platform"
 	"darkstar/src/ports/statestore"
-	"darkstar/src/ports/workflowstore"
 )
 
 const usage = `DARKSTAR
@@ -238,11 +237,12 @@ func runDaemon(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 }
 
 type daemonAPIService struct {
-	server      *localapi.Server
-	paths       platformport.Paths
-	projectRoot string
-	database    *sqlite.Database
-	executions  *runexecution.Service
+	server                   *localapi.Server
+	paths                    platformport.Paths
+	projectRoot              string
+	defaultWorkflowDirectory string
+	database                 *sqlite.Database
+	executions               *runexecution.Service
 }
 
 func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) error {
@@ -254,10 +254,13 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return fmt.Errorf("open daemon state: %w", err)
 	}
 	service.database = database
-	workflowSource, err := workflowfilesystem.New(
-		workflowfilesystem.Directory{Scope: workflowstore.ScopeUser, Path: filepath.Join(service.paths.Config, "workflows")},
-		workflowfilesystem.Directory{Scope: workflowstore.ScopeProject, Path: filepath.Join(service.projectRoot, ".darkstar", "workflows")},
-	)
+	workflowDirectories, err := service.workflowDirectories()
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return fmt.Errorf("configure workflow sources: %w", err)
+	}
+	workflowSource, err := workflowfilesystem.New(workflowDirectories...)
 	if err != nil {
 		_ = database.Close()
 		service.database = nil
@@ -268,6 +271,11 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		_ = database.Close()
 		service.database = nil
 		return err
+	}
+	if _, err := workflowCatalog.InstallConfigured(ctx); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return fmt.Errorf("install configured workflows: %w", err)
 	}
 	if err := service.server.SetWorkflows(workflowCatalog); err != nil {
 		_ = database.Close()
@@ -424,6 +432,18 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return err
 	}
 	return nil
+}
+
+func (service *daemonAPIService) workflowDirectories() ([]workflowfilesystem.Directory, error) {
+	defaultDirectory := service.defaultWorkflowDirectory
+	if defaultDirectory == "" {
+		executable, err := os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("resolve executable for shipped workflows: %w", err)
+		}
+		defaultDirectory = filepath.Join(filepath.Dir(executable), "workflows")
+	}
+	return workflowfilesystem.ResolveDirectories(defaultDirectory, service.paths, service.projectRoot)
 }
 
 func (service *daemonAPIService) Close() error {

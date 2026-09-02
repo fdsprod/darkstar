@@ -1,5 +1,12 @@
 # Workflow loading, installation, and run snapshots
 
+The distribution places `darkstar/software-delivery` and its
+`darkstar/story-execution` child workflow in the `workflows` directory beside
+the executable. The daemon validates and installs configured default, user,
+and project workflow versions during startup. A changed document must use a
+new semantic version; reusing an installed name/version with different bytes
+fails startup with a version-conflict error.
+
 Workflow authoring files are discovered from three configured filesystem scopes:
 
 1. shipped defaults;

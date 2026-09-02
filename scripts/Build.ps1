@@ -41,6 +41,12 @@ try {
         throw "Go build failed with exit code $LASTEXITCODE."
     }
 
+    $workflowDirectory = Join-Path $OutputDirectory "workflows"
+    New-Item -ItemType Directory -Force -Path $workflowDirectory | Out-Null
+    foreach ($workflowName in @("software-delivery.json", "story-execution.json")) {
+        Copy-Item -LiteralPath (Join-Path $repositoryRoot "examples/workflows/$workflowName") -Destination (Join-Path $workflowDirectory $workflowName) -Force
+    }
+
     if (-not $SkipDashboard) {
         & npm run build
         if ($LASTEXITCODE -ne 0) {

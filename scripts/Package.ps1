@@ -44,6 +44,10 @@ $files += Get-ChildItem -LiteralPath $skillRoot -Recurse -File | ForEach-Object 
     $relative = [IO.Path]::GetRelativePath($skillRoot, $_.FullName).Replace('\', '/')
     [pscustomobject]@{ Source = $_.FullName; Entry = "skills/$relative" }
 }
+$workflowRoot = Join-Path $repositoryRoot "examples/workflows"
+$files += @("software-delivery.json", "story-execution.json") | ForEach-Object {
+    [pscustomobject]@{ Source = (Join-Path $workflowRoot $_); Entry = "workflows/$_" }
+}
 $files = $files | Sort-Object Entry
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
