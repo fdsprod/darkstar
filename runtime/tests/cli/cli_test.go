@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/cli"
+	"darkstar/src/cli"
 )
 
 func TestRunHelp(t *testing.T) {

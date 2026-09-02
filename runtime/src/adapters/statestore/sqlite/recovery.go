@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/recovery"
+	"darkstar/src/core/recovery"
 )
 
 // RecoveryConflictError reports a changed subject or decision within one

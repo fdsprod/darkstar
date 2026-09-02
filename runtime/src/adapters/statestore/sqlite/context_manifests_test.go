@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	contextcore "github.com/fdsprod/darkstar/runtime/src/core/contextmanifest"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactstore"
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
-	manifestport "github.com/fdsprod/darkstar/runtime/src/ports/contextmanifest"
-	"github.com/fdsprod/darkstar/runtime/src/ports/representationregistry"
+	contextcore "darkstar/src/core/contextmanifest"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactstore"
+	"darkstar/src/ports/contentprocessor"
+	manifestport "darkstar/src/ports/contextmanifest"
+	"darkstar/src/ports/representationregistry"
 )
 
 func TestAttemptContextManifestSelectsDeterministicallyAndFreezes(t *testing.T) {

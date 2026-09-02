@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/adapters/artifactstore/folder"
-	"github.com/fdsprod/darkstar/runtime/src/adapters/contentprocessor/common"
-	"github.com/fdsprod/darkstar/runtime/src/adapters/statestore/sqlite"
-	"github.com/fdsprod/darkstar/runtime/src/core/artifactderive"
-	"github.com/fdsprod/darkstar/runtime/src/core/artifactingest"
-	"github.com/fdsprod/darkstar/runtime/src/core/artifactsafety"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
+	"darkstar/src/adapters/artifactstore/folder"
+	"darkstar/src/adapters/contentprocessor/common"
+	"darkstar/src/adapters/statestore/sqlite"
+	"darkstar/src/core/artifactderive"
+	"darkstar/src/core/artifactingest"
+	"darkstar/src/core/artifactsafety"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/contentprocessor"
 )
 
 func TestIngestAndDerivePersistsVersionedRepresentations(t *testing.T) {

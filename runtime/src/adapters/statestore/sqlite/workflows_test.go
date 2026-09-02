@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/config"
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
-	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
+	"darkstar/src/core/config"
+	"darkstar/src/core/workflow"
+	"darkstar/src/ports/statestore"
+	"darkstar/src/ports/workflowstore"
 )
 
 func TestWorkflowInstallationAndRunSnapshotsAreImmutable(t *testing.T) {

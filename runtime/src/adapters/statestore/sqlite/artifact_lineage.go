@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactlineage"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactlineage"
+	"darkstar/src/ports/artifactregistry"
 )
 
 var _ artifactlineage.Store = (*Database)(nil)

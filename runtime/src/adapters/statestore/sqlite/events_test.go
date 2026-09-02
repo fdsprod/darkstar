@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports/statestore"
 )
 
 var eventTestTime = time.Date(2026, time.August, 31, 20, 0, 0, 123000000, time.UTC)

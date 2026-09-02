@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	localapi "github.com/fdsprod/darkstar/runtime/src/api"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	localapi "darkstar/src/api"
+	"darkstar/src/ports/statestore"
 )
 
 const (

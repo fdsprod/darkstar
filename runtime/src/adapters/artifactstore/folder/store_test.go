@@ -14,8 +14,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactstore"
+	"darkstar/src/ports"
+	"darkstar/src/ports/artifactstore"
 )
 
 func TestNewRequiresAbsoluteRoot(t *testing.T) {

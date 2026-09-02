@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports"
-	"github.com/fdsprod/darkstar/runtime/src/ports/provider"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports"
+	"darkstar/src/ports/provider"
+	"darkstar/src/ports/statestore"
 )
 
 const (

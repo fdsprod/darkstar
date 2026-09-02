@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/provider"
+	"darkstar/src/ports/provider"
 )
 
 type fixtureFrame struct {

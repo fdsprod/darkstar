@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports"
-	"github.com/fdsprod/darkstar/runtime/src/ports/provider"
+	"darkstar/src/ports"
+	"darkstar/src/ports/provider"
 )
 
 // StepKind identifies one operation in an attempt's replayable event script.

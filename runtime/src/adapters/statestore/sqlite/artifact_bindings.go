@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactbinding"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactbinding"
+	"darkstar/src/ports/artifactregistry"
 )
 
 var _ artifactbinding.Store = (*Database)(nil)

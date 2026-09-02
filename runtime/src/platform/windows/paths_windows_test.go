@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/platform"
+	"darkstar/src/ports/platform"
 )
 
 func TestResolvePathsUsesLocalAppDataContract(t *testing.T) {

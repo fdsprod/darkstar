@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
+	"darkstar/src/ports/contentprocessor"
 )
 
 func TestCommonFormatsProduceDeterministicRepresentations(t *testing.T) {

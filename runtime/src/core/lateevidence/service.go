@@ -10,12 +10,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactbinding"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactlineage"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/contextmanifest"
-	"github.com/fdsprod/darkstar/runtime/src/ports/impactassessment"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports/artifactbinding"
+	"darkstar/src/ports/artifactlineage"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/contextmanifest"
+	"darkstar/src/ports/impactassessment"
+	"darkstar/src/ports/statestore"
 )
 
 var ErrEvidenceNotBound = errors.New("late evidence is not actively bound to the requested target")

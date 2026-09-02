@@ -12,9 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	workflowfilesystem "github.com/fdsprod/darkstar/runtime/src/adapters/workflowstore/filesystem"
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
-	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
+	workflowfilesystem "darkstar/src/adapters/workflowstore/filesystem"
+	"darkstar/src/core/workflow"
+	"darkstar/src/ports/workflowstore"
 )
 
 type workflowMachineOutput struct {

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactbinding"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactbinding"
+	"darkstar/src/ports/artifactregistry"
 )
 
 func TestArtifactBindingsRetainVersionedHistoryForEveryTarget(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/daemon"
+	"darkstar/src/daemon"
 )
 
 func TestDaemonLockIsExclusiveForHandleLifetime(t *testing.T) {

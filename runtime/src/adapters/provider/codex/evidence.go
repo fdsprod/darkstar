@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode"
 
-	providerport "github.com/fdsprod/darkstar/runtime/src/ports/provider"
+	providerport "darkstar/src/ports/provider"
 )
 
 // EvidenceRecord is one immutable provider observation to persist.

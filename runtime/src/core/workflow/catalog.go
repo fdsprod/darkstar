@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/config"
-	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
+	"darkstar/src/core/config"
+	"darkstar/src/ports/workflowstore"
 )
 
 // LoadedDefinition is one validated canonical workflow selected from configured scopes.

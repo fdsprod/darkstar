@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactstore"
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
-	"github.com/fdsprod/darkstar/runtime/src/ports/representationregistry"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactstore"
+	"darkstar/src/ports/contentprocessor"
+	"darkstar/src/ports/representationregistry"
 )
 
 func TestRepresentationRegistryIsImmutableAndIdempotent(t *testing.T) {

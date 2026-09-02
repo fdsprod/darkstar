@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactstore"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactstore"
 )
 
 var (

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
+	"darkstar/src/core/workflow"
 )
 
 func TestBoundedTransitionIsIdempotentAndFailsAtItsFrameLimit(t *testing.T) {

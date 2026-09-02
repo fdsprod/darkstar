@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/adapters/statestore/sqlite"
-	"github.com/fdsprod/darkstar/runtime/src/core/config"
-	"github.com/fdsprod/darkstar/runtime/src/core/health"
-	"github.com/fdsprod/darkstar/runtime/src/daemon"
-	"github.com/fdsprod/darkstar/runtime/src/daemon/configuration"
-	platformport "github.com/fdsprod/darkstar/runtime/src/ports/platform"
-	providerport "github.com/fdsprod/darkstar/runtime/src/ports/provider"
+	"darkstar/src/adapters/statestore/sqlite"
+	"darkstar/src/core/config"
+	"darkstar/src/core/health"
+	"darkstar/src/daemon"
+	"darkstar/src/daemon/configuration"
+	platformport "darkstar/src/ports/platform"
+	providerport "darkstar/src/ports/provider"
 )
 
 const commandTimeout = 5 * time.Second

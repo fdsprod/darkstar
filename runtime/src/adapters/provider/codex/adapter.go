@@ -20,8 +20,8 @@ import (
 
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports"
-	providerport "github.com/fdsprod/darkstar/runtime/src/ports/provider"
+	"darkstar/src/ports"
+	providerport "darkstar/src/ports/provider"
 )
 
 const providerName = "codex"

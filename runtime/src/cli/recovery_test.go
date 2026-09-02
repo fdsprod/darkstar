@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/adapters/statestore/sqlite"
-	localapi "github.com/fdsprod/darkstar/runtime/src/api"
-	"github.com/fdsprod/darkstar/runtime/src/daemon"
-	"github.com/fdsprod/darkstar/runtime/src/ports/platform"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/adapters/statestore/sqlite"
+	localapi "darkstar/src/api"
+	"darkstar/src/daemon"
+	"darkstar/src/ports/platform"
+	"darkstar/src/ports/statestore"
 )
 
 func TestDaemonServiceReconcilesBeforePublishingAPI(t *testing.T) {

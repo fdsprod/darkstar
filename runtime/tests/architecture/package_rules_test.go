@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-const modulePath = "github.com/fdsprod/darkstar/runtime"
+const modulePath = "darkstar"
 
 func TestRequiredPortPackagesExist(t *testing.T) {
 	t.Parallel()

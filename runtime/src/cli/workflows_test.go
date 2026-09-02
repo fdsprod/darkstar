@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
-	platformport "github.com/fdsprod/darkstar/runtime/src/ports/platform"
+	"darkstar/src/core/workflow"
+	platformport "darkstar/src/ports/platform"
 )
 
 func TestWorkflowCLIInstallListGraphAndPreviewJSON(t *testing.T) {

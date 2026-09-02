@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/config"
-	"github.com/fdsprod/darkstar/runtime/src/ports/platform"
+	"darkstar/src/core/config"
+	"darkstar/src/ports/platform"
 	"go.yaml.in/yaml/v3"
 )
 

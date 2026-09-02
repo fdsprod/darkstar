@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports/statestore"
 )
 
 const (

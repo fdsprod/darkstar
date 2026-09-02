@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
+	clientapi "darkstar/src/api/client"
 )
 
 const machineSchemaVersion = 1

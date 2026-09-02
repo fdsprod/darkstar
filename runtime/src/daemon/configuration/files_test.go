@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/config"
-	"github.com/fdsprod/darkstar/runtime/src/daemon/configuration"
-	"github.com/fdsprod/darkstar/runtime/src/ports/platform"
+	"darkstar/src/core/config"
+	"darkstar/src/daemon/configuration"
+	"darkstar/src/ports/platform"
 )
 
 func TestResolveFileLocationsSeparatesProjectAndUserOnlyFiles(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/projection"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/core/projection"
+	"darkstar/src/ports/statestore"
 )
 
 func TestWorkflowStateMachinesCommitThroughAllThreeProjections(t *testing.T) {

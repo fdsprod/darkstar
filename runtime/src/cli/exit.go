@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
+	clientapi "darkstar/src/api/client"
 )
 
 // ExitClass is the frozen process-exit contract for CLI automation.

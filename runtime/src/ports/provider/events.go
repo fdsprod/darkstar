@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports"
+	"darkstar/src/ports"
 )
 
 // EventKind is the closed DARKSTAR vocabulary emitted by provider adapters.

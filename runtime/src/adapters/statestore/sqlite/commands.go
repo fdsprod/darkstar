@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports/statestore"
 )
 
 // CommandConflictError reports reuse of an idempotency key for different input.

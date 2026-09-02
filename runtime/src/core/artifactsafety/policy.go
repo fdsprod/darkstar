@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/contentprocessor"
 )
 
 const PolicyVersion = "artifact-safety/v1alpha1"

@@ -12,8 +12,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
-	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
+	"darkstar/src/core/workflow"
+	"darkstar/src/ports/workflowstore"
 )
 
 var lowercaseDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)

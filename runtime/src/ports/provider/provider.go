@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports"
+	"darkstar/src/ports"
 )
 
 // Provider owns the complete lifecycle of one provider-backed attempt. Methods

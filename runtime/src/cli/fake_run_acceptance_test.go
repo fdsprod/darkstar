@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	localapi "github.com/fdsprod/darkstar/runtime/src/api"
-	"github.com/fdsprod/darkstar/runtime/src/core/runexecution"
-	"github.com/fdsprod/darkstar/runtime/src/daemon"
-	platformport "github.com/fdsprod/darkstar/runtime/src/ports/platform"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	localapi "darkstar/src/api"
+	"darkstar/src/core/runexecution"
+	"darkstar/src/daemon"
+	platformport "darkstar/src/ports/platform"
+	"darkstar/src/ports/statestore"
 )
 
 func TestPublicCLIFakeRunSurvivesRestartWithoutDuplicateEffectsAndExports(t *testing.T) {

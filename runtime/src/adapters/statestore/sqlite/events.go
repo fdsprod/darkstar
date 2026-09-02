@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/projection"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/core/projection"
+	"darkstar/src/ports/statestore"
 )
 
 const currentStateProjection = "current_state"

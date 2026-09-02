@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
+	"darkstar/src/ports/contentprocessor"
 	_ "golang.org/x/image/webp"
 )
 

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	localapi "github.com/fdsprod/darkstar/runtime/src/api"
-	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
-	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
+	localapi "darkstar/src/api"
+	clientapi "darkstar/src/api/client"
+	"darkstar/src/core/runexport"
 )
 
 func TestConnectDiscoversRunningDaemonWithoutAutostart(t *testing.T) {

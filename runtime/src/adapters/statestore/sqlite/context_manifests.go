@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"strings"
 
-	manifestport "github.com/fdsprod/darkstar/runtime/src/ports/contextmanifest"
+	manifestport "darkstar/src/ports/contextmanifest"
 )
 
 var _ manifestport.Store = (*Database)(nil)

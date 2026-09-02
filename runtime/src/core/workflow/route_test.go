@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
+	"darkstar/src/core/workflow"
 )
 
 func TestCreateRouteUsesWorkflowDefaults(t *testing.T) {

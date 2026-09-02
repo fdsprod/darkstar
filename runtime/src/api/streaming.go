@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/core/runexport"
+	"darkstar/src/ports/statestore"
 )
 
 const (

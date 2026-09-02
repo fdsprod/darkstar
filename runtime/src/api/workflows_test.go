@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/adapters/statestore/sqlite"
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
-	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
+	"darkstar/src/adapters/statestore/sqlite"
+	"darkstar/src/core/workflow"
+	"darkstar/src/ports/workflowstore"
 )
 
 func TestWorkflowAPICoversInstallListShowGraphAndPreview(t *testing.T) {

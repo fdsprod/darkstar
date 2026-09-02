@@ -15,14 +15,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/artifactderive"
-	"github.com/fdsprod/darkstar/runtime/src/core/artifactingest"
-	"github.com/fdsprod/darkstar/runtime/src/core/lateevidence"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactbinding"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactlineage"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/impactassessment"
-	"github.com/fdsprod/darkstar/runtime/src/ports/representationregistry"
+	"darkstar/src/core/artifactderive"
+	"darkstar/src/core/artifactingest"
+	"darkstar/src/core/lateevidence"
+	"darkstar/src/ports/artifactbinding"
+	"darkstar/src/ports/artifactlineage"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/impactassessment"
+	"darkstar/src/ports/representationregistry"
 )
 
 const PolicyVersion = "artifact-context/v1alpha1"

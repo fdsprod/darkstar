@@ -9,8 +9,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/runexecution"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/core/runexecution"
+	"darkstar/src/ports/statestore"
 )
 
 // RunService is the command/query boundary published by the local API.

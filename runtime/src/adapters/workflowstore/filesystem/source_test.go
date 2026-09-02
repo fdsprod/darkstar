@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/platform"
-	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
+	"darkstar/src/ports/platform"
+	"darkstar/src/ports/workflowstore"
 )
 
 func TestResolveDirectoriesUsesPlatformAndProjectScopes(t *testing.T) {

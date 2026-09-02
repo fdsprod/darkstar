@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactregistry"
 )
 
 var (

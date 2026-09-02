@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/config"
+	"darkstar/src/core/config"
 )
 
 func TestResolveUsesCanonicalPrecedenceAndAttributesEveryLeaf(t *testing.T) {

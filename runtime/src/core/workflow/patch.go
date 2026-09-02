@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports/statestore"
 )
 
 const KindRoutePatch = "RoutePatch"

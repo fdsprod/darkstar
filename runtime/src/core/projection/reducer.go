@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports/statestore"
 )
 
 // ReducerVersion changes whenever replay semantics change incompatibly.

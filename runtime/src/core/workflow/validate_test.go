@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
+	"darkstar/src/core/workflow"
 )
 
 func TestShippedWorkflowsPassStaticValidation(t *testing.T) {

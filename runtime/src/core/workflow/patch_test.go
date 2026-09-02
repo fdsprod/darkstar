@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/core/workflow"
+	"darkstar/src/ports/statestore"
 )
 
 func TestRoutePatchJSONKeepsOperationsClosedAndStrict(t *testing.T) {

@@ -13,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/platform"
-	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
+	"darkstar/src/ports/platform"
+	"darkstar/src/ports/workflowstore"
 	"go.yaml.in/yaml/v3"
 )
 

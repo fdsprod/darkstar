@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/fdsprod/darkstar/runtime/src/cli"
+	"darkstar/src/cli"
 )
 
 func main() {

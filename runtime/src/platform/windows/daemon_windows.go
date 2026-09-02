@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/daemon"
+	"darkstar/src/daemon"
 	"golang.org/x/sys/windows"
 )
 

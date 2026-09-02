@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
+	"darkstar/src/ports/contentprocessor"
 )
 
 func TestCommonImagesProduceModelImageAndBoundedPreview(t *testing.T) {

@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/health"
-	"github.com/fdsprod/darkstar/runtime/src/core/workflow"
-	"github.com/fdsprod/darkstar/runtime/src/ports/workflowstore"
+	"darkstar/src/core/health"
+	"darkstar/src/core/workflow"
+	"darkstar/src/ports/workflowstore"
 )
 
 const requestIDHeader = "X-Request-Id"

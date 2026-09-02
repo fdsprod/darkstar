@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports"
-	providerport "github.com/fdsprod/darkstar/runtime/src/ports/provider"
+	"darkstar/src/ports"
+	providerport "darkstar/src/ports/provider"
 )
 
 type appServerScript struct {

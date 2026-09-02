@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactbinding"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactbinding"
+	"darkstar/src/ports/artifactregistry"
 )
 
 func TestProposalVariantsMarshalClosedActionDiscriminators(t *testing.T) {

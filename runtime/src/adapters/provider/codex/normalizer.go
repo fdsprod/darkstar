@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/provider"
+	"darkstar/src/ports/provider"
 )
 
 // NormalizerOptions binds one ordered native message stream to one DARKSTAR attempt.

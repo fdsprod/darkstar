@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/runexport"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/core/runexport"
+	"darkstar/src/ports/statestore"
 )
 
 var runIDPattern = regexp.MustCompile(`^run_[0-9A-HJKMNP-TV-Z]{26}$`)

@@ -3,7 +3,7 @@ package artifactsafety
 import (
 	"testing"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactregistry"
 )
 
 func TestDefaultPolicyMatchesNormativeBudgetsAndFailsClosed(t *testing.T) {

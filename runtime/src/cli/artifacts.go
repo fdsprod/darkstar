@@ -13,14 +13,14 @@ import (
 	"strconv"
 	"strings"
 
-	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
-	"github.com/fdsprod/darkstar/runtime/src/core/artifactderive"
-	"github.com/fdsprod/darkstar/runtime/src/core/artifactingest"
-	"github.com/fdsprod/darkstar/runtime/src/core/artifactops"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactbinding"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/impactassessment"
-	"github.com/fdsprod/darkstar/runtime/src/ports/representationregistry"
+	clientapi "darkstar/src/api/client"
+	"darkstar/src/core/artifactderive"
+	"darkstar/src/core/artifactingest"
+	"darkstar/src/core/artifactops"
+	"darkstar/src/ports/artifactbinding"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/impactassessment"
+	"darkstar/src/ports/representationregistry"
 )
 
 const maxCLIArtifactBytes = 25 << 20

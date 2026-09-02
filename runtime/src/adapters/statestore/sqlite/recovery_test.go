@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/recovery"
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/core/recovery"
+	"darkstar/src/ports/statestore"
 )
 
 func TestPendingRecoveryAndAtomicDecisions(t *testing.T) {

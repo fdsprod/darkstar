@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports/statestore"
 )
 
 var coordinationTestTime = time.Date(2026, time.September, 1, 1, 2, 3, 0, time.UTC)

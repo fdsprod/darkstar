@@ -17,7 +17,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
+	"darkstar/src/ports/contentprocessor"
 	"go.yaml.in/yaml/v3"
 )
 

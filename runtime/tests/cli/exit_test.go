@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	clientapi "github.com/fdsprod/darkstar/runtime/src/api/client"
-	"github.com/fdsprod/darkstar/runtime/src/cli"
+	clientapi "darkstar/src/api/client"
+	"darkstar/src/cli"
 )
 
 func TestClassifyError(t *testing.T) {

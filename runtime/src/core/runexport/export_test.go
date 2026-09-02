@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports/statestore"
 )
 
 func TestBuildCreatesRedactedSelfContainedBundle(t *testing.T) {

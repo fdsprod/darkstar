@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactlineage"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactlineage"
+	"darkstar/src/ports/artifactregistry"
 )
 
 func TestArtifactRevisionInvalidatesOnlyReachableDescendants(t *testing.T) {

@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/artifactsafety"
-	"github.com/fdsprod/darkstar/runtime/src/ports"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactstore"
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
+	"darkstar/src/core/artifactsafety"
+	"darkstar/src/ports"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactstore"
+	"darkstar/src/ports/contentprocessor"
 )
 
 func TestIngestPasteAndStdinPreserveDistinctIdentityWhileSharingBlob(t *testing.T) {

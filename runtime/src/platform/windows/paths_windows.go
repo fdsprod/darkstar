@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/platform"
+	"darkstar/src/ports/platform"
 	"golang.org/x/sys/windows"
 )
 

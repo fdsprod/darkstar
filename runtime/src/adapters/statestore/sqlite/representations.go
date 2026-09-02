@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
-	"github.com/fdsprod/darkstar/runtime/src/ports/contentprocessor"
-	"github.com/fdsprod/darkstar/runtime/src/ports/representationregistry"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/contentprocessor"
+	"darkstar/src/ports/representationregistry"
 )
 
 var _ representationregistry.Registry = (*Database)(nil)

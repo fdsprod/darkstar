@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports"
-	"github.com/fdsprod/darkstar/runtime/src/ports/provider"
+	"darkstar/src/ports"
+	"darkstar/src/ports/provider"
 )
 
 // CallKind identifies an observed port operation.

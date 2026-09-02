@@ -17,7 +17,7 @@ if (-not [IO.Path]::IsPathRooted($OutputDirectory)) {
 }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $binaryPath = Join-Path $OutputDirectory "darkstar.exe"
-$linkerFlags = "-s -w -buildid= -X github.com/fdsprod/darkstar/runtime/src/cli.Version=$Version"
+$linkerFlags = "-s -w -buildid= -X darkstar/src/cli.Version=$Version"
 $previousGoEnvironment = @{
     CGO_ENABLED = [Environment]::GetEnvironmentVariable("CGO_ENABLED", "Process")
     GOARCH = [Environment]::GetEnvironmentVariable("GOARCH", "Process")

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/statestore"
+	"darkstar/src/ports/statestore"
 )
 
 // FencingConflictError reports a compare-and-swap mismatch for a lease scope.

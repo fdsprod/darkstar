@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	manifestport "github.com/fdsprod/darkstar/runtime/src/ports/contextmanifest"
-	"github.com/fdsprod/darkstar/runtime/src/ports/representationregistry"
+	manifestport "darkstar/src/ports/contextmanifest"
+	"darkstar/src/ports/representationregistry"
 )
 
 var (

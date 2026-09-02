@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/adapters/provider/fake"
-	"github.com/fdsprod/darkstar/runtime/src/core/runexecution"
-	"github.com/fdsprod/darkstar/runtime/src/ports/provider"
+	"darkstar/src/adapters/provider/fake"
+	"darkstar/src/core/runexecution"
+	"darkstar/src/ports/provider"
 )
 
 func newFakeRunProvider(scenarioName, attemptID string, resume bool) (provider.Provider, error) {

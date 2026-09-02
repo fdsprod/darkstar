@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactbinding"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactlineage"
-	"github.com/fdsprod/darkstar/runtime/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactbinding"
+	"darkstar/src/ports/artifactlineage"
+	"darkstar/src/ports/artifactregistry"
 )
 
 type CoverageState string

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fdsprod/darkstar/runtime/src/core/health"
+	"darkstar/src/core/health"
 )
 
 func TestWriteDoctorReportIncludesCodesAndActions(t *testing.T) {
