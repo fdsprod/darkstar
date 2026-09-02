@@ -12,6 +12,7 @@ import (
 	contextcore "darkstar/src/core/contextmanifest"
 	"darkstar/src/ports/artifactregistry"
 	"darkstar/src/ports/artifactstore"
+	registryport "darkstar/src/ports/capabilityregistry"
 	"darkstar/src/ports/contentprocessor"
 	manifestport "darkstar/src/ports/contextmanifest"
 	"darkstar/src/ports/representationregistry"
@@ -98,7 +99,11 @@ func manifestRequest(runID, nodeID, attemptID string, candidates []contextcore.C
 		Schemas:      []manifestport.DigestRef{{ID: "schema/output", Digest: strings.Repeat("2", 64)}},
 		Permissions:  []string{"workspace.write", "repository.read"},
 		Workspace:    manifestport.Workspace{ID: "workspace/repository", Digest: strings.Repeat("3", 64), Access: "workspace_write"},
-		Capabilities: []manifestport.DigestRef{{ID: "provider/codex", Digest: strings.Repeat("4", 64)}},
+		Capabilities: []registryport.Selection{{
+			ID: "cap_codex", Name: "mcp:codex/tool", Kind: registryport.KindTool, Class: registryport.ClassRegistered,
+			Version: "1.0.0", Fingerprint: strings.Repeat("4", 64), Source: registryport.Source{Type: "provider", Locator: "codex/tool"},
+			Permissions: []string{"tool.invoke"},
+		}},
 	}
 }
 

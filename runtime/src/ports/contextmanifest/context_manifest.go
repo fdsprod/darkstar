@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"darkstar/src/ports/capabilityregistry"
 )
 
 var (
@@ -55,22 +57,22 @@ type Omission struct {
 }
 
 type Manifest struct {
-	ManifestID    string      `json:"manifestId"`
-	RunID         string      `json:"runId"`
-	NodeID        string      `json:"nodeId"`
-	AttemptID     string      `json:"attemptId"`
-	PolicyVersion string      `json:"policyVersion"`
-	Budget        int64       `json:"budget"`
-	Reserved      int64       `json:"reservedTokens"`
-	Entries       []Entry     `json:"entries"`
-	Omissions     []Omission  `json:"omissions"`
-	Instructions  []DigestRef `json:"instructions"`
-	Schemas       []DigestRef `json:"schemas"`
-	Permissions   []string    `json:"permissions"`
-	Workspace     Workspace   `json:"workspace"`
-	Capabilities  []DigestRef `json:"capabilities"`
-	Digest        string      `json:"digest"`
-	FrozenAt      time.Time   `json:"frozenAt"`
+	ManifestID    string                         `json:"manifestId"`
+	RunID         string                         `json:"runId"`
+	NodeID        string                         `json:"nodeId"`
+	AttemptID     string                         `json:"attemptId"`
+	PolicyVersion string                         `json:"policyVersion"`
+	Budget        int64                          `json:"budget"`
+	Reserved      int64                          `json:"reservedTokens"`
+	Entries       []Entry                        `json:"entries"`
+	Omissions     []Omission                     `json:"omissions"`
+	Instructions  []DigestRef                    `json:"instructions"`
+	Schemas       []DigestRef                    `json:"schemas"`
+	Permissions   []string                       `json:"permissions"`
+	Workspace     Workspace                      `json:"workspace"`
+	Capabilities  []capabilityregistry.Selection `json:"capabilities"`
+	Digest        string                         `json:"digest"`
+	FrozenAt      time.Time                      `json:"frozenAt"`
 }
 
 func (manifest Manifest) UsedTokens() int64 {

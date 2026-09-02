@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 
+	registryport "darkstar/src/ports/capabilityregistry"
 	manifestport "darkstar/src/ports/contextmanifest"
 )
 
@@ -118,7 +119,7 @@ func normalizeManifest(manifest manifestport.Manifest) (manifestport.Manifest, e
 		}
 		seenRepresentations[omission.RepresentationID] = struct{}{}
 	}
-	for _, group := range [][]manifestport.DigestRef{manifest.Instructions, manifest.Schemas, manifest.Capabilities} {
+	for _, group := range [][]manifestport.DigestRef{manifest.Instructions, manifest.Schemas} {
 		seen := make(map[string]struct{}, len(group))
 		for _, reference := range group {
 			if strings.TrimSpace(reference.ID) == "" || !artifactDigestPattern.MatchString(reference.Digest) {
@@ -129,6 +130,36 @@ func normalizeManifest(manifest manifestport.Manifest) (manifestport.Manifest, e
 			}
 			seen[reference.ID] = struct{}{}
 		}
+	}
+	seenCapabilities := make(map[string]struct{}, len(manifest.Capabilities))
+	for index := range manifest.Capabilities {
+		capability := &manifest.Capabilities[index]
+		if strings.TrimSpace(capability.ID) == "" || strings.TrimSpace(capability.Name) == "" || !artifactDigestPattern.MatchString(capability.Fingerprint) || strings.TrimSpace(capability.Source.Type) == "" || strings.TrimSpace(capability.Source.Locator) == "" {
+			return manifest, errors.New("context manifest capability selection is invalid")
+		}
+		if capability.Kind != registryport.KindSkill && capability.Kind != registryport.KindTool {
+			return manifest, errors.New("context manifest capability kind is invalid")
+		}
+		switch capability.Class {
+		case registryport.ClassGuaranteed, registryport.ClassRegistered, registryport.ClassInherited:
+		default:
+			return manifest, errors.New("context manifest capability class is invalid")
+		}
+		if _, duplicate := seenCapabilities[capability.ID]; duplicate {
+			return manifest, errors.New("context manifest repeats a capability selection")
+		}
+		seenCapabilities[capability.ID] = struct{}{}
+		permissions := make(map[string]struct{}, len(capability.Permissions))
+		for _, permission := range capability.Permissions {
+			if strings.TrimSpace(permission) == "" || permission != strings.TrimSpace(permission) {
+				return manifest, errors.New("context manifest capability permission is invalid")
+			}
+			if _, duplicate := permissions[permission]; duplicate {
+				return manifest, errors.New("context manifest repeats a capability permission")
+			}
+			permissions[permission] = struct{}{}
+		}
+		capability.Permissions = append([]string(nil), capability.Permissions...)
 	}
 	seenPermissions := make(map[string]struct{}, len(manifest.Permissions))
 	for _, permission := range manifest.Permissions {
@@ -145,7 +176,7 @@ func normalizeManifest(manifest manifestport.Manifest) (manifestport.Manifest, e
 	manifest.Instructions = append([]manifestport.DigestRef(nil), manifest.Instructions...)
 	manifest.Schemas = append([]manifestport.DigestRef(nil), manifest.Schemas...)
 	manifest.Permissions = append([]string(nil), manifest.Permissions...)
-	manifest.Capabilities = append([]manifestport.DigestRef(nil), manifest.Capabilities...)
+	manifest.Capabilities = append([]registryport.Selection(nil), manifest.Capabilities...)
 	if manifest.Entries == nil {
 		manifest.Entries = []manifestport.Entry{}
 	}
@@ -162,7 +193,7 @@ func normalizeManifest(manifest manifestport.Manifest) (manifestport.Manifest, e
 		manifest.Permissions = []string{}
 	}
 	if manifest.Capabilities == nil {
-		manifest.Capabilities = []manifestport.DigestRef{}
+		manifest.Capabilities = []registryport.Selection{}
 	}
 	manifest.FrozenAt = manifest.FrozenAt.UTC()
 	return manifest, nil

@@ -20,6 +20,7 @@ func TestRequiredPortPackagesExist(t *testing.T) {
 	for _, name := range []string{
 		"artifactregistry",
 		"artifactstore",
+		"capabilityregistry",
 		"contentprocessor",
 		"contextmanifest",
 		"representationregistry",

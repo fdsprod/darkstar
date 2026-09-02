@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"darkstar/src/ports/capabilityregistry"
 	manifestport "darkstar/src/ports/contextmanifest"
 	"darkstar/src/ports/representationregistry"
 )
@@ -53,7 +54,7 @@ type Request struct {
 	Schemas        []manifestport.DigestRef
 	Permissions    []string
 	Workspace      manifestport.Workspace
-	Capabilities   []manifestport.DigestRef
+	Capabilities   []capabilityregistry.Selection
 }
 
 type Service struct {
@@ -198,7 +199,7 @@ func normalizeRequest(request Request) (Request, error) {
 	if request.Schemas, err = canonicalDigestRefs("schema", request.Schemas); err != nil {
 		return request, err
 	}
-	if request.Capabilities, err = canonicalDigestRefs("capability", request.Capabilities); err != nil {
+	if request.Capabilities, err = canonicalCapabilities(request.Capabilities); err != nil {
 		return request, err
 	}
 	request.Permissions, err = canonicalStrings("permission", request.Permissions)
@@ -222,6 +223,44 @@ func normalizeRequest(request Request) (Request, error) {
 		seen[candidate.RepresentationID] = struct{}{}
 	}
 	return request, nil
+}
+
+func canonicalCapabilities(values []capabilityregistry.Selection) ([]capabilityregistry.Selection, error) {
+	result := append([]capabilityregistry.Selection(nil), values...)
+	seen := make(map[string]struct{}, len(result))
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Name != result[j].Name {
+			return result[i].Name < result[j].Name
+		}
+		return result[i].ID < result[j].ID
+	})
+	for index := range result {
+		value := &result[index]
+		if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.Name) == "" || !validDigest(value.Fingerprint) || strings.TrimSpace(value.Source.Type) == "" || strings.TrimSpace(value.Source.Locator) == "" {
+			return nil, errors.New("capability selection identity, fingerprint, and source are required")
+		}
+		if value.Kind != capabilityregistry.KindSkill && value.Kind != capabilityregistry.KindTool {
+			return nil, fmt.Errorf("invalid capability kind %q", value.Kind)
+		}
+		switch value.Class {
+		case capabilityregistry.ClassGuaranteed, capabilityregistry.ClassRegistered, capabilityregistry.ClassInherited:
+		default:
+			return nil, fmt.Errorf("invalid selected capability class %q", value.Class)
+		}
+		permissions, err := canonicalStrings("capability permission", value.Permissions)
+		if err != nil {
+			return nil, err
+		}
+		value.Permissions = permissions
+		if _, duplicate := seen[value.ID]; duplicate {
+			return nil, fmt.Errorf("duplicate capability selection %q", value.ID)
+		}
+		seen[value.ID] = struct{}{}
+	}
+	if result == nil {
+		result = []capabilityregistry.Selection{}
+	}
+	return result, nil
 }
 
 func canonicalDigestRefs(kind string, values []manifestport.DigestRef) ([]manifestport.DigestRef, error) {
@@ -274,19 +313,19 @@ func omissionReason(state CandidateState, disclosure representationregistry.Disc
 
 func manifestDigest(manifest manifestport.Manifest) (string, error) {
 	payload := struct {
-		RunID         string                   `json:"runId"`
-		NodeID        string                   `json:"nodeId"`
-		AttemptID     string                   `json:"attemptId"`
-		PolicyVersion string                   `json:"policyVersion"`
-		Budget        int64                    `json:"budget"`
-		Reserved      int64                    `json:"reservedTokens"`
-		Entries       []manifestport.Entry     `json:"entries"`
-		Omissions     []manifestport.Omission  `json:"omissions"`
-		Instructions  []manifestport.DigestRef `json:"instructions"`
-		Schemas       []manifestport.DigestRef `json:"schemas"`
-		Permissions   []string                 `json:"permissions"`
-		Workspace     manifestport.Workspace   `json:"workspace"`
-		Capabilities  []manifestport.DigestRef `json:"capabilities"`
+		RunID         string                         `json:"runId"`
+		NodeID        string                         `json:"nodeId"`
+		AttemptID     string                         `json:"attemptId"`
+		PolicyVersion string                         `json:"policyVersion"`
+		Budget        int64                          `json:"budget"`
+		Reserved      int64                          `json:"reservedTokens"`
+		Entries       []manifestport.Entry           `json:"entries"`
+		Omissions     []manifestport.Omission        `json:"omissions"`
+		Instructions  []manifestport.DigestRef       `json:"instructions"`
+		Schemas       []manifestport.DigestRef       `json:"schemas"`
+		Permissions   []string                       `json:"permissions"`
+		Workspace     manifestport.Workspace         `json:"workspace"`
+		Capabilities  []capabilityregistry.Selection `json:"capabilities"`
 	}{manifest.RunID, manifest.NodeID, manifest.AttemptID, manifest.PolicyVersion, manifest.Budget, manifest.Reserved,
 		manifest.Entries, manifest.Omissions, manifest.Instructions, manifest.Schemas, manifest.Permissions, manifest.Workspace, manifest.Capabilities}
 	content, err := json.Marshal(payload)

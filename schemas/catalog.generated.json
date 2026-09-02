@@ -13,7 +13,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/artifact-v1alpha1.schema.json",
       "name": "artifact-v1alpha1",
-      "sha256": "ecab55547b1fc2d6a7e5651c620dd9d1056df4dc20ee3f42c04b193b83f98ae9",
+      "sha256": "e362a2faece5b1c414d68a855bd4865beb705010812a614ce712d3ab8821cb8f",
       "version": "v1alpha1"
     },
     {
