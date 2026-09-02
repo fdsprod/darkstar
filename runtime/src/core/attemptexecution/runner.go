@@ -123,13 +123,20 @@ type ExecutorResolver interface {
 type ValidationRequest struct {
 	AttemptID string
 	Context   ContextSnapshot
+	Workspace string
 	Result    executor.Result
+}
+
+// ValidationResult carries durable evidence produced by deterministic
+// validators. Successful validation evidence is committed with the candidate.
+type ValidationResult struct {
+	Evidence []executor.Evidence
 }
 
 // OutputValidator accepts or rejects candidate output before any success state
 // is committed.
 type OutputValidator interface {
-	Validate(context.Context, ValidationRequest) error
+	Validate(context.Context, ValidationRequest) (ValidationResult, error)
 }
 
 // StartedRecord is durable recovery evidence for an active executor.
@@ -288,9 +295,16 @@ func (runner *Runner) Run(ctx context.Context, request Request) (commit Commit, 
 	if err := validateResult(result); err != nil {
 		return Commit{}, runner.recordFailure(ctx, request.AttemptID, FailureResult, err)
 	}
-	if err := runner.validator.Validate(ctx, ValidationRequest{AttemptID: request.AttemptID, Context: snapshot, Result: result}); err != nil {
+	validation, err := runner.validator.Validate(ctx, ValidationRequest{
+		AttemptID: request.AttemptID, Context: snapshot, Workspace: allocation.Workspace, Result: result,
+	})
+	if err != nil {
 		return Commit{}, runner.recordFailure(ctx, request.AttemptID, FailureValidation, err)
 	}
+	if err := validateEvidence(validation.Evidence); err != nil {
+		return Commit{}, runner.recordFailure(ctx, request.AttemptID, FailureValidation, err)
+	}
+	result.Evidence = append(result.Evidence, validation.Evidence...)
 
 	commit = Commit{
 		AttemptID: request.AttemptID, Executor: request.ExecutorKind, Context: cloneContext(snapshot), Resources: cloneAllocation(allocation),
@@ -439,6 +453,15 @@ func validateEvent(event executor.Event) error {
 func validateResult(result executor.Result) error {
 	if len(result.CandidateOutput) == 0 || !json.Valid(result.CandidateOutput) || strings.TrimSpace(result.RecoveryRef) == "" {
 		return fmt.Errorf("%w: candidate output and recovery reference are required", ErrInvalidResult)
+	}
+	return nil
+}
+
+func validateEvidence(values []executor.Evidence) error {
+	for index, value := range values {
+		if strings.TrimSpace(value.Kind) == "" || strings.TrimSpace(value.Ref) == "" || strings.TrimSpace(value.Digest) == "" {
+			return fmt.Errorf("%w: validation evidence %d requires kind, ref, and digest", ErrInvalidResult, index+1)
+		}
 	}
 	return nil
 }

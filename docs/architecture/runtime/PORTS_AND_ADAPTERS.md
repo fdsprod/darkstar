@@ -39,6 +39,17 @@ starts or resumes the selected `ports/executor`, journals its ordered events,
 validates candidate output, and commits accepted output plus terminal state in
 one idempotent transaction before releasing resources.
 
+`adapters/executor/command` implements DS-114's deterministic command boundary.
+Workflow commands select a configured executable alias, workspace-relative
+working-directory allowlist entry, and allowlisted environment names; the
+adapter pins exact executable paths, never invokes a shell, owns the full
+process tree, bounds output and time, and records content-addressed evidence.
+Terminal outcomes are a closed success/nonzero/timeout/cancel/output-limit/
+uncertain union, with an exit code present only for a normal nonzero exit.
+Command validators use the same boundary, receive candidate JSON on standard
+input, run in declaration order, and return evidence for the attempt's atomic
+commit.
+
 ## Dependency direction
 
 ```text

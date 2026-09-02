@@ -27,6 +27,7 @@ func TestRunnerExecutesAndCommitsValidatedAttempt(t *testing.T) {
 	}
 	journal := &fakeJournal{trace: &trace}
 	runner := newFakeRunner(t, &trace, execution, journal, nil)
+	runner.validator.(*fakeValidator).result = ValidationResult{Evidence: []executor.Evidence{{Kind: "validation", Ref: "evidence/validation", Digest: "digest"}}}
 
 	commit, err := runner.Run(context.Background(), startRequest())
 	if err != nil {
@@ -34,6 +35,9 @@ func TestRunnerExecutesAndCommitsValidatedAttempt(t *testing.T) {
 	}
 	if commit.AttemptID != "attempt_1" || commit.LastEventCursor != "2" || string(commit.Result.CandidateOutput) != `{"answer":42}` {
 		t.Fatalf("commit = %#v", commit)
+	}
+	if len(commit.Result.Evidence) != 1 || commit.Result.Evidence[0].Kind != "validation" {
+		t.Fatalf("validation evidence was not included in commit: %#v", commit.Result.Evidence)
 	}
 	if len(journal.commits) != 1 || len(journal.failures) != 0 {
 		t.Fatalf("journal commits/failures = %d/%d", len(journal.commits), len(journal.failures))
@@ -297,13 +301,14 @@ func (fake *fakeEvents) Close() error {
 }
 
 type fakeValidator struct {
-	trace *[]string
-	err   error
+	trace  *[]string
+	err    error
+	result ValidationResult
 }
 
-func (fake *fakeValidator) Validate(context.Context, ValidationRequest) error {
+func (fake *fakeValidator) Validate(context.Context, ValidationRequest) (ValidationResult, error) {
 	*fake.trace = append(*fake.trace, "validator.validate")
-	return fake.err
+	return fake.result, fake.err
 }
 
 type fakeJournal struct {
