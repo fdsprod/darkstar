@@ -95,7 +95,7 @@ func (adapter *Adapter) ObserveCapabilities(ctx context.Context) (registryport.O
 func (adapter *Adapter) observeCapabilities(ctx context.Context, client *AppServerClient) (registryport.ObservationSnapshot, error) {
 	version := client.ProviderVersion()
 	if version == "" {
-		return registryport.ObservationSnapshot{}, errors.New("Codex capability inventory requires an initialized client")
+		return registryport.ObservationSnapshot{}, errors.New("codex capability inventory requires an initialized client")
 	}
 	observedAt := adapter.clock().UTC()
 	capabilities, err := adapter.observeSkills(ctx, client, version, observedAt)
@@ -134,10 +134,10 @@ func (adapter *Adapter) observeSkills(ctx context.Context, client *AppServerClie
 	capabilities := make([]registryport.Observation, 0)
 	for _, entry := range response.Data {
 		if !samePath(entry.CWD, adapter.projectRoot) {
-			return nil, fmt.Errorf("Codex skill inventory returned unexpected workspace %q", entry.CWD)
+			return nil, fmt.Errorf("codex skill inventory returned unexpected workspace %q", entry.CWD)
 		}
 		if len(entry.Errors) != 0 {
-			return nil, fmt.Errorf("Codex skill inventory for %q reported %d discovery errors", entry.CWD, len(entry.Errors))
+			return nil, fmt.Errorf("codex skill inventory for %q reported %d discovery errors", entry.CWD, len(entry.Errors))
 		}
 		for _, skill := range entry.Skills {
 			scope, name, err := skillCapabilityIdentity(skill.Scope, skill.Name)
@@ -212,7 +212,7 @@ func (adapter *Adapter) observeMCPTools(ctx context.Context, client *AppServerCl
 		}
 		next := strings.TrimSpace(*response.NextCursor)
 		if _, duplicate := seenCursors[next]; duplicate {
-			return nil, errors.New("Codex MCP inventory repeated a pagination cursor")
+			return nil, errors.New("codex MCP inventory repeated a pagination cursor")
 		}
 		seenCursors[next] = struct{}{}
 		cursor = &next
@@ -304,7 +304,7 @@ func fingerprintInventory(version, kind string, value any) (string, error) {
 func fingerprintSkillPackage(version string, skill codexSkillMetadata) (string, error) {
 	skillPath := filepath.Clean(skill.Path)
 	if !strings.EqualFold(filepath.Base(skillPath), "SKILL.md") {
-		return "", fmt.Errorf("Codex skill %q locator does not name SKILL.md", skill.Name)
+		return "", fmt.Errorf("codex skill %q locator does not name SKILL.md", skill.Name)
 	}
 	type packageFile struct {
 		Path   string `json:"path"`

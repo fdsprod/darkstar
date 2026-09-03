@@ -82,13 +82,6 @@ func New(options Options) (*Adapter, error) {
 	return &Adapter{executable: github, gitExecutable: git, runner: runner, now: now}, nil
 }
 
-func (adapter *Adapter) unsupported(operation string) error {
-	if adapter == nil || adapter.runner == nil || adapter.executable == "" {
-		return failure(ports.FailureInternal, "GitHub CLI adapter is not configured", false)
-	}
-	return failure(ports.FailureUnsupported, operation+" is not implemented", false)
-}
-
 func (adapter *Adapter) run(ctx context.Context, arguments []string, input []byte) ([]byte, error) {
 	if adapter == nil {
 		return nil, failure(ports.FailureInternal, "GitHub CLI adapter is not configured", false)
