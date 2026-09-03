@@ -72,6 +72,21 @@ The `after` byte cursor and bounded `limit` query return raw bytes plus
 `X-Darkstar-Log-Complete`. Following clients request successive offsets; the API
 never accepts a filesystem path or returns an unbounded log body.
 
+The agent surface binds operational controls to durable attempt identities:
+
+| Method and route | Operation |
+|---|---|
+| `GET /api/v1/agents` | List queued and executing attempts in priority/creation order. |
+| `GET /api/v1/agents/{attemptId}` | Inspect provider, lifecycle state, elapsed time, workspace, requested permissions, and log availability. |
+| `GET /api/v1/agents/{attemptId}/logs?after=N&limit=N` | Read the selected attempt's log through the same bounded byte-cursor contract as the opaque log route. |
+| `POST /api/v1/agents/{attemptId}/cancel` | Idempotently cancel the selected active attempt and its owning run. |
+
+Agent state is a derived view of the attempt projection rather than a second
+lifecycle. Workspace and permissions come from the immutable context manifest
+when one is frozen; the scenario compatibility runner reports its explicit
+read-only, offline, non-interactive policy. Cancellation requires an
+`Idempotency-Key`, accepts no body, and returns the terminal attempt view.
+
 `POST /api/v1/runs` accepts exactly one of two request shapes plus a required
 `Idempotency-Key`. A work-backed request names `workItemId`, `workflowId`, and
 `workflowVersion`; the daemon validates the active project/work hierarchy,

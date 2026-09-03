@@ -266,6 +266,10 @@ func (s *Server) serveLog(response http.ResponseWriter, request *http.Request, r
 		return
 	}
 	reference := strings.TrimPrefix(path.Clean(request.URL.Path), "/api/v1/logs/")
+	s.serveLogReference(response, request, requestID, reference)
+}
+
+func (s *Server) serveLogReference(response http.ResponseWriter, request *http.Request, requestID, reference string) {
 	if !logReferencePattern.MatchString(reference) {
 		writeAPIError(response, http.StatusNotFound, apiError{
 			SchemaVersion: 1, Code: "NOT_FOUND", Message: "The requested log reference was not found.", RequestID: requestID,

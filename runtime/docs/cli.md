@@ -54,6 +54,25 @@ strictly extends a completed frozen route; and cancel closes active children and
 terminates a live provider handle. Every control accepts `--idempotency-key` for
 safe automation retries, and stale or illegal transitions fail explicitly.
 
+Agent operations expose the same provider attempts without requiring users to
+resolve run details or opaque log references:
+
+```text
+darkstar agent list
+darkstar agent status [<attempt-id>]
+darkstar agent logs <attempt-id> [--follow]
+darkstar agent cancel <attempt-id> [--idempotency-key <key>]
+```
+
+`list` and argument-free `status` show queued and executing attempts with their
+provider, workspace access, requested permissions, and elapsed time. Supplying
+an attempt ID to `status` also works after completion. Log output uses bounded
+byte cursors; `--follow` polls only after consuming the current snapshot and
+stops when the attempt is terminal. In JSON mode, each log chunk is one JSON
+Line carrying its byte range so consumers can resume without replay. Attempt
+cancellation is idempotent and delegates to the daemon's provider/run control,
+preserving the same durable terminal evidence as run cancellation.
+
 `darkstar run export <run-id> --output <file>` downloads the daemon-created ZIP
 without duplicating export or redaction logic in the client. The CLI resolves the
 output to an absolute path, writes a protected temporary file in the destination

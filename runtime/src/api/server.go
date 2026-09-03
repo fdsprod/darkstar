@@ -46,6 +46,7 @@ type Server struct {
 	streams   *StreamServices
 	exporter  RunExporter
 	runs      RunService
+	agents    AgentService
 	work      WorkService
 	artifacts ArtifactService
 	approvals ApprovalService
@@ -155,6 +156,21 @@ func (s *Server) SetRuns(runs RunService) error {
 		return errors.New("API run service is required")
 	}
 	s.runs = runs
+	return nil
+}
+
+// SetAgents installs provider-attempt status, log lookup, and cancellation
+// before Start publishes the endpoint.
+func (s *Server) SetAgents(agents AgentService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API agent service can only be set before start")
+	}
+	if agents == nil {
+		return errors.New("API agent service is required")
+	}
+	s.agents = agents
 	return nil
 }
 
@@ -398,6 +414,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/logs/") {
 		s.serveLog(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/agents" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/agents/") {
+		s.serveAgents(response, request, requestID)
 		return
 	}
 	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/runs/") && strings.HasSuffix(path.Clean(request.URL.Path), "/export") {

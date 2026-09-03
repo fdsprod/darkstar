@@ -132,6 +132,61 @@ func TestPublicCLIPausesResumesAndCancelsRuns(t *testing.T) {
 	}
 }
 
+func TestPublicCLIAgentStatusLogsAndCancellation(t *testing.T) {
+	root := t.TempDir()
+	paths := platformport.Paths{
+		Config: filepath.Join(root, "config"), Data: filepath.Join(root, "data"),
+		Cache: filepath.Join(root, "cache"), Logs: filepath.Join(root, "logs"), Runtime: filepath.Join(root, "runtime"),
+	}
+	for _, directory := range []string{paths.Config, paths.Data, paths.Cache, paths.Logs, paths.Runtime} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	originalResolver := resolveApplicationPaths
+	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) { return paths, nil }
+	t.Cleanup(func() { resolveApplicationPaths = originalResolver })
+	service := startAcceptanceService(t, paths, "44444444444444444444444444444444")
+	t.Cleanup(func() { _ = service.Close() })
+
+	var started runexecution.View
+	runCLIJSON(t, []string{"run", "start", "--scenario", runexecution.ScenarioRestart, "--idempotency-key", "agent-cli-start", "--json"}, &started)
+	running := waitForRun(t, started.Run.RunID, func(view runexecution.View) bool {
+		return view.Run.Status == statestore.RunRunning && view.Attempts[0].LastSequence == 1
+	})
+	attemptID := running.Attempts[0].AttemptID
+
+	var listed struct {
+		SchemaVersion int                    `json:"schemaVersion"`
+		Result        runexecution.AgentList `json:"result"`
+	}
+	runCLIJSON(t, []string{"agent", "status", "--json"}, &listed)
+	if len(listed.Result.Items) != 1 || listed.Result.Items[0].AttemptID != attemptID || listed.Result.Items[0].Execution.Workspace.ID == "" {
+		t.Fatalf("agent status list = %#v", listed)
+	}
+
+	var log agentLogOutput
+	runCLIJSON(t, []string{"agent", "logs", attemptID, "--json"}, &log)
+	if log.AttemptID != attemptID || !strings.Contains(log.Content, `"kind":"turn.started"`) {
+		t.Fatalf("agent log = %#v", log)
+	}
+
+	var cancelled struct {
+		SchemaVersion int                `json:"schemaVersion"`
+		Result        runexecution.Agent `json:"result"`
+	}
+	runCLIJSON(t, []string{"agent", "cancel", attemptID, "--idempotency-key", "agent-cli-cancel", "--json"}, &cancelled)
+	if cancelled.Result.Status != statestore.AttemptCancelled {
+		t.Fatalf("cancelled agent = %#v", cancelled)
+	}
+
+	var followed agentLogOutput
+	runCLIJSON(t, []string{"agent", "logs", attemptID, "--follow", "--json"}, &followed)
+	if followed.AttemptID != attemptID || followed.NextOffset == 0 {
+		t.Fatalf("followed agent log = %#v", followed)
+	}
+}
+
 func startAcceptanceService(t *testing.T, paths platformport.Paths, instanceID string) *daemonAPIService {
 	t.Helper()
 	server, err := localapi.NewServer(paths.Runtime)

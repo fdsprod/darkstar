@@ -90,16 +90,17 @@ type LogSink interface {
 
 // Service owns provider workers for one daemon lifetime.
 type Service struct {
-	store   statestore.Store
-	factory ProviderFactory
-	logs    LogSink
-	planner WorkflowPlanner
-	now     func() time.Time
-	ctx     context.Context
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	workers map[string]*worker
-	wait    sync.WaitGroup
+	store     statestore.Store
+	factory   ProviderFactory
+	logs      LogSink
+	planner   WorkflowPlanner
+	workspace string
+	now       func() time.Time
+	ctx       context.Context
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	workers   map[string]*worker
+	wait      sync.WaitGroup
 }
 
 // worker is the complete process-local ownership record for one provider
@@ -134,6 +135,23 @@ func (s *Service) SetWorkflowPlanner(planner WorkflowPlanner) error {
 		return errors.New("workflow planner cannot change while runs are active")
 	}
 	s.planner = planner
+	return nil
+}
+
+// SetAgentWorkspace records the compatibility runner's explicit workspace
+// before any provider work starts. Workflow-backed attempts use their frozen
+// context manifest instead.
+func (s *Service) SetAgentWorkspace(workspace string) error {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return errors.New("agent workspace is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.workers) != 0 {
+		return errors.New("agent workspace cannot change while runs are active")
+	}
+	s.workspace = workspace
 	return nil
 }
 
@@ -456,12 +474,15 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 			ProviderThreadID: attempt.ProviderThreadID, ProviderTurnID: attempt.ProviderTurnID, LastSequence: attempt.LastSequence,
 		})
 	} else {
+		s.mu.Lock()
+		workspace := s.workspace
+		s.mu.Unlock()
 		handle, err = adapter.StartAttempt(ctx, provider.AttemptRequest{
 			AttemptID: attempt.AttemptID, RunID: attempt.RunID, NodeID: attempt.NodeID,
 			IdempotencyKey: "start:" + attempt.AttemptID, Access: provider.AccessReadOnly,
 			Network: provider.NetworkDenied, CommandPolicy: provider.InteractionDeny,
 			FilePolicy: provider.InteractionDeny, ToolPolicy: provider.InteractionDeny,
-			Prompt: "Execute the deterministic M1 fake-provider scenario.",
+			Workspace: workspace, Prompt: "Execute the deterministic M1 fake-provider scenario.",
 		})
 	}
 	if err != nil {

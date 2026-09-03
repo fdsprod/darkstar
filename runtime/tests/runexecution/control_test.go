@@ -16,6 +16,7 @@ import (
 	. "darkstar/src/core/runexecution"
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports"
+	manifestport "darkstar/src/ports/contextmanifest"
 	"darkstar/src/ports/provider"
 	"darkstar/src/ports/statestore"
 )
@@ -89,6 +90,64 @@ func TestCancelTerminatesProviderAndClosesChildren(t *testing.T) {
 			t.Fatalf("Resume(cancelled) error = %v", err)
 		}
 	}
+}
+
+func TestAgentViewListsExecutionContextAndCancelsSelectedAttempt(t *testing.T) {
+	service, database, factory := newControlTestService(t, false)
+	if err := service.SetAgentWorkspace("C:/workspace"); err != nil {
+		t.Fatal(err)
+	}
+	view, err := service.Start(context.Background(), StartRequest{Scenario: ScenarioRestart}, "start-agent-view")
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := waitForControlRun(t, service, view.Run.RunID, func(value View) bool {
+		return value.Run.Status == statestore.RunRunning && value.Attempts[0].LastSequence == 1
+	})
+	list, err := service.ListAgents(context.Background())
+	if err != nil || len(list.Items) != 1 {
+		t.Fatalf("ListAgents() = %#v, %v", list, err)
+	}
+	agent := list.Items[0]
+	if agent.AttemptID != running.Attempts[0].AttemptID || agent.Provider != "fake" || agent.Execution.Workspace.ID != "C:/workspace" ||
+		agent.Execution.Workspace.Access != "read_only" || !containsString(agent.Execution.Permissions, "network:denied") {
+		t.Fatalf("agent view = %#v", agent)
+	}
+	manifest := manifestport.Manifest{
+		ManifestID: "manifest_agent_view", RunID: agent.RunID, NodeID: agent.NodeID, AttemptID: agent.AttemptID,
+		PolicyVersion: "context/v1", Permissions: []string{"repository.write"},
+		Workspace: manifestport.Workspace{ID: "workspace/frozen", Digest: strings.Repeat("a", 64), Access: manifestport.WorkspaceWrite},
+		Digest:    strings.Repeat("b", 64), FrozenAt: time.Now().UTC(),
+	}
+	if _, _, err := database.StoreManifest(context.Background(), manifest, "manifest-agent-view"); err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := service.Agent(context.Background(), agent.AttemptID)
+	if err != nil || frozen.Execution.Source != "context_manifest" || frozen.Execution.Workspace.ID != "workspace/frozen" ||
+		!containsString(frozen.Execution.Permissions, "repository.write") {
+		t.Fatalf("Agent(frozen context) = %#v, %v", frozen, err)
+	}
+	cancelled, err := service.CancelAgent(context.Background(), agent.AttemptID, "cancel-agent-view")
+	if err != nil || cancelled.Status != statestore.AttemptCancelled || factory.callCount(fake.CallCancel) != 1 {
+		t.Fatalf("CancelAgent() = %#v, %v; cancel calls=%d", cancelled, err, factory.callCount(fake.CallCancel))
+	}
+	replayed, err := service.CancelAgent(context.Background(), agent.AttemptID, "cancel-agent-view")
+	if err != nil || replayed.Status != statestore.AttemptCancelled {
+		t.Fatalf("CancelAgent(replay) = %#v, %v", replayed, err)
+	}
+	after, err := service.ListAgents(context.Background())
+	if err != nil || len(after.Items) != 0 {
+		t.Fatalf("ListAgents(after cancel) = %#v, %v", after, err)
+	}
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStartupLeavesExplicitlyPausedRunQuiescent(t *testing.T) {

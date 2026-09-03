@@ -138,6 +138,17 @@ type Session struct {
 	recovery localapi.RecoveryStatus
 }
 
+// LogChunk is one bounded append-only log read. Complete describes the
+// response snapshot; a following client must still inspect attempt state before
+// deciding that no more bytes can arrive.
+type LogChunk struct {
+	Offset     int64
+	NextOffset int64
+	Size       int64
+	Complete   bool
+	Content    []byte
+}
+
 // Version returns the negotiated API representation version.
 func (session *Session) Version() localapi.Version { return session.version }
 
@@ -319,6 +330,59 @@ func (session *Session) Download(ctx context.Context, resource string) ([]byte, 
 		return nil, &Failure{Kind: FailureProtocol, Op: "validate daemon API response", Err: fmt.Errorf("unexpected Content-Type %q", contentType)}
 	}
 	return content, nil
+}
+
+// ReadLog reads one authenticated bounded chunk from an attempt-log resource.
+func (session *Session) ReadLog(ctx context.Context, resource string, after int64, limit int) (LogChunk, error) {
+	if after < 0 || limit < 1 || limit > 1<<20 {
+		return LogChunk{}, &Failure{Kind: FailureProtocol, Op: "read attempt log", Err: errors.New("invalid log range")}
+	}
+	resourceURL, err := session.resourceURL(resource)
+	if err != nil {
+		return LogChunk{}, &Failure{Kind: FailureProtocol, Op: "build attempt log request", Err: err}
+	}
+	parsed, err := url.Parse(resourceURL)
+	if err != nil {
+		return LogChunk{}, &Failure{Kind: FailureProtocol, Op: "build attempt log request", Err: err}
+	}
+	query := parsed.Query()
+	query.Set("after", strconv.FormatInt(after, 10))
+	query.Set("limit", strconv.Itoa(limit))
+	parsed.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return LogChunk{}, &Failure{Kind: FailureProtocol, Op: "build attempt log request", Err: err}
+	}
+	request.Header.Set("Authorization", session.endpoint.AuthorizationHeader())
+	request.Header.Set("Accept", "application/octet-stream")
+	response, err := session.client.http.Do(request)
+	if err != nil {
+		return LogChunk{}, &Failure{Kind: FailureUnavailable, Op: "read attempt log", Err: err}
+	}
+	defer func() { _ = response.Body.Close() }()
+	content, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
+	if err != nil {
+		return LogChunk{}, &Failure{Kind: FailureProtocol, Op: "read attempt log", Err: err}
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		var problem APIError
+		if json.Unmarshal(content, &problem) == nil && problem.SchemaVersion == 1 && problem.Code != "" && problem.Message != "" {
+			problem.HTTPStatus = response.StatusCode
+			return LogChunk{}, &problem
+		}
+		return LogChunk{}, &Failure{Kind: FailureProtocol, Op: "read attempt log", Err: fmt.Errorf("HTTP %d returned an invalid error envelope", response.StatusCode)}
+	}
+	if len(content) > limit || !strings.HasPrefix(response.Header.Get("Content-Type"), "application/octet-stream") {
+		return LogChunk{}, &Failure{Kind: FailureProtocol, Op: "validate attempt log", Err: errors.New("invalid log response")}
+	}
+	offset, offsetErr := strconv.ParseInt(response.Header.Get("X-Darkstar-Log-Offset"), 10, 64)
+	next, nextErr := strconv.ParseInt(response.Header.Get("X-Darkstar-Log-Next-Offset"), 10, 64)
+	size, sizeErr := strconv.ParseInt(response.Header.Get("X-Darkstar-Log-Size"), 10, 64)
+	complete, completeErr := strconv.ParseBool(response.Header.Get("X-Darkstar-Log-Complete"))
+	if offsetErr != nil || nextErr != nil || sizeErr != nil || completeErr != nil || offset != after || next != offset+int64(len(content)) || size < next || complete != (next == size) {
+		return LogChunk{}, &Failure{Kind: FailureProtocol, Op: "validate attempt log", Err: errors.New("contradictory log cursor headers")}
+	}
+	return LogChunk{Offset: offset, NextOffset: next, Size: size, Complete: complete, Content: content}, nil
 }
 
 // StreamEvents replays the authenticated SSE event stream after one durable

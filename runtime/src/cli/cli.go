@@ -48,6 +48,7 @@ Usage:
   darkstar [command] [--json]
 
 Commands:
+  agent      Inspect and control queued or running agents
   api        Inspect the autostarted local API
   artifact   Ingest, bind, inspect, derive, lint, and revise artifacts
   daemon     Run and control the per-user daemon
@@ -85,6 +86,12 @@ Run commands:
   run continue <run-id> --until <node> [--idempotency-key <key>] [--json]
   run cancel <run-id> [--idempotency-key <key>] [--json]
   run export <run-id> --output <file> [--json]
+
+Agent commands:
+  agent list [--json]
+  agent status [<attempt-id>] [--json]
+  agent logs <attempt-id> [--follow] [--json]
+  agent cancel <attempt-id> [--idempotency-key <key>] [--json]
 
 Artifact commands:
   artifact ingest (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--role <role>] [--json]
@@ -168,6 +175,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runDaemon(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "api":
 		return runAPI(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "agent":
+		return runAgent(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "artifact":
 		return runArtifact(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "doctor":
@@ -347,6 +356,12 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
+	if err := executions.SetAgentWorkspace(service.projectRoot); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
 	if err := executions.SetWorkflowPlanner(workflowCatalog); err != nil {
 		_ = executions.Close()
 		_ = database.Close()
@@ -362,6 +377,13 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return fmt.Errorf("resume active runs: %w", err)
 	}
 	if err := service.server.SetRuns(executions); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		service.executions = nil
+		return err
+	}
+	if err := service.server.SetAgents(executions); err != nil {
 		_ = executions.Close()
 		_ = database.Close()
 		service.database = nil
