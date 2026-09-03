@@ -75,6 +75,7 @@ func TestShippedWorkflowsDecodeIntoClosedNodeVariants(t *testing.T) {
 		workflow.NodeCommand,
 		workflow.NodeApproval,
 		workflow.NodeSubworkflow,
+		workflow.NodePointExecution,
 	} {
 		if !found[nodeType] {
 			t.Errorf("shipped examples do not cover %q", nodeType)
@@ -97,6 +98,7 @@ func TestPublishedEnumsMatchTypedContract(t *testing.T) {
 	assertStringSet(t, schemaEnum(t, schema, "$defs", "node", "properties", "type", "enum"), []string{
 		string(workflow.NodeReasoning), string(workflow.NodeGate), string(workflow.NodeCommand),
 		string(workflow.NodeApproval), string(workflow.NodeSubworkflow),
+		string(workflow.NodePointExecution),
 	})
 	assertStringSet(t, schemaEnum(t, schema, "$defs", "valueType", "enum"), []string{
 		string(workflow.ValueNull), string(workflow.ValueBoolean), string(workflow.ValueInteger),
@@ -114,6 +116,15 @@ func TestPublishedEnumsMatchTypedContract(t *testing.T) {
 	assertStringSet(t, schemaEnum(t, schema, "$defs", "readiness", "properties", "remedies", "items", "properties", "action", "enum"), []string{
 		string(workflow.ReadinessSupplyInput), string(workflow.ReadinessReviseArtifact), string(workflow.ReadinessClarifyDecision),
 		string(workflow.ReadinessInstallCapability), string(workflow.ReadinessRerunValidation),
+	})
+	assertStringSet(t, schemaEnum(t, schema, "$defs", "pointExecutionExecutor", "properties", "approval", "enum"), []string{
+		string(workflow.PointApprovalNone), string(workflow.PointApprovalEvery), string(workflow.PointApprovalRisk), string(workflow.PointApprovalCombined),
+	})
+	assertStringSet(t, schemaEnum(t, schema, "$defs", "pointExecutionExecutor", "properties", "validation", "enum"), []string{
+		string(workflow.PointValidationEach), string(workflow.PointValidationCombined), string(workflow.PointValidationEachAndCombined),
+	})
+	assertStringSet(t, schemaEnum(t, schema, "$defs", "pointExecutionExecutor", "properties", "publishing", "enum"), []string{
+		string(workflow.PointPublishingAfterStory), string(workflow.PointPublishingAfterEach),
 	})
 }
 
@@ -202,6 +213,20 @@ func TestPostPRNodesUseStructuredExternalEvidence(t *testing.T) {
 		if !foundValidator {
 			t.Errorf("%s has no matching evidence schema validator", nodeID)
 		}
+	}
+}
+
+func TestStoryWorkflowUsesTypedPointExecution(t *testing.T) {
+	t.Parallel()
+
+	document := decodeExample(t, "story-execution.json")
+	node, ok := document.Spec.Nodes["s5_implementation"].(workflow.PointExecutionNode)
+	if !ok {
+		t.Fatalf("s5_implementation has type %T", document.Spec.Nodes["s5_implementation"])
+	}
+	if node.Executor.PlanInput != "implementation_plan" || node.Executor.Approval != workflow.PointApprovalNone ||
+		node.Executor.Validation != workflow.PointValidationEachAndCombined || node.Executor.Publishing != workflow.PointPublishingAfterStory {
+		t.Fatalf("point execution policy = %#v", node.Executor)
 	}
 }
 
@@ -341,6 +366,10 @@ func assertConcreteNodeType(t *testing.T, id workflow.Identifier, node workflow.
 	case workflow.NodeSubworkflow:
 		if _, ok := node.(workflow.SubworkflowNode); !ok {
 			t.Errorf("node %s discriminator subworkflow has concrete type %T", id, node)
+		}
+	case workflow.NodePointExecution:
+		if _, ok := node.(workflow.PointExecutionNode); !ok {
+			t.Errorf("node %s discriminator point_execution has concrete type %T", id, node)
 		}
 	default:
 		t.Errorf("node %s has unsupported type %q", id, node.Type())

@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/software-delivery",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "displayName": "DARKSTAR default software delivery workflow"
   },
   "spec": {
@@ -248,7 +248,7 @@
         "terminal": false,
         "join": {"mode": "one", "from": ["p10_to_p11", "p12_repair_story"]},
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "story": {"from": "node.p9_decomposition.output.story_set", "pointer": "/0", "type": "object"},
           "repository": {"from": "run.input.repository", "type": "string"},
           "needs_clarification": {"from": "run.input.needs_clarification", "type": "boolean"},
           "needs_research": {"from": "run.input.needs_story_research", "type": "boolean"},
@@ -257,11 +257,11 @@
         "outputs": {"story_validation": {"type": "object"}},
         "readiness": {"recommendedEvidence": [{"role": "ready_story", "description": "A dependency-ready story with accepted context and repository access."}], "policyGates": [{"policy": "story_readiness", "enforcement": "blocking", "description": "The child workflow applies its own story readiness and approval boundaries."}], "invariants": ["Each story executes against its pinned child workflow version."], "remedies": [{"code": "story_execution_blocked", "target": "p10_delivery_readiness", "action": "revise_artifact", "description": "Resolve the story dependency or readiness finding before scheduling it."}]},
         "call": {
-          "workflow": {"name": "darkstar/story-execution", "version": "1.2.0", "path": "story-execution.json"},
+          "workflow": {"name": "darkstar/story-execution", "version": "1.3.0", "path": "story-execution.json"},
           "entry": "s0_readiness",
           "terminals": ["s6_validation"],
           "inputs": {
-            "work_item": "work_item",
+            "story": "story",
             "repository": "repository",
             "needs_clarification": "needs_clarification",
             "needs_research": "needs_research",

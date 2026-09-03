@@ -3,12 +3,12 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/story-execution",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "displayName": "Default story execution sub-workflow"
   },
   "spec": {
     "inputs": {
-      "work_item": {"type": "object"},
+      "story": {"type": "object"},
       "repository": {"type": "string"},
       "needs_clarification": {"type": "boolean"},
       "needs_research": {"type": "boolean"},
@@ -25,7 +25,7 @@
         "entry": true,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "story": {"from": "run.input.story", "type": "object"},
           "repository": {"from": "run.input.repository", "type": "string"}
         },
         "outputs": {"readiness": {"type": "object"}},
@@ -79,7 +79,7 @@
         "type": "approval",
         "entry": true,
         "terminal": true,
-        "inputs": {"work_item": {"from": "run.input.work_item", "type": "object"}},
+        "inputs": {"story": {"from": "run.input.story", "type": "object"}},
         "outputs": {"answers": {"type": "object"}},
         "readiness": {"recommendedEvidence": [{"role": "blocking_questions", "description": "Only questions whose answers can change scope, design, permissions, or acceptance."}], "policyGates": [{"policy": "owner_clarification", "enforcement": "blocking", "description": "The configured owner supplies load-bearing answers."}], "invariants": ["The workflow never invents an answer to continue execution."], "remedies": [{"code": "clarification_unresolved", "target": "s0_readiness", "action": "clarify_decision", "description": "Refine the blocking question and route it to the responsible owner."}]},
         "approval": {"actor": "work-item-owner"},
@@ -120,7 +120,7 @@
         "terminal": true,
         "join": {"mode": "one", "from": ["s0_to_s2", "s1_to_s2"]},
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "story": {"from": "run.input.story", "type": "object"},
           "repository": {"from": "run.input.repository", "type": "string"},
           "answers": {"from": "node.s1_clarification.output.answers", "type": "object", "required": false}
         },
@@ -149,7 +149,7 @@
         "terminal": true,
         "join": {"mode": "one", "from": ["s0_to_s3", "s1_to_s3", "s2_to_s3"]},
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "story": {"from": "run.input.story", "type": "object"},
           "repository": {"from": "run.input.repository", "type": "string"},
           "research": {"from": "node.s2_research.output.research", "type": "object", "required": false}
         },
@@ -167,7 +167,7 @@
         "terminal": true,
         "join": {"mode": "one", "from": ["s0_to_s4", "s1_to_s4", "s2_to_s4", "s3_to_s4"]},
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "story": {"from": "run.input.story", "type": "object"},
           "repository": {"from": "run.input.repository", "type": "string"},
           "design": {"from": "node.s3_design.output.design", "type": "object", "required": false}
         },
@@ -180,12 +180,12 @@
       },
       "s5_implementation": {
         "displayName": "S5 — Implementation-point loop",
-        "type": "reasoning",
+        "type": "point_execution",
         "entry": true,
         "terminal": false,
         "join": {"mode": "one", "from": ["s4_to_s5", "s5_more_points"]},
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "story": {"from": "run.input.story", "type": "object"},
           "repository": {"from": "run.input.repository", "type": "string"},
           "implementation_plan": {"from": "node.s4_plan.output.implementation_plan", "type": "object", "required": false},
           "prior_changeset": {"from": "node.s5_implementation.output.changeset", "type": "object", "required": false}
@@ -195,7 +195,7 @@
           "progress": {"type": "object"}
         },
         "readiness": {"recommendedEvidence": [{"role": "approved_implementation_plan", "description": "The approved point, clean baseline, required capabilities, and validation commands."}], "policyGates": [{"policy": "implementation_point", "enforcement": "blocking", "description": "Repository write authority and point preconditions must be satisfied."}], "invariants": ["Only the active point changes; validation precedes its atomic commit."], "remedies": [{"code": "implementation_point_failed", "target": "s4_plan", "action": "revise_artifact", "description": "Revise the affected point when its scope or validation plan is unsound."}]},
-        "reasoning": {"agent": "implementer", "tools": ["darkstar:repository-write", "darkstar:validation"]},
+        "points": {"planInput": "implementation_plan", "approval": "none", "riskTags": [], "validation": "each_and_combined", "publishing": "after_story_validation"},
         "permissions": ["workspace.write", "process.run"],
         "transitions": [{"id": "s5_to_progress_gate", "to": "s5_progress_gate"}]
       },
@@ -240,7 +240,7 @@
         "entry": true,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
+          "story": {"from": "run.input.story", "type": "object"},
           "repository": {"from": "run.input.repository", "type": "string"},
           "changeset": {"from": "node.s5_implementation.output.changeset", "type": "object", "required": false}
         },

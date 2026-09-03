@@ -193,10 +193,27 @@ func (state *validationState) validateNodes(nodeIDs []Identifier) {
 		state.validateBindings(nodeID, fields)
 		state.validateReadiness(nodeID, fields)
 		state.validateApproval(nodeID, node, fields)
+		state.validatePointExecution(nodeID, node, fields)
 		state.validateValidators(nodeID, fields)
 		state.validatePredicates(nodeID, node, fields)
 		state.validateSubworkflow(nodeID, node, fields)
 		state.validateCapabilities(nodeID, node)
+	}
+}
+
+func (state *validationState) validatePointExecution(nodeID Identifier, node Node, fields NodeFields) {
+	pointNode, ok := node.(PointExecutionNode)
+	if !ok {
+		return
+	}
+	location := fmt.Sprintf("/spec/nodes/%s/points/planInput", nodeID)
+	binding, exists := fields.Inputs[pointNode.Executor.PlanInput]
+	if !exists {
+		state.add(ValidationReferenceMissing, fmt.Sprintf("point executor references unknown input %q", pointNode.Executor.PlanInput), location, nil)
+		return
+	}
+	if binding.ValueType() != ValueObject {
+		state.add(ValidationBindingIncompatible, fmt.Sprintf("point execution plan input %q must be an object", pointNode.Executor.PlanInput), location, nil)
 	}
 }
 

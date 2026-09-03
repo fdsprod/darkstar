@@ -9,8 +9,8 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const ID_RE = /^[a-z][a-z0-9_]{0,63}$/;
-const NODE_TYPES = new Set(["reasoning", "gate", "command", "approval", "subworkflow"]);
-const EXECUTOR_FIELDS = Object.freeze(["reasoning", "gate", "command", "approval", "call"]);
+const NODE_TYPES = new Set(["reasoning", "gate", "command", "approval", "subworkflow", "point_execution"]);
+const EXECUTOR_FIELDS = Object.freeze(["reasoning", "gate", "command", "approval", "call", "points"]);
 const VALUE_TYPES = new Set(["null", "boolean", "integer", "number", "string", "array", "object"]);
 const MISSING = Symbol("missing");
 
@@ -238,7 +238,7 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
       errors.push(fail("WF_SCHEMA_INVALID", `invalid node '${nodeId}'`, location));
       continue;
     }
-    const requiredExecutor = { reasoning: "reasoning", gate: "gate", command: "command", approval: "approval", subworkflow: "call" }[node.type];
+    const requiredExecutor = { reasoning: "reasoning", gate: "gate", command: "command", approval: "approval", subworkflow: "call", point_execution: "points" }[node.type];
     if (!NODE_TYPES.has(node.type)) errors.push(fail("WF_SCHEMA_INVALID", `invalid node type '${node.type}'`, `${location}/type`));
     else {
       const declaredExecutors = EXECUTOR_FIELDS.filter((field) => Object.hasOwn(node, field));
@@ -329,6 +329,18 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
         if (!declaration) errors.push(fail("WF_REFERENCE_MISSING", `external evidence references unknown output '${node.approval.evidenceOutput}'`, `${location}/approval/evidenceOutput`));
         else if (declaration.type !== "object" || typeof declaration.schema !== "string") errors.push(fail("WF_BINDING_INCOMPATIBLE", "external evidence output must be an object with a schema", `${location}/approval/evidenceOutput`));
       }
+    }
+    if (node.type === "point_execution" && node.points && typeof node.points === "object") {
+      const plan = node.inputs?.[node.points.planInput];
+      if (!plan) errors.push(fail("WF_REFERENCE_MISSING", `point executor references unknown input '${node.points.planInput}'`, `${location}/points/planInput`));
+      else if (plan.type !== "object") errors.push(fail("WF_BINDING_INCOMPATIBLE", "point execution plan input must be an object", `${location}/points/planInput`));
+      const approval = node.points.approval;
+      const riskTags = node.points.riskTags;
+      if (!["none", "every", "risk", "combined"].includes(approval) || !Array.isArray(riskTags) || (approval === "risk") !== (riskTags.length > 0)) {
+        errors.push(fail("WF_SCHEMA_INVALID", "point approval and risk tags do not form a valid policy", `${location}/points`));
+      }
+      if (!["each", "combined", "each_and_combined"].includes(node.points.validation)) errors.push(fail("WF_SCHEMA_INVALID", "invalid point validation policy", `${location}/points/validation`));
+      if (!["after_story_validation", "after_each_point"].includes(node.points.publishing)) errors.push(fail("WF_SCHEMA_INVALID", "invalid point publishing policy", `${location}/points/publishing`));
     }
     if (node.checkpoint && typeof node.checkpoint === "object") {
       const allowedFields = {

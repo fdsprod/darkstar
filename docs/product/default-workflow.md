@@ -387,7 +387,7 @@ Tracer bullets are the default decomposition skill for cross-layer work. TDD may
 
 ### S5 — Implementation-point loop
 
-For each ready point, DARKSTAR invokes the configured implementer with the accepted inputs, scoped permissions, current worktree, and point completion contract. After deterministic validation, it records the diff and evidence and creates an atomic commit when configured.
+For each ready point, DARKSTAR invokes the typed point executor with the accepted story, approved implementation plan, scoped permissions, current worktree, and point completion contract. The same explicit story contract is supplied when the workflow runs independently or is called from an initiative. After deterministic validation, it records the diff and evidence and creates an atomic commit when configured.
 
 **Default checkpoint:** No pause between points. Configurable to approve every point, approve selected risk-tagged points, or approve only the combined story result.
 

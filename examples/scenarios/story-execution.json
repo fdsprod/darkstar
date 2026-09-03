@@ -1,6 +1,6 @@
 {
   "runInputs": {
-    "work_item": {"title": "Implement tenant-aware rate limits"},
+    "story": {"id": "story-1", "title": "Implement tenant-aware rate limits", "acceptanceCriteria": ["Limits are tenant-aware"]},
     "repository": "C:/work/example",
     "needs_clarification": true,
     "needs_research": true,

@@ -258,6 +258,7 @@ func decodeNode(data []byte) (Node, error) {
 		Command        json.RawMessage   `json:"command"`
 		Approval       json.RawMessage   `json:"approval"`
 		Call           json.RawMessage   `json:"call"`
+		Points         json.RawMessage   `json:"points"`
 		Validators     []json.RawMessage `json:"validators"`
 		Retry          json.RawMessage   `json:"retry"`
 		Checkpoint     json.RawMessage   `json:"checkpoint"`
@@ -332,7 +333,7 @@ func decodeNode(data []byte) (Node, error) {
 
 	executors := map[NodeType]json.RawMessage{
 		NodeReasoning: wire.Reasoning, NodeGate: wire.Gate, NodeCommand: wire.Command,
-		NodeApproval: wire.Approval, NodeSubworkflow: wire.Call,
+		NodeApproval: wire.Approval, NodeSubworkflow: wire.Call, NodePointExecution: wire.Points,
 	}
 	for kind, raw := range executors {
 		if kind != wire.Type && len(raw) != 0 {
@@ -374,6 +375,12 @@ func decodeNode(data []byte) (Node, error) {
 			return nil, fmt.Errorf("call: %w", err)
 		}
 		return SubworkflowNode{Common: common, Call: call}, nil
+	case NodePointExecution:
+		executor, err := decodePointExecution(wire.Points)
+		if err != nil {
+			return nil, fmt.Errorf("points: %w", err)
+		}
+		return PointExecutionNode{Common: common, Executor: executor}, nil
 	default:
 		panic("node type validated above")
 	}
@@ -488,6 +495,47 @@ func decodeCommand(data []byte) (CommandExecutor, error) {
 	}
 	if executor.TimeoutSeconds != nil && *executor.TimeoutSeconds == 0 {
 		return CommandExecutor{}, errors.New("timeoutSeconds must be positive")
+	}
+	return executor, nil
+}
+
+func decodePointExecution(data []byte) (PointExecutionExecutor, error) {
+	var executor PointExecutionExecutor
+	if err := strictDecode(data, &executor); err != nil {
+		return PointExecutionExecutor{}, err
+	}
+	if err := validateIdentifier(executor.PlanInput); err != nil {
+		return PointExecutionExecutor{}, fmt.Errorf("planInput: %w", err)
+	}
+	switch executor.Approval {
+	case PointApprovalNone, PointApprovalEvery, PointApprovalCombined:
+		if len(executor.RiskTags) != 0 {
+			return PointExecutionExecutor{}, errors.New("riskTags are valid only for risk approval")
+		}
+	case PointApprovalRisk:
+		if len(executor.RiskTags) == 0 {
+			return PointExecutionExecutor{}, errors.New("risk approval requires riskTags")
+		}
+	default:
+		return PointExecutionExecutor{}, fmt.Errorf("unsupported approval mode %q", executor.Approval)
+	}
+	for _, tag := range executor.RiskTags {
+		if strings.TrimSpace(tag) == "" || strings.TrimSpace(tag) != tag {
+			return PointExecutionExecutor{}, errors.New("riskTags must contain trimmed non-empty values")
+		}
+	}
+	if err := validateUniqueStrings(executor.RiskTags); err != nil {
+		return PointExecutionExecutor{}, fmt.Errorf("riskTags: %w", err)
+	}
+	switch executor.Validation {
+	case PointValidationEach, PointValidationCombined, PointValidationEachAndCombined:
+	default:
+		return PointExecutionExecutor{}, fmt.Errorf("unsupported validation mode %q", executor.Validation)
+	}
+	switch executor.Publishing {
+	case PointPublishingAfterStory, PointPublishingAfterEach:
+	default:
+		return PointExecutionExecutor{}, fmt.Errorf("unsupported publishing mode %q", executor.Publishing)
 	}
 	return executor, nil
 }
@@ -1000,7 +1048,7 @@ func validateValueType(value ValueType) error {
 
 func validNodeType(value NodeType) bool {
 	switch value {
-	case NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow:
+	case NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution:
 		return true
 	default:
 		return false
@@ -1128,6 +1176,9 @@ func (node CommandNode) MarshalJSON() ([]byte, error) {
 }
 func (node SubworkflowNode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nodeObject(node.Common, node.Type(), "call", node.Call))
+}
+func (node PointExecutionNode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(nodeObject(node.Common, node.Type(), "points", node.Executor))
 }
 
 func (node GateNode) MarshalJSON() ([]byte, error) {

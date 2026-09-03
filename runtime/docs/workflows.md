@@ -102,6 +102,13 @@ type-compatible child outputs to the parent candidate. Parent, child, and siblin
 frames never share transition tokens or traversal counters, so reusable story and
 repair workflows have isolated iteration state.
 
+The built-in story workflow receives one explicit story whether it is called by an
+initiative or started independently. Its `point_execution` node is a distinct
+executor variant bound to the typed implementation-plan input; approval, validation,
+and publishing policies are closed enums and cannot be replaced by reasoning output.
+The shipped policy validates each point and the combined story, keeps commits local
+until story validation, and bounds the authored point loop.
+
 ## Route-patch proposal and authorization
 
 The production route-patch core accepts the existing `RoutePatch` v1alpha1 wire

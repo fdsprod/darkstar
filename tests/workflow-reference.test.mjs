@@ -60,6 +60,10 @@ test("invalid workflow state combinations are rejected", () => {
   const downstreamRemedy = loadJson(workflowPath("software-delivery.json"));
   downstreamRemedy.spec.nodes.p8_technical_design.readiness.remedies[0].target = "p9_decomposition";
   assert.ok(validateWorkflow(downstreamRemedy, path).some((error) => error.code === "WF_READINESS_INVALID"));
+
+  const invalidPointPolicy = loadJson(workflowPath("story-execution.json"));
+  invalidPointPolicy.spec.nodes.s5_implementation.points.riskTags = ["security"];
+  assert.ok(validateWorkflow(invalidPointPolicy, path).some((error) => error.code === "WF_SCHEMA_INVALID"));
 });
 
 test("MVP checkpoint revisions preserve the final approved candidate", () => {
@@ -123,6 +127,14 @@ test("selected middle terminal suppresses its authored outgoing transition", () 
 });
 
 test("story alternative joins and bounded implementation loop are deterministic", () => {
+  const workflow = loadJson(workflowPath("story-execution.json"));
+  assert.deepEqual(workflow.spec.nodes.s5_implementation.points, {
+    planInput: "implementation_plan",
+    approval: "none",
+    riskTags: [],
+    validation: "each_and_combined",
+    publishing: "after_story_validation",
+  });
   const result = runExample("story-execution.json", "story-execution.json");
   assert.equal(result.visits.s5_implementation, 2);
   assert.equal(result.loopTraversals.s5_more_points, 1);
@@ -224,7 +236,7 @@ test("true bounded transition fails visibly when its budget is exhausted", () =>
   const path = workflowPath("story-execution.json");
   const document = loadJson(path);
   const fixture = {
-    runInputs: { work_item: {}, repository: "C:/work/example" },
+    runInputs: { story: {}, repository: "C:/work/example" },
     results: {
       s5_implementation: Array.from({ length: 22 }, (_, index) => ({
         changeset: { point: index + 1 },

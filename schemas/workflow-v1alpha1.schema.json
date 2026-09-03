@@ -232,6 +232,25 @@
         "timeoutSeconds": {"type": "integer", "minimum": 1}
       }
     },
+    "pointExecutionExecutor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planInput", "approval", "riskTags", "validation", "publishing"],
+      "properties": {
+        "planInput": {"$ref": "#/$defs/identifier"},
+        "approval": {"enum": ["none", "every", "risk", "combined"]},
+        "riskTags": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "validation": {"enum": ["each", "combined", "each_and_combined"]},
+        "publishing": {"enum": ["after_story_validation", "after_each_point"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"approval": {"const": "risk"}}, "required": ["approval"]},
+          "then": {"properties": {"riskTags": {"minItems": 1}}},
+          "else": {"properties": {"riskTags": {"maxItems": 0}}}
+        }
+      ]
+    },
     "approvalExecutor": {
       "type": "object",
       "additionalProperties": false,
@@ -345,7 +364,7 @@
       "required": ["type", "entry", "terminal", "inputs", "outputs"],
       "properties": {
         "displayName": {"type": "string", "minLength": 1},
-        "type": {"enum": ["reasoning", "gate", "command", "approval", "subworkflow"]},
+        "type": {"enum": ["reasoning", "gate", "command", "approval", "subworkflow", "point_execution"]},
         "entry": {"type": "boolean"},
         "terminal": {"type": "boolean"},
         "inputs": {
@@ -364,6 +383,7 @@
         "command": {"$ref": "#/$defs/commandExecutor"},
         "approval": {"$ref": "#/$defs/approvalExecutor"},
         "call": {"$ref": "#/$defs/subworkflowCall"},
+        "points": {"$ref": "#/$defs/pointExecutionExecutor"},
         "validators": {
           "type": "array",
           "items": {
@@ -404,7 +424,7 @@
             "reasoning": {"$ref": "#/$defs/reasoningExecutor"}
           },
           "required": ["reasoning"],
-          "not": {"anyOf": [{"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}]}
+          "not": {"anyOf": [{"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["points"]}]}
         },
         {
           "properties": {
@@ -412,7 +432,7 @@
             "gate": {"$ref": "#/$defs/gateExecutor"}
           },
           "required": ["gate"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}]}
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["points"]}]}
         },
         {
           "properties": {
@@ -420,7 +440,7 @@
             "command": {"$ref": "#/$defs/commandExecutor"}
           },
           "required": ["command"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["approval"]}, {"required": ["call"]}]}
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["points"]}]}
         },
         {
           "properties": {
@@ -428,7 +448,7 @@
             "approval": {"$ref": "#/$defs/approvalExecutor"}
           },
           "required": ["approval"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["call"]}]}
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["call"]}, {"required": ["points"]}]}
         },
         {
           "properties": {
@@ -436,7 +456,15 @@
             "call": {"$ref": "#/$defs/subworkflowCall"}
           },
           "required": ["call"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}]}
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["points"]}]}
+        },
+        {
+          "properties": {
+            "type": {"const": "point_execution"},
+            "points": {"$ref": "#/$defs/pointExecutionExecutor"}
+          },
+          "required": ["points"],
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}]}
         }
       ]
     },

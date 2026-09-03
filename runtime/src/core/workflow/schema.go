@@ -67,11 +67,12 @@ type OutputDeclaration struct {
 type NodeType string
 
 const (
-	NodeReasoning   NodeType = "reasoning"
-	NodeGate        NodeType = "gate"
-	NodeCommand     NodeType = "command"
-	NodeApproval    NodeType = "approval"
-	NodeSubworkflow NodeType = "subworkflow"
+	NodeReasoning      NodeType = "reasoning"
+	NodeGate           NodeType = "gate"
+	NodeCommand        NodeType = "command"
+	NodeApproval       NodeType = "approval"
+	NodeSubworkflow    NodeType = "subworkflow"
+	NodePointExecution NodeType = "point_execution"
 )
 
 // Node is a closed executor union. Each concrete node carries exactly one
@@ -188,6 +189,49 @@ type SubworkflowNode struct {
 func (SubworkflowNode) Type() NodeType       { return NodeSubworkflow }
 func (n SubworkflowNode) Fields() NodeFields { return n.Common }
 func (SubworkflowNode) isNode()              {}
+
+// PointExecutionNode delegates one visit to the typed implementation-point
+// executor. Its policy is workflow data rather than provider reasoning output.
+type PointExecutionNode struct {
+	Common   NodeFields
+	Executor PointExecutionExecutor
+}
+
+func (PointExecutionNode) Type() NodeType       { return NodePointExecution }
+func (n PointExecutionNode) Fields() NodeFields { return n.Common }
+func (PointExecutionNode) isNode()              {}
+
+type PointApprovalMode string
+
+const (
+	PointApprovalNone     PointApprovalMode = "none"
+	PointApprovalEvery    PointApprovalMode = "every"
+	PointApprovalRisk     PointApprovalMode = "risk"
+	PointApprovalCombined PointApprovalMode = "combined"
+)
+
+type PointValidationMode string
+
+const (
+	PointValidationEach            PointValidationMode = "each"
+	PointValidationCombined        PointValidationMode = "combined"
+	PointValidationEachAndCombined PointValidationMode = "each_and_combined"
+)
+
+type PointPublishingMode string
+
+const (
+	PointPublishingAfterStory PointPublishingMode = "after_story_validation"
+	PointPublishingAfterEach  PointPublishingMode = "after_each_point"
+)
+
+type PointExecutionExecutor struct {
+	PlanInput  Identifier          `json:"planInput"`
+	Approval   PointApprovalMode   `json:"approval"`
+	RiskTags   []string            `json:"riskTags"`
+	Validation PointValidationMode `json:"validation"`
+	Publishing PointPublishingMode `json:"publishing"`
+}
 
 type ReasoningExecutor struct {
 	Agent  string   `json:"agent"`
