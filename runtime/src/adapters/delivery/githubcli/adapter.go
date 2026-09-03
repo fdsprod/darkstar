@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"darkstar/src/ports"
 	"darkstar/src/ports/delivery"
@@ -43,15 +44,19 @@ func (osCommandRunner) Run(ctx context.Context, executable string, arguments []s
 
 // Options supplies the pinned executable and testable process boundary.
 type Options struct {
-	Executable string
-	Runner     CommandRunner
+	Executable    string
+	GitExecutable string
+	Runner        CommandRunner
+	Now           func() time.Time
 }
 
 // Adapter owns GitHub-specific command construction and response translation.
 // Operation implementations are added behind the stable delivery capabilities.
 type Adapter struct {
-	executable string
-	runner     CommandRunner
+	executable    string
+	gitExecutable string
+	runner        CommandRunner
+	now           func() time.Time
 }
 
 var _ delivery.Connector = (*Adapter)(nil)
@@ -62,34 +67,19 @@ func New(options Options) (*Adapter, error) {
 	if runner == nil {
 		runner = osCommandRunner{}
 	}
-	target := strings.TrimSpace(options.Executable)
-	if target == "" {
-		target = "gh"
-	}
-	resolved, err := runner.LookPath(target)
+	github, err := resolveExecutable(runner, options.Executable, "gh", "GitHub CLI")
 	if err != nil {
-		return nil, failure(ports.FailureUnavailable, "GitHub CLI is not executable", true)
+		return nil, err
 	}
-	if strings.TrimSpace(resolved) == "" {
-		return nil, failure(ports.FailureUnavailable, "GitHub CLI is not executable", true)
-	}
-	resolved, err = filepath.Abs(resolved)
+	git, err := resolveExecutable(runner, options.GitExecutable, "git", "Git")
 	if err != nil {
-		return nil, failure(ports.FailureInvalidRequest, "GitHub CLI executable path is invalid", false)
+		return nil, err
 	}
-	return &Adapter{executable: filepath.Clean(resolved), runner: runner}, nil
-}
-
-func (adapter *Adapter) ProbeHealth(context.Context, delivery.HealthRequest) (delivery.HealthObservation, error) {
-	return delivery.HealthObservation{}, adapter.unsupported("GitHub health probing")
-}
-
-func (adapter *Adapter) ObserveBranch(context.Context, delivery.ObserveBranchRequest) (delivery.BranchObservation, error) {
-	return delivery.BranchObservation{}, adapter.unsupported("GitHub branch observation")
-}
-
-func (adapter *Adapter) PublishBranch(context.Context, delivery.PublishBranchRequest) (delivery.BranchPublication, error) {
-	return delivery.BranchPublication{}, adapter.unsupported("GitHub branch publication")
+	now := options.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &Adapter{executable: github, gitExecutable: git, runner: runner, now: now}, nil
 }
 
 func (adapter *Adapter) FindChangeRequests(context.Context, delivery.FindChangeRequestsRequest) (delivery.ChangeRequestSearch, error) {
@@ -116,26 +106,75 @@ func (adapter *Adapter) unsupported(operation string) error {
 }
 
 func (adapter *Adapter) run(ctx context.Context, arguments []string, input []byte) ([]byte, error) {
-	if adapter == nil || adapter.runner == nil || adapter.executable == "" {
+	if adapter == nil {
 		return nil, failure(ports.FailureInternal, "GitHub CLI adapter is not configured", false)
 	}
-	stdout, _, err := adapter.runner.Run(ctx, adapter.executable, append([]string(nil), arguments...), append([]byte(nil), input...))
-	if err == nil {
-		if len(stdout) > maxOutputBytes {
-			return nil, failure(ports.FailureResourceExhausted, "GitHub CLI output exceeded the adapter limit", false)
-		}
-		return append([]byte(nil), stdout...), nil
+	return adapter.runExecutable(ctx, adapter.executable, arguments, input)
+}
+
+func (adapter *Adapter) runGit(ctx context.Context, arguments []string) ([]byte, error) {
+	if adapter == nil {
+		return nil, failure(ports.FailureInternal, "GitHub CLI adapter is not configured", false)
+	}
+	return adapter.runExecutable(ctx, adapter.gitExecutable, arguments, nil)
+}
+
+type commandResult struct {
+	stdout []byte
+	stderr []byte
+	err    error
+}
+
+func (adapter *Adapter) execute(ctx context.Context, executable string, arguments []string, input []byte) commandResult {
+	if adapter == nil || adapter.runner == nil || strings.TrimSpace(executable) == "" {
+		return commandResult{err: failure(ports.FailureInternal, "GitHub CLI adapter is not configured", false)}
+	}
+	stdout, stderr, err := adapter.runner.Run(ctx, executable, append([]string(nil), arguments...), append([]byte(nil), input...))
+	if len(stdout)+len(stderr) > maxOutputBytes {
+		return commandResult{err: failure(ports.FailureResourceExhausted, "command output exceeded the adapter limit", false)}
+	}
+	return commandResult{stdout: append([]byte(nil), stdout...), stderr: append([]byte(nil), stderr...), err: err}
+}
+
+func (adapter *Adapter) runExecutable(ctx context.Context, executable string, arguments []string, input []byte) ([]byte, error) {
+	result := adapter.execute(ctx, executable, arguments, input)
+	if result.err == nil {
+		return result.stdout, nil
+	}
+	return nil, normalizeCommandFailure(ctx, result.err)
+}
+
+func normalizeCommandFailure(ctx context.Context, err error) error {
+	var classified *ports.Failure
+	if errors.As(err, &classified) {
+		return classified
 	}
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return nil, failure(ports.FailureTimeout, "GitHub CLI operation timed out", true)
+		return failure(ports.FailureTimeout, "GitHub CLI operation timed out", true)
 	case errors.Is(ctx.Err(), context.Canceled):
-		return nil, failure(ports.FailureCancelled, "GitHub CLI operation was cancelled", false)
+		return failure(ports.FailureCancelled, "GitHub CLI operation was cancelled", false)
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, os.ErrNotExist):
-		return nil, failure(ports.FailureUnavailable, "GitHub CLI is not executable", true)
+		return failure(ports.FailureUnavailable, "GitHub CLI is not executable", true)
 	default:
-		return nil, failure(ports.FailureUncertain, "GitHub CLI operation did not produce a proven result", false)
+		return failure(ports.FailureUncertain, "GitHub CLI operation did not produce a proven result", false)
 	}
+}
+
+func resolveExecutable(runner CommandRunner, configured, fallback, label string) (string, error) {
+	target := strings.TrimSpace(configured)
+	if target == "" {
+		target = fallback
+	}
+	resolved, err := runner.LookPath(target)
+	if err != nil || strings.TrimSpace(resolved) == "" {
+		return "", failure(ports.FailureUnavailable, label+" is not executable", true)
+	}
+	resolved, err = filepath.Abs(resolved)
+	if err != nil {
+		return "", failure(ports.FailureInvalidRequest, label+" executable path is invalid", false)
+	}
+	return filepath.Clean(resolved), nil
 }
 
 func failure(code ports.FailureCode, message string, retryable bool) *ports.Failure {

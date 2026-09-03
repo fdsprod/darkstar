@@ -15,6 +15,8 @@ import (
 	"darkstar/src/adapters/statestore/sqlite"
 	"darkstar/src/core/health"
 	"darkstar/src/daemon"
+	"darkstar/src/ports"
+	"darkstar/src/ports/delivery"
 	"darkstar/src/ports/platform"
 	"darkstar/src/ports/provider"
 )
@@ -46,13 +48,60 @@ func (runner fakeRunner) LookPaths(name string) ([]string, error) {
 }
 
 func (runner fakeRunner) Output(_ context.Context, name string, arguments ...string) ([]byte, error) {
-	if runner.failing[name] {
+	base := strings.TrimSuffix(strings.ToLower(filepath.Base(name)), ".exe")
+	if runner.failing[name] || runner.failing[base] {
 		return nil, errors.New("command failed")
 	}
-	if len(arguments) == 1 && arguments[0] == "--version" && strings.Contains(strings.ToLower(filepath.Base(name)), "codex") {
+	if len(arguments) == 1 && arguments[0] == "--version" && base == "codex" {
 		return []byte("codex-cli 0.151.0-alpha.7.2\n"), nil
 	}
+	if base == "git" && len(arguments) >= 5 && arguments[2] == "remote" && arguments[3] == "get-url" {
+		return []byte("git@github.com:darkstar/runtime.git\n"), nil
+	}
+	if base == "gh" && len(arguments) > 0 && arguments[0] == "auth" {
+		return []byte("ok\n"), nil
+	}
+	if base == "gh" && len(arguments) > 3 && arguments[0] == "api" && arguments[3] == "user" {
+		return []byte("octocat\n"), nil
+	}
+	if base == "gh" && len(arguments) > 3 && arguments[0] == "api" && strings.HasPrefix(arguments[3], "repos/") {
+		return []byte(`{"full_name":"darkstar/runtime","default_branch":"main","html_url":"https://github.com/darkstar/runtime","permissions":{"push":true}}`), nil
+	}
 	return []byte("ok\n"), nil
+}
+
+type recordedDoctorCommand struct {
+	executable string
+	arguments  []string
+}
+
+type githubHealthRunner struct {
+	root  string
+	calls []recordedDoctorCommand
+}
+
+func (runner *githubHealthRunner) LookPath(name string) (string, error) {
+	if filepath.IsAbs(name) {
+		return name, nil
+	}
+	return filepath.Join(runner.root, "tools", name+".exe"), nil
+}
+
+func (runner *githubHealthRunner) Output(_ context.Context, name string, arguments ...string) ([]byte, error) {
+	runner.calls = append(runner.calls, recordedDoctorCommand{executable: name, arguments: append([]string(nil), arguments...)})
+	base := strings.TrimSuffix(strings.ToLower(filepath.Base(name)), ".exe")
+	switch {
+	case base == "git" && len(arguments) == 5 && arguments[2] == "remote" && arguments[3] == "get-url" && arguments[4] == "upstream":
+		return []byte("git@github.com:acme/widget.git\n"), nil
+	case base == "gh" && len(arguments) > 0 && arguments[0] == "auth":
+		return []byte("ok\n"), nil
+	case base == "gh" && len(arguments) > 3 && arguments[0] == "api" && arguments[3] == "user":
+		return []byte("delivery-bot\n"), nil
+	case base == "gh" && len(arguments) > 3 && arguments[0] == "api" && arguments[3] == "repos/acme/widget":
+		return []byte(`{"full_name":"acme/widget","default_branch":"trunk","html_url":"https://github.com/acme/widget","permissions":{"push":true}}`), nil
+	default:
+		return nil, errors.New("unexpected command")
+	}
 }
 
 func TestReportReturnsCompleteHealthySnapshot(t *testing.T) {
@@ -121,6 +170,84 @@ func TestReportUsesActionableCodesWithoutFailingTheRequest(t *testing.T) {
 		if check.Code != wantCodes[check.Subsystem] || check.Action == "" {
 			t.Errorf("check = %#v, want code %s and an action", check, wantCodes[check.Subsystem])
 		}
+	}
+}
+
+func TestGitHubCheckResolvesConfiguredRemoteBaseAndPushWithoutMutation(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runner := &githubHealthRunner{root: root}
+	doctor := New(Options{ProjectRoot: root, GitHubRemote: "upstream", Runner: runner, Now: func() time.Time { return time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC) }})
+	check := doctor.githubCheck(context.Background(), root)
+	if check.Status != health.StatusHealthy || check.Code != "GITHUB_READY" {
+		t.Fatalf("check = %#v", check)
+	}
+	for _, fragment := range []string{"upstream", "acme/widget", "github.com", "trunk", "can push"} {
+		if !strings.Contains(check.Message, fragment) {
+			t.Fatalf("message %q does not contain %q", check.Message, fragment)
+		}
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("commands = %#v", runner.calls)
+	}
+	wantRemote := []string{"-C", filepath.Clean(root), "remote", "get-url", "upstream"}
+	if !reflect.DeepEqual(runner.calls[0].arguments, wantRemote) {
+		t.Fatalf("remote command = %#v", runner.calls[0].arguments)
+	}
+	for _, call := range runner.calls {
+		joined := strings.Join(call.arguments, " ")
+		for _, mutation := range []string{" push ", " commit ", " checkout ", " reset ", "--method POST", "--method PATCH", "--method DELETE"} {
+			if strings.Contains(" "+joined+" ", mutation) {
+				t.Fatalf("mutating doctor command = %#v", call.arguments)
+			}
+		}
+	}
+}
+
+func TestDoctorDefaultsGitHubRemoteToOrigin(t *testing.T) {
+	t.Parallel()
+	doctor := New(Options{Runner: fakeRunner{}})
+	if doctor.githubRemote != "origin" {
+		t.Fatalf("GitHub remote = %q, want origin", doctor.githubRemote)
+	}
+}
+
+func TestGitHubCheckMapsEveryClosedDeliveryHealthOutcome(t *testing.T) {
+	t.Parallel()
+	base := deliveryHealthObservation()
+	tests := []struct {
+		name    string
+		outcome delivery.HealthOutcome
+		code    string
+		status  health.Status
+	}{
+		{name: "ready", outcome: delivery.HealthReady{}, code: "GITHUB_READY", status: health.StatusHealthy},
+		{name: "read only", outcome: delivery.HealthReadOnly{Reason: "Grant push access."}, code: "GITHUB_PUSH_PERMISSION_REQUIRED", status: health.StatusDegraded},
+		{name: "unauthenticated", outcome: delivery.HealthUnauthenticated{Reason: "Authenticate."}, code: "GITHUB_AUTH_REQUIRED", status: health.StatusDegraded},
+		{name: "unavailable", outcome: delivery.HealthUnavailable{Reason: "Check repository access."}, code: "GITHUB_REPOSITORY_UNAVAILABLE", status: health.StatusDegraded},
+		{name: "degraded", outcome: delivery.HealthDegraded{Reason: "Use the configured account."}, code: "GITHUB_DELIVERY_DEGRADED", status: health.StatusDegraded},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			observation := base
+			observation.Outcome = test.outcome
+			check := githubObservationCheck(observation)
+			if check.Code != test.code || check.Status != test.status {
+				t.Fatalf("check = %#v", check)
+			}
+			if check.Status != health.StatusHealthy && check.Action == "" {
+				t.Fatal("non-healthy outcome has no action")
+			}
+		})
+	}
+}
+
+func TestGitHubProbeFailureMapsRemoteResolutionToActionableCheck(t *testing.T) {
+	t.Parallel()
+	check := githubProbeFailure(&ports.Failure{Code: ports.FailureNotFound, Message: "safe"}, "upstream")
+	if check.Code != "GITHUB_REMOTE_NOT_FOUND" || check.Status != health.StatusDegraded || check.Action == "" || !strings.Contains(check.Message, "upstream") {
+		t.Fatalf("check = %#v", check)
 	}
 }
 
@@ -206,5 +333,15 @@ func testPaths(root string) platform.Paths {
 		Cache:   filepath.Join(root, "cache"),
 		Logs:    filepath.Join(root, "logs"),
 		Runtime: filepath.Join(root, "runtime"),
+	}
+}
+
+func deliveryHealthObservation() delivery.HealthObservation {
+	repository := delivery.Repository{Provider: "github", Host: "github.com", Owner: "acme", Name: "widget"}
+	return delivery.HealthObservation{
+		Remote:     delivery.Remote{Name: "upstream"},
+		Repository: repository,
+		BaseBranch: delivery.BranchRef{Repository: repository, Name: "trunk"},
+		Account:    "delivery-bot",
 	}
 }

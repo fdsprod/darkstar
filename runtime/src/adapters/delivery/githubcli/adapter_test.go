@@ -15,16 +15,20 @@ import (
 
 func TestNewPinsResolvedGitHubCLIExecutable(t *testing.T) {
 	t.Parallel()
-	runner := &fakeRunner{resolved: filepath.Join(t.TempDir(), "tools", "gh.exe")}
-	adapter, err := New(Options{Executable: "configured-gh", Runner: runner})
+	root := t.TempDir()
+	runner := &fakeRunner{resolvedByName: map[string]string{
+		"configured-gh":  filepath.Join(root, "tools", "gh.exe"),
+		"configured-git": filepath.Join(root, "tools", "git.exe"),
+	}}
+	adapter, err := New(Options{Executable: "configured-gh", GitExecutable: "configured-git", Runner: runner})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runner.lookedUp != "configured-gh" {
-		t.Fatalf("looked up %q, want configured-gh", runner.lookedUp)
+	if !reflect.DeepEqual(runner.lookedUp, []string{"configured-gh", "configured-git"}) {
+		t.Fatalf("looked up %#v", runner.lookedUp)
 	}
-	if adapter.executable != filepath.Clean(runner.resolved) {
-		t.Fatalf("executable = %q, want %q", adapter.executable, filepath.Clean(runner.resolved))
+	if adapter.executable != filepath.Clean(runner.resolvedByName["configured-gh"]) || adapter.gitExecutable != filepath.Clean(runner.resolvedByName["configured-git"]) {
+		t.Fatalf("executables = %q, %q", adapter.executable, adapter.gitExecutable)
 	}
 }
 
@@ -116,18 +120,6 @@ func TestConnectorCapabilitiesFailClosedUntilImplemented(t *testing.T) {
 	}
 	operations := []func() error{
 		func() error {
-			_, err := adapter.ProbeHealth(context.Background(), delivery.HealthRequest{})
-			return err
-		},
-		func() error {
-			_, err := adapter.ObserveBranch(context.Background(), delivery.ObserveBranchRequest{})
-			return err
-		},
-		func() error {
-			_, err := adapter.PublishBranch(context.Background(), delivery.PublishBranchRequest{})
-			return err
-		},
-		func() error {
 			_, err := adapter.FindChangeRequests(context.Background(), delivery.FindChangeRequestsRequest{})
 			return err
 		},
@@ -154,24 +146,49 @@ func TestConnectorCapabilitiesFailClosedUntilImplemented(t *testing.T) {
 }
 
 type fakeRunner struct {
-	resolved    string
-	lookedUp    string
-	arguments   []string
-	input       []byte
-	stdout      []byte
-	lookPathErr error
-	runErr      error
+	resolved       string
+	resolvedByName map[string]string
+	lookedUp       []string
+	arguments      []string
+	input          []byte
+	stdout         []byte
+	stderr         []byte
+	lookPathErr    error
+	runErr         error
+	calls          []commandCall
+	responses      []commandResponse
 }
 
 func (runner *fakeRunner) LookPath(name string) (string, error) {
-	runner.lookedUp = name
+	runner.lookedUp = append(runner.lookedUp, name)
+	if resolved, ok := runner.resolvedByName[name]; ok {
+		return resolved, runner.lookPathErr
+	}
 	return runner.resolved, runner.lookPathErr
 }
 
-func (runner *fakeRunner) Run(_ context.Context, _ string, arguments []string, input []byte) ([]byte, []byte, error) {
+func (runner *fakeRunner) Run(_ context.Context, executable string, arguments []string, input []byte) ([]byte, []byte, error) {
 	runner.arguments = append([]string(nil), arguments...)
 	runner.input = append([]byte(nil), input...)
-	return runner.stdout, nil, runner.runErr
+	runner.calls = append(runner.calls, commandCall{executable: executable, arguments: append([]string(nil), arguments...), input: append([]byte(nil), input...)})
+	if len(runner.responses) > 0 {
+		response := runner.responses[0]
+		runner.responses = runner.responses[1:]
+		return append([]byte(nil), response.stdout...), append([]byte(nil), response.stderr...), response.err
+	}
+	return runner.stdout, runner.stderr, runner.runErr
+}
+
+type commandCall struct {
+	executable string
+	arguments  []string
+	input      []byte
+}
+
+type commandResponse struct {
+	stdout []byte
+	stderr []byte
+	err    error
 }
 
 func cancelledContext() context.Context {

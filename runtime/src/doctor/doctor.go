@@ -15,11 +15,14 @@ import (
 	"sync"
 	"time"
 
+	"darkstar/src/adapters/delivery/githubcli"
 	"darkstar/src/adapters/statestore/sqlite"
 	"darkstar/src/core/config"
 	"darkstar/src/core/health"
 	"darkstar/src/daemon"
 	"darkstar/src/daemon/configuration"
+	"darkstar/src/ports"
+	deliveryport "darkstar/src/ports/delivery"
 	platformport "darkstar/src/ports/platform"
 	providerport "darkstar/src/ports/provider"
 )
@@ -42,9 +45,26 @@ func (osCommandRunner) LookPath(name string) (string, error) { return exec.LookP
 
 func (osCommandRunner) Output(ctx context.Context, name string, arguments ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, name, arguments...)
+	command.Env = append(os.Environ(), "GH_PROMPT_DISABLED=1", "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
 	command.Stdin = nil
 	command.Stderr = io.Discard
 	return command.Output()
+}
+
+// githubAdapterRunner adapts Doctor's read-only command seam to the delivery
+// adapter without introducing adapter dependencies into core or ports.
+type githubAdapterRunner struct{ runner CommandRunner }
+
+func (runner githubAdapterRunner) LookPath(name string) (string, error) {
+	return runner.runner.LookPath(name)
+}
+
+func (runner githubAdapterRunner) Run(ctx context.Context, executable string, arguments []string, input []byte) ([]byte, []byte, error) {
+	if len(input) != 0 {
+		return nil, nil, errors.New("doctor command probes do not accept input")
+	}
+	output, err := runner.runner.Output(ctx, executable, arguments...)
+	return output, nil, err
 }
 
 func (runner osCommandRunner) LookPaths(name string) ([]string, error) {
@@ -81,20 +101,22 @@ type Options struct {
 	ProjectRoot     string
 	Provider        providerport.Provider
 	CodexExecutable string
+	GitHubRemote    string
 	Runner          CommandRunner
 	Now             func() time.Time
 }
 
 // Doctor is a reusable, side-effect-bounded local readiness probe.
 type Doctor struct {
-	paths       platformport.Paths
-	database    *sqlite.Database
-	process     daemon.ProcessIdentity
-	projectRoot string
-	provider    providerport.Provider
-	codex       executableResolution
-	runner      CommandRunner
-	now         func() time.Time
+	paths        platformport.Paths
+	database     *sqlite.Database
+	process      daemon.ProcessIdentity
+	projectRoot  string
+	provider     providerport.Provider
+	codex        executableResolution
+	githubRemote string
+	runner       CommandRunner
+	now          func() time.Time
 }
 
 // New constructs a doctor. Invalid live dependencies are represented as
@@ -109,15 +131,20 @@ func New(options Options) *Doctor {
 		now = time.Now
 	}
 	codex := resolveExecutable(runner, options.CodexExecutable, "codex")
+	githubRemote := strings.TrimSpace(options.GitHubRemote)
+	if githubRemote == "" {
+		githubRemote = "origin"
+	}
 	return &Doctor{
-		paths:       options.Paths,
-		database:    options.Database,
-		process:     options.Process,
-		projectRoot: options.ProjectRoot,
-		provider:    options.Provider,
-		codex:       codex,
-		runner:      runner,
-		now:         now,
+		paths:        options.Paths,
+		database:     options.Database,
+		process:      options.Process,
+		projectRoot:  options.ProjectRoot,
+		provider:     options.Provider,
+		codex:        codex,
+		githubRemote: githubRemote,
+		runner:       runner,
+		now:          now,
 	}
 }
 
@@ -146,7 +173,7 @@ func (doctor *Doctor) ReportForProject(ctx context.Context, projectRoot string) 
 		doctor.pathsCheck,
 		func(ctx context.Context) health.Check { return doctor.gitCheck(ctx, projectRoot) },
 		doctor.codexCheck,
-		doctor.githubCheck,
+		func(ctx context.Context) health.Check { return doctor.githubCheck(ctx, projectRoot) },
 		func(ctx context.Context) health.Check { return doctor.configurationCheck(ctx, projectRoot) },
 		doctor.providerCheck,
 	}
@@ -275,18 +302,73 @@ func (doctor *Doctor) codexCheck(ctx context.Context) health.Check {
 	return check
 }
 
-func (doctor *Doctor) githubCheck(ctx context.Context) health.Check {
+func (doctor *Doctor) githubCheck(ctx context.Context, projectRoot string) health.Check {
 	github, err := doctor.runner.LookPath("gh")
 	if err != nil {
 		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_CLI_NOT_FOUND", "GitHub CLI is not available on PATH.", "Install GitHub CLI, add it to PATH, and restart the daemon before enabling GitHub delivery.")
 	}
-	if _, err := doctor.runCommand(ctx, github, "--version"); err != nil {
-		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_CLI_FAILED", "GitHub CLI could not report its version.", "Repair the GitHub CLI installation, then rerun doctor.")
+	if !filepath.IsAbs(projectRoot) {
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_PROJECT_ROOT_UNAVAILABLE", "GitHub delivery cannot resolve a remote without an absolute project root.", "Start DARKSTAR from the target Git repository and rerun doctor.")
 	}
-	if _, err := doctor.runCommand(ctx, github, "auth", "status", "--hostname", "github.com"); err != nil {
-		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_AUTH_REQUIRED", "GitHub CLI is installed but github.com authentication is not ready.", "Run `gh auth login --hostname github.com`, then rerun doctor.")
+	git, err := doctor.runner.LookPath("git")
+	if err != nil {
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_GIT_NOT_FOUND", "GitHub delivery cannot resolve the configured remote because Git is unavailable.", "Install Git for Windows, add it to PATH, and rerun doctor.")
 	}
-	return healthy(health.SubsystemGitHub, "GITHUB_READY", "GitHub CLI is executable and authenticated for github.com.")
+	adapter, err := githubcli.New(githubcli.Options{Executable: github, GitExecutable: git, Runner: githubAdapterRunner{runner: doctor.runner}, Now: doctor.now})
+	if err != nil {
+		return githubProbeFailure(err, doctor.githubRemote)
+	}
+	probeContext, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+	observation, err := adapter.ProbeHealth(probeContext, deliveryport.HealthRequest{
+		LocalRepository: filepath.Clean(projectRoot),
+		RemoteName:      doctor.githubRemote,
+	})
+	if err != nil {
+		return githubProbeFailure(err, doctor.githubRemote)
+	}
+	return githubObservationCheck(observation)
+}
+
+func githubObservationCheck(observation deliveryport.HealthObservation) health.Check {
+	repository := fmt.Sprintf("%s/%s", observation.Repository.Owner, observation.Repository.Name)
+	switch outcome := observation.Outcome.(type) {
+	case deliveryport.HealthReady:
+		return healthy(health.SubsystemGitHub, "GITHUB_READY", fmt.Sprintf("Git remote %s resolves to %s on %s with base branch %s; the authenticated account can push.", observation.Remote.Name, repository, observation.Repository.Host, observation.BaseBranch.Name))
+	case deliveryport.HealthReadOnly:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_PUSH_PERMISSION_REQUIRED", fmt.Sprintf("Git remote %s resolves to %s, but the authenticated account cannot push.", observation.Remote.Name, repository), outcome.Reason)
+	case deliveryport.HealthUnauthenticated:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_AUTH_REQUIRED", fmt.Sprintf("Git remote %s resolves to %s, but GitHub authentication is not ready.", observation.Remote.Name, repository), outcome.Reason)
+	case deliveryport.HealthUnavailable:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_REPOSITORY_UNAVAILABLE", fmt.Sprintf("Git remote %s resolves to %s, but the GitHub repository is unavailable.", observation.Remote.Name, repository), outcome.Reason)
+	case deliveryport.HealthDegraded:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_DELIVERY_DEGRADED", fmt.Sprintf("GitHub delivery health for remote %s is degraded.", observation.Remote.Name), outcome.Reason)
+	default:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_HEALTH_INVALID", "The GitHub delivery adapter returned an unknown health outcome.", "Repair or upgrade the GitHub delivery adapter, then rerun doctor.")
+	}
+}
+
+func githubProbeFailure(err error, remoteName string) health.Check {
+	var classified *ports.Failure
+	if !errors.As(err, &classified) {
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_PROBE_FAILED", "GitHub delivery health could not be determined.", "Inspect Git and GitHub CLI configuration, then rerun doctor.")
+	}
+	switch classified.Code {
+	case ports.FailureNotFound:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_REMOTE_NOT_FOUND", fmt.Sprintf("Git remote %s could not be resolved from the selected project.", remoteName), fmt.Sprintf("Configure Git remote %s for the target GitHub repository, then rerun doctor.", remoteName))
+	case ports.FailureInvalidRequest:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_REMOTE_INVALID", fmt.Sprintf("Git remote %s does not identify a valid GitHub repository.", remoteName), "Correct the project remote URL or configured remote name, then rerun doctor.")
+	case ports.FailureUnavailable:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_DELIVERY_UNAVAILABLE", "GitHub delivery tooling is unavailable.", "Repair the Git and GitHub CLI installations, then rerun doctor.")
+	case ports.FailureTimeout:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_PROBE_TIMEOUT", "GitHub delivery health timed out.", "Check network access to GitHub and rerun doctor.")
+	case ports.FailureCancelled:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_PROBE_CANCELLED", "GitHub delivery health was cancelled.", "Rerun doctor when the operation can complete.")
+	case ports.FailureProtocolDrift:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_RESPONSE_INVALID", "GitHub returned an incompatible health response.", "Upgrade GitHub CLI or the GitHub delivery adapter, then rerun doctor.")
+	default:
+		return finding(health.SubsystemGitHub, health.StatusDegraded, "GITHUB_PROBE_FAILED", "GitHub delivery health could not be determined.", "Inspect Git and GitHub CLI configuration, then rerun doctor.")
+	}
 }
 
 func (doctor *Doctor) configurationCheck(_ context.Context, projectRoot string) health.Check {

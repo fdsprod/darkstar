@@ -12,6 +12,9 @@ func TestContractChoicesAreClosedInterfaces(t *testing.T) {
 	choices := []any{
 		delivery.HealthReady{},
 		delivery.RemoteBranchMissing{},
+		delivery.OwnedRemoteBranchAt{},
+		delivery.PublishAfterFinalValidation{},
+		delivery.PublishAfterPointAcceptance{},
 		delivery.BranchAlreadyPublished{},
 		delivery.DraftState{},
 		delivery.OwnedChangeRequest{},

@@ -57,8 +57,15 @@ type Repository struct {
 }
 
 type HealthRequest struct {
-	Repository Repository
-	Account    string
+	LocalRepository string
+	RemoteName      string
+	Account         string
+}
+
+// Remote identifies the selected local Git remote without returning its raw
+// URL, which may contain credentials.
+type Remote struct {
+	Name string
 }
 
 // HealthOutcome is the authoritative, mutually exclusive access observation.
@@ -87,7 +94,9 @@ type HealthDegraded struct{ Reason string }
 func (HealthDegraded) isHealthOutcome() {}
 
 type HealthObservation struct {
+	Remote      Remote
 	Repository  Repository
+	BaseBranch  BranchRef
 	Account     string
 	Outcome     HealthOutcome
 	Diagnostics []string
@@ -121,23 +130,57 @@ type BranchObservation struct {
 	EvidenceRef string
 }
 
+type BranchOwner struct {
+	DeliveryLineID string
+	WorkItemID     string
+}
+
+// BranchOwnershipEvidence is the durable proof a caller must persist after
+// first publication and return when advancing an existing remote branch.
+type BranchOwnershipEvidence struct {
+	Owner                    BranchOwner
+	EstablishedByOperationID string
+}
+
 // RemoteBranchExpectation is the compare-and-swap precondition for branch
-// publication. A missing branch cannot accidentally be represented by an empty
-// expected commit SHA.
+// publication. Existing branch advancement requires recorded ownership proof;
+// a commit SHA alone can never authorize mutation.
 type RemoteBranchExpectation interface{ isRemoteBranchExpectation() }
 
 type RemoteBranchMissing struct{}
 
 func (RemoteBranchMissing) isRemoteBranchExpectation() {}
 
-type RemoteBranchAt struct{ CommitSHA string }
+type OwnedRemoteBranchAt struct {
+	CommitSHA string
+	Ownership BranchOwnershipEvidence
+}
 
-func (RemoteBranchAt) isRemoteBranchExpectation() {}
+func (OwnedRemoteBranchAt) isRemoteBranchExpectation() {}
+
+// BranchPublicationTiming carries both the policy decision and the exact
+// commit authorized by it, avoiding a separate commit field that could
+// contradict the selected timing.
+type BranchPublicationTiming interface{ isBranchPublicationTiming() }
+
+type PublishAfterFinalValidation struct{ ValidatedCommitSHA string }
+
+func (PublishAfterFinalValidation) isBranchPublicationTiming() {}
+
+type PublishAfterPointAcceptance struct {
+	AcceptedCommitSHA string
+	PointID           string
+	PointRevision     uint64
+}
+
+func (PublishAfterPointAcceptance) isBranchPublicationTiming() {}
 
 type PublishBranchRequest struct {
 	OperationID     string
 	LocalRepository string
-	SourceCommitSHA string
+	RemoteName      string
+	Owner           BranchOwner
+	Timing          BranchPublicationTiming
 	Destination     BranchRef
 	ExpectedRemote  RemoteBranchExpectation
 }
@@ -158,6 +201,7 @@ type BranchPublication struct {
 	Branch      BranchRef
 	CommitSHA   string
 	Outcome     BranchPublicationOutcome
+	Ownership   BranchOwnershipEvidence
 	ObservedAt  time.Time
 	EvidenceRef string
 }
