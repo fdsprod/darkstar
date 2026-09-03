@@ -457,19 +457,18 @@ The same graph supports common shortcuts:
 
 | Profile | Typical route |
 |---|---|
-| **Idea to production** | P0 → P1 → applicable P2–P17 nodes |
-| **POC/spike** | P0 → P1 → P3 → stop |
-| **PRD only** | P0/P2 → P4 → stop |
-| **Design only** | P1 → P7 if needed → P8 → stop |
-| **Story decomposition only** | P4/P8 → P9 → stop |
-| **Accepted story** | S0 → applicable S1–S6 nodes → P12/P13 as configured |
-| **Implementation from accepted plan** | S5 → S6 → P12 → P13 |
-| **Bug/hotfix** | P1 → focused S1/S2/S4 as useful → S5/S6 → P12–P17 |
-| **Validation only** | P12 or S6 → stop/report |
-| **PR preparation only** | P13 → stop |
-| **Release only** | P15 → P16 → P17 |
+| **Idea to production** (`idea_to_production`) | P0 → P1 → applicable P2–P17 nodes |
+| **POC/spike** (`poc`) | P3 → stop |
+| **PRD only** (`prd_only`) | P4 → stop |
+| **Design only** (`design_only`) | P8 → stop |
+| **Accepted story** (`accepted_story`) | S0 → applicable S1–S6 nodes |
+| **Implementation from accepted plan** (`implementation_only`) | S5 → S6 |
+| **Bug/hotfix** (`bug`) | S0 → focused S2/S4 → S5/S6 |
+| **Validation only** (`validation`) | S6 → stop/report |
+| **PR preparation only** (`pr`) | P13 → stop |
+| **Release only** (`release`) | P15 → P16 → P17 |
 
-Profiles are route presets, not separate hard-coded pipelines.
+Profiles are route presets, not separate hard-coded pipelines. Explicit inputs override preset defaults, and every preview passes through ordinary entry, terminal, closure, policy, and input-readiness validation.
 
 ---
 

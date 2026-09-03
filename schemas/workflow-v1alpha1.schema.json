@@ -61,11 +61,32 @@
             }
           }
         },
+        "profiles": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": {"$ref": "#/$defs/routeProfile"},
+          "default": {}
+        },
         "nodes": {
           "type": "object",
           "minProperties": 1,
           "propertyNames": {"$ref": "#/$defs/identifier"},
           "additionalProperties": {"$ref": "#/$defs/node"}
+        }
+      }
+    },
+    "routeProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "entry", "terminals", "inputDefaults"],
+      "properties": {
+        "description": {"type": "string", "minLength": 1},
+        "entry": {"$ref": "#/$defs/identifier"},
+        "terminals": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "inputDefaults": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": true
         }
       }
     },

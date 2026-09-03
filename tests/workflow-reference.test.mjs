@@ -8,7 +8,9 @@ import {
   Runner,
   WorkflowError,
   applyPatchBeforeRun,
+  freezeRoute,
   loadJson,
+  resolveProfile,
   validateWorkflow,
 } from "../scripts/workflow-reference.mjs";
 
@@ -124,6 +126,30 @@ test("selected middle terminal suppresses its authored outgoing transition", () 
   );
   assert.deepEqual(result.visits, { p8_technical_design: 1 });
   assert.equal(result.events.some((event) => event.type === "transition.fired"), false);
+});
+
+test("all ten default entry profiles resolve and preview", () => {
+  const expected = new Map([
+    ["idea_to_production", ["software-delivery.json", "p0_intake", "p17_verification"]],
+    ["poc", ["software-delivery.json", "p3_poc", "p3_poc"]],
+    ["prd_only", ["software-delivery.json", "p4_requirements", "p4_requirements"]],
+    ["design_only", ["software-delivery.json", "p8_technical_design", "p8_technical_design"]],
+    ["accepted_story", ["story-execution.json", "s0_readiness", "s6_validation"]],
+    ["implementation_only", ["story-execution.json", "s5_implementation", "s6_validation"]],
+    ["bug", ["story-execution.json", "s0_readiness", "s6_validation"]],
+    ["validation", ["story-execution.json", "s6_validation", "s6_validation"]],
+    ["pr", ["software-delivery.json", "p13_pull_request", "p13_pull_request"]],
+    ["release", ["software-delivery.json", "p15_release_readiness", "p17_verification"]],
+  ]);
+  for (const [profileId, [file, entry, terminal]] of expected) {
+    const document = loadJson(workflowPath(file));
+    const resolved = resolveProfile(document, profileId);
+    const route = freezeRoute(document, resolved.entry, resolved.terminals);
+    assert.equal(route.entry, entry, profileId);
+    assert.deepEqual([...route.terminals], [terminal], profileId);
+  }
+  const idea = loadJson(workflowPath("software-delivery.json"));
+  assert.equal(resolveProfile(idea, "idea_to_production", { needs_poc: true }).runInputs.needs_poc, true);
 });
 
 test("story alternative joins and bounded implementation loop are deterministic", () => {

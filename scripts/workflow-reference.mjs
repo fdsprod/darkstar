@@ -61,6 +61,16 @@ export function loadJson(file) {
   }
 }
 
+export function resolveProfile(document, profileId, runInputs = {}) {
+  const profile = document.spec.profiles?.[profileId];
+  if (!profile) throw fail("ROUTE_PROFILE_INVALID", `route profile '${profileId}' does not exist`, "/profile");
+  return {
+    entry: profile.entry,
+    terminals: [...profile.terminals],
+    runInputs: { ...structuredClone(profile.inputDefaults), ...structuredClone(runInputs) },
+  };
+}
+
 function jsonType(value) {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
@@ -445,6 +455,24 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
   if (Object.keys(nodes).sort().some((id) => !colors.has(id) && visit(id))) errors.push(fail("WF_UNBOUNDED_CYCLE", "normal transitions contain a directed cycle", "/spec/nodes"));
   if (!entries.has(defaults.entry)) errors.push(fail("WF_DEFAULT_ROUTE_INVALID", "invalid default entry", "/spec/routeDefaults/entry"));
   if (!Array.isArray(defaults.terminals) || defaults.terminals.length === 0 || defaults.terminals.some((id) => !terminals.has(id))) errors.push(fail("WF_DEFAULT_ROUTE_INVALID", "invalid default terminals", "/spec/routeDefaults/terminals"));
+  for (const [profileId, profile] of Object.entries(spec.profiles ?? {})) {
+    const location = `/spec/profiles/${profileId}`;
+    if (!ID_RE.test(profileId) || !profile || typeof profile !== "object" || typeof profile.description !== "string") {
+      errors.push(fail("WF_SCHEMA_INVALID", `invalid route profile '${profileId}'`, location));
+      continue;
+    }
+    if (!entries.has(profile.entry)) errors.push(fail("WF_DEFAULT_ROUTE_INVALID", "profile entry is absent or not entry-capable", `${location}/entry`));
+    if (!Array.isArray(profile.terminals) || profile.terminals.length === 0 || profile.terminals.some((id) => !terminals.has(id))) errors.push(fail("WF_DEFAULT_ROUTE_INVALID", "profile terminal is absent or not terminal-capable", `${location}/terminals`));
+    if (!profile.inputDefaults || typeof profile.inputDefaults !== "object" || Array.isArray(profile.inputDefaults)) {
+      errors.push(fail("WF_SCHEMA_INVALID", "profile inputDefaults must be an object", `${location}/inputDefaults`));
+      continue;
+    }
+    for (const [inputId, value] of Object.entries(profile.inputDefaults)) {
+      const declaration = runInputs[inputId];
+      if (!declaration) errors.push(fail("WF_REFERENCE_MISSING", `profile default references unknown run input '${inputId}'`, `${location}/inputDefaults/${inputId}`));
+      else if (!matchesType(value, declaration.type)) errors.push(fail("WF_BINDING_INCOMPATIBLE", `profile default for '${inputId}' has the wrong type`, `${location}/inputDefaults/${inputId}`));
+    }
+  }
 
   if (sourcePath) {
     const absolute = resolve(sourcePath);

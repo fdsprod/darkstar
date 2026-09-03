@@ -31,12 +31,20 @@ type Metadata struct {
 type Spec struct {
 	Inputs        map[Identifier]ValueDeclaration `json:"inputs,omitempty"`
 	RouteDefaults RouteDefaults                   `json:"routeDefaults"`
+	Profiles      map[Identifier]RouteProfile     `json:"profiles,omitempty"`
 	Nodes         map[Identifier]Node             `json:"nodes"`
 }
 
 type RouteDefaults struct {
 	Entry     Identifier   `json:"entry"`
 	Terminals []Identifier `json:"terminals"`
+}
+
+type RouteProfile struct {
+	Description   string                         `json:"description"`
+	Entry         Identifier                     `json:"entry"`
+	Terminals     []Identifier                   `json:"terminals"`
+	InputDefaults map[Identifier]json.RawMessage `json:"inputDefaults"`
 }
 
 type ValueType string

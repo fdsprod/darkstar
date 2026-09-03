@@ -156,6 +156,35 @@ func (state *validationState) validate() {
 	state.validateReachability(nodeIDs)
 	state.validateCycles(nodeIDs)
 	state.validateDefaultRoute()
+	state.validateProfiles()
+}
+
+func (state *validationState) validateProfiles() {
+	for profileID, profile := range state.document.Spec.Profiles {
+		base := fmt.Sprintf("/spec/profiles/%s", profileID)
+		entry, exists := state.nodes[profile.Entry]
+		if !exists || !entry.Fields().Entry {
+			state.add(ValidationDefaultRouteInvalid, "profile entry is absent or not entry-capable", base+"/entry", nil)
+		}
+		for index, terminalID := range profile.Terminals {
+			terminal, exists := state.nodes[terminalID]
+			if !exists || !terminal.Fields().Terminal {
+				state.add(ValidationDefaultRouteInvalid, "profile terminal is absent or not terminal-capable", fmt.Sprintf("%s/terminals/%d", base, index), nil)
+			}
+		}
+		for inputID, value := range profile.InputDefaults {
+			declaration, exists := state.document.Spec.Inputs[inputID]
+			location := fmt.Sprintf("%s/inputDefaults/%s", base, inputID)
+			if !exists {
+				state.add(ValidationReferenceMissing, fmt.Sprintf("profile default references unknown run input %q", inputID), location, nil)
+				continue
+			}
+			actual, valid := rawValueType(value)
+			if !valid || !typesCompatible(actual, declaration.Type) {
+				state.add(ValidationBindingIncompatible, fmt.Sprintf("profile default for %q has type %s, want %s", inputID, actual, declaration.Type), location, nil)
+			}
+		}
+	}
 }
 
 func (state *validationState) indexTransitions(nodeIDs []Identifier) {

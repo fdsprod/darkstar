@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/story-execution",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "displayName": "Default story execution sub-workflow"
   },
   "spec": {
@@ -17,6 +17,12 @@
     "routeDefaults": {
       "entry": "s0_readiness",
       "terminals": ["s6_validation"]
+    },
+    "profiles": {
+      "accepted_story": {"description": "Execute an accepted story through validation.", "entry": "s0_readiness", "terminals": ["s6_validation"], "inputDefaults": {"needs_clarification": false, "needs_research": false, "needs_design": false}},
+      "implementation_only": {"description": "Execute an accepted implementation plan and validate the story.", "entry": "s5_implementation", "terminals": ["s6_validation"], "inputDefaults": {}},
+      "bug": {"description": "Investigate and implement a focused defect repair.", "entry": "s0_readiness", "terminals": ["s6_validation"], "inputDefaults": {"needs_clarification": false, "needs_research": true, "needs_design": false}},
+      "validation": {"description": "Run story validation only and stop with its report.", "entry": "s6_validation", "terminals": ["s6_validation"], "inputDefaults": {}}
     },
     "nodes": {
       "s0_readiness": {

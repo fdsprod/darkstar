@@ -85,6 +85,12 @@ outputs, or an included predecessor. Any remaining gaps are returned as ordered
 `RUN_INPUT_REQUIRED` requirements so the run can wait for input without fabricating
 a value or executing an excluded predecessor.
 
+Workflows may publish named route profiles. A profile contains only an entry,
+terminal boundary, description, and typed run-input defaults; it cannot duplicate or
+replace graph topology. Profile preview merges defaults beneath explicit caller input
+and then invokes the same route creation path used by direct `from`/`until` requests.
+The shipped delivery and story workflows jointly provide the ten default profiles.
+
 ## Bounded edges and sub-workflow frames
 
 Runtime control-flow state is scoped to an execution frame. Firing a transition

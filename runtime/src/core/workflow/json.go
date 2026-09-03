@@ -110,6 +110,7 @@ func decodeSpec(data []byte) (Spec, error) {
 	type specWire struct {
 		Inputs        json.RawMessage `json:"inputs"`
 		RouteDefaults json.RawMessage `json:"routeDefaults"`
+		Profiles      json.RawMessage `json:"profiles"`
 		Nodes         json.RawMessage `json:"nodes"`
 	}
 	var wire specWire
@@ -146,7 +147,54 @@ func decodeSpec(data []byte) (Spec, error) {
 	if err != nil {
 		return Spec{}, fmt.Errorf("nodes: %w", err)
 	}
-	return Spec{Inputs: inputs, RouteDefaults: defaults, Nodes: nodes}, nil
+	profiles, err := decodeProfiles(wire.Profiles)
+	if err != nil {
+		return Spec{}, fmt.Errorf("profiles: %w", err)
+	}
+	return Spec{Inputs: inputs, RouteDefaults: defaults, Profiles: profiles, Nodes: nodes}, nil
+}
+
+func decodeProfiles(data []byte) (map[Identifier]RouteProfile, error) {
+	profiles := make(map[Identifier]RouteProfile)
+	if len(data) == 0 {
+		return profiles, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := strictDecode(data, &raw); err != nil {
+		return nil, err
+	}
+	for name, value := range raw {
+		id := Identifier(name)
+		if err := validateIdentifier(id); err != nil {
+			return nil, err
+		}
+		var profile RouteProfile
+		if err := strictDecode(value, &profile); err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		if strings.TrimSpace(profile.Description) == "" {
+			return nil, fmt.Errorf("%s.description is required", name)
+		}
+		if err := validateIdentifier(profile.Entry); err != nil {
+			return nil, fmt.Errorf("%s.entry: %w", name, err)
+		}
+		if len(profile.Terminals) == 0 {
+			return nil, fmt.Errorf("%s.terminals must contain at least one node", name)
+		}
+		if err := validateIdentifierList(profile.Terminals, true); err != nil {
+			return nil, fmt.Errorf("%s.terminals: %w", name, err)
+		}
+		if profile.InputDefaults == nil {
+			return nil, fmt.Errorf("%s.inputDefaults is required", name)
+		}
+		for inputID, input := range profile.InputDefaults {
+			if err := validateIdentifier(inputID); err != nil || len(input) == 0 || !json.Valid(input) {
+				return nil, fmt.Errorf("%s.inputDefaults contains invalid input %q", name, inputID)
+			}
+		}
+		profiles[id] = profile
+	}
+	return profiles, nil
 }
 
 func decodeValueDeclarations(data []byte) (map[Identifier]ValueDeclaration, error) {

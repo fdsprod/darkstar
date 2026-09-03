@@ -48,6 +48,41 @@ func TestCreateRouteSupportsMiddleEntryAndTerminalOnlyRoutes(t *testing.T) {
 	assertExcluded(t, terminalOnly, "end", workflow.ExclusionPastTerminal)
 }
 
+func TestShippedRouteProfilesPreviewThroughOrdinaryValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		documentName string
+		profile      workflow.Identifier
+		entry        workflow.Identifier
+		terminal     workflow.Identifier
+	}{
+		{"software-delivery.json", "idea_to_production", "p0_intake", "p17_verification"},
+		{"software-delivery.json", "poc", "p3_poc", "p3_poc"},
+		{"software-delivery.json", "prd_only", "p4_requirements", "p4_requirements"},
+		{"software-delivery.json", "design_only", "p8_technical_design", "p8_technical_design"},
+		{"software-delivery.json", "pr", "p13_pull_request", "p13_pull_request"},
+		{"software-delivery.json", "release", "p15_release_readiness", "p17_verification"},
+		{"story-execution.json", "accepted_story", "s0_readiness", "s6_validation"},
+		{"story-execution.json", "implementation_only", "s5_implementation", "s6_validation"},
+		{"story-execution.json", "bug", "s0_readiness", "s6_validation"},
+		{"story-execution.json", "validation", "s6_validation", "s6_validation"},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(string(test.profile), func(t *testing.T) {
+			document := decodeExample(t, test.documentName)
+			route, errors := workflow.CreateProfileRoute(document, test.profile, workflow.RouteContext{})
+			if len(errors) != 0 {
+				t.Fatalf("profile route errors = %+v", errors)
+			}
+			if route.Entry != test.entry || !reflect.DeepEqual(route.Terminals, []workflow.Identifier{test.terminal}) {
+				t.Fatalf("route boundaries = %s -> %v", route.Entry, route.Terminals)
+			}
+		})
+	}
+}
+
 func TestCreateRouteValidatesExplicitBoundaries(t *testing.T) {
 	t.Parallel()
 	document := basicWorkflow()

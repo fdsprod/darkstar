@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/software-delivery",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "displayName": "DARKSTAR default software delivery workflow"
   },
   "spec": {
@@ -19,6 +19,14 @@
       "route_readiness_threshold": {"type": "number"}
     },
     "routeDefaults": {"entry": "p0_intake", "terminals": ["p17_verification"]},
+    "profiles": {
+      "idea_to_production": {"description": "Start with an idea and continue through production verification.", "entry": "p0_intake", "terminals": ["p17_verification"], "inputDefaults": {"needs_poc": false, "needs_experience_design": false, "needs_technical_research": false, "needs_clarification": false, "needs_story_research": false, "needs_story_design": false, "route_readiness_threshold": 0.75}},
+      "poc": {"description": "Run a focused proof of concept and stop with findings.", "entry": "p3_poc", "terminals": ["p3_poc"], "inputDefaults": {}},
+      "prd_only": {"description": "Author or revise product requirements and stop.", "entry": "p4_requirements", "terminals": ["p4_requirements"], "inputDefaults": {}},
+      "design_only": {"description": "Author or revise technical design and stop.", "entry": "p8_technical_design", "terminals": ["p8_technical_design"], "inputDefaults": {}},
+      "pr": {"description": "Create or finalize a pull request and stop.", "entry": "p13_pull_request", "terminals": ["p13_pull_request"], "inputDefaults": {}},
+      "release": {"description": "Assess release readiness and continue through production verification.", "entry": "p15_release_readiness", "terminals": ["p17_verification"], "inputDefaults": {}}
+    },
     "nodes": {
       "p0_intake": {
         "displayName": "P0 — Intake and desired outcome",
@@ -257,7 +265,7 @@
         "outputs": {"story_validation": {"type": "object"}},
         "readiness": {"recommendedEvidence": [{"role": "ready_story", "description": "A dependency-ready story with accepted context and repository access."}], "policyGates": [{"policy": "story_readiness", "enforcement": "blocking", "description": "The child workflow applies its own story readiness and approval boundaries."}], "invariants": ["Each story executes against its pinned child workflow version."], "remedies": [{"code": "story_execution_blocked", "target": "p10_delivery_readiness", "action": "revise_artifact", "description": "Resolve the story dependency or readiness finding before scheduling it."}]},
         "call": {
-          "workflow": {"name": "darkstar/story-execution", "version": "1.3.0", "path": "story-execution.json"},
+          "workflow": {"name": "darkstar/story-execution", "version": "1.4.0", "path": "story-execution.json"},
           "entry": "s0_readiness",
           "terminals": ["s6_validation"],
           "inputs": {

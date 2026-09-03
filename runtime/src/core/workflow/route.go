@@ -22,6 +22,27 @@ type RouteRequest struct {
 	Until []Identifier `json:"until,omitempty"`
 }
 
+// CreateProfileRoute resolves one authored preset through the ordinary route
+// validator. Explicit context wins over profile defaults.
+func CreateProfileRoute(document Document, profileID Identifier, context RouteContext) (Route, ValidationErrors) {
+	profile, exists := document.Spec.Profiles[profileID]
+	if !exists {
+		return Route{}, ValidationErrors{{Code: ValidationRouteEntryInvalid, Message: "selected route profile is absent", Location: "/profile", Details: map[string][]string{"profileIds": {string(profileID)}}}}
+	}
+	merged := RouteContext{
+		RunInputs:       make(map[Identifier]json.RawMessage, len(profile.InputDefaults)+len(context.RunInputs)),
+		AcceptedOutputs: context.AcceptedOutputs,
+		RequiredNodes:   append([]Identifier(nil), context.RequiredNodes...),
+	}
+	for id, value := range profile.InputDefaults {
+		merged.RunInputs[id] = append(json.RawMessage(nil), value...)
+	}
+	for id, value := range context.RunInputs {
+		merged.RunInputs[id] = append(json.RawMessage(nil), value...)
+	}
+	return CreateRoute(document, RouteRequest{From: profile.Entry, Until: profile.Terminals}, merged)
+}
+
 // RouteContext contains facts available while freezing a route. Map membership,
 // rather than the JSON value, records availability so a present null remains a
 // present value. RequiredNodes is the project-policy control set that the route
