@@ -42,6 +42,7 @@ type pullRequestResponse struct {
 	} `json:"base"`
 	Head struct {
 		Ref  string `json:"ref"`
+		SHA  string `json:"sha"`
 		Repo struct {
 			FullName string `json:"full_name"`
 		} `json:"repo"`
@@ -111,28 +112,29 @@ func (adapter *Adapter) FindChangeRequests(ctx context.Context, request delivery
 }
 
 func (adapter *Adapter) CreateChangeRequest(ctx context.Context, request delivery.CreateChangeRequestRequest) (delivery.ChangeRequestCreation, error) {
-	validatedHead, body, normalized, err := validateFinalChangeRequest(request)
+	spec, err := validateChangeRequestCreation(request)
 	if err != nil {
 		return delivery.ChangeRequestCreation{}, err
 	}
+	normalized := spec.request
 	searchRequest := delivery.FindChangeRequestsRequest{Coordinates: normalized.Coordinates, Owner: normalized.Owner}
 	before, err := adapter.FindChangeRequests(ctx, searchRequest)
 	if err != nil {
 		return delivery.ChangeRequestCreation{}, err
 	}
-	if existing, found, err := reconcileChangeRequest(before, normalized, body); err != nil {
+	if existing, found, err := reconcileChangeRequest(before, spec); err != nil {
 		return delivery.ChangeRequestCreation{}, err
 	} else if found {
 		return adapter.changeRequestCreation(delivery.ChangeRequestReconciled{ChangeRequest: existing}), nil
 	}
-	if err := adapter.verifyChangeRequestBranches(ctx, normalized.Coordinates, validatedHead); err != nil {
+	if err := adapter.verifyChangeRequestBranches(ctx, normalized.Coordinates, spec.authorizedHead); err != nil {
 		return delivery.ChangeRequestCreation{}, err
 	}
 
 	payload, err := json.Marshal(createPullRequestPayload{
-		Title: normalized.Title, Body: body, Base: normalized.Coordinates.Base.Name,
+		Title: normalized.Title, Body: spec.body, Base: normalized.Coordinates.Base.Name,
 		Head:     normalized.Coordinates.Head.Repository.Owner + ":" + normalized.Coordinates.Head.Name,
-		HeadRepo: normalized.Coordinates.Head.Repository.Name, Draft: false,
+		HeadRepo: normalized.Coordinates.Head.Repository.Name, Draft: spec.draft,
 	})
 	if err != nil {
 		return delivery.ChangeRequestCreation{}, failure(ports.FailureInternal, "GitHub pull-request payload could not be encoded", false)
@@ -146,7 +148,7 @@ func (adapter *Adapter) CreateChangeRequest(ctx context.Context, request deliver
 	if readErr != nil {
 		return delivery.ChangeRequestCreation{}, failure(ports.FailureUncertain, "pull-request creation completed without a provable remote result", false)
 	}
-	changeRequest, found, reconcileErr := reconcileChangeRequest(after, normalized, body)
+	changeRequest, found, reconcileErr := reconcileChangeRequest(after, spec)
 	if reconcileErr != nil {
 		return delivery.ChangeRequestCreation{}, reconcileErr
 	}
@@ -206,30 +208,57 @@ func validateChangeRequestSearch(request delivery.FindChangeRequestsRequest) (de
 	return coordinates, nil
 }
 
-func validateFinalChangeRequest(request delivery.CreateChangeRequestRequest) (string, string, delivery.CreateChangeRequestRequest, error) {
+type changeRequestCreationSpec struct {
+	request        delivery.CreateChangeRequestRequest
+	body           string
+	revision       string
+	authorizedHead string
+	draft          bool
+}
+
+func validateChangeRequestCreation(request delivery.CreateChangeRequestRequest) (changeRequestCreationSpec, error) {
 	if strings.TrimSpace(request.OperationID) == "" || request.OperationID != strings.TrimSpace(request.OperationID) {
-		return "", "", delivery.CreateChangeRequestRequest{}, failure(ports.FailureInvalidRequest, "pull-request operation ID is required and must be trimmed", false)
+		return changeRequestCreationSpec{}, failure(ports.FailureInvalidRequest, "pull-request operation ID is required and must be trimmed", false)
 	}
 	coordinates, err := validateChangeRequestSearch(delivery.FindChangeRequestsRequest{Coordinates: request.Coordinates, Owner: request.Owner})
 	if err != nil {
-		return "", "", delivery.CreateChangeRequestRequest{}, err
+		return changeRequestCreationSpec{}, err
 	}
 	request.Coordinates = coordinates
-	validatedHead := strings.ToLower(strings.TrimSpace(request.Authorization.ValidatedHeadSHA))
-	if !commitPattern.MatchString(validatedHead) {
-		return "", "", delivery.CreateChangeRequestRequest{}, failure(ports.FailureInvalidRequest, "final-validation authorization requires an exact head commit SHA", false)
-	}
 	if err := validateBodyText(request.Title, "pull-request title", maximumChangeRequestTitleBytes); err != nil {
-		return "", "", delivery.CreateChangeRequestRequest{}, err
+		return changeRequestCreationSpec{}, err
 	}
-	if err := validateFinalContent(request.Content, validatedHead); err != nil {
-		return "", "", delivery.CreateChangeRequestRequest{}, err
+	var content delivery.FinalChangeRequestContent
+	var authorizedHead string
+	var draft bool
+	switch intent := request.Intent.(type) {
+	case delivery.CreateFinalChangeRequest:
+		content = intent.Content
+		authorizedHead = strings.ToLower(strings.TrimSpace(intent.Authorization.ValidatedHeadSHA))
+		if !commitPattern.MatchString(authorizedHead) {
+			return changeRequestCreationSpec{}, failure(ports.FailureInvalidRequest, "final-validation authorization requires an exact head commit SHA", false)
+		}
+	case delivery.CreateIncrementalDraft:
+		content = intent.Content
+		authorizedHead = strings.ToLower(strings.TrimSpace(intent.Authorization.AcceptedHeadSHA))
+		draft = true
+		if !commitPattern.MatchString(authorizedHead) || strings.TrimSpace(intent.Authorization.PointID) == "" || intent.Authorization.PointID != strings.TrimSpace(intent.Authorization.PointID) || intent.Authorization.PointRevision == 0 {
+			return changeRequestCreationSpec{}, failure(ports.FailureInvalidRequest, "incremental draft creation requires an accepted point, revision, and exact head commit SHA", false)
+		}
+	default:
+		return changeRequestCreationSpec{}, failure(ports.FailureInvalidRequest, "pull-request creation intent is required", false)
 	}
-	body := renderFinalChangeRequestBody(request.Owner, request.Content)
+	if err := validateFinalContent(content, authorizedHead); err != nil {
+		return changeRequestCreationSpec{}, err
+	}
+	if intent, ok := request.Intent.(delivery.CreateIncrementalDraft); ok && content.PointChecklist[len(content.PointChecklist)-1].ID != intent.Authorization.PointID {
+		return changeRequestCreationSpec{}, failure(ports.FailureInvalidRequest, "incremental draft content must end with the authorized accepted point", false)
+	}
+	body := renderFinalChangeRequestBody(request.Owner, content)
 	if len(body) > maximumChangeRequestBodyBytes {
-		return "", "", delivery.CreateChangeRequestRequest{}, failure(ports.FailureResourceExhausted, "pull-request body exceeds the adapter limit", false)
+		return changeRequestCreationSpec{}, failure(ports.FailureResourceExhausted, "pull-request body exceeds the adapter limit", false)
 	}
-	return validatedHead, body, request, nil
+	return changeRequestCreationSpec{request: request, body: body, revision: content.Revision, authorizedHead: authorizedHead, draft: draft}, nil
 }
 
 func validateFinalContent(content delivery.FinalChangeRequestContent, validatedHead string) error {
@@ -338,6 +367,8 @@ func translatePullRequest(response pullRequestResponse, expected delivery.Change
 	ownership := delivery.ChangeRequestOwnership(delivery.UnownedChangeRequest{})
 	if revision, ok := ownedRevision(response.Body, owner); ok {
 		ownership = delivery.OwnedChangeRequest{Owner: owner, Revision: revision}
+	} else if _, err := locateOwnedSection(response.Body); err != nil && strings.Contains(response.Body, "darkstar:owned-change-request") {
+		ownership = delivery.MalformedChangeRequestOwnership{Reason: "DARKSTAR ownership markers are malformed or duplicated"}
 	}
 	coordinates := delivery.ChangeRequestCoordinates{
 		Base: delivery.BranchRef{Repository: baseRepository, Name: response.Base.Ref},
@@ -379,7 +410,7 @@ func repositoryFromFullName(host, fullName string) (delivery.Repository, error) 
 	return normalizedRepository(repository), nil
 }
 
-func reconcileChangeRequest(search delivery.ChangeRequestSearch, request delivery.CreateChangeRequestRequest, body string) (delivery.ChangeRequest, bool, error) {
+func reconcileChangeRequest(search delivery.ChangeRequestSearch, spec changeRequestCreationSpec) (delivery.ChangeRequest, bool, error) {
 	if len(search.Matches) > 1 {
 		return delivery.ChangeRequest{}, false, failure(ports.FailureConflict, "multiple pull requests match the exact base and head coordinates", false)
 	}
@@ -387,21 +418,29 @@ func reconcileChangeRequest(search delivery.ChangeRequestSearch, request deliver
 		return delivery.ChangeRequest{}, false, nil
 	}
 	existing := search.Matches[0]
+	request := spec.request
 	owned, ok := existing.Ownership.(delivery.OwnedChangeRequest)
 	if !ok || owned.Owner != request.Owner {
 		return delivery.ChangeRequest{}, false, failure(ports.FailureConflict, "an unowned pull request already uses the exact base and head coordinates", false)
 	}
-	switch existing.State.(type) {
-	case delivery.DraftState:
-		return delivery.ChangeRequest{}, false, failure(ports.FailureConflict, "the owned matching pull request is draft and cannot satisfy final creation", false)
-	case delivery.ClosedState:
-		return delivery.ChangeRequest{}, false, failure(ports.FailureConflict, "the owned matching pull request was closed without merge and requires operator action", false)
-	case delivery.OpenState, delivery.MergedState:
-		// An open or already-merged owned request is the single prior effect.
-	default:
-		return delivery.ChangeRequest{}, false, failure(ports.FailureProtocolDrift, "the owned pull request has an unknown lifecycle state", false)
+	if spec.draft {
+		if _, ok := existing.State.(delivery.DraftState); !ok {
+			return delivery.ChangeRequest{}, false, failure(ports.FailureConflict, "the owned matching pull request is not the requested incremental draft", false)
+		}
+	} else {
+		switch existing.State.(type) {
+		case delivery.DraftState:
+			return delivery.ChangeRequest{}, false, failure(ports.FailureConflict, "the owned matching pull request is draft and must be finalized through an authorized update", false)
+		case delivery.ClosedState:
+			return delivery.ChangeRequest{}, false, failure(ports.FailureConflict, "the owned matching pull request was closed without merge and requires operator action", false)
+		case delivery.OpenState, delivery.MergedState:
+			// An open or already-merged owned request is the single prior effect.
+		default:
+			return delivery.ChangeRequest{}, false, failure(ports.FailureProtocolDrift, "the owned pull request has an unknown lifecycle state", false)
+		}
 	}
-	if existing.Title != request.Title || existing.Body != body || owned.Revision != request.Content.Revision {
+	span, parseErr := locateOwnedSection(existing.Body)
+	if parseErr != nil || existing.Title != request.Title || existing.Body[span.start:span.end] != spec.body || owned.Revision != spec.revision {
 		return delivery.ChangeRequest{}, false, failure(ports.FailureConflict, "the owned pull request does not match the requested final content", false)
 	}
 	return existing, true, nil
@@ -419,11 +458,12 @@ func (adapter *Adapter) changeRequestCreation(outcome delivery.ChangeRequestCrea
 }
 
 func renderFinalChangeRequestBody(owner delivery.ChangeRequestOwner, content delivery.FinalChangeRequestContent) string {
+	return renderOwnedSection(owner, delivery.OwnedSection{Revision: content.Revision, Body: renderFinalChangeRequestContent(content)})
+}
+
+func renderFinalChangeRequestContent(content delivery.FinalChangeRequestContent) string {
 	var body strings.Builder
-	body.WriteString(ownerMarker(owner))
-	body.WriteByte('\n')
-	body.WriteString(revisionMarker(content.Revision))
-	body.WriteString("\n\n## Outcome\n\n")
+	body.WriteString("## Outcome\n\n")
 	body.WriteString(markdownText(content.Outcome))
 	body.WriteString("\n\n## Scope\n\n")
 	for _, item := range content.Scope {
@@ -447,9 +487,11 @@ func renderFinalChangeRequestBody(owner delivery.ChangeRequestOwner, content del
 	for _, evidence := range content.Evidence {
 		fmt.Fprintf(&body, "- [%s](%s) — %s\n", markdownText(evidence.Label), evidence.URL, markdownText(evidence.Summary))
 	}
-	body.WriteByte('\n')
-	body.WriteString(ownedSectionEnd)
-	return body.String()
+	return strings.TrimSpace(body.String())
+}
+
+func renderOwnedSection(owner delivery.ChangeRequestOwner, section delivery.OwnedSection) string {
+	return ownerMarker(owner) + "\n" + revisionMarker(section.Revision) + "\n\n" + strings.TrimSpace(section.Body) + "\n\n" + ownedSectionEnd
 }
 
 func ownerMarker(owner delivery.ChangeRequestOwner) string {
@@ -462,17 +504,70 @@ func revisionMarker(revision string) string {
 	return revisionMarkerPrefix + base64.RawURLEncoding.EncodeToString([]byte(revision)) + " -->"
 }
 
+type ownedSectionSpan struct {
+	start     int
+	end       int
+	ownerLine string
+	revision  string
+}
+
+func locateOwnedSection(body string) (ownedSectionSpan, error) {
+	type markerLine struct {
+		line  string
+		start int
+		end   int
+		index int
+	}
+	lines := strings.Split(body, "\n")
+	offset := 0
+	owners := make([]markerLine, 0, 1)
+	revisions := make([]markerLine, 0, 1)
+	ends := make([]markerLine, 0, 1)
+	markerLines := 0
+	for index, line := range lines {
+		trimmed := strings.TrimSuffix(line, "\r")
+		entry := markerLine{line: trimmed, start: offset, end: offset + len(trimmed), index: index}
+		if strings.Contains(trimmed, "darkstar:owned-change-request") {
+			markerLines++
+			switch {
+			case strings.HasPrefix(trimmed, ownerMarkerPrefix):
+				owners = append(owners, entry)
+			case strings.HasPrefix(trimmed, revisionMarkerPrefix):
+				revisions = append(revisions, entry)
+			case trimmed == ownedSectionEnd:
+				ends = append(ends, entry)
+			}
+		}
+		offset += len(line)
+		if index < len(lines)-1 {
+			offset++
+		}
+	}
+	if markerLines != 3 || len(owners) != 1 || len(revisions) != 1 || len(ends) != 1 {
+		return ownedSectionSpan{}, fmt.Errorf("owned section requires exactly one owner, revision, and end marker")
+	}
+	owner := owners[0]
+	revision := revisions[0]
+	end := ends[0]
+	digest := strings.TrimSuffix(strings.TrimPrefix(owner.line, ownerMarkerPrefix), " -->")
+	decodedDigest, digestErr := hex.DecodeString(digest)
+	if !strings.HasSuffix(owner.line, " -->") || len(decodedDigest) != sha256.Size || digestErr != nil || revision.index != owner.index+1 || end.index <= revision.index {
+		return ownedSectionSpan{}, fmt.Errorf("owned section marker structure is invalid")
+	}
+	encoded := strings.TrimSuffix(strings.TrimPrefix(revision.line, revisionMarkerPrefix), " -->")
+	decodedRevision, revisionErr := base64.RawURLEncoding.DecodeString(encoded)
+	if !strings.HasSuffix(revision.line, " -->") || revisionErr != nil || validateBodyText(string(decodedRevision), "owned content revision", 256) != nil {
+		return ownedSectionSpan{}, fmt.Errorf("owned section revision marker is invalid")
+	}
+	return ownedSectionSpan{start: owner.start, end: end.end, ownerLine: owner.line, revision: string(decodedRevision)}, nil
+}
+
 func ownedRevision(body string, owner delivery.ChangeRequestOwner) (string, bool) {
-	lines := strings.Split(strings.TrimSpace(body), "\n")
-	if len(lines) < 3 || lines[0] != ownerMarker(owner) || lines[len(lines)-1] != ownedSectionEnd || !strings.HasPrefix(lines[1], revisionMarkerPrefix) || !strings.HasSuffix(lines[1], " -->") {
+	span, err := locateOwnedSection(body)
+	if err != nil || span.ownerLine != ownerMarker(owner) {
 		return "", false
 	}
-	encoded := strings.TrimSuffix(strings.TrimPrefix(lines[1], revisionMarkerPrefix), " -->")
-	decoded, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil || validateBodyText(string(decoded), "owned content revision", 256) != nil {
-		return "", false
-	}
-	return string(decoded), true
+	return span.revision, true
 }
 
 func markdownText(value string) string {

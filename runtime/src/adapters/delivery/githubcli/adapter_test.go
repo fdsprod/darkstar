@@ -112,7 +112,7 @@ func TestRunRejectsOversizedOutput(t *testing.T) {
 	assertFailureCode(t, err, ports.FailureResourceExhausted)
 }
 
-func TestConnectorCapabilitiesFailClosedUntilImplemented(t *testing.T) {
+func TestChangeRequestCapabilitiesRejectEmptyRequests(t *testing.T) {
 	t.Parallel()
 	adapter, err := New(Options{Runner: &fakeRunner{resolved: filepath.Join(t.TempDir(), "gh.exe")}})
 	if err != nil {
@@ -132,7 +132,7 @@ func TestConnectorCapabilitiesFailClosedUntilImplemented(t *testing.T) {
 		if err := operation(); err == nil {
 			t.Fatalf("operation %d unexpectedly succeeded", index)
 		} else {
-			assertFailureCode(t, err, ports.FailureUnsupported)
+			assertFailureCode(t, err, ports.FailureInvalidRequest)
 		}
 	}
 }

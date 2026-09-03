@@ -82,14 +82,6 @@ func New(options Options) (*Adapter, error) {
 	return &Adapter{executable: github, gitExecutable: git, runner: runner, now: now}, nil
 }
 
-func (adapter *Adapter) UpdateChangeRequest(context.Context, delivery.UpdateChangeRequestRequest) (delivery.ChangeRequestUpdate, error) {
-	return delivery.ChangeRequestUpdate{}, adapter.unsupported("GitHub change-request update")
-}
-
-func (adapter *Adapter) ObserveChangeRequest(context.Context, delivery.ObserveChangeRequestRequest) (delivery.ChangeRequestObservation, error) {
-	return delivery.ChangeRequestObservation{}, adapter.unsupported("GitHub change-request observation")
-}
-
 func (adapter *Adapter) unsupported(operation string) error {
 	if adapter == nil || adapter.runner == nil || adapter.executable == "" {
 		return failure(ports.FailureInternal, "GitHub CLI adapter is not configured", false)

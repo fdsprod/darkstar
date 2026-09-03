@@ -248,6 +248,12 @@ type UnownedChangeRequest struct{}
 
 func (UnownedChangeRequest) isChangeRequestOwnership() {}
 
+// MalformedChangeRequestOwnership records marker-shaped content that cannot be
+// safely adopted or edited. It is distinct from ordinary human-authored text.
+type MalformedChangeRequestOwnership struct{ Reason string }
+
+func (MalformedChangeRequestOwnership) isChangeRequestOwnership() {}
+
 type OwnedChangeRequest struct {
 	Owner    ChangeRequestOwner
 	Revision string
@@ -284,6 +290,14 @@ type ChangeRequestOwner struct {
 // request, so a zero value or independent flag cannot weaken the authorization.
 type FinalValidationAuthorization struct {
 	ValidatedHeadSHA string
+}
+
+// PointAcceptanceAuthorization couples incremental draft creation or refresh
+// to the exact accepted point and head commit that authorized publication.
+type PointAcceptanceAuthorization struct {
+	AcceptedHeadSHA string
+	PointID         string
+	PointRevision   uint64
 }
 
 type ArtifactLink struct {
@@ -329,18 +343,34 @@ type FinalChangeRequestContent struct {
 // OwnedSection is the only part of a change-request body the connector may
 // replace after creation.
 type OwnedSection struct {
-	Marker   string
 	Revision string
 	Body     string
 }
 
-type CreateChangeRequestRequest struct {
-	OperationID   string
-	Coordinates   ChangeRequestCoordinates
-	Owner         ChangeRequestOwner
-	Title         string
+// ChangeRequestCreationIntent keeps final and configured incremental draft
+// creation mutually exclusive. Each variant carries its own authorization.
+type ChangeRequestCreationIntent interface{ isChangeRequestCreationIntent() }
+
+type CreateFinalChangeRequest struct {
 	Content       FinalChangeRequestContent
 	Authorization FinalValidationAuthorization
+}
+
+func (CreateFinalChangeRequest) isChangeRequestCreationIntent() {}
+
+type CreateIncrementalDraft struct {
+	Content       FinalChangeRequestContent
+	Authorization PointAcceptanceAuthorization
+}
+
+func (CreateIncrementalDraft) isChangeRequestCreationIntent() {}
+
+type CreateChangeRequestRequest struct {
+	OperationID string
+	Coordinates ChangeRequestCoordinates
+	Owner       ChangeRequestOwner
+	Title       string
+	Intent      ChangeRequestCreationIntent
 }
 
 type ChangeRequestCreationOutcome interface{ isChangeRequestCreationOutcome() }
@@ -369,24 +399,40 @@ type ReplaceTitle struct{ Title string }
 
 func (ReplaceTitle) isTitleEdit() {}
 
-type ReadinessEdit interface{ isReadinessEdit() }
+// ChangeRequestUpdateIntent keeps ordinary open-request updates, accepted-point
+// draft refreshes, and final draft readiness mutually exclusive.
+type ChangeRequestUpdateIntent interface{ isChangeRequestUpdateIntent() }
 
-type KeepReadiness struct{}
+type UpdateOwnedChangeRequest struct {
+	Title        TitleEdit
+	OwnedSection OwnedSection
+}
 
-func (KeepReadiness) isReadinessEdit() {}
+func (UpdateOwnedChangeRequest) isChangeRequestUpdateIntent() {}
 
-type MarkReady struct{}
+type UpdateIncrementalDraft struct {
+	Title         TitleEdit
+	Content       FinalChangeRequestContent
+	Authorization PointAcceptanceAuthorization
+}
 
-func (MarkReady) isReadinessEdit() {}
+func (UpdateIncrementalDraft) isChangeRequestUpdateIntent() {}
+
+type FinalizeIncrementalDraft struct {
+	Title         TitleEdit
+	Content       FinalChangeRequestContent
+	Authorization FinalValidationAuthorization
+}
+
+func (FinalizeIncrementalDraft) isChangeRequestUpdateIntent() {}
 
 // UpdateChangeRequestRequest replaces only the connector-owned body section.
 // Human-authored content outside the ownership markers must be preserved.
 type UpdateChangeRequestRequest struct {
-	OperationID  string
-	Ref          ChangeRequestRef
-	Title        TitleEdit
-	OwnedSection OwnedSection
-	Readiness    ReadinessEdit
+	OperationID string
+	Ref         ChangeRequestRef
+	Owner       ChangeRequestOwner
+	Intent      ChangeRequestUpdateIntent
 }
 
 type ChangeRequestUpdateOutcome interface{ isChangeRequestUpdateOutcome() }
@@ -399,6 +445,12 @@ type ChangeRequestUnchanged struct{ ChangeRequest ChangeRequest }
 
 func (ChangeRequestUnchanged) isChangeRequestUpdateOutcome() {}
 
+// ChangeRequestUpdateReconciled means a mutation command had an uncertain
+// result, but a subsequent read proved the requested state.
+type ChangeRequestUpdateReconciled struct{ ChangeRequest ChangeRequest }
+
+func (ChangeRequestUpdateReconciled) isChangeRequestUpdateOutcome() {}
+
 type ChangeRequestUpdate struct {
 	Outcome     ChangeRequestUpdateOutcome
 	ObservedAt  time.Time
@@ -406,12 +458,66 @@ type ChangeRequestUpdate struct {
 }
 
 type ObserveChangeRequestRequest struct {
-	Ref ChangeRequestRef
+	Ref   ChangeRequestRef
+	Owner ChangeRequestOwner
 }
+
+type RequiredCheckDetail struct {
+	Name        string
+	State       string
+	Summary     string
+	EvidenceRef string
+}
+
+type RequiredChecksOutcome interface{ isRequiredChecksOutcome() }
+
+type RequiredChecksNotConfigured struct{}
+
+func (RequiredChecksNotConfigured) isRequiredChecksOutcome() {}
+
+type RequiredChecksSuccessful struct{}
+
+func (RequiredChecksSuccessful) isRequiredChecksOutcome() {}
+
+type RequiredChecksPending struct{ Checks []RequiredCheckDetail }
+
+func (RequiredChecksPending) isRequiredChecksOutcome() {}
+
+type RequiredChecksFailed struct{ Checks []RequiredCheckDetail }
+
+func (RequiredChecksFailed) isRequiredChecksOutcome() {}
+
+type ReviewDetail struct {
+	Reviewer    string
+	Summary     string
+	EvidenceRef string
+}
+
+type RequiredReviewOutcome interface{ isRequiredReviewOutcome() }
+
+type ReviewNotRequired struct{}
+
+func (ReviewNotRequired) isRequiredReviewOutcome() {}
+
+type ReviewApproved struct{}
+
+func (ReviewApproved) isRequiredReviewOutcome() {}
+
+type ReviewPending struct{}
+
+func (ReviewPending) isRequiredReviewOutcome() {}
+
+type ReviewChangesRequested struct{ Reviews []ReviewDetail }
+
+func (ReviewChangesRequested) isRequiredReviewOutcome() {}
 
 type ChangeRequestObservationOutcome interface{ isChangeRequestObservationOutcome() }
 
-type ChangeRequestFound struct{ ChangeRequest ChangeRequest }
+type ChangeRequestFound struct {
+	ChangeRequest ChangeRequest
+	Checks        RequiredChecksOutcome
+	Review        RequiredReviewOutcome
+}
 
 func (ChangeRequestFound) isChangeRequestObservationOutcome() {}
 

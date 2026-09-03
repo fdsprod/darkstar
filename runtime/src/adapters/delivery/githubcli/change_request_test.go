@@ -16,7 +16,7 @@ import (
 func TestCreateChangeRequestRendersFinalBodyAndCreatesNonDraft(t *testing.T) {
 	t.Parallel()
 	request := finalChangeRequest()
-	body := renderFinalChangeRequestBody(request.Owner, request.Content)
+	body := renderFinalChangeRequestBody(request.Owner, creationContent(request))
 	wantBody := strings.Join([]string{
 		ownerMarker(request.Owner),
 		revisionMarker("validation-7"),
@@ -108,7 +108,7 @@ func TestCreateChangeRequestRendersFinalBodyAndCreatesNonDraft(t *testing.T) {
 func TestCreateChangeRequestAdoptsExistingOwnedMatchWithoutMutation(t *testing.T) {
 	t.Parallel()
 	request := finalChangeRequest()
-	body := renderFinalChangeRequestBody(request.Owner, request.Content)
+	body := renderFinalChangeRequestBody(request.Owner, creationContent(request))
 	runner := scriptedRunner(t, commandResponse{stdout: pullResponsesJSON(t, pullSpec{number: 19, title: request.Title, body: body})})
 	adapter := operationAdapter(t, runner)
 	creation, err := adapter.CreateChangeRequest(context.Background(), request)
@@ -127,7 +127,7 @@ func TestCreateChangeRequestAdoptsExistingOwnedMatchWithoutMutation(t *testing.T
 func TestCreateChangeRequestRejectsUnownedAndAmbiguousCollisions(t *testing.T) {
 	t.Parallel()
 	request := finalChangeRequest()
-	body := renderFinalChangeRequestBody(request.Owner, request.Content)
+	body := renderFinalChangeRequestBody(request.Owner, creationContent(request))
 	tests := []struct {
 		name  string
 		pulls []pullSpec
@@ -153,7 +153,7 @@ func TestCreateChangeRequestRejectsUnownedAndAmbiguousCollisions(t *testing.T) {
 func TestCreateChangeRequestRejectsDraftAndClosedOwnedCollisions(t *testing.T) {
 	t.Parallel()
 	request := finalChangeRequest()
-	body := renderFinalChangeRequestBody(request.Owner, request.Content)
+	body := renderFinalChangeRequestBody(request.Owner, creationContent(request))
 	for _, test := range []struct {
 		name string
 		pull pullSpec
@@ -178,7 +178,7 @@ func TestCreateChangeRequestRejectsDraftAndClosedOwnedCollisions(t *testing.T) {
 func TestCreateChangeRequestReconcilesCreateCommandUncertainty(t *testing.T) {
 	t.Parallel()
 	request := finalChangeRequest()
-	body := renderFinalChangeRequestBody(request.Owner, request.Content)
+	body := renderFinalChangeRequestBody(request.Owner, creationContent(request))
 	runner := scriptedRunner(t,
 		commandResponse{stdout: []byte(`[]`)},
 		commandResponse{stdout: []byte(oldCommit + "\n")},
@@ -209,7 +209,7 @@ func TestCreateChangeRequestReconcilesCreateCommandUncertainty(t *testing.T) {
 func TestFindChangeRequestsFiltersToExactBaseAndHeadRepositoriesAndRefs(t *testing.T) {
 	t.Parallel()
 	request := finalChangeRequest()
-	body := renderFinalChangeRequestBody(request.Owner, request.Content)
+	body := renderFinalChangeRequestBody(request.Owner, creationContent(request))
 	runner := scriptedRunner(t, commandResponse{stdout: pullResponsesJSON(t,
 		pullSpec{number: 1, title: request.Title, body: body},
 		pullSpec{number: 2, title: request.Title, body: body, headRepository: "darkstar/other"},
@@ -224,7 +224,7 @@ func TestFindChangeRequestsFiltersToExactBaseAndHeadRepositoriesAndRefs(t *testi
 		t.Fatalf("matches = %#v", search.Matches)
 	}
 	owned, ok := search.Matches[0].Ownership.(delivery.OwnedChangeRequest)
-	if !ok || owned.Owner != request.Owner || owned.Revision != request.Content.Revision {
+	if !ok || owned.Owner != request.Owner || owned.Revision != creationContent(request).Revision {
 		t.Fatalf("ownership = %#v", search.Matches[0].Ownership)
 	}
 }
@@ -239,7 +239,7 @@ func finalChangeRequest() delivery.CreateChangeRequestRequest {
 		},
 		Owner: delivery.ChangeRequestOwner{DeliveryLineID: "delivery-1", WorkItemID: "DAR-87"},
 		Title: "Create the final pull request",
-		Content: delivery.FinalChangeRequestContent{
+		Intent: delivery.CreateFinalChangeRequest{Content: delivery.FinalChangeRequestContent{
 			Revision: "validation-7", Outcome: "Deliver one idempotent final pull request.",
 			Scope:          []string{"Add exact pull request reconciliation."},
 			ArtifactLinks:  []delivery.ArtifactLink{{Label: "Accepted design", URL: "https://example.test/artifacts/design"}},
@@ -250,9 +250,12 @@ func finalChangeRequest() delivery.CreateChangeRequestRequest {
 			},
 			RiskRollback: delivery.RiskRollback{Risk: "A retry could otherwise duplicate the pull request.", Rollback: "Close the owned PR and revert the adapter commit."},
 			Evidence:     []delivery.EvidenceLink{{Label: "Go tests", URL: "https://example.test/evidence/tests", Summary: "Targeted and full suites passed."}},
-		},
-		Authorization: delivery.FinalValidationAuthorization{ValidatedHeadSHA: newCommit},
+		}, Authorization: delivery.FinalValidationAuthorization{ValidatedHeadSHA: newCommit}},
 	}
+}
+
+func creationContent(request delivery.CreateChangeRequestRequest) delivery.FinalChangeRequestContent {
+	return request.Intent.(delivery.CreateFinalChangeRequest).Content
 }
 
 type pullSpec struct {

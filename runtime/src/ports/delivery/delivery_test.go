@@ -18,8 +18,16 @@ func TestContractChoicesAreClosedInterfaces(t *testing.T) {
 		delivery.BranchAlreadyPublished{},
 		delivery.DraftState{},
 		delivery.OwnedChangeRequest{},
+		delivery.MalformedChangeRequestOwnership{},
+		delivery.CreateFinalChangeRequest{},
+		delivery.CreateIncrementalDraft{},
 		delivery.KeepTitle{},
-		delivery.MarkReady{},
+		delivery.UpdateOwnedChangeRequest{},
+		delivery.UpdateIncrementalDraft{},
+		delivery.FinalizeIncrementalDraft{},
+		delivery.RequiredChecksPending{},
+		delivery.RequiredChecksFailed{},
+		delivery.ReviewChangesRequested{},
 		delivery.ChangeRequestReconciled{},
 		delivery.ChangeRequestUnchanged{},
 		delivery.ChangeRequestMissing{},
@@ -85,8 +93,8 @@ func TestFinalCreationAuthorizationCannotRepresentDraftMode(t *testing.T) {
 	if _, found := request.FieldByName("ExpectedHeadSHA"); found {
 		t.Fatal("final creation request duplicates its authorized head SHA")
 	}
-	authorization, found := request.FieldByName("Authorization")
-	if !found || authorization.Type != reflect.TypeOf(delivery.FinalValidationAuthorization{}) {
-		t.Fatalf("authorization = %v, want concrete FinalValidationAuthorization", authorization.Type)
+	intent, found := request.FieldByName("Intent")
+	if !found || intent.Type != reflect.TypeOf((*delivery.ChangeRequestCreationIntent)(nil)).Elem() {
+		t.Fatalf("intent = %v, want closed ChangeRequestCreationIntent", intent.Type)
 	}
 }
