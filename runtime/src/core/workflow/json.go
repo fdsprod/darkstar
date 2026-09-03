@@ -20,7 +20,7 @@ var (
 	digestPattern           = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
-// Decode strictly decodes one v1alpha1 workflow document. It rejects unknown
+// Decode strictly decodes one supported workflow document. It rejects unknown
 // fields and contradictory tagged variants before returning a domain value.
 func Decode(data []byte) (Document, error) {
 	var document Document
@@ -57,8 +57,8 @@ func (document *Document) UnmarshalJSON(data []byte) error {
 	if err := strictDecode(data, &wire); err != nil {
 		return err
 	}
-	if wire.APIVersion != APIVersionV1Alpha1 {
-		return fmt.Errorf("apiVersion must be %q", APIVersionV1Alpha1)
+	if wire.APIVersion != APIVersionV1Alpha1 && wire.APIVersion != APIVersionV1Alpha2 {
+		return fmt.Errorf("apiVersion must be %q or %q", APIVersionV1Alpha1, APIVersionV1Alpha2)
 	}
 	if wire.Kind != KindWorkflow {
 		return fmt.Errorf("kind must be %q", KindWorkflow)
@@ -71,7 +71,7 @@ func (document *Document) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("metadata: %w", err)
 	}
-	spec, err := decodeSpec(wire.Spec)
+	spec, err := decodeSpec(wire.Spec, wire.APIVersion)
 	if err != nil {
 		return fmt.Errorf("spec: %w", err)
 	}
@@ -106,7 +106,7 @@ func decodeMetadata(data []byte) (Metadata, error) {
 	return Metadata{Name: wire.Name, Version: wire.Version, DisplayName: displayName, Description: wire.Description}, nil
 }
 
-func decodeSpec(data []byte) (Spec, error) {
+func decodeSpec(data []byte, apiVersion string) (Spec, error) {
 	type specWire struct {
 		Inputs        json.RawMessage `json:"inputs"`
 		RouteDefaults json.RawMessage `json:"routeDefaults"`
@@ -119,6 +119,9 @@ func decodeSpec(data []byte) (Spec, error) {
 	}
 	if len(wire.RouteDefaults) == 0 || len(wire.Nodes) == 0 {
 		return Spec{}, errors.New("routeDefaults and nodes are required")
+	}
+	if apiVersion == APIVersionV1Alpha1 && len(wire.Profiles) != 0 {
+		return Spec{}, errors.New("profiles require apiVersion darkstar.local/v1alpha2")
 	}
 
 	inputs := make(map[Identifier]ValueDeclaration)
@@ -143,7 +146,7 @@ func decodeSpec(data []byte) (Spec, error) {
 		return Spec{}, fmt.Errorf("routeDefaults.terminals: %w", err)
 	}
 
-	nodes, err := decodeNodes(wire.Nodes)
+	nodes, err := decodeNodes(wire.Nodes, apiVersion)
 	if err != nil {
 		return Spec{}, fmt.Errorf("nodes: %w", err)
 	}
@@ -266,7 +269,7 @@ func decodeOutputDeclarations(data []byte) (map[Identifier]OutputDeclaration, er
 	return result, nil
 }
 
-func decodeNodes(data []byte) (map[Identifier]Node, error) {
+func decodeNodes(data []byte, apiVersion string) (map[Identifier]Node, error) {
 	var raw map[string]json.RawMessage
 	if err := strictDecode(data, &raw); err != nil {
 		return nil, err
@@ -283,7 +286,7 @@ func decodeNodes(data []byte) (map[Identifier]Node, error) {
 		if err := validateIdentifier(id); err != nil {
 			return nil, err
 		}
-		node, err := decodeNode(value)
+		node, err := decodeNode(value, apiVersion)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
@@ -292,7 +295,7 @@ func decodeNodes(data []byte) (map[Identifier]Node, error) {
 	return result, nil
 }
 
-func decodeNode(data []byte) (Node, error) {
+func decodeNode(data []byte, apiVersion string) (Node, error) {
 	type nodeWire struct {
 		DisplayName    json.RawMessage   `json:"displayName"`
 		Type           NodeType          `json:"type"`
@@ -321,6 +324,9 @@ func decodeNode(data []byte) (Node, error) {
 	}
 	if wire.Entry == nil || wire.Terminal == nil || len(wire.Inputs) == 0 || len(wire.Outputs) == 0 {
 		return nil, errors.New("type, entry, terminal, inputs, and outputs are required")
+	}
+	if apiVersion == APIVersionV1Alpha1 && (len(wire.Readiness) != 0 || len(wire.Points) != 0 || wire.Type == NodePointExecution) {
+		return nil, errors.New("readiness and point execution require apiVersion darkstar.local/v1alpha2")
 	}
 	displayName, err := decodeOptionalNonEmptyString(wire.DisplayName)
 	if err != nil {
@@ -412,7 +418,7 @@ func decodeNode(data []byte) (Node, error) {
 		}
 		return CommandNode{Common: common, Executor: executor}, nil
 	case NodeApproval:
-		executor, err := decodeApproval(wire.Approval)
+		executor, err := decodeApproval(wire.Approval, apiVersion)
 		if err != nil {
 			return nil, fmt.Errorf("approval: %w", err)
 		}
@@ -588,7 +594,7 @@ func decodePointExecution(data []byte) (PointExecutionExecutor, error) {
 	return executor, nil
 }
 
-func decodeApproval(data []byte) (ApprovalExecutor, error) {
+func decodeApproval(data []byte, apiVersion string) (ApprovalExecutor, error) {
 	type approvalWire struct {
 		Actor             string     `json:"actor"`
 		ExternalCondition string     `json:"externalCondition"`
@@ -605,8 +611,12 @@ func decodeApproval(data []byte) (ApprovalExecutor, error) {
 		if strings.TrimSpace(wire.ExternalCondition) == "" {
 			return nil, errors.New("external actor requires externalCondition")
 		}
-		if err := validateIdentifier(wire.EvidenceOutput); err != nil {
-			return nil, fmt.Errorf("external actor requires evidenceOutput: %w", err)
+		if apiVersion == APIVersionV1Alpha2 {
+			if err := validateIdentifier(wire.EvidenceOutput); err != nil {
+				return nil, fmt.Errorf("external actor requires evidenceOutput: %w", err)
+			}
+		} else if wire.EvidenceOutput != "" {
+			return nil, errors.New("evidenceOutput requires apiVersion darkstar.local/v1alpha2")
 		}
 		return ExternalApproval{ExternalCondition: wire.ExternalCondition, EvidenceOutput: wire.EvidenceOutput}, nil
 	}
@@ -1050,7 +1060,7 @@ func decodeOperand(data []byte) (Operand, error) {
 }
 
 func validateDocument(document Document) error {
-	if document.APIVersion != APIVersionV1Alpha1 || document.Kind != KindWorkflow {
+	if (document.APIVersion != APIVersionV1Alpha1 && document.APIVersion != APIVersionV1Alpha2) || document.Kind != KindWorkflow {
 		return errors.New("document has an unsupported apiVersion or kind")
 	}
 	if !workflowNamePattern.MatchString(document.Metadata.Name) || !semanticVersionPattern.MatchString(document.Metadata.Version) {
@@ -1240,7 +1250,11 @@ func (node ApprovalNode) MarshalJSON() ([]byte, error) {
 	case NamedApproval:
 		executor = map[string]any{"actor": approval.Name}
 	case ExternalApproval:
-		executor = map[string]any{"actor": "external", "externalCondition": approval.ExternalCondition, "evidenceOutput": approval.EvidenceOutput}
+		value := map[string]any{"actor": "external", "externalCondition": approval.ExternalCondition}
+		if approval.EvidenceOutput != "" {
+			value["evidenceOutput"] = approval.EvidenceOutput
+		}
+		executor = value
 	default:
 		return nil, fmt.Errorf("unsupported approval executor %T", node.Executor)
 	}

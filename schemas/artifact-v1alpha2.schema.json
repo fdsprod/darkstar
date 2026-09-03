@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://darkstar.local/schemas/artifact-v1alpha1.schema.json",
-  "title": "DARKSTAR artifact boundary v1alpha1",
+  "$id": "https://darkstar.local/schemas/artifact-v1alpha2.schema.json",
+  "title": "DARKSTAR artifact boundary v1alpha2",
   "oneOf": [
     {"$ref": "#/$defs/artifact"},
     {"$ref": "#/$defs/representation"},
@@ -287,6 +287,29 @@
         "access": {"enum": ["read_only", "workspace_write"]}
       }
     },
+    "capabilitySelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "class", "fingerprint", "source", "permissions"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["skill", "tool"]},
+        "class": {"enum": ["guaranteed", "registered", "inherited"]},
+        "version": {"type": "string", "minLength": 1},
+        "fingerprint": {"$ref": "#/$defs/digest"},
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "locator"],
+          "properties": {
+            "type": {"type": "string", "minLength": 1},
+            "locator": {"type": "string", "minLength": 1}
+          }
+        },
+        "permissions": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    },
     "contextManifest": {
       "type": "object",
       "additionalProperties": false,
@@ -315,7 +338,7 @@
         "schemas": {"type": "array", "items": {"$ref": "#/$defs/digestRef"}},
         "permissions": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
         "workspace": {"$ref": "#/$defs/workspaceSnapshot"},
-        "capabilities": {"type": "array", "items": {"$ref": "#/$defs/digestRef"}},
+        "capabilities": {"type": "array", "items": {"$ref": "#/$defs/capabilitySelection"}},
         "digest": {"$ref": "#/$defs/digest"},
         "frozenAt": {"type": "string", "format": "date-time"}
       }

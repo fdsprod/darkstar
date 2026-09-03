@@ -140,7 +140,7 @@ These issues should be written up before their dependent implementation closes. 
 **Spike outcome:** Adopt immutable typed graph snapshots, explicit bindings, data-only predicate trees, first-class deterministic gates over persisted reasoning scores, exclusive-or-explicit-fanout transitions, logical-closure joins, budgeted cycle edges, non-recursive pinned sub-workflows, and route patches limited to predeclared transitions and terminal boundaries. The executable evidence is:
 
 - [Workflow execution semantics](../architecture/workflow/execution-semantics.md);
-- [`schemas/workflow-v1alpha1.schema.json`](../../schemas/workflow-v1alpha1.schema.json) and [`schemas/route-patch-v1alpha1.schema.json`](../../schemas/route-patch-v1alpha1.schema.json);
+- [`schemas/workflow-v1alpha1.schema.json`](../../schemas/workflow-v1alpha1.schema.json), [`schemas/workflow-v1alpha2.schema.json`](../../schemas/workflow-v1alpha2.schema.json), and [`schemas/route-patch-v1alpha1.schema.json`](../../schemas/route-patch-v1alpha1.schema.json);
 - [`examples/workflows/`](../../examples/workflows/), [`examples/scenarios/`](../../examples/scenarios/), and [`examples/route-patches/`](../../examples/route-patches/);
 - [`scripts/workflow-reference.mjs`](../../scripts/workflow-reference.mjs); and
 - [`tests/workflow-reference.test.mjs`](../../tests/workflow-reference.test.mjs).

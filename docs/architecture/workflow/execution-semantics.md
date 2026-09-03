@@ -2,7 +2,7 @@
 
 > [Documentation index](../../README.md)
 
-**Status:** Proposed normative contract for `darkstar.local/v1alpha1`  
+**Status:** Proposed normative contract for `darkstar.local/v1alpha2`
 **Decision:** DS-002  
 **Scope:** Workflow validation, route freezing, node execution, transitions, joins, bounded loops, checkpoints, sub-workflows, route patches, versioning, and stable errors
 
@@ -48,7 +48,7 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 ## 3. Installed form and identity
 
 Authoring files MAY be YAML or JSON. Installation parses them to the data model in
-[`schemas/workflow-v1alpha1.schema.json`](../../../schemas/workflow-v1alpha1.schema.json),
+[`schemas/workflow-v1alpha2.schema.json`](../../../schemas/workflow-v1alpha2.schema.json),
 rejects duplicate YAML keys and non-JSON values, and serializes canonical JSON:
 
 - UTF-8;

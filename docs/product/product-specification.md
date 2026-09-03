@@ -219,7 +219,7 @@ Recommended precedence, highest first:
 Illustrative MVP project configuration:
 
 ```yaml
-apiVersion: darkstar.local/v1alpha1
+apiVersion: darkstar.local/v1alpha2
 kind: Project
 metadata:
   name: darkstar
@@ -281,7 +281,7 @@ Workflow validation shall detect:
 Illustrative workflow:
 
 ```yaml
-apiVersion: darkstar.local/v1alpha1
+apiVersion: darkstar.local/v1alpha2
 kind: Workflow
 metadata:
   name: product-delivery

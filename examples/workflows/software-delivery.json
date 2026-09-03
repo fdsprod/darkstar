@@ -1,5 +1,5 @@
 {
-  "apiVersion": "darkstar.local/v1alpha1",
+  "apiVersion": "darkstar.local/v1alpha2",
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/software-delivery",

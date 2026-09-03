@@ -219,10 +219,12 @@ function predicateReferences(predicate, prefix) {
 export function validateWorkflow(document, sourcePath = null, callStack = []) {
   const errors = [];
   if (!document || typeof document !== "object" || Array.isArray(document)) return [fail("WF_SCHEMA_INVALID", "workflow must be an object")];
-  if (document.apiVersion !== "darkstar.local/v1alpha1" || document.kind !== "Workflow") errors.push(fail("WF_SCHEMA_INVALID", "unsupported apiVersion or kind"));
+  if (!["darkstar.local/v1alpha1", "darkstar.local/v1alpha2"].includes(document.apiVersion) || document.kind !== "Workflow") errors.push(fail("WF_SCHEMA_INVALID", "unsupported apiVersion or kind"));
   const metadata = document.metadata;
   const spec = document.spec;
   if (!metadata || !spec || typeof metadata !== "object" || typeof spec !== "object") return [...errors, fail("WF_SCHEMA_INVALID", "metadata and spec must be objects")];
+  const legacyWorkflow = document.apiVersion === "darkstar.local/v1alpha1";
+  if (legacyWorkflow && Object.hasOwn(spec, "profiles")) errors.push(fail("WF_SCHEMA_INVALID", "profiles require apiVersion darkstar.local/v1alpha2", "/spec/profiles"));
   if (typeof metadata.name !== "string" || typeof metadata.version !== "string") errors.push(fail("WF_SCHEMA_INVALID", "metadata name and version are required", "/metadata"));
   const runInputs = spec.inputs ?? {};
   const nodes = spec.nodes;
@@ -247,6 +249,9 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
     if (!ID_RE.test(nodeId) || !node || typeof node !== "object" || Array.isArray(node)) {
       errors.push(fail("WF_SCHEMA_INVALID", `invalid node '${nodeId}'`, location));
       continue;
+    }
+    if (legacyWorkflow && (node.type === "point_execution" || Object.hasOwn(node, "points") || Object.hasOwn(node, "readiness"))) {
+      errors.push(fail("WF_SCHEMA_INVALID", "readiness and point execution require apiVersion darkstar.local/v1alpha2", location));
     }
     const requiredExecutor = { reasoning: "reasoning", gate: "gate", command: "command", approval: "approval", subworkflow: "call", point_execution: "points" }[node.type];
     if (!NODE_TYPES.has(node.type)) errors.push(fail("WF_SCHEMA_INVALID", `invalid node type '${node.type}'`, `${location}/type`));
@@ -333,7 +338,11 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
       const isExternal = node.approval.actor === "external";
       const hasExternalCondition = Object.hasOwn(node.approval, "externalCondition");
       const hasEvidenceOutput = Object.hasOwn(node.approval, "evidenceOutput");
-      if (isExternal !== hasExternalCondition || isExternal !== hasEvidenceOutput) errors.push(fail("WF_SCHEMA_INVALID", "external approval actor, condition, and evidence output must be declared together", `${location}/approval`));
+      if (legacyWorkflow) {
+        if (isExternal !== hasExternalCondition || hasEvidenceOutput) errors.push(fail("WF_SCHEMA_INVALID", "v1alpha1 external approval requires only actor and condition", `${location}/approval`));
+      } else if (isExternal !== hasExternalCondition || isExternal !== hasEvidenceOutput) {
+        errors.push(fail("WF_SCHEMA_INVALID", "external approval actor, condition, and evidence output must be declared together", `${location}/approval`));
+      }
       if (isExternal && hasEvidenceOutput) {
         const declaration = node.outputs?.[node.approval.evidenceOutput];
         if (!declaration) errors.push(fail("WF_REFERENCE_MISSING", `external evidence references unknown output '${node.approval.evidenceOutput}'`, `${location}/approval/evidenceOutput`));

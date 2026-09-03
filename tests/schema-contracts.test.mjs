@@ -35,6 +35,10 @@ test("v1 run evolution preserves legacy operations and models new requests as a 
   assert.equal(api.components.schemas.Run.required.includes("lastGlobalPosition"), false);
   assert.ok(api.components.schemas.Run.properties.routeSnapshot);
   assert.equal(api.components.schemas.CreateRunRequest.additionalProperties, false);
+  assert.deepEqual(api.components.schemas.WorkflowDocument.oneOf.map((variant) => variant.$ref), [
+    "./workflow-v1alpha1.schema.json", "./workflow-v1alpha2.schema.json"
+  ]);
+  assert.ok(api.components.schemas.WorkflowGraph.properties.nodes.items.properties.type.enum.includes("point_execution"));
 });
 
 test("project and work command contracts publish exact request variants and aggregate views", () => {
@@ -64,7 +68,7 @@ test("run controls publish the complete optimistic-concurrency surface", () => {
 });
 
 test("provider and artifact boundaries are published as strict schemas", () => {
-  for (const name of ["provider-v1alpha1.schema.json", "artifact-v1alpha1.schema.json"]) {
+  for (const name of ["provider-v1alpha1.schema.json", "artifact-v1alpha1.schema.json", "artifact-v1alpha2.schema.json"]) {
     const schema = JSON.parse(readFileSync(resolve(root, "schemas", name), "utf8"));
     assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
     assert.ok(Object.values(schema.$defs).filter((definition) => definition.type === "object").every((definition) => definition.additionalProperties === false));
@@ -128,7 +132,7 @@ test("provider events publish the normalized adapter vocabulary", () => {
 });
 
 test("artifact provenance and context order have one source of truth", () => {
-  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha1.schema.json"), "utf8"));
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha2.schema.json"), "utf8"));
   assert.deepEqual(schema.$defs.provenance.oneOf.map((variant) => variant.properties.origin.const), ["attempt", "operation"]);
   for (const field of ["version", "producer", "roles", "tags", "metadata"])
     assert.ok(schema.$defs.artifact.properties[field], `artifact is missing ${field}`);
@@ -140,7 +144,7 @@ test("artifact provenance and context order have one source of truth", () => {
 });
 
 test("late-evidence impact uses closed coverage and proposal variants", () => {
-  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha1.schema.json"), "utf8"));
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha2.schema.json"), "utf8"));
   assert.deepEqual(
     schema.$defs.impactProposal.oneOf.map((variant) => variant.properties.action.const),
     ["continue", "refresh", "revise", "insert", "invalidate"]
@@ -155,6 +159,24 @@ test("compatibility permits additive optional fields", () => {
   const after = structuredClone(before);
   after.properties.label = { type: "string" };
   assert.deepEqual(compareContracts(contracts({ "sample-v1.schema.json": before }), contracts({ "sample-v1.schema.json": after })), []);
+});
+
+test("compatibility permits preserving a published schema as an explicit version alternative", () => {
+  const before = { $ref: "./workflow-v1alpha1.schema.json" };
+  const after = { oneOf: [before, { $ref: "./workflow-v1alpha2.schema.json" }] };
+  assert.deepEqual(compareContracts(contracts({ "sample-v1.schema.json": before }), contracts({ "sample-v1.schema.json": after })), []);
+});
+
+test("compatibility permits an exact corrective promotion to a newer contract version", () => {
+  const mutated = { $schema: "https://json-schema.org/draft/2020-12/schema", $id: "https://example.test/sample-v1alpha1.schema.json", title: "Sample v1alpha1", type: "string", minLength: 2 };
+  const restored = { ...mutated, minLength: 3 };
+  const promoted = { ...mutated, $id: "https://example.test/sample-v1alpha2.schema.json", title: "Sample v1alpha2" };
+  const before = contracts({ "sample-v1alpha1.schema.json": mutated });
+  const after = contracts({ "sample-v1alpha1.schema.json": restored, "sample-v1alpha2.schema.json": promoted });
+  assert.deepEqual(compareContracts(before, after), []);
+
+  promoted.minLength = 3;
+  assert.ok(compareContracts(before, after).some((issue) => issue.includes("minLength")));
 });
 
 test("compatibility rejects removal, narrowing, and new requirements", () => {

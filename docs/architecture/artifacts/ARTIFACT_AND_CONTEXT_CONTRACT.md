@@ -2,12 +2,12 @@
 
 > [Documentation index](../../README.md)
 
-**Status:** Proposed normative contract for `darkstar.local/v1alpha1`  
+**Status:** Proposed normative contract for `darkstar.local/v1alpha2`
 **Decision:** DS-006  
 **Scope:** Artifact ingestion, immutable storage, representations, binding, context selection, limits, and safe degradation
 
 The machine-readable record boundary is
-[`artifact-v1alpha1.schema.json`](../../../schemas/artifact-v1alpha1.schema.json).
+[`artifact-v1alpha2.schema.json`](../../../schemas/artifact-v1alpha2.schema.json).
 
 ## 1. Decision
 

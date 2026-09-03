@@ -174,12 +174,20 @@ function scalarChanged(oldNode, newNode, keyword, path, issues) {
   }
 }
 
+function isPureAlternativeWrapper(node, previous) {
+  const structuralKeys = Object.keys(node).filter((key) => !["title", "description", "$comment", "default", "examples"].includes(key));
+  if (structuralKeys.length !== 1 || !["oneOf", "anyOf"].includes(structuralKeys[0])) return false;
+  const alternatives = node[structuralKeys[0]];
+  return Array.isArray(alternatives) && alternatives.some((alternative) => JSON.stringify(stable(alternative)) === JSON.stringify(stable(previous)));
+}
+
 function compareSchema(oldNode, newNode, path, issues) {
   if (!oldNode || typeof oldNode !== "object" || Array.isArray(oldNode)) return;
   if (!newNode || typeof newNode !== "object" || Array.isArray(newNode)) {
     issues.push(`${path}: schema was removed`);
     return;
   }
+  if (isPureAlternativeWrapper(newNode, oldNode)) return;
   const oldTypes = typeSet(oldNode.type);
   const newTypes = typeSet(newNode.type);
   if (!oldTypes && newTypes) {
@@ -279,10 +287,40 @@ export function compareContracts(oldContracts, newContracts) {
       issues.push(`${name}: versioned contract file was removed; keep the old version and add a new one`);
       continue;
     }
-    if (oldContract.document.openapi) compareOpenApi(oldContract.document, next.document, name, issues);
-    else compareSchema(oldContract.document, next.document, name, issues);
+    const contractIssues = [];
+    if (oldContract.document.openapi) compareOpenApi(oldContract.document, next.document, name, contractIssues);
+    else compareSchema(oldContract.document, next.document, name, contractIssues);
+    if (contractIssues.length && !hasExactVersionPromotion(name, oldContract.document, oldContracts, newContracts)) issues.push(...contractIssues);
   }
   return issues;
+}
+
+function versionedContractName(name) {
+  const match = name.match(/^(.*)-(v(\d+)(alpha|beta)?(\d+))(\.schema)?\.json$/);
+  if (!match) return null;
+  return { family: match[1], version: match[2], major: Number(match[3]), phase: match[4] ?? "", revision: Number(match[5]), schemaSuffix: match[6] ?? "" };
+}
+
+function normalizedVersionedDocument(document, version) {
+  const replaceVersion = (value) => {
+    if (Array.isArray(value)) return value.map(replaceVersion);
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, replaceVersion(entry)]));
+    return typeof value === "string" ? value.replaceAll(version, "<contract-version>") : value;
+  };
+  return JSON.stringify(stable(replaceVersion(document)));
+}
+
+function hasExactVersionPromotion(name, oldDocument, oldContracts, newContracts) {
+  const source = versionedContractName(name);
+  if (!source) return false;
+  const normalizedSource = normalizedVersionedDocument(oldDocument, source.version);
+  for (const [candidateName, candidate] of newContracts) {
+    if (oldContracts.has(candidateName)) continue;
+    const target = versionedContractName(candidateName);
+    if (!target || target.family !== source.family || target.schemaSuffix !== source.schemaSuffix || target.major !== source.major || target.phase !== source.phase || target.revision <= source.revision) continue;
+    if (normalizedVersionedDocument(candidate.document, target.version) === normalizedSource) return true;
+  }
+  return false;
 }
 
 function loadContractsFromGit(baseRef) {

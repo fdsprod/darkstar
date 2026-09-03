@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://darkstar.local/schemas/workflow-v1alpha1.schema.json",
-  "title": "DARKSTAR workflow v1alpha1",
+  "$id": "https://darkstar.local/schemas/workflow-v1alpha2.schema.json",
+  "title": "DARKSTAR workflow v1alpha2",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
-    "apiVersion": {"const": "darkstar.local/v1alpha1"},
+    "apiVersion": {"const": "darkstar.local/v1alpha2"},
     "kind": {"const": "Workflow"},
     "metadata": {"$ref": "#/$defs/metadata"},
     "spec": {"$ref": "#/$defs/spec"}
@@ -61,11 +61,32 @@
             }
           }
         },
+        "profiles": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": {"$ref": "#/$defs/routeProfile"},
+          "default": {}
+        },
         "nodes": {
           "type": "object",
           "minProperties": 1,
           "propertyNames": {"$ref": "#/$defs/identifier"},
           "additionalProperties": {"$ref": "#/$defs/node"}
+        }
+      }
+    },
+    "routeProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "entry", "terminals", "inputDefaults"],
+      "properties": {
+        "description": {"type": "string", "minLength": 1},
+        "entry": {"$ref": "#/$defs/identifier"},
+        "terminals": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "inputDefaults": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": true
         }
       }
     },
@@ -232,19 +253,39 @@
         "timeoutSeconds": {"type": "integer", "minimum": 1}
       }
     },
+    "pointExecutionExecutor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planInput", "approval", "riskTags", "validation", "publishing"],
+      "properties": {
+        "planInput": {"$ref": "#/$defs/identifier"},
+        "approval": {"enum": ["none", "every", "risk", "combined"]},
+        "riskTags": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "validation": {"enum": ["each", "combined", "each_and_combined"]},
+        "publishing": {"enum": ["after_story_validation", "after_each_point"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"approval": {"const": "risk"}}, "required": ["approval"]},
+          "then": {"properties": {"riskTags": {"minItems": 1}}},
+          "else": {"properties": {"riskTags": {"maxItems": 0}}}
+        }
+      ]
+    },
     "approvalExecutor": {
       "type": "object",
       "additionalProperties": false,
       "required": ["actor"],
       "properties": {
         "actor": {"type": "string", "minLength": 1},
-        "externalCondition": {"type": "string", "minLength": 1}
+        "externalCondition": {"type": "string", "minLength": 1},
+        "evidenceOutput": {"$ref": "#/$defs/identifier"}
       },
       "allOf": [
         {
           "if": {"properties": {"actor": {"const": "external"}}, "required": ["actor"]},
-          "then": {"required": ["externalCondition"]},
-          "else": {"not": {"required": ["externalCondition"]}}
+          "then": {"required": ["externalCondition", "evidenceOutput"]},
+          "else": {"not": {"anyOf": [{"required": ["externalCondition"]}, {"required": ["evidenceOutput"]}]}}
         }
       ]
     },
@@ -287,13 +328,64 @@
         }
       }
     },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recommendedEvidence", "policyGates", "invariants", "remedies"],
+      "properties": {
+        "recommendedEvidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "description"],
+            "properties": {
+              "role": {"$ref": "#/$defs/identifier"},
+              "description": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "policyGates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["policy", "enforcement", "description"],
+            "properties": {
+              "policy": {"$ref": "#/$defs/identifier"},
+              "enforcement": {"enum": ["advisory", "blocking", "external"]},
+              "description": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "invariants": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "remedies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "target", "action", "description"],
+            "properties": {
+              "code": {"$ref": "#/$defs/identifier"},
+              "target": {"$ref": "#/$defs/identifier"},
+              "action": {"enum": ["supply_input", "revise_artifact", "clarify_decision", "install_capability", "rerun_validation"]},
+              "description": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
     "node": {
       "type": "object",
       "additionalProperties": false,
       "required": ["type", "entry", "terminal", "inputs", "outputs"],
       "properties": {
         "displayName": {"type": "string", "minLength": 1},
-        "type": {"enum": ["reasoning", "gate", "command", "approval", "subworkflow"]},
+        "type": {"enum": ["reasoning", "gate", "command", "approval", "subworkflow", "point_execution"]},
         "entry": {"type": "boolean"},
         "terminal": {"type": "boolean"},
         "inputs": {
@@ -306,11 +398,13 @@
           "propertyNames": {"$ref": "#/$defs/identifier"},
           "additionalProperties": {"$ref": "#/$defs/outputDeclaration"}
         },
+        "readiness": {"$ref": "#/$defs/readiness"},
         "reasoning": {"$ref": "#/$defs/reasoningExecutor"},
         "gate": {"$ref": "#/$defs/gateExecutor"},
         "command": {"$ref": "#/$defs/commandExecutor"},
         "approval": {"$ref": "#/$defs/approvalExecutor"},
         "call": {"$ref": "#/$defs/subworkflowCall"},
+        "points": {"$ref": "#/$defs/pointExecutionExecutor"},
         "validators": {
           "type": "array",
           "items": {
@@ -351,7 +445,7 @@
             "reasoning": {"$ref": "#/$defs/reasoningExecutor"}
           },
           "required": ["reasoning"],
-          "not": {"anyOf": [{"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}]}
+          "not": {"anyOf": [{"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["points"]}]}
         },
         {
           "properties": {
@@ -359,7 +453,7 @@
             "gate": {"$ref": "#/$defs/gateExecutor"}
           },
           "required": ["gate"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}]}
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["points"]}]}
         },
         {
           "properties": {
@@ -367,7 +461,7 @@
             "command": {"$ref": "#/$defs/commandExecutor"}
           },
           "required": ["command"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["approval"]}, {"required": ["call"]}]}
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["points"]}]}
         },
         {
           "properties": {
@@ -375,7 +469,7 @@
             "approval": {"$ref": "#/$defs/approvalExecutor"}
           },
           "required": ["approval"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["call"]}]}
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["call"]}, {"required": ["points"]}]}
         },
         {
           "properties": {
@@ -383,7 +477,15 @@
             "call": {"$ref": "#/$defs/subworkflowCall"}
           },
           "required": ["call"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}]}
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["points"]}]}
+        },
+        {
+          "properties": {
+            "type": {"const": "point_execution"},
+            "points": {"$ref": "#/$defs/pointExecutionExecutor"}
+          },
+          "required": ["points"],
+          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}]}
         }
       ]
     },

@@ -7,6 +7,7 @@ import "encoding/json"
 
 const (
 	APIVersionV1Alpha1 = "darkstar.local/v1alpha1"
+	APIVersionV1Alpha2 = "darkstar.local/v1alpha2"
 	KindWorkflow       = "Workflow"
 )
 

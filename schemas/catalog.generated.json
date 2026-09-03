@@ -13,8 +13,16 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/artifact-v1alpha1.schema.json",
       "name": "artifact-v1alpha1",
-      "sha256": "e362a2faece5b1c414d68a855bd4865beb705010812a614ce712d3ab8821cb8f",
+      "sha256": "ecab55547b1fc2d6a7e5651c620dd9d1056df4dc20ee3f42c04b193b83f98ae9",
       "version": "v1alpha1"
+    },
+    {
+      "file": "artifact-v1alpha2.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/artifact-v1alpha2.schema.json",
+      "name": "artifact-v1alpha2",
+      "sha256": "b2b4400fee03d7293da7aa8f95c66d36e37f782ec7557e1577c9365447d69906",
+      "version": "v1alpha2"
     },
     {
       "file": "builtin-skills-v1alpha1.schema.json",
@@ -61,7 +69,7 @@
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "cde5bbb6f04802b2397298bfc1a0aae97e7070c3d1aaa5f17e4e531b76e5eb3c",
+      "sha256": "f18d314f48818a83f5ce854ce1caa14abacf862f30a350d7bc6efa36c888c2d1",
       "version": "v1alpha1"
     },
     {
@@ -109,8 +117,16 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/workflow-v1alpha1.schema.json",
       "name": "workflow-v1alpha1",
-      "sha256": "e006c9c387202cdf986c4edf468ba16c033ffd7ece474222a59966cd7b14e460",
+      "sha256": "4788651414fcd82265faa9e785f4fa49d5c4886eea981e169d5997ee718a1122",
       "version": "v1alpha1"
+    },
+    {
+      "file": "workflow-v1alpha2.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/workflow-v1alpha2.schema.json",
+      "name": "workflow-v1alpha2",
+      "sha256": "67a5be583f8721fe4b0151b0f38d7aa0783fa1bf66bdb1ef84f700d3bdcdf350",
+      "version": "v1alpha2"
     }
   ],
   "schemaVersion": 1

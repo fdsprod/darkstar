@@ -86,7 +86,7 @@ func TestShippedWorkflowsDecodeIntoClosedNodeVariants(t *testing.T) {
 func TestPublishedEnumsMatchTypedContract(t *testing.T) {
 	t.Parallel()
 
-	data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "schemas", "workflow-v1alpha1.schema.json"))
+	data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "schemas", "workflow-v1alpha2.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +126,20 @@ func TestPublishedEnumsMatchTypedContract(t *testing.T) {
 	assertStringSet(t, schemaEnum(t, schema, "$defs", "pointExecutionExecutor", "properties", "publishing", "enum"), []string{
 		string(workflow.PointPublishingAfterStory), string(workflow.PointPublishingAfterEach),
 	})
+}
+
+func TestWorkflowVersionBoundaryPreservesLegacyExternalApproval(t *testing.T) {
+	t.Parallel()
+
+	legacy := []byte(`{"apiVersion":"darkstar.local/v1alpha1","kind":"Workflow","metadata":{"name":"legacy","version":"1.0.0"},"spec":{"routeDefaults":{"entry":"approve","terminals":["approve"]},"nodes":{"approve":{"type":"approval","entry":true,"terminal":true,"inputs":{},"outputs":{},"approval":{"actor":"external","externalCondition":"checks pass"}}}}}`)
+	if _, err := workflow.Decode(legacy); err != nil {
+		t.Fatalf("decode preserved v1alpha1 workflow: %v", err)
+	}
+
+	modern := strings.Replace(string(legacy), "darkstar.local/v1alpha1", "darkstar.local/v1alpha2", 1)
+	if _, err := workflow.Decode([]byte(modern)); err == nil || !strings.Contains(err.Error(), "requires evidenceOutput") {
+		t.Fatalf("v1alpha2 external approval error = %v", err)
+	}
 }
 
 func TestGatePredicatesAndBoundedTransitionsAreTyped(t *testing.T) {
