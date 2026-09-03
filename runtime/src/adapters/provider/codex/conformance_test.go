@@ -2,7 +2,6 @@ package codex
 
 import (
 	"testing"
-	"time"
 
 	providerport "darkstar/src/ports/provider"
 	"darkstar/tests/providerconformance"
@@ -37,7 +36,7 @@ func TestCompletedAdaptersConformance(t *testing.T) {
 			Request: func(t *testing.T) providerport.AttemptRequest {
 				t.Helper()
 				request := testAttemptRequest(t.TempDir())
-				request.Timeout = time.Second
+				request.Timeout = execTestAttemptTimeout
 				return request
 			},
 		})

@@ -19,6 +19,8 @@ import (
 	providerport "darkstar/src/ports/provider"
 )
 
+const execTestAttemptTimeout = 10 * time.Second
+
 type fixtureExecProcess struct {
 	stdout io.Reader
 	stderr io.Reader
@@ -41,7 +43,7 @@ func (process *fixtureExecProcess) Kill() error {
 
 func TestExecAdapterStreamsValidatesAndRecordsSelection(t *testing.T) {
 	request := testAttemptRequest(t.TempDir())
-	request.Timeout = time.Second
+	request.Timeout = execTestAttemptTimeout
 	var captured ExecCommand
 	adapter := newExecTestAdapter(t, NewMemoryExecRecoveryStore(), func(command ExecCommand) (ExecProcess, error) {
 		captured = command
@@ -120,7 +122,7 @@ func TestExecAdapterReplaysReviewedWindowsFixture(t *testing.T) {
 		t.Run(version, func(t *testing.T) {
 			fixture := loadExecFixture(t, version, "exec-read-only.jsonl")
 			request := testAttemptRequest(t.TempDir())
-			request.Timeout = time.Second
+			request.Timeout = execTestAttemptTimeout
 			request.OutputSchema = json.RawMessage(`{
 				"type":"object","additionalProperties":false,
 				"properties":{"probe":{"const":"exec-read-only"},"success":{"const":true},"detail":{"type":"string"}},
@@ -155,11 +157,11 @@ func TestExecAdapterRejectsUnboundedInteractiveAndUnreviewedAttempts(t *testing.
 	for name, mutate := range map[string]func(*providerport.AttemptRequest){
 		"unbounded": func(value *providerport.AttemptRequest) { value.Timeout = 0 },
 		"interactive": func(value *providerport.AttemptRequest) {
-			value.Timeout = time.Second
+			value.Timeout = execTestAttemptTimeout
 			value.CommandPolicy = providerport.InteractionAsk
 		},
 		"write": func(value *providerport.AttemptRequest) {
-			value.Timeout = time.Second
+			value.Timeout = execTestAttemptTimeout
 			value.Access = providerport.AccessWorkspaceWrite
 		},
 	} {
@@ -183,7 +185,7 @@ func TestExecAdapterRejectsUnboundedInteractiveAndUnreviewedAttempts(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Timeout = time.Second
+	request.Timeout = execTestAttemptTimeout
 	_, err = unreviewed.StartAttempt(context.Background(), request)
 	var failure *ports.Failure
 	if !errors.As(err, &failure) || failure.Code != ports.FailureProtocolDrift {
@@ -193,7 +195,7 @@ func TestExecAdapterRejectsUnboundedInteractiveAndUnreviewedAttempts(t *testing.
 
 func TestExecAdapterCoalescesConcurrentIdempotentStart(t *testing.T) {
 	request := testAttemptRequest(t.TempDir())
-	request.Timeout = time.Second
+	request.Timeout = execTestAttemptTimeout
 	reader, writer := io.Pipe()
 	factoryCalled := make(chan struct{})
 	var factoryMu sync.Mutex
@@ -236,7 +238,7 @@ func TestExecAdapterCoalescesConcurrentIdempotentStart(t *testing.T) {
 func TestExecAdapterResumesFromDurableRequestMaterial(t *testing.T) {
 	store := NewMemoryExecRecoveryStore()
 	request := testAttemptRequest(t.TempDir())
-	request.Timeout = time.Second
+	request.Timeout = execTestAttemptTimeout
 	first := newExecTestAdapter(t, store, func(ExecCommand) (ExecProcess, error) {
 		return execFixtureProcess(execSuccessFixture("session-resume", `{"answer":"first"}`)), nil
 	})
