@@ -258,7 +258,7 @@ func (resolver *Resolver) resolveOne(name string, kind registryport.Kind, versio
 	if len(eligible) == 0 {
 		return registryport.Record{}, resolutionFailure(FailureRequiredMissing, name, "only unsupported discovery exists")
 	}
-	allowed := filter(eligible, func(record registryport.Record) bool { return grants[record.ID].Decision != PolicyDeny })
+	allowed := filter(eligible, func(record registryport.Record) bool { return policyAllows(record, grants) })
 	if len(allowed) == 0 {
 		return registryport.Record{}, resolutionFailure(FailurePolicyDenied, name, "all candidates denied")
 	}
@@ -465,6 +465,14 @@ func classRank(class registryport.Class) int {
 	default:
 		return 3
 	}
+}
+
+func policyAllows(record registryport.Record, grants map[string]Grant) bool {
+	grant, configured := grants[record.ID]
+	if configured {
+		return grant.Decision == PolicyAllow
+	}
+	return record.Class == registryport.ClassGuaranteed
 }
 
 func resolutionFailure(code FailureCode, capability, detail string) *ResolutionError {

@@ -60,9 +60,9 @@ func TestResolveFailsClosedAtEveryBoundary(t *testing.T) {
 		{"version", []registryport.Record{record("cap", "project:review", registryport.KindSkill, registryport.ClassRegistered, "1.0.0", nil)}, Requirement{Name: "project:review", Kind: registryport.KindSkill, Version: "2.0.0"}, nil, FailureVersionMismatch},
 		{"fingerprint", []registryport.Record{record("cap", "project:review", registryport.KindSkill, registryport.ClassRegistered, "1.0.0", nil)}, Requirement{Name: "project:review", Kind: registryport.KindSkill, Fingerprint: strings.Repeat("b", 64)}, nil, FailureFingerprintChanged},
 		{"policy", []registryport.Record{record("cap", "project:review", registryport.KindSkill, registryport.ClassRegistered, "1.0.0", nil)}, Requirement{Name: "project:review", Kind: registryport.KindSkill}, map[string]Grant{"cap": {Decision: PolicyDeny}}, FailurePolicyDenied},
-		{"unhealthy", []registryport.Record{unhealthy(record("cap", "project:review", registryport.KindSkill, registryport.ClassRegistered, "1.0.0", nil))}, Requirement{Name: "project:review", Kind: registryport.KindSkill}, nil, FailureUnhealthy},
-		{"inherited", []registryport.Record{record("cap", "codex-inherited:project/review", registryport.KindSkill, registryport.ClassInherited, "", nil)}, Requirement{Name: "codex-inherited:project/review", Kind: registryport.KindSkill}, nil, FailureInheritedNotAllowed},
-		{"dependency", []registryport.Record{record("cap", "project:review", registryport.KindSkill, registryport.ClassRegistered, "1.0.0", []string{"mcp:docs/search"})}, Requirement{Name: "project:review", Kind: registryport.KindSkill}, nil, FailureDependencyMissing},
+		{"unhealthy", []registryport.Record{unhealthy(record("cap", "project:review", registryport.KindSkill, registryport.ClassRegistered, "1.0.0", nil))}, Requirement{Name: "project:review", Kind: registryport.KindSkill}, map[string]Grant{"cap": {Decision: PolicyAllow}}, FailureUnhealthy},
+		{"inherited", []registryport.Record{record("cap", "codex-inherited:project/review", registryport.KindSkill, registryport.ClassInherited, "", nil)}, Requirement{Name: "codex-inherited:project/review", Kind: registryport.KindSkill}, map[string]Grant{"cap": {Decision: PolicyAllow}}, FailureInheritedNotAllowed},
+		{"dependency", []registryport.Record{record("cap", "project:review", registryport.KindSkill, registryport.ClassRegistered, "1.0.0", []string{"mcp:docs/search"})}, Requirement{Name: "project:review", Kind: registryport.KindSkill}, map[string]Grant{"cap": {Decision: PolicyAllow}}, FailureDependencyMissing},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -87,6 +87,59 @@ func TestNewRejectsSameClassShadowing(t *testing.T) {
 	var failure *ResolutionError
 	if !errors.As(err, &failure) || failure.Code != FailureAmbiguous {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestResolveRequiresExplicitPolicyForRegisteredAndInheritedCapabilities(t *testing.T) {
+	t.Parallel()
+	resolver, err := New([]registryport.Record{
+		record("registered", "project:review", registryport.KindSkill, registryport.ClassRegistered, "1.0.0", nil),
+		record("inherited", "codex-inherited:user/review", registryport.KindSkill, registryport.ClassInherited, "", nil),
+		record("guaranteed", "darkstar:artifact.read", registryport.KindTool, registryport.ClassGuaranteed, "1.0.0", nil),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, requirement := range []Requirement{
+		{Name: "project:review", Kind: registryport.KindSkill},
+		{Name: "codex-inherited:user/review", Kind: registryport.KindSkill, AcceptInherited: true},
+	} {
+		_, err := resolver.Resolve(Request{Requirements: []Requirement{requirement}, PolicyDigest: "policy", HostFingerprint: "host"})
+		var failure *ResolutionError
+		if !errors.As(err, &failure) || failure.Code != FailurePolicyDenied {
+			t.Fatalf("%s without policy = %v", requirement.Name, err)
+		}
+	}
+	manifest, err := resolver.Resolve(Request{
+		Requirements: []Requirement{{Name: "darkstar:artifact.read", Kind: registryport.KindTool}},
+		PolicyDigest: "policy", HostFingerprint: "host",
+	})
+	if err != nil || len(manifest.Selections) != 1 || manifest.Selections[0].ID != "guaranteed" {
+		t.Fatalf("guaranteed resolution = %#v, %v", manifest, err)
+	}
+}
+
+func TestResolveUsesDeclaredFallbackForUnversionedInheritedCapability(t *testing.T) {
+	t.Parallel()
+	resolver, err := New([]registryport.Record{
+		record("inherited", "codex-inherited:project/render", registryport.KindTool, registryport.ClassInherited, "", nil),
+		record("fallback", "darkstar:artifact.read", registryport.KindTool, registryport.ClassGuaranteed, "1.0.0", nil),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := resolver.Resolve(Request{
+		Requirements: []Requirement{{
+			Name: "codex-inherited:project/render", Kind: registryport.KindTool, Version: "2.0.0", AcceptInherited: true,
+			Fallbacks: []Alternative{{Name: "darkstar:artifact.read", Version: "1.0.0"}},
+		}},
+		Grants: map[string]Grant{"inherited": {Decision: PolicyAllow}}, PolicyDigest: "policy", HostFingerprint: "host",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Selections) != 1 || manifest.Selections[0].ID != "fallback" || len(manifest.FallbacksUsed) != 1 || !manifest.Degraded() {
+		t.Fatalf("manifest = %#v", manifest)
 	}
 }
 
