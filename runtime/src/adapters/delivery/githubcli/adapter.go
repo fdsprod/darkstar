@@ -82,14 +82,6 @@ func New(options Options) (*Adapter, error) {
 	return &Adapter{executable: github, gitExecutable: git, runner: runner, now: now}, nil
 }
 
-func (adapter *Adapter) FindChangeRequests(context.Context, delivery.FindChangeRequestsRequest) (delivery.ChangeRequestSearch, error) {
-	return delivery.ChangeRequestSearch{}, adapter.unsupported("GitHub change-request search")
-}
-
-func (adapter *Adapter) CreateChangeRequest(context.Context, delivery.CreateChangeRequestRequest) (delivery.ChangeRequestCreation, error) {
-	return delivery.ChangeRequestCreation{}, adapter.unsupported("GitHub change-request creation")
-}
-
 func (adapter *Adapter) UpdateChangeRequest(context.Context, delivery.UpdateChangeRequestRequest) (delivery.ChangeRequestUpdate, error) {
 	return delivery.ChangeRequestUpdate{}, adapter.unsupported("GitHub change-request update")
 }

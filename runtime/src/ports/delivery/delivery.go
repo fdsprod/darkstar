@@ -231,8 +231,8 @@ type ChangeRequestCoordinates struct {
 }
 
 type FindChangeRequestsRequest struct {
-	Coordinates     ChangeRequestCoordinates
-	OwnershipMarker string
+	Coordinates ChangeRequestCoordinates
+	Owner       ChangeRequestOwner
 }
 
 type ChangeRequestRef struct {
@@ -249,7 +249,7 @@ type UnownedChangeRequest struct{}
 func (UnownedChangeRequest) isChangeRequestOwnership() {}
 
 type OwnedChangeRequest struct {
-	Marker   string
+	Owner    ChangeRequestOwner
 	Revision string
 }
 
@@ -271,17 +271,60 @@ type ChangeRequestSearch struct {
 	EvidenceRef string
 }
 
-// ChangeRequestMode is the required creation mode; its zero value cannot be
-// mistaken for a final change request.
-type ChangeRequestMode interface{ isChangeRequestMode() }
+// ChangeRequestOwner is the stable workflow identity embedded in the
+// connector-owned section. It is separate from an account because retries may
+// run under a different authenticated actor without changing ownership.
+type ChangeRequestOwner struct {
+	DeliveryLineID string
+	WorkItemID     string
+}
 
-type CreateDraft struct{}
+// FinalValidationAuthorization couples final change-request creation to the
+// exact validated head commit. There is deliberately no draft mode on this
+// request, so a zero value or independent flag cannot weaken the authorization.
+type FinalValidationAuthorization struct {
+	ValidatedHeadSHA string
+}
 
-func (CreateDraft) isChangeRequestMode() {}
+type ArtifactLink struct {
+	Label string
+	URL   string
+}
 
-type CreateReady struct{}
+type AcceptedPoint struct {
+	ID      string
+	Summary string
+}
 
-func (CreateReady) isChangeRequestMode() {}
+type CommitSummary struct {
+	SHA     string
+	Summary string
+}
+
+type RiskRollback struct {
+	Risk     string
+	Rollback string
+}
+
+type EvidenceLink struct {
+	Label   string
+	URL     string
+	Summary string
+}
+
+// FinalChangeRequestContent is provider-neutral source data for the
+// connector-owned body. Slice order is significant and is preserved in the
+// rendered point checklist, commit list, and evidence list.
+type FinalChangeRequestContent struct {
+	Revision       string
+	Outcome        string
+	Scope          []string
+	ArtifactLinks  []ArtifactLink
+	PointChecklist []AcceptedPoint
+	Commits        []CommitSummary
+	RiskRollback   RiskRollback
+	Evidence       []EvidenceLink
+}
 
 // OwnedSection is the only part of a change-request body the connector may
 // replace after creation.
@@ -292,12 +335,12 @@ type OwnedSection struct {
 }
 
 type CreateChangeRequestRequest struct {
-	OperationID     string
-	Coordinates     ChangeRequestCoordinates
-	Title           string
-	OwnedSection    OwnedSection
-	Mode            ChangeRequestMode
-	ExpectedHeadSHA string
+	OperationID   string
+	Coordinates   ChangeRequestCoordinates
+	Owner         ChangeRequestOwner
+	Title         string
+	Content       FinalChangeRequestContent
+	Authorization FinalValidationAuthorization
 }
 
 type ChangeRequestCreationOutcome interface{ isChangeRequestCreationOutcome() }

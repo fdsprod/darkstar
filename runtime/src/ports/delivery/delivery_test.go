@@ -18,7 +18,6 @@ func TestContractChoicesAreClosedInterfaces(t *testing.T) {
 		delivery.BranchAlreadyPublished{},
 		delivery.DraftState{},
 		delivery.OwnedChangeRequest{},
-		delivery.CreateReady{},
 		delivery.KeepTitle{},
 		delivery.MarkReady{},
 		delivery.ChangeRequestReconciled{},
@@ -58,6 +57,8 @@ func TestOperationContractsDoNotUseBooleanOrPointerState(t *testing.T) {
 		delivery.PublishBranchRequest{},
 		delivery.BranchPublication{},
 		delivery.ChangeRequest{},
+		delivery.FinalValidationAuthorization{},
+		delivery.FinalChangeRequestContent{},
 		delivery.CreateChangeRequestRequest{},
 		delivery.ChangeRequestCreation{},
 		delivery.UpdateChangeRequestRequest{},
@@ -72,5 +73,20 @@ func TestOperationContractsDoNotUseBooleanOrPointerState(t *testing.T) {
 				t.Fatalf("%s.%s uses %s state", typeOf, field.Name, field.Type.Kind())
 			}
 		}
+	}
+}
+
+func TestFinalCreationAuthorizationCannotRepresentDraftMode(t *testing.T) {
+	t.Parallel()
+	request := reflect.TypeOf(delivery.CreateChangeRequestRequest{})
+	if _, found := request.FieldByName("Mode"); found {
+		t.Fatal("final creation request exposes an independent mode")
+	}
+	if _, found := request.FieldByName("ExpectedHeadSHA"); found {
+		t.Fatal("final creation request duplicates its authorized head SHA")
+	}
+	authorization, found := request.FieldByName("Authorization")
+	if !found || authorization.Type != reflect.TypeOf(delivery.FinalValidationAuthorization{}) {
+		t.Fatalf("authorization = %v, want concrete FinalValidationAuthorization", authorization.Type)
 	}
 }

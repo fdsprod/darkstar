@@ -120,14 +120,6 @@ func TestConnectorCapabilitiesFailClosedUntilImplemented(t *testing.T) {
 	}
 	operations := []func() error{
 		func() error {
-			_, err := adapter.FindChangeRequests(context.Background(), delivery.FindChangeRequestsRequest{})
-			return err
-		},
-		func() error {
-			_, err := adapter.CreateChangeRequest(context.Background(), delivery.CreateChangeRequestRequest{})
-			return err
-		},
-		func() error {
 			_, err := adapter.UpdateChangeRequest(context.Background(), delivery.UpdateChangeRequestRequest{})
 			return err
 		},
