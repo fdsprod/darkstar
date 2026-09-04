@@ -10,6 +10,8 @@ import {
 
 import { BoardPage } from "../pages/BoardPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
+import { RunDetailPage } from "../pages/RunDetailPage";
+import { WorkDetailPage } from "../pages/WorkDetailPage";
 
 export type AppRouteId = "board" | "work" | "run" | "checkpoints" | "agents" | "workflows" | "settings" | "artifact" | "not-found";
 
@@ -121,8 +123,8 @@ export function RouteView() {
     case "agents": return <PlaceholderPage eyebrow="Execution" title="Agents" description="Inspect queued and active attempts, their bounded authority, workspaces, and live logs." />;
     case "workflows": return <PlaceholderPage eyebrow="Configuration" title="Workflows" description="Inspect installed workflow versions, route profiles, validation findings, and execution boundaries." />;
     case "settings": return <PlaceholderPage eyebrow="System" title="Settings & Health" description="Understand effective configuration and the readiness of the daemon, repositories, providers, and delivery integrations." />;
-    case "work": return <PlaceholderPage eyebrow="Work item" title={shortIdentifier(route.params.workId)} description="The work record keeps its runs, selected route, artifacts, and audit history together." />;
-    case "run": return <PlaceholderPage eyebrow={`Run · ${shortIdentifier(route.params.runId)}`} title={shortIdentifier(route.params.workId)} description="Follow durable node visits and attempts without losing the history of retries or interruptions." />;
+    case "work": return <WorkDetailPage />;
+    case "run": return <RunDetailPage />;
     case "artifact": return <PlaceholderPage eyebrow="Artifact" title={shortIdentifier(route.params.artifactId)} description="Inspect immutable revisions, representations, provenance, bindings, and freshness." />;
     default: return <PlaceholderPage eyebrow="404" title="Page not found" description="The requested dashboard location does not exist." action={{ label: "Return to board", to: "/board" }} />;
   }

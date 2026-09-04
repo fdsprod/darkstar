@@ -64,11 +64,62 @@ type WorkflowPlanner interface {
 	Preview(context.Context, string, string, workflow.RouteRequest, workflow.RouteContext) (workflow.RoutePreview, workflow.ValidationErrors, error)
 }
 
-// View combines the persisted run projection with its attempt projections.
+// View combines the persisted run projection with its node-visit and attempt
+// projections. Keeping visits in the query response lets every client render
+// the durable execution timeline without reconstructing state from events.
 type View struct {
-	SchemaVersion int                            `json:"schemaVersion"`
-	Run           statestore.RunProjection       `json:"run"`
-	Attempts      []statestore.AttemptProjection `json:"attempts"`
+	SchemaVersion    int                            `json:"schemaVersion"`
+	Run              statestore.RunProjection       `json:"run"`
+	Nodes            []statestore.NodeProjection    `json:"nodes"`
+	Attempts         []statestore.AttemptProjection `json:"attempts"`
+	Timeline         []TimelineEntry                `json:"timeline"`
+	TimelinePageInfo TimelinePageInfo               `json:"timelinePageInfo"`
+	Commands         []CommandSummary               `json:"commands"`
+	CommandsPageInfo CommandPageInfo                `json:"commandsPageInfo"`
+}
+
+const (
+	viewTimelineLimit = 200
+	viewCommandLimit  = 100
+)
+
+// TimelinePageInfo makes the bounded nature of the embedded audit window
+// explicit. Full evidence remains available through the run export boundary.
+type TimelinePageInfo struct {
+	HasEarlier    bool    `json:"hasEarlier"`
+	FirstPosition *uint64 `json:"firstPosition,omitempty"`
+	LastPosition  *uint64 `json:"lastPosition,omitempty"`
+}
+
+// CommandPageInfo identifies whether older command summaries were omitted.
+type CommandPageInfo struct {
+	HasEarlier bool `json:"hasEarlier"`
+}
+
+// TimelineEntry is the deliberately metadata-only event shape exposed to
+// dashboard clients. Event data and metadata stay behind the runtime boundary.
+type TimelineEntry struct {
+	ID                string                   `json:"id"`
+	GlobalPosition    uint64                   `json:"globalPosition"`
+	AggregateType     statestore.AggregateType `json:"aggregateType"`
+	AggregateID       string                   `json:"aggregateId"`
+	AggregateRevision uint64                   `json:"aggregateRevision"`
+	Kind              string                   `json:"kind"`
+	OccurredAt        time.Time                `json:"occurredAt"`
+	RecordedAt        time.Time                `json:"recordedAt"`
+	ActorType         statestore.ActorType     `json:"actorType"`
+}
+
+// CommandSummary omits replay credentials, request digests, and response
+// bodies while retaining enough evidence to audit command completion.
+type CommandSummary struct {
+	Scope              string     `json:"scope"`
+	Status             string     `json:"status"`
+	ResponseStatus     *int       `json:"responseStatus,omitempty"`
+	FirstEventPosition *uint64    `json:"firstEventPosition,omitempty"`
+	LastEventPosition  *uint64    `json:"lastEventPosition,omitempty"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	CompletedAt        *time.Time `json:"completedAt,omitempty"`
 }
 
 // ProviderFactory constructs a deterministic provider for a new or resumed attempt.
@@ -386,7 +437,11 @@ func (s *Service) Start(ctx context.Context, request StartRequest, idempotencyKe
 
 // Get reads only persisted projections.
 func (s *Service) Get(ctx context.Context, runID string) (View, error) {
-	run, err := s.store.Run(ctx, runID)
+	evidence, err := s.store.RunEvidence(ctx, runID)
+	if err != nil {
+		return View{}, err
+	}
+	nodes, err := s.store.NodesForRun(ctx, runID)
 	if err != nil {
 		return View{}, err
 	}
@@ -394,7 +449,67 @@ func (s *Service) Get(ctx context.Context, runID string) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	return View{SchemaVersion: 1, Run: run, Attempts: attempts}, nil
+	if nodes == nil {
+		nodes = []statestore.NodeProjection{}
+	}
+	if attempts == nil {
+		attempts = []statestore.AttemptProjection{}
+	}
+	timeline, timelinePageInfo := summarizeTimeline(evidence.Events)
+	commands, commandsPageInfo := summarizeCommands(evidence.Commands)
+	return View{
+		SchemaVersion:    1,
+		Run:              evidence.Run,
+		Nodes:            nodes,
+		Attempts:         attempts,
+		Timeline:         timeline,
+		TimelinePageInfo: timelinePageInfo,
+		Commands:         commands,
+		CommandsPageInfo: commandsPageInfo,
+	}, nil
+}
+
+func summarizeTimeline(events []statestore.Event) ([]TimelineEntry, TimelinePageInfo) {
+	start := 0
+	if len(events) > viewTimelineLimit {
+		start = len(events) - viewTimelineLimit
+	}
+	window := events[start:]
+	values := make([]TimelineEntry, 0, len(window))
+	for _, event := range window {
+		values = append(values, TimelineEntry{
+			ID: event.ID, GlobalPosition: event.GlobalPosition,
+			AggregateType: event.AggregateType, AggregateID: event.AggregateID,
+			AggregateRevision: event.AggregateRevision, Kind: event.Kind,
+			OccurredAt: event.OccurredAt, RecordedAt: event.RecordedAt,
+			ActorType: event.Actor.Type,
+		})
+	}
+	page := TimelinePageInfo{HasEarlier: start > 0}
+	if len(values) != 0 {
+		first, last := values[0].GlobalPosition, values[len(values)-1].GlobalPosition
+		page.FirstPosition, page.LastPosition = &first, &last
+	}
+	return values, page
+}
+
+func summarizeCommands(commands []statestore.CommandEvidence) ([]CommandSummary, CommandPageInfo) {
+	start := 0
+	if len(commands) > viewCommandLimit {
+		start = len(commands) - viewCommandLimit
+	}
+	window := commands[start:]
+	values := make([]CommandSummary, 0, len(window))
+	for _, command := range window {
+		values = append(values, CommandSummary{
+			Scope: command.Scope, Status: command.Status,
+			ResponseStatus:     command.ResponseStatus,
+			FirstEventPosition: command.FirstEventPosition,
+			LastEventPosition:  command.LastEventPosition,
+			CreatedAt:          command.CreatedAt, CompletedAt: command.CompletedAt,
+		})
+	}
+	return values, CommandPageInfo{HasEarlier: start > 0}
 }
 
 // ResumeActive schedules every non-terminal attempt after startup projection rebuild.
