@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -333,9 +334,141 @@ func interactionCheckpoint(requestID json.RawMessage, method string, kind provid
 		return provider.InteractionCheckpoint{}, err
 	}
 	digest := sha256.Sum256(payload)
+	values, err := objectParams(params)
+	if err != nil {
+		return provider.InteractionCheckpoint{}, err
+	}
+	turnID := rawString(values["turnId"])
+	if strings.TrimSpace(turnID) == "" || turnID != strings.TrimSpace(turnID) || len(turnID) > 128 {
+		return provider.InteractionCheckpoint{}, errors.New("provider interaction turn ID is required")
+	}
+	scope, err := normalizedInteractionScope(kind, values)
+	if err != nil {
+		return provider.InteractionCheckpoint{}, err
+	}
+	policy := sha256.Sum256([]byte("provider-interaction-policy-v1\x00" + string(kind) + "\x00ask"))
+	var input *provider.UserInputRequest
+	if kind == provider.InteractionUser {
+		normalized, normalizeErr := normalizedUserInput(values)
+		if normalizeErr != nil {
+			return provider.InteractionCheckpoint{}, normalizeErr
+		}
+		input = &normalized
+	}
 	return provider.InteractionCheckpoint{
-		Kind: kind, ProviderRequestID: providerRequestID, ScopeDigest: hex.EncodeToString(digest[:]),
+		Kind: kind, ProviderRequestID: providerRequestID, ProviderTurnID: turnID, Scope: scope,
+		ScopeDigest: hex.EncodeToString(digest[:]), PolicyDigest: hex.EncodeToString(policy[:]), Input: input,
 	}, nil
+}
+
+func normalizedInteractionScope(kind provider.InteractionKind, params map[string]json.RawMessage) (provider.InteractionScope, error) {
+	scope := provider.InteractionScope{}
+	subject := rawString(params["itemId"])
+	switch kind {
+	case provider.InteractionCommand:
+		scope.Target, scope.Operation, subject = "command", "execute", rawString(params["command"])
+		if subject == "" {
+			var command []string
+			if json.Unmarshal(params["command"], &command) == nil {
+				subject = strings.Join(command, " ")
+			}
+		}
+	case provider.InteractionFile:
+		scope.Target, scope.Operation, subject = "file", "modify", rawString(params["path"])
+		if subject == "" {
+			subject = rawString(params["filePath"])
+		}
+	case provider.InteractionNetwork:
+		scope.Target, scope.Operation = "network_host", "connect"
+		var network struct {
+			Host string `json:"host"`
+		}
+		if raw := params["networkApprovalContext"]; len(raw) != 0 && json.Unmarshal(raw, &network) == nil && network.Host != "" {
+			subject = network.Host
+		}
+	case provider.InteractionPermission:
+		scope.Target, scope.Operation = "provider_capabilities", "elevate"
+		var permissions map[string]json.RawMessage
+		if json.Unmarshal(params["permissions"], &permissions) == nil {
+			names := make([]string, 0, len(permissions))
+			for name := range permissions {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			subject = strings.Join(names, ",")
+		}
+	case provider.InteractionTool:
+		scope.Target, scope.Operation = "provider_tool", "invoke"
+		if tool := rawString(params["tool"]); tool != "" {
+			subject = tool
+		}
+	case provider.InteractionUser:
+		scope.Target, scope.Operation = "user_input", "answer"
+		if subject == "" {
+			subject = "request"
+		}
+	default:
+		return provider.InteractionScope{}, errors.New("unsupported provider interaction scope")
+	}
+	scope.Subject = subject
+	if !provider.ValidInteractionScope(kind, scope) {
+		return provider.InteractionScope{}, errors.New("provider interaction contains an unsafe scope target")
+	}
+	return scope, nil
+}
+
+func normalizedUserInput(params map[string]json.RawMessage) (provider.UserInputRequest, error) {
+	type rawQuestion struct {
+		ID       string `json:"id"`
+		Question string `json:"question"`
+		Prompt   string `json:"prompt"`
+		Header   string `json:"header"`
+		IsSecret bool   `json:"isSecret"`
+		Options  []struct {
+			Label string `json:"label"`
+		} `json:"options"`
+	}
+	var rawQuestions []rawQuestion
+	if raw := params["questions"]; len(raw) != 0 {
+		if err := json.Unmarshal(raw, &rawQuestions); err != nil {
+			var one rawQuestion
+			if objectErr := json.Unmarshal(raw, &one); objectErr != nil {
+				return provider.UserInputRequest{}, errors.New("provider user-input questions must be an object or array")
+			}
+			rawQuestions = append(rawQuestions, one)
+		}
+	}
+	if len(rawQuestions) == 0 {
+		return provider.UserInputRequest{}, errors.New("provider user-input request contains no actionable questions")
+	}
+	questions := make([]provider.UserInputQuestion, 0, len(rawQuestions))
+	for index, raw := range rawQuestions {
+		if raw.IsSecret {
+			return provider.UserInputRequest{}, errors.New("provider user-input request contains a secret question")
+		}
+		id := raw.ID
+		if id == "" {
+			id = fmt.Sprintf("question_%d", index+1)
+		}
+		prompt := raw.Question
+		if prompt == "" {
+			prompt = raw.Prompt
+		}
+		if prompt == "" {
+			prompt = raw.Header
+		}
+		options := make([]string, len(raw.Options))
+		for optionIndex := range raw.Options {
+			options[optionIndex] = raw.Options[optionIndex].Label
+		}
+		questions = append(questions, provider.UserInputQuestion{ID: id, Prompt: prompt, Options: options,
+			Schema: provider.UserInputSchema{Type: "string", AllowedValues: append([]string(nil), options...)}})
+	}
+	result := provider.UserInputRequest{Questions: questions}
+	if !provider.ValidUserInputRequest(result) {
+		return provider.UserInputRequest{}, errors.New("provider user-input request contains unsafe or incomplete display content")
+	}
+	return result, nil
 }
 
 func objectParams(raw json.RawMessage) (map[string]json.RawMessage, error) {

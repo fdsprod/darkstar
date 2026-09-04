@@ -228,6 +228,9 @@ func TestExecAdapterCoalescesConcurrentIdempotentStart(t *testing.T) {
 	if left.err != nil || right.err != nil || !reflect.DeepEqual(left.handle, right.handle) {
 		t.Fatalf("coalesced starts = (%#v, %v), (%#v, %v)", left.handle, left.err, right.handle, right.err)
 	}
+	if _, err := adapter.GetResult(context.Background(), providerport.ResultRequest{Handle: left.handle}); err != nil {
+		t.Fatalf("GetResult() error = %v", err)
+	}
 	factoryMu.Lock()
 	defer factoryMu.Unlock()
 	if factoryCalls != 1 {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,23 +24,22 @@ func TestEventNormalizerReplaysVersionedAppServerFixtures(t *testing.T) {
 
 	fixed := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
 	wantKinds := map[provider.EventKind]bool{
-		provider.EventAttemptStarted:             false,
-		provider.EventTurnStarted:                false,
-		provider.EventTurnCompleted:              false,
-		provider.EventTurnInterrupted:            false,
-		provider.EventMessageDelta:               false,
-		provider.EventMessageCompleted:           false,
-		provider.EventCommandStarted:             false,
-		provider.EventCommandOutput:              false,
-		provider.EventCommandCompleted:           false,
-		provider.EventPermissionRequested:        false,
-		provider.EventPermissionResponseRecorded: false,
-		provider.EventUserInputRequested:         false,
-		provider.EventUserInputResponseRecorded:  false,
-		provider.EventUsageUpdated:               false,
-		provider.EventWarning:                    false,
-		provider.EventUnknownProvider:            false,
+		provider.EventAttemptStarted:            false,
+		provider.EventTurnStarted:               false,
+		provider.EventTurnCompleted:             false,
+		provider.EventTurnInterrupted:           false,
+		provider.EventMessageDelta:              false,
+		provider.EventMessageCompleted:          false,
+		provider.EventCommandStarted:            false,
+		provider.EventCommandOutput:             false,
+		provider.EventCommandCompleted:          false,
+		provider.EventUserInputRequested:        false,
+		provider.EventUserInputResponseRecorded: false,
+		provider.EventUsageUpdated:              false,
+		provider.EventWarning:                   false,
+		provider.EventUnknownProvider:           false,
 	}
+	unsafeApprovalFrames := 0
 
 	for _, fixture := range fixturePaths(t) {
 		normalizer, err := NewEventNormalizer(NormalizerOptions{
@@ -76,6 +76,10 @@ func TestEventNormalizerReplaysVersionedAppServerFixtures(t *testing.T) {
 			}
 			event, err := normalizer.Normalize(incoming)
 			if err != nil {
+				if _, approval := incoming.(ServerRequest); approval && strings.HasSuffix(frame.Message.Method, "/requestApproval") && strings.Contains(err.Error(), "unsafe scope target") {
+					unsafeApprovalFrames++
+					continue
+				}
 				t.Fatalf("normalize %s from %s: %v", frame.Message.Method, fixture.path, err)
 			}
 			sequence++
@@ -93,6 +97,9 @@ func TestEventNormalizerReplaysVersionedAppServerFixtures(t *testing.T) {
 			t.Fatalf("scan fixture %s: %v", fixture.path, err)
 		}
 		_ = file.Close()
+	}
+	if unsafeApprovalFrames == 0 {
+		t.Error("fixture replay did not exercise fail-closed approval scope handling")
 	}
 	for kind, observed := range wantKinds {
 		if !observed {
@@ -148,7 +155,7 @@ func TestEventNormalizerPreservesKnownUnknownAndRequestPayloads(t *testing.T) {
 	}
 	assertNativePayload(t, unknown.Payload, "future/event", "", unknownRaw)
 
-	requested, err := normalizer.Normalize(ServerRequest{ID: json.RawMessage(`"request-1"`), Method: "item/fileChange/requestApproval", Params: json.RawMessage(`{"threadId":"thread-1","turnId":"turn-1","itemId":"change-1"}`)})
+	requested, err := normalizer.Normalize(ServerRequest{ID: json.RawMessage(`"request-1"`), Method: "item/fileChange/requestApproval", Params: json.RawMessage(`{"threadId":"thread-1","turnId":"turn-1","itemId":"change-1","path":"src/output.txt"}`)})
 	if err != nil {
 		t.Fatalf("Normalize(request) error = %v", err)
 	}
@@ -188,10 +195,10 @@ func TestEventNormalizerEmitsDistinctInteractionCheckpoints(t *testing.T) {
 	}{
 		{"command", "item/commandExecution/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"command-1","command":"go test"}`, provider.InteractionCommand, provider.EventPermissionRequested},
 		{"network", "item/commandExecution/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"command-2","networkApprovalContext":{"host":"example.com","protocol":"https"}}`, provider.InteractionNetwork, provider.EventPermissionRequested},
-		{"file", "item/fileChange/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"file-1"}`, provider.InteractionFile, provider.EventPermissionRequested},
+		{"file", "item/fileChange/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"file-1","path":"src/output.txt"}`, provider.InteractionFile, provider.EventPermissionRequested},
 		{"permission", "item/permissions/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"permission-1","permissions":{"network":null,"fileSystem":{"read":["C:\\\\repo"]}}}`, provider.InteractionPermission, provider.EventPermissionRequested},
 		{"tool", "item/tool/call", `{"threadId":"thread-1","turnId":"turn-1","callId":"tool-1","tool":"lookup","arguments":{}}`, provider.InteractionTool, provider.EventToolStarted},
-		{"user", "item/tool/requestUserInput", `{"threadId":"thread-1","turnId":"turn-1","itemId":"question-1","questions":[],"isBlocking":true}`, provider.InteractionUser, provider.EventUserInputRequested},
+		{"user", "item/tool/requestUserInput", `{"threadId":"thread-1","turnId":"turn-1","itemId":"question-1","questions":{"id":"choice","question":"Continue with verification?","options":[{"label":"Continue"},{"label":"Stop"}]},"isBlocking":true}`, provider.InteractionUser, provider.EventUserInputRequested},
 	}
 	digests := map[string]string{}
 	for index, test := range tests {
@@ -219,6 +226,44 @@ func TestEventNormalizerEmitsDistinctInteractionCheckpoints(t *testing.T) {
 	}
 	if digests["command"] == digests["network"] {
 		t.Fatal("command and network checkpoints shared a scope digest")
+	}
+}
+
+func TestEventNormalizerRejectsUnsafePermissionScope(t *testing.T) {
+	t.Parallel()
+
+	unsafe := []struct {
+		name   string
+		method string
+		params string
+	}{
+		{"absolute command path", "item/commandExecution/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"command-1","command":"C:\\Users\\person\\run.exe --token=secret"}`},
+		{"absolute file path", "item/fileChange/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"file-1","path":"C:\\Users\\person\\secret.txt"}`},
+		{"network URL", "item/commandExecution/requestApproval", `{"threadId":"thread-1","turnId":"turn-1","itemId":"command-2","networkApprovalContext":{"host":"https://example.com"}}`},
+	}
+	for index, test := range unsafe {
+		t.Run(test.name, func(t *testing.T) {
+			normalizer, err := NewEventNormalizer(NormalizerOptions{AttemptID: "attempt-1", ProviderVersion: "version-1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = normalizer.Normalize(ServerRequest{ID: json.RawMessage(strconv.Itoa(index + 1)), Method: test.method, Params: json.RawMessage(test.params)})
+			if err == nil || !strings.Contains(err.Error(), "unsafe scope target") {
+				t.Fatalf("Normalize() error = %v, want unsafe scope target", err)
+			}
+		})
+	}
+}
+
+func TestEventNormalizerRejectsSecretUserInput(t *testing.T) {
+	t.Parallel()
+	normalizer, err := NewEventNormalizer(NormalizerOptions{AttemptID: "attempt-1", ProviderVersion: "version-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = normalizer.Normalize(ServerRequest{ID: json.RawMessage(`1`), Method: "item/tool/requestUserInput", Params: json.RawMessage(`{"threadId":"thread-1","turnId":"turn-1","itemId":"question-1","questions":{"id":"value","question":"Enter the value","isSecret":true}}`)})
+	if err == nil || !strings.Contains(err.Error(), "secret question") {
+		t.Fatalf("Normalize() error = %v, want secret question rejection", err)
 	}
 }
 

@@ -9,8 +9,8 @@
     "schemaVersion": {"const": 1},
     "id": {"type":"string","pattern":"^event_[0-9A-HJKMNP-TV-Z]{26}$"},
     "globalPosition": {"type":"integer","minimum":1},
-    "aggregateType": {"enum":["project","work","story","point","run","visit","attempt","artifact","approval","operation","assessment","input"]},
-    "aggregateId": {"type":"string","pattern":"^(project|work|story|point|run|visit|attempt|artifact|approval|operation|assessment|input)_[0-9A-HJKMNP-TV-Z]{26}$"},
+    "aggregateType": {"enum":["project","work","story","point","run","visit","attempt","artifact","approval","operation","assessment","input","permission"]},
+    "aggregateId": {"type":"string","pattern":"^(project|work|story|point|run|visit|attempt|artifact|approval|operation|assessment|input|permission)_[0-9A-HJKMNP-TV-Z]{26}$"},
     "aggregateRevision": {"type":"integer","minimum":1},
     "kind": {"type":"string","pattern":"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"},
     "occurredAt": {"type":"string","format":"date-time"},
@@ -37,6 +37,7 @@
     {"properties":{"aggregateType":{"const":"approval"},"aggregateId":{"type":"string","pattern":"^approval_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
     {"properties":{"aggregateType":{"const":"operation"},"aggregateId":{"type":"string","pattern":"^operation_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
     {"properties":{"aggregateType":{"const":"assessment"},"aggregateId":{"type":"string","pattern":"^assessment_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
-    {"properties":{"aggregateType":{"const":"input"},"aggregateId":{"type":"string","pattern":"^input_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]}
+    {"properties":{"aggregateType":{"const":"input"},"aggregateId":{"type":"string","pattern":"^input_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]},
+    {"properties":{"aggregateType":{"const":"permission"},"aggregateId":{"type":"string","pattern":"^permission_[0-9A-HJKMNP-TV-Z]{26}$"}},"required":["aggregateType","aggregateId"]}
   ]
 }

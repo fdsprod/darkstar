@@ -681,27 +681,38 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 		if err != nil {
 			return
 		}
+		payloadDigest := fmt.Sprintf("%x", sha256.Sum256(event.Payload))
 		data := map[string]any{
 			"sequence": event.Sequence, "kind": event.Kind, "provider": event.Provider,
-			"providerVersion": event.ProviderVersion, "payload": json.RawMessage(event.Payload),
+			"providerVersion": event.ProviderVersion, "payloadDigest": payloadDigest, "redacted": true,
 			"logReference": current.LogReference,
 		}
 		events := []statestore.PendingEvent{pendingEvent("attempt.provider_event", statestore.AggregateAttempt, current.AttemptID,
 			current.ResourceVersion, current.RunID, fmt.Sprintf("provider:%s:%d", current.AttemptID, event.Sequence),
 			statestore.ActorProvider, "fake", event.OccurredAt, data)}
-		if event.Kind == provider.EventUserInputRequested {
+		if event.Kind == provider.EventUserInputRequested || event.Kind == provider.EventPermissionRequested {
 			checkpoint, present, checkpointErr := provider.InteractionCheckpointFromEvent(event)
-			if checkpointErr != nil || !present || checkpoint.Kind != provider.InteractionUser {
-				s.failAttempt(current.AttemptID, current.RunID, errors.New("user-input event has no valid user checkpoint"))
+			if checkpointErr != nil || !present {
+				s.failAttempt(current.AttemptID, current.RunID, errors.New("provider interaction event has no valid checkpoint"))
 				return
 			}
-			events = append(events, inputRequestedEvent(current, handle, event, checkpoint))
+			if event.Kind == provider.EventUserInputRequested && checkpoint.Kind == provider.InteractionUser {
+				events = append(events, inputRequestedEvent(current, handle, event, checkpoint))
+			} else if event.Kind == provider.EventPermissionRequested && checkpoint.Kind != provider.InteractionUser {
+				events = append(events, permissionRequestedEvent(current, handle, event, checkpoint))
+			} else {
+				s.failAttempt(current.AttemptID, current.RunID, errors.New("provider interaction event checkpoint kind does not match"))
+				return
+			}
 		}
 		if _, err = s.store.Append(ctx, events...); err != nil {
 			return
 		}
-		line, _ := json.Marshal(map[string]any{"sequence": event.Sequence, "kind": event.Kind, "payload": json.RawMessage(event.Payload)})
-		_ = s.logs.AppendLog(ctx, current.LogReference, append(line, '\n'))
+		line, _ := json.Marshal(map[string]any{"sequence": event.Sequence, "kind": event.Kind, "payloadDigest": payloadDigest, "redacted": true})
+		if err = s.logs.AppendLog(ctx, current.LogReference, append(line, '\n')); err != nil {
+			s.failAttempt(current.AttemptID, current.RunID, errors.New("redacted provider log persistence failed"))
+			return
+		}
 	}
 	result, err := adapter.GetResult(ctx, provider.ResultRequest{Handle: handle})
 	if err != nil {

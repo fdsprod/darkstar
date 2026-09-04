@@ -12,7 +12,7 @@ func TestReduceInputRequestUsesClosedSiblingLifecycle(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 	requested := statestore.Event{SchemaVersion: 1, AggregateType: statestore.AggregateInput, AggregateID: "input_00000000000000000000000000",
 		AggregateRevision: 1, GlobalPosition: 1, CorrelationID: "run_00000000000000000000000000", RecordedAt: now,
-		Actor: statestore.Actor{Type: statestore.ActorProvider, ID: "codex"}, Data: json.RawMessage(`{"runId":"run_00000000000000000000000000","attemptId":"attempt_00000000000000000000000000","nodeId":"design","providerThreadId":"thread-1","providerRequestId":"opaque-1","scopeDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","request":{"question":"Proceed?"}}`), Kind: "input.requested"}
+		Actor: statestore.Actor{Type: statestore.ActorProvider, ID: "codex"}, Data: json.RawMessage(`{"runId":"run_00000000000000000000000000","attemptId":"attempt_00000000000000000000000000","nodeId":"design","providerThreadId":"thread-1","providerRequestId":"opaque-1","scopeDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","request":{"questions":[{"id":"confirm","prompt":"Proceed?","options":["Yes","No"],"schema":{"type":"string","allowedValues":["Yes","No"]}}]}}`), Kind: "input.requested"}
 	pending, applies, err := ReduceInputRequest(nil, requested)
 	if err != nil || !applies || pending.Status != statestore.InputRequestPending || pending.Answer != nil || pending.Receipt != nil {
 		t.Fatalf("pending = %#v, applies=%v, err=%v", pending, applies, err)

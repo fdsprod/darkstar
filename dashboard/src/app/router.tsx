@@ -10,6 +10,7 @@ import {
 
 import { BoardPage } from "../pages/BoardPage";
 import { ArtifactPage } from "../pages/ArtifactPage";
+import { AgentsPage } from "../pages/AgentsPage";
 import { CheckpointsPage } from "../pages/CheckpointsPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
 import { RunDetailPage } from "../pages/RunDetailPage";
@@ -125,7 +126,7 @@ export function RouteView() {
   switch (route.id) {
     case "board": return <BoardPage />;
     case "checkpoints": return <CheckpointsPage />;
-    case "agents": return <PlaceholderPage eyebrow="Execution" title="Agents" description="Inspect queued and active attempts, their bounded authority, workspaces, and live logs." />;
+    case "agents": return <AgentsPage />;
     case "workflows": return <WorkflowsPage />;
     case "settings": return <PlaceholderPage eyebrow="System" title="Settings & Health" description="Understand effective configuration and the readiness of the daemon, repositories, providers, and delivery integrations." />;
     case "work": return <WorkDetailPage />;

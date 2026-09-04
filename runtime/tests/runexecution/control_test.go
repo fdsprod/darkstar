@@ -92,6 +92,28 @@ func TestCancelTerminatesProviderAndClosesChildren(t *testing.T) {
 	}
 }
 
+func TestCancelMarksUncertainProviderTerminationForReconciliation(t *testing.T) {
+	service, _, factory := newControlTestService(t, false)
+	factory.cancelDisposition = provider.CancelUncertain
+	view, err := service.Start(context.Background(), StartRequest{Scenario: ScenarioRestart}, "start-uncertain-cancel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := waitForControlRun(t, service, view.Run.RunID, func(value View) bool {
+		return value.Run.Status == statestore.RunRunning && value.Attempts[0].Status == statestore.AttemptRunning
+	})
+	reconciled, err := service.Cancel(context.Background(), ControlRequest{
+		RunID: view.Run.RunID, ExpectedResourceVersion: running.Run.ResourceVersion, IdempotencyKey: "cancel-uncertain",
+	})
+	if err != nil || reconciled.Status != statestore.RunReconcileRequired {
+		t.Fatalf("Cancel() = %#v, %v; want run reconciliation", reconciled, err)
+	}
+	final, err := service.Get(context.Background(), view.Run.RunID)
+	if err != nil || final.Attempts[0].Status != statestore.AttemptReconcileRequired || factory.callCount(fake.CallCancel) != 1 {
+		t.Fatalf("uncertain cancel result = %#v, %v; cancel calls=%d", final, err, factory.callCount(fake.CallCancel))
+	}
+}
+
 func TestAgentViewListsExecutionContextAndCancelsSelectedAttempt(t *testing.T) {
 	service, database, factory := newControlTestService(t, false)
 	if err := service.SetAgentWorkspace("C:/workspace"); err != nil {
@@ -127,11 +149,11 @@ func TestAgentViewListsExecutionContextAndCancelsSelectedAttempt(t *testing.T) {
 		!containsString(frozen.Execution.Permissions, "repository.write") {
 		t.Fatalf("Agent(frozen context) = %#v, %v", frozen, err)
 	}
-	cancelled, err := service.CancelAgent(context.Background(), agent.AttemptID, "cancel-agent-view")
+	cancelled, err := service.CancelAgent(context.Background(), agent.AttemptID, agent.ResourceVersion, "cancel-agent-view")
 	if err != nil || cancelled.Status != statestore.AttemptCancelled || factory.callCount(fake.CallCancel) != 1 {
 		t.Fatalf("CancelAgent() = %#v, %v; cancel calls=%d", cancelled, err, factory.callCount(fake.CallCancel))
 	}
-	replayed, err := service.CancelAgent(context.Background(), agent.AttemptID, "cancel-agent-view")
+	replayed, err := service.CancelAgent(context.Background(), agent.AttemptID, agent.ResourceVersion, "cancel-agent-view")
 	if err != nil || replayed.Status != statestore.AttemptCancelled {
 		t.Fatalf("CancelAgent(replay) = %#v, %v", replayed, err)
 	}
@@ -252,12 +274,16 @@ func TestContinueExtendsCompletedFrozenRoute(t *testing.T) {
 }
 
 type controlTestFactory struct {
-	mu        sync.Mutex
-	fail      bool
-	providers []*fake.Fake
+	mu                sync.Mutex
+	fail              bool
+	cancelDisposition provider.CancelDisposition
+	providers         []*fake.Fake
 }
 
 func (factory *controlTestFactory) Provider(_ string, attemptID string, resume bool) (provider.Provider, error) {
+	factory.mu.Lock()
+	fail, cancelDisposition := factory.fail, factory.cancelDisposition
+	factory.mu.Unlock()
 	steps := []fake.Step{
 		fake.Emit(provider.Event{Sequence: 1, Kind: provider.EventTurnStarted, Payload: json.RawMessage(`{"phase":"started"}`)}),
 		fake.Pause(24 * time.Hour),
@@ -265,14 +291,15 @@ func (factory *controlTestFactory) Provider(_ string, attemptID string, resume b
 		fake.Emit(provider.Event{Sequence: 3, Kind: provider.EventTurnCompleted, Payload: json.RawMessage(`{"phase":"completed"}`)}),
 	}
 	result := provider.AttemptResult(provider.SucceededResult{StructuredOutput: json.RawMessage(`{"ok":true}`)})
+	cancelResult := provider.CancelResult{Disposition: cancelDisposition}
 	options := []fake.Option{}
-	if factory.fail {
+	if fail {
 		steps = nil
 		result = provider.FailedResult{Failure: ports.Failure{Code: ports.FailureInternal, Message: "scripted failure", Retryable: false}}
 	} else if !resume {
 		options = append(options, fake.WithClock(fake.NewManualClock(time.Unix(0, 0).UTC())))
 	}
-	adapter, err := fake.New(fake.Scenario{Attempts: []fake.AttemptScenario{{AttemptID: attemptID, Steps: steps, Result: result}}}, options...)
+	adapter, err := fake.New(fake.Scenario{Attempts: []fake.AttemptScenario{{AttemptID: attemptID, Steps: steps, Result: result, CancelResult: cancelResult}}}, options...)
 	if err != nil {
 		return nil, err
 	}

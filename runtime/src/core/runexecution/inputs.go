@@ -130,6 +130,10 @@ func (s *Service) AnswerInput(ctx context.Context, request AnswerInputRequest) (
 	if request.ScopeDigest != input.ScopeDigest {
 		return InputRequestView{}, ErrInputScopeConflict
 	}
+	var normalizedRequest provider.UserInputRequest
+	if err := json.Unmarshal([]byte(input.Request), &normalizedRequest); err != nil || !provider.ValidUserInputAnswer(normalizedRequest, request.Answer) {
+		return InputRequestView{}, ErrInputInvalidRequest
+	}
 	if input.Answer != nil {
 		same := input.Answer.ActionKey == request.IdempotencyKey && bytes.Equal([]byte(input.Answer.Answer), request.Answer) && input.Answer.Actor == request.Actor
 		if !same {
@@ -247,7 +251,7 @@ func inputRequestedEvent(attempt statestore.AttemptProjection, handle provider.A
 		fmt.Sprintf("input:%s:%d", attempt.AttemptID, event.Sequence), statestore.ActorProvider, event.Provider, event.OccurredAt,
 		map[string]any{"runId": attempt.RunID, "attemptId": attempt.AttemptID, "nodeId": attempt.NodeID,
 			"providerThreadId": handle.ProviderThreadID, "providerRequestId": checkpoint.ProviderRequestID,
-			"scopeDigest": checkpoint.ScopeDigest, "request": json.RawMessage(event.Payload)})
+			"scopeDigest": checkpoint.ScopeDigest, "request": checkpoint.Input})
 }
 
 func validInputActor(actor statestore.Actor) bool {

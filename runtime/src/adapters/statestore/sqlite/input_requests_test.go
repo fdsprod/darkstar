@@ -31,7 +31,7 @@ func TestInputRequestProjectionQueriesAndRebuild(t *testing.T) {
 		}
 	}
 	appendInputEvent(1, "input.requested", "request", statestore.Actor{Type: statestore.ActorProvider, ID: "codex"},
-		`{"runId":"`+runID+`","attemptId":"`+attemptID+`","nodeId":"design","providerThreadId":"thread-1","providerRequestId":"opaque-1","scopeDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","request":{"question":"Proceed?"}}`)
+		`{"runId":"`+runID+`","attemptId":"`+attemptID+`","nodeId":"design","providerThreadId":"thread-1","providerRequestId":"opaque-1","scopeDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","request":{"questions":[{"id":"confirm","prompt":"Proceed?","options":["Yes","No"],"schema":{"type":"string","allowedValues":["Yes","No"]}}]}}`)
 	pending, err := database.InputRequests(ctx, statestore.InputRequestPending)
 	if err != nil || len(pending) != 1 || pending[0].InputRequestID != id {
 		t.Fatalf("pending = %#v, %v", pending, err)

@@ -128,9 +128,35 @@ const (
 )
 
 type InteractionCheckpoint struct {
-	Kind              InteractionKind `json:"kind"`
-	ProviderRequestID string          `json:"providerRequestId"`
-	ScopeDigest       string          `json:"scopeDigest"`
+	Kind              InteractionKind   `json:"kind"`
+	ProviderRequestID string            `json:"providerRequestId"`
+	ProviderTurnID    string            `json:"providerTurnId"`
+	Scope             InteractionScope  `json:"scope"`
+	ScopeDigest       string            `json:"scopeDigest"`
+	PolicyDigest      string            `json:"policyDigest"`
+	Input             *UserInputRequest `json:"input,omitempty"`
+}
+
+type InteractionScope struct {
+	Target    string `json:"target"`
+	Operation string `json:"operation"`
+	Subject   string `json:"subject,omitempty"`
+}
+
+type UserInputSchema struct {
+	Type          string   `json:"type"`
+	AllowedValues []string `json:"allowedValues,omitempty"`
+}
+
+type UserInputQuestion struct {
+	ID      string          `json:"id"`
+	Prompt  string          `json:"prompt"`
+	Options []string        `json:"options"`
+	Schema  UserInputSchema `json:"schema"`
+}
+
+type UserInputRequest struct {
+	Questions []UserInputQuestion `json:"questions"`
 }
 
 // AttemptRequest freezes everything an adapter may use for a new attempt.

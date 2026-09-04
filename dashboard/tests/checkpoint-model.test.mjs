@@ -42,12 +42,15 @@ test("resource, digest, identity, revision, and state changes require checkpoint
 });
 
 test("input answers accept one exact JSON value only while pending", () => {
-  assert.deepEqual(buildInputAnswerRequest({ status: "pending", scopeDigest: "digest" }, '{"choice":"yes"}'), { scopeDigest: "digest", answer: { choice: "yes" } });
-  assert.equal(parseJSONAnswer("null"), null);
+  const input = { status: "pending", scopeDigest: "digest", request: { questions: [{ id: "choice", prompt: "Continue?", options: ["yes", "no"], schema: { type: "string", allowedValues: ["yes", "no"] } }] } };
+  const envelope = { answers: { choice: { answers: "yes" } } };
+  assert.deepEqual(buildInputAnswerRequest(input, JSON.stringify(envelope)), { scopeDigest: "digest", answer: envelope });
+  assert.throws(() => parseJSONAnswer("null"), /answers object/);
   assert.throws(() => parseJSONAnswer(""), /Enter a JSON answer/);
   assert.throws(() => parseJSONAnswer("yes"), /valid JSON/);
-  assert.throws(() => buildInputAnswerRequest({ status: "answer_recorded", scopeDigest: "digest" }, "true"), /awaiting authoritative delivery/);
-  assert.throws(() => buildInputAnswerRequest({ status: "answered", scopeDigest: "digest" }, "true"), /already been delivered/);
+  assert.throws(() => buildInputAnswerRequest(input, '{"answers":{"choice":{"answers":"other"}}}'), /recorded option/);
+  assert.throws(() => buildInputAnswerRequest({ ...input, status: "answer_recorded" }, JSON.stringify(envelope)), /awaiting authoritative delivery/);
+  assert.throws(() => buildInputAnswerRequest({ ...input, status: "answered" }, JSON.stringify(envelope)), /already been delivered/);
 });
 
 test("generated checkpoint and input contracts are typed, closed, and version fenced by the client", async () => {

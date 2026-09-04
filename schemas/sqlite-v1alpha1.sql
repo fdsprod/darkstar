@@ -14,7 +14,7 @@ INSERT INTO global_positions(singleton, last_position) VALUES (1, 0);
 
 CREATE TABLE aggregates (
   aggregate_id TEXT PRIMARY KEY,
-  aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('project', 'work', 'story', 'point', 'run', 'visit', 'attempt', 'artifact', 'approval', 'operation', 'assessment', 'input')),
+  aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('project', 'work', 'story', 'point', 'run', 'visit', 'attempt', 'artifact', 'approval', 'operation', 'assessment', 'input', 'permission')),
   revision INTEGER NOT NULL CHECK (revision >= 0),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -30,7 +30,8 @@ CREATE TABLE aggregates (
     (aggregate_type = 'approval' AND aggregate_id GLOB 'approval_*') OR
     (aggregate_type = 'operation' AND aggregate_id GLOB 'operation_*') OR
     (aggregate_type = 'assessment' AND aggregate_id GLOB 'assessment_*') OR
-    (aggregate_type = 'input' AND aggregate_id GLOB 'input_*')
+    (aggregate_type = 'input' AND aggregate_id GLOB 'input_*') OR
+    (aggregate_type = 'permission' AND aggregate_id GLOB 'permission_*')
   )
 ) STRICT;
 
@@ -761,3 +762,42 @@ ON input_request_projection(run_id, created_at, input_request_id);
 
 CREATE INDEX input_request_projection_attempt
 ON input_request_projection(attempt_id, created_at, input_request_id);
+
+CREATE TABLE provider_permission_projection (
+  permission_request_id TEXT PRIMARY KEY CHECK (permission_request_id GLOB 'permission_*'),
+  run_id TEXT NOT NULL CHECK (run_id GLOB 'run_*'),
+  attempt_id TEXT NOT NULL CHECK (attempt_id GLOB 'attempt_*'),
+  node_id TEXT NOT NULL CHECK (node_id <> ''),
+  provider_thread_id TEXT NOT NULL CHECK (provider_thread_id <> ''),
+  provider_turn_id TEXT NOT NULL CHECK (provider_turn_id <> ''),
+  provider_request_id TEXT NOT NULL CHECK (provider_request_id <> ''),
+  interaction_kind TEXT NOT NULL CHECK (interaction_kind IN ('command', 'file', 'network', 'permission', 'tool')),
+  scope_json TEXT NOT NULL CHECK (json_valid(scope_json) AND json_type(scope_json) = 'object'),
+  scope_digest TEXT NOT NULL CHECK (length(scope_digest) = 64 AND scope_digest NOT GLOB '*[^0-9a-f]*'),
+  policy_digest TEXT NOT NULL CHECK (length(policy_digest) = 64 AND policy_digest NOT GLOB '*[^0-9a-f]*'),
+  evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json) AND json_type(evidence_json) = 'object'),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'decision_recorded', 'responded')),
+  decision TEXT CHECK (decision IS NULL OR decision IN ('allow_once', 'deny', 'cancel')),
+  decision_action_key TEXT,
+  decided_by_type TEXT CHECK (decided_by_type IS NULL OR decided_by_type IN ('user', 'external')),
+  decided_by_id TEXT,
+  decision_recorded_at TEXT,
+  receipt_provider_request_id TEXT,
+  delivered_at TEXT,
+  resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
+  last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(attempt_id, provider_request_id),
+  CHECK (
+    (status = 'pending' AND decision IS NULL AND decision_action_key IS NULL AND decided_by_type IS NULL AND decided_by_id IS NULL AND decision_recorded_at IS NULL AND receipt_provider_request_id IS NULL AND delivered_at IS NULL) OR
+    (status = 'decision_recorded' AND decision IS NOT NULL AND decision_action_key IS NOT NULL AND decided_by_type IS NOT NULL AND decided_by_id IS NOT NULL AND decision_recorded_at IS NOT NULL AND receipt_provider_request_id IS NULL AND delivered_at IS NULL) OR
+    (status = 'responded' AND decision IS NOT NULL AND decision_action_key IS NOT NULL AND decided_by_type IS NOT NULL AND decided_by_id IS NOT NULL AND decision_recorded_at IS NOT NULL AND receipt_provider_request_id = provider_request_id AND delivered_at IS NOT NULL)
+  )
+) STRICT;
+
+CREATE INDEX provider_permission_projection_status
+ON provider_permission_projection(status, created_at, permission_request_id);
+
+CREATE INDEX provider_permission_projection_attempt
+ON provider_permission_projection(attempt_id, created_at, permission_request_id);

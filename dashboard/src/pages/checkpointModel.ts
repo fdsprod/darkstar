@@ -35,6 +35,9 @@ export interface ArtifactCheckpointRound extends CheckpointRoundIdentity {
 export interface ArtifactCheckpointQueue { schemaVersion: 1; items: ArtifactCheckpointRound[] }
 export interface ArtifactCheckpointHistory { checkpointId: string; rounds: ArtifactCheckpointRound[] }
 export type InputRequestAction = "answer" | "retry_delivery";
+export interface UserInputQuestion { id: string; prompt: string; options: string[]; schema: { type: "string"; allowedValues: string[] } }
+export interface UserInputRequest { questions: UserInputQuestion[] }
+export interface UserInputAnswerEnvelope { answers: Record<string, { answers: string }> }
 export interface InputRequest {
   id: string;
   runId: string;
@@ -42,10 +45,10 @@ export interface InputRequest {
   nodeId: string;
   providerRequestId: string;
   scopeDigest: string;
-  request: Record<string, unknown>;
+  request: UserInputRequest;
   status: "pending" | "answer_recorded" | "answered";
   allowedActions: InputRequestAction[];
-  answer?: { answer: unknown; actor: CheckpointActor; recordedAt: string };
+  answer?: { answer: UserInputAnswerEnvelope; actor: CheckpointActor; recordedAt: string };
   receipt?: { providerRequestId: string; deliveredAt: string };
   resourceVersion: number;
   lastGlobalPosition: number;
@@ -100,14 +103,33 @@ export function orderedCheckpointHistory<T extends CheckpointRoundIdentity>(roun
   return ordered;
 }
 
-export function parseJSONAnswer(value: string): unknown {
+export function parseJSONAnswer(value: string): UserInputAnswerEnvelope {
   if (!value.trim()) throw new Error("Enter a JSON answer.");
-  try { return JSON.parse(value); } catch { throw new Error("Answer must be valid JSON."); }
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { throw new Error("Answer must be valid JSON."); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !("answers" in parsed)) throw new Error("Answer must contain an answers object.");
+  const answers = (parsed as { answers?: unknown }).answers;
+  if (!answers || typeof answers !== "object" || Array.isArray(answers)) throw new Error("Answer must contain an answers object.");
+  const result: UserInputAnswerEnvelope = { answers: {} };
+  for (const [id, entry] of Object.entries(answers)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry) || Object.keys(entry).length !== 1 || typeof (entry as { answers?: unknown }).answers !== "string") {
+      throw new Error(`Answer ${id} must contain one string value.`);
+    }
+    result.answers[id] = { answers: (entry as { answers: string }).answers };
+  }
+  return result;
 }
 
-export function buildInputAnswerRequest(input: { status: "pending" | "answer_recorded" | "answered"; scopeDigest: string }, answerText: string) {
+export function buildInputAnswerRequest(input: { status: "pending" | "answer_recorded" | "answered"; scopeDigest: string; request: UserInputRequest }, answerText: string) {
   if (input.status !== "pending") throw new Error(input.status === "answer_recorded" ? "This answer is already recorded and awaiting authoritative delivery." : "This input request has already been delivered.");
-  return { scopeDigest: input.scopeDigest, answer: parseJSONAnswer(answerText) };
+  const answer = parseJSONAnswer(answerText);
+  if (Object.keys(answer.answers).length !== input.request.questions.length) throw new Error("Answer every recorded question exactly once.");
+  for (const question of input.request.questions) {
+    const value = answer.answers[question.id]?.answers;
+    if (!value || value.length > 128) throw new Error(`Answer ${question.id} with a non-empty string.`);
+    if (question.schema.allowedValues.length && !question.schema.allowedValues.includes(value)) throw new Error(`Choose a recorded option for ${question.id}.`);
+  }
+  return { scopeDigest: input.scopeDigest, answer };
 }
 
 export function inputActionPresentation(action: InputRequestAction) {

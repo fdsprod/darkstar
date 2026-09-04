@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"darkstar/src/ports/provider"
 	"darkstar/src/ports/statestore"
 )
 
@@ -34,9 +35,10 @@ func ReduceInputRequest(current *statestore.InputRequestProjection, event states
 		if err := decodeData(event, &data); err != nil {
 			return statestore.InputRequestProjection{}, true, err
 		}
+		var request provider.UserInputRequest
 		if data.RunID == "" || data.AttemptID == "" || data.NodeID == "" || data.ProviderThreadID == "" ||
 			strings.TrimSpace(data.ProviderRequestID) == "" || data.ProviderRequestID != strings.TrimSpace(data.ProviderRequestID) ||
-			event.CorrelationID != data.RunID || !validSourceHash(data.ScopeDigest) || !jsonObjectValue(data.Request) {
+			event.CorrelationID != data.RunID || !validSourceHash(data.ScopeDigest) || decodeClosedJSON(data.Request, &request) != nil || !provider.ValidUserInputRequest(request) {
 			return statestore.InputRequestProjection{}, true, errors.New("input.requested requires correlated run, attempt, node, provider identities, scope digest, and an object request")
 		}
 		return statestore.InputRequestProjection{

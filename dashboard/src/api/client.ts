@@ -17,6 +17,14 @@ export interface RequestOptions<TBody = never> {
   signal?: AbortSignal;
 }
 
+export interface AgentLogChunk {
+  offset: number;
+  nextOffset: number;
+  size: number;
+  complete: boolean;
+  bytes: Uint8Array;
+}
+
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code: string;
@@ -96,6 +104,38 @@ export class DarkstarApiClient {
   getInputRequest(inputRequestId: string, signal?: AbortSignal) { return this.operation("getInputRequest", { path: { inputRequestId }, signal }); }
   answerInputRequest(inputRequestId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["InputRequestAnswerRequest"], signal?: AbortSignal) { return this.operation("answerInputRequest", { path: { inputRequestId }, body, resourceVersion, idempotencyKey, signal }); }
   retryInputDelivery(inputRequestId: string, resourceVersion: number, signal?: AbortSignal) { return this.operation("retryInputRequestDelivery", { path: { inputRequestId }, resourceVersion, signal }); }
+  listAgents(signal?: AbortSignal) { return this.operation("listAgents", { signal }); }
+  getAgent(attemptId: string, signal?: AbortSignal) { return this.operation("getAgent", { path: { attemptId }, signal }); }
+  cancelAgent(attemptId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("cancelAgent", { path: { attemptId }, resourceVersion, idempotencyKey, signal }); }
+  listProviderPermissions(query: { attemptId?: string; status?: "pending" | "decision_recorded" | "responded" } = {}, signal?: AbortSignal) { return this.operation("listProviderPermissions", { query, signal }); }
+  getProviderPermission(permissionRequestId: string, signal?: AbortSignal) { return this.operation("getProviderPermission", { path: { permissionRequestId }, signal }); }
+  decideProviderPermission(permissionRequestId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["ProviderPermissionDecisionRequest"], signal?: AbortSignal) { return this.operation("decideProviderPermission", { path: { permissionRequestId }, resourceVersion, idempotencyKey, body, signal }); }
+  retryProviderPermissionDelivery(permissionRequestId: string, resourceVersion: number, signal?: AbortSignal) { return this.operation("retryProviderPermissionDelivery", { path: { permissionRequestId }, resourceVersion, signal }); }
+
+  async readAgentLog(attemptId: string, after = 0, limit = 65_536, signal?: AbortSignal): Promise<AgentLogChunk> {
+    const headers = new Headers({ Accept: "application/octet-stream" });
+    const authorization = typeof this.authorization === "function" ? this.authorization() : this.authorization;
+    if (authorization) headers.set("Authorization", authorization);
+    const query = new URLSearchParams({ after: String(after), limit: String(limit) });
+    const path = operationDefinitions.readAgentLog.path.replace("{attemptId}", encodeURIComponent(attemptId));
+    const response = await this.fetcher(`${path}?${query}`, { headers, credentials: "same-origin", signal });
+    if (!response.ok) throw await toApiError(response);
+    const offset = requiredIntegerHeader(response, "X-Darkstar-Log-Offset");
+    const nextOffset = requiredIntegerHeader(response, "X-Darkstar-Log-Next-Offset");
+    const size = requiredIntegerHeader(response, "X-Darkstar-Log-Size");
+    const completeValue = response.headers.get("X-Darkstar-Log-Complete");
+    if (completeValue !== "true" && completeValue !== "false") throw new Error("Agent log response omitted its completion cursor.");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (nextOffset !== offset + bytes.length || nextOffset > size) throw new Error("Agent log response returned inconsistent cursor metadata.");
+    return { offset, nextOffset, size, complete: completeValue === "true", bytes };
+  }
+}
+
+function requiredIntegerHeader(response: Response, name: string) {
+  const raw = response.headers.get(name);
+  const value = raw === null ? Number.NaN : Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Agent log response omitted ${name}.`);
+  return value;
 }
 
 async function toApiError(response: Response) {

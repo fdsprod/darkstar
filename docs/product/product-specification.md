@@ -881,6 +881,10 @@ darkstar agent list
 darkstar agent status [--json]
 darkstar agent logs <attempt-id> [--follow]
 darkstar agent cancel <attempt-id>
+darkstar agent permissions list [--attempt <attempt-id>] [--status <pending|decision_recorded|responded>]
+darkstar agent permissions show <permission-id>
+darkstar agent permissions decide <permission-id> <allow_once|deny|cancel>
+darkstar agent permissions retry <permission-id>
 ```
 
 ### 8.6 Stable CLI exit classes

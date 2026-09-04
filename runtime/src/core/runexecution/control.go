@@ -308,13 +308,21 @@ func (s *Service) Cancel(ctx context.Context, request ControlRequest) (statestor
 	now := s.now().UTC().Round(0)
 	events := make([]statestore.PendingEvent, 0, len(attempts)*2+1)
 	cancelledVisits := map[string]bool{}
+	reconcileRequired := false
 	for _, attempt := range attempts {
 		if attempt.Status.Terminal() {
 			continue
 		}
 		data := map[string]any{"reason": "user", "logReference": attempt.LogReference}
-		if evidence := cancelEvidence[attempt.AttemptID]; evidence != nil {
-			data["providerCancellation"] = evidence
+		observation := cancelEvidence[attempt.AttemptID]
+		if observation.Disposition != "" {
+			data["providerCancellation"] = map[string]any{"disposition": observation.Disposition}
+		}
+		if observation.Uncertain {
+			reconcileRequired = true
+			events = append(events, pendingEvent("attempt.reconcile_required", statestore.AggregateAttempt, attempt.AttemptID, attempt.ResourceVersion,
+				run.RunID, request.IdempotencyKey, statestore.ActorSystem, "daemon", now, map[string]any{"reason": "provider_cancellation_unconfirmed"}))
+			continue
 		}
 		events = append(events, pendingEvent("attempt.cancelled", statestore.AggregateAttempt, attempt.AttemptID, attempt.ResourceVersion,
 			run.RunID, request.IdempotencyKey, request.Actor.Type, request.Actor.ID, now, data))
@@ -330,7 +338,11 @@ func (s *Service) Cancel(ctx context.Context, request ControlRequest) (statestor
 			}
 		}
 	}
-	events = append(events, controlEvent(eventKind, run, request, map[string]any{"reason": "user"}, now))
+	finalEventKind := eventKind
+	if reconcileRequired {
+		finalEventKind = "run.reconcile_required"
+	}
+	events = append(events, controlEvent(finalEventKind, run, request, map[string]any{"reason": map[bool]string{true: "provider_cancellation_unconfirmed", false: "user"}[reconcileRequired]}, now))
 	committed, err := s.store.Append(ctx, events...)
 	if err != nil {
 		return statestore.RunProjection{}, err
@@ -461,7 +473,12 @@ func decodeControlResponse(encoded json.RawMessage, action, runID string) (state
 	}
 }
 
-func (s *Service) quiesceRun(ctx context.Context, runID string, terminate bool, key string) map[string]any {
+type cancelObservation struct {
+	Disposition provider.CancelDisposition
+	Uncertain   bool
+}
+
+func (s *Service) quiesceRun(ctx context.Context, runID string, terminate bool, key string) map[string]cancelObservation {
 	s.mu.Lock()
 	stopped := make(map[string]stoppedWorker)
 	for attemptID, active := range s.workers {
@@ -472,7 +489,7 @@ func (s *Service) quiesceRun(ctx context.Context, runID string, terminate bool, 
 		active.cancel()
 	}
 	s.mu.Unlock()
-	evidence := make(map[string]any, len(stopped))
+	evidence := make(map[string]cancelObservation, len(stopped))
 	if terminate {
 		attempts, _ := s.store.AttemptsForRun(ctx, runID)
 		for _, attempt := range attempts {
@@ -484,7 +501,7 @@ func (s *Service) quiesceRun(ctx context.Context, runID string, terminate bool, 
 			}
 			adapter, err := s.factory.Provider(attempt.Scenario, attempt.AttemptID, true)
 			if err != nil {
-				evidence[attempt.AttemptID] = map[string]any{"error": err.Error()}
+				evidence[attempt.AttemptID] = cancelObservation{Disposition: provider.CancelUncertain, Uncertain: true}
 				continue
 			}
 			stopped[attempt.AttemptID] = stoppedWorker{adapter: adapter, handle: provider.AttemptHandle{
@@ -498,9 +515,9 @@ func (s *Service) quiesceRun(ctx context.Context, runID string, terminate bool, 
 			}
 			result, err := active.adapter.CancelAttempt(ctx, provider.CancelRequest{Handle: active.handle, IdempotencyKey: "cancel:" + key + ":" + attemptID})
 			if err != nil {
-				evidence[attemptID] = map[string]any{"error": err.Error()}
+				evidence[attemptID] = cancelObservation{Disposition: provider.CancelUncertain, Uncertain: true}
 			} else {
-				evidence[attemptID] = result
+				evidence[attemptID] = cancelObservation{Disposition: result.Disposition, Uncertain: result.Disposition == provider.CancelUncertain}
 			}
 		}
 	}

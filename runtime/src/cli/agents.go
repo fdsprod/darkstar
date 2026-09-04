@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,7 +33,7 @@ type agentLogOutput struct {
 
 func runAgent(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		return writeCommandError(stdout, stderr, jsonOutput, "darkstar agent", "ARGUMENT_INVALID", "an agent command is required (list, status, logs, cancel)", false, ExitInvalidInput)
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar agent", "ARGUMENT_INVALID", "an agent command is required (list, status, logs, cancel, permissions)", false, ExitInvalidInput)
 	}
 	command := "darkstar agent " + args[0]
 	switch args[0] {
@@ -73,10 +74,19 @@ func runAgent(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 			return code
 		}
 		var agent runexecution.Agent
-		if err := session.DoJSON(context.Background(), http.MethodPost, "agents/"+attemptID+"/cancel", nil, &agent, clientapi.WithHeader("Idempotency-Key", key)); err != nil {
+		if err := session.DoJSON(context.Background(), http.MethodGet, "agents/"+attemptID, nil, &agent); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		if !slices.Contains(agent.AllowedActions, runexecution.AgentActionCancel) {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "AGENT_CANCEL_INVALID_TRANSITION", "agent cancellation is not allowed in the current state", false, ExitConflict)
+		}
+		if err := session.DoJSON(context.Background(), http.MethodPost, "agents/"+attemptID+"/cancel", nil, &agent,
+			clientapi.WithHeader("Idempotency-Key", key), clientapi.WithHeader("If-Match", fmt.Sprintf(`"%d"`, agent.ResourceVersion))); err != nil {
 			return writeClientError(stdout, stderr, jsonOutput, command, err)
 		}
 		return writeAgent(agent, jsonOutput, stdout, stderr, command)
+	case "permissions":
+		return runAgentPermissions(args[1:], jsonOutput, stdout, stderr)
 	default:
 		return writeCommandError(stdout, stderr, jsonOutput, "darkstar agent", "ARGUMENT_INVALID", fmt.Sprintf("unknown agent command %q", args[0]), false, ExitInvalidInput)
 	}
@@ -111,10 +121,18 @@ func writeAgent(agent runexecution.Agent, jsonOutput bool, stdout, stderr io.Wri
 		}
 		return int(ExitSuccess)
 	}
-	_, _ = fmt.Fprintf(stdout, "%s %s\nProvider: %s\nRun: %s\nNode: %s\nWorkspace: %s (%s)\nPermissions: %s\nElapsed: %s\n",
+	_, _ = fmt.Fprintf(stdout, "%s %s\nProvider: %s\nRun: %s\nNode: %s\nWorkspace: %s (%s)\nPermissions: %s\nAllowed actions: %s\nElapsed: %s\n",
 		agent.AttemptID, agent.Status, agent.Provider, agent.RunID, agent.NodeID, agent.Execution.Workspace.ID,
-		agent.Execution.Workspace.Access, strings.Join(agent.Execution.Permissions, ", "), time.Duration(agent.ElapsedMilliseconds)*time.Millisecond)
+		agent.Execution.Workspace.Access, strings.Join(agent.Execution.Permissions, ", "), joinAgentActions(agent.AllowedActions), time.Duration(agent.ElapsedMilliseconds)*time.Millisecond)
 	return int(ExitSuccess)
+}
+
+func joinAgentActions(actions []runexecution.AgentAction) string {
+	values := make([]string, len(actions))
+	for index := range actions {
+		values[index] = string(actions[index])
+	}
+	return strings.Join(values, ", ")
 }
 
 func parseAgentLogs(args []string) (string, bool, error) {

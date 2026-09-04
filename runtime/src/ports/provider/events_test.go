@@ -134,7 +134,7 @@ func TestEventValidateClassifiesContractDrift(t *testing.T) {
 func TestInteractionCheckpointFromEventReturnsTypedCheckpoint(t *testing.T) {
 	t.Parallel()
 
-	event := provider.Event{Payload: json.RawMessage(`{"checkpoint":{"kind":"network","providerRequestId":"7","scopeDigest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`)}
+	event := provider.Event{Payload: json.RawMessage(`{"checkpoint":{"kind":"network","providerRequestId":"7","providerTurnId":"turn-1","scope":{"target":"network_host","operation":"connect","subject":"example.com"},"scopeDigest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","policyDigest":"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"}}`)}
 	checkpoint, present, err := provider.InteractionCheckpointFromEvent(event)
 	if err != nil || !present {
 		t.Fatalf("InteractionCheckpointFromEvent() present = %t, error = %v", present, err)
@@ -162,6 +162,42 @@ func TestInteractionCheckpointFromEventRejectsMalformedCheckpoint(t *testing.T) 
 		var failure *ports.Failure
 		if present || !errors.As(err, &failure) || failure.Code != ports.FailureProtocolDrift {
 			t.Fatalf("payload %s: present = %t, error = %#v", payload, present, err)
+		}
+	}
+}
+
+func TestNormalizedInteractionContentRejectsSensitiveDisplayText(t *testing.T) {
+	t.Parallel()
+
+	unsafeCommand := provider.Event{Payload: json.RawMessage(`{"checkpoint":{"kind":"command","providerRequestId":"7","providerTurnId":"turn-1","scope":{"target":"command","operation":"execute","subject":"echo token-secret"},"scopeDigest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","policyDigest":"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"}}`)}
+	if _, present, err := provider.InteractionCheckpointFromEvent(unsafeCommand); present || err == nil {
+		t.Fatalf("sensitive command present = %t, error = %v", present, err)
+	}
+
+	unsafePrompt := provider.Event{Payload: json.RawMessage(`{"checkpoint":{"kind":"user","providerRequestId":"8","providerTurnId":"turn-1","scope":{"target":"user_input","operation":"answer","subject":"question-1"},"scopeDigest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","policyDigest":"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","input":{"questions":[{"id":"credential","prompt":"Enter your password","options":[],"schema":{"type":"string","allowedValues":[]}}]}}}`)}
+	if _, present, err := provider.InteractionCheckpointFromEvent(unsafePrompt); present || err == nil {
+		t.Fatalf("sensitive prompt present = %t, error = %v", present, err)
+	}
+}
+
+func TestValidUserInputAnswerEnforcesQuestionSchema(t *testing.T) {
+	t.Parallel()
+	input := provider.UserInputRequest{Questions: []provider.UserInputQuestion{{
+		ID: "choice", Prompt: "Continue?", Options: []string{"Continue", "Stop"},
+		Schema: provider.UserInputSchema{Type: "string", AllowedValues: []string{"Continue", "Stop"}},
+	}}}
+	if !provider.ValidUserInputAnswer(input, json.RawMessage(`{"answers":{"choice":{"answers":"Continue"}}}`)) {
+		t.Fatal("ValidUserInputAnswer() rejected a matching closed answer")
+	}
+	for _, raw := range []json.RawMessage{
+		json.RawMessage(`{"answers":{"choice":{"answers":"Other"}}}`),
+		json.RawMessage(`{"answers":{"choice":{"answers":7}}}`),
+		json.RawMessage(`{"answers":{"choice":{"answers":"Continue","extra":true}}}`),
+		json.RawMessage(`{"answers":{"other":{"answers":"Continue"}}}`),
+		json.RawMessage(`{"answers":{"choice":{"answers":"token-secret"}}}`),
+	} {
+		if provider.ValidUserInputAnswer(input, raw) {
+			t.Fatalf("ValidUserInputAnswer() accepted %s", raw)
 		}
 	}
 }

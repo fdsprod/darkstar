@@ -97,6 +97,10 @@ Agent commands:
   agent status [<attempt-id>] [--json]
   agent logs <attempt-id> [--follow] [--json]
   agent cancel <attempt-id> [--idempotency-key <key>] [--json]
+  agent permissions list [--attempt <attempt-id>] [--status <status>] [--json]
+  agent permissions show <permission-id> [--json]
+  agent permissions decide <permission-id> <allow_once|deny|cancel> [--idempotency-key <key>] [--json]
+  agent permissions retry <permission-id> [--json]
 
 Approval and checkpoint commands:
   approval show <approval-id> [--json]

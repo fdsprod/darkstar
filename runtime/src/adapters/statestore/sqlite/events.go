@@ -29,6 +29,7 @@ var (
 		statestore.AggregateApproval: "approval_", statestore.AggregateOperation: "operation_",
 		statestore.AggregateAssessment: "assessment_",
 		statestore.AggregateInput:      "input_",
+		statestore.AggregatePermission: "permission_",
 	}
 )
 
@@ -435,6 +436,22 @@ func (d *Database) InputRequestsForAttempt(ctx context.Context, attemptID string
 	return queryInputRequests(ctx, d.sql, ` WHERE attempt_id = ? ORDER BY created_at, input_request_id`, attemptID)
 }
 
+func (d *Database) ProviderPermission(ctx context.Context, id string) (statestore.ProviderPermissionProjection, error) {
+	value, err := readProviderPermissionProjection(ctx, d.sql, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return statestore.ProviderPermissionProjection{}, fmt.Errorf("%w: provider permission %s", statestore.ErrNotFound, id)
+	}
+	return value, err
+}
+
+func (d *Database) ProviderPermissions(ctx context.Context, status statestore.ProviderPermissionStatus) ([]statestore.ProviderPermissionProjection, error) {
+	return queryProviderPermissions(ctx, d.sql, ` WHERE status=? ORDER BY created_at, permission_request_id`, status)
+}
+
+func (d *Database) ProviderPermissionsForAttempt(ctx context.Context, attemptID string) ([]statestore.ProviderPermissionProjection, error) {
+	return queryProviderPermissions(ctx, d.sql, ` WHERE attempt_id=? ORDER BY created_at, permission_request_id`, attemptID)
+}
+
 // ApprovalsForCheckpoint returns immutable candidate requests in revision order.
 func (d *Database) ApprovalsForCheckpoint(ctx context.Context, checkpointID string) ([]statestore.ApprovalProjection, error) {
 	rows, err := d.sql.QueryContext(ctx, approvalSelect+` WHERE checkpoint_id = ? ORDER BY checkpoint_revision`, checkpointID)
@@ -528,7 +545,7 @@ func (d *Database) RebuildProjections(ctx context.Context) (err error) {
 	if closeErr != nil {
 		return fmt.Errorf("close replay events: %w", closeErr)
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM point_dependencies; DELETE FROM attempt_projection; DELETE FROM point_projection; DELETE FROM story_projection; DELETE FROM work_item_projection; DELETE FROM project_projection; DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM approval_projection; DELETE FROM readiness_assessment_projection; DELETE FROM input_request_projection; DELETE FROM projection_checkpoints`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM point_dependencies; DELETE FROM attempt_projection; DELETE FROM point_projection; DELETE FROM story_projection; DELETE FROM work_item_projection; DELETE FROM project_projection; DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM approval_projection; DELETE FROM readiness_assessment_projection; DELETE FROM input_request_projection; DELETE FROM provider_permission_projection; DELETE FROM projection_checkpoints`); err != nil {
 		return fmt.Errorf("clear projections: %w", err)
 	}
 	for _, event := range events {
@@ -791,6 +808,19 @@ func applyProjection(ctx context.Context, tx *sql.Tx, event statestore.Event) er
 			return err
 		}
 		return writeInputRequestProjection(ctx, tx, next)
+	case statestore.AggregatePermission:
+		current, err := readProviderPermissionProjection(ctx, tx, event.AggregateID)
+		var existing *statestore.ProviderPermissionProjection
+		if err == nil {
+			existing = &current
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		next, applies, err := projection.ReduceProviderPermission(existing, event)
+		if err != nil || !applies {
+			return err
+		}
+		return writeProviderPermissionProjection(ctx, tx, next)
 	default:
 		return nil
 	}
@@ -916,6 +946,63 @@ func queryInputRequests(ctx context.Context, query rowsQueryer, suffix string, a
 	values := make([]statestore.InputRequestProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanInputRequestProjection(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+const providerPermissionSelect = `SELECT permission_request_id,run_id,attempt_id,node_id,provider_thread_id,provider_turn_id,provider_request_id,
+	interaction_kind,scope_json,scope_digest,policy_digest,evidence_json,status,decision,decision_action_key,decided_by_type,decided_by_id,
+	decision_recorded_at,receipt_provider_request_id,delivered_at,resource_version,last_global_position,created_at,updated_at
+	FROM provider_permission_projection`
+
+func readProviderPermissionProjection(ctx context.Context, query rowQueryer, id string) (statestore.ProviderPermissionProjection, error) {
+	return scanProviderPermissionProjection(query.QueryRowContext(ctx, providerPermissionSelect+` WHERE permission_request_id=?`, id))
+}
+
+func scanProviderPermissionProjection(row rowScanner) (statestore.ProviderPermissionProjection, error) {
+	var value statestore.ProviderPermissionProjection
+	var decision, key, actorType, actorID, decisionAt, receiptID, deliveredAt sql.NullString
+	var createdAt, updatedAt string
+	err := row.Scan(&value.PermissionRequestID, &value.RunID, &value.AttemptID, &value.NodeID, &value.ProviderThreadID, &value.ProviderTurnID, &value.ProviderRequestID,
+		&value.InteractionKind, &value.Scope, &value.ScopeDigest, &value.PolicyDigest, &value.Evidence, &value.Status, &decision, &key, &actorType, &actorID, &decisionAt, &receiptID, &deliveredAt,
+		&value.ResourceVersion, &value.LastGlobalPosition, &createdAt, &updatedAt)
+	if err != nil {
+		return value, err
+	}
+	if decision.Valid {
+		when, parseErr := parseTime(decisionAt.String)
+		if parseErr != nil {
+			return value, parseErr
+		}
+		value.Decision = &statestore.ProviderPermissionDecisionProjection{Decision: decision.String, ActionKey: key.String, Actor: statestore.Actor{Type: statestore.ActorType(actorType.String), ID: actorID.String}, RecordedAt: when}
+	}
+	if receiptID.Valid {
+		when, parseErr := parseTime(deliveredAt.String)
+		if parseErr != nil {
+			return value, parseErr
+		}
+		value.Receipt = &statestore.ProviderPermissionReceiptProjection{ProviderRequestID: receiptID.String, DeliveredAt: when}
+	}
+	value.CreatedAt, err = parseTime(createdAt)
+	if err == nil {
+		value.UpdatedAt, err = parseTime(updatedAt)
+	}
+	return value, err
+}
+
+func queryProviderPermissions(ctx context.Context, query rowsQueryer, suffix string, args ...any) ([]statestore.ProviderPermissionProjection, error) {
+	rows, err := query.QueryContext(ctx, providerPermissionSelect+suffix, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make([]statestore.ProviderPermissionProjection, 0)
+	for rows.Next() {
+		value, scanErr := scanProviderPermissionProjection(rows)
 		if scanErr != nil {
 			return nil, scanErr
 		}
@@ -1144,6 +1231,20 @@ func writeInputRequestProjection(ctx context.Context, tx *sql.Tx, value statesto
 		return fmt.Errorf("write input request projection %s: %w", value.InputRequestID, err)
 	}
 	return nil
+}
+
+func writeProviderPermissionProjection(ctx context.Context, tx *sql.Tx, value statestore.ProviderPermissionProjection) error {
+	var decision, key, actorType, actorID, decisionAt, receiptID, deliveredAt any
+	if value.Decision != nil {
+		decision, key, actorType, actorID, decisionAt = value.Decision.Decision, value.Decision.ActionKey, value.Decision.Actor.Type, value.Decision.Actor.ID, formatTime(value.Decision.RecordedAt)
+	}
+	if value.Receipt != nil {
+		receiptID, deliveredAt = value.Receipt.ProviderRequestID, formatTime(value.Receipt.DeliveredAt)
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO provider_permission_projection(permission_request_id,run_id,attempt_id,node_id,provider_thread_id,provider_turn_id,provider_request_id,interaction_kind,scope_json,scope_digest,policy_digest,evidence_json,status,decision,decision_action_key,decided_by_type,decided_by_id,decision_recorded_at,receipt_provider_request_id,delivered_at,resource_version,last_global_position,created_at,updated_at)
+	VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(permission_request_id) DO UPDATE SET status=excluded.status,decision=excluded.decision,decision_action_key=excluded.decision_action_key,decided_by_type=excluded.decided_by_type,decided_by_id=excluded.decided_by_id,decision_recorded_at=excluded.decision_recorded_at,receipt_provider_request_id=excluded.receipt_provider_request_id,delivered_at=excluded.delivered_at,resource_version=excluded.resource_version,last_global_position=excluded.last_global_position,updated_at=excluded.updated_at`,
+		value.PermissionRequestID, value.RunID, value.AttemptID, value.NodeID, value.ProviderThreadID, value.ProviderTurnID, value.ProviderRequestID, value.InteractionKind, string(value.Scope), value.ScopeDigest, value.PolicyDigest, string(value.Evidence), value.Status, decision, key, actorType, actorID, decisionAt, receiptID, deliveredAt, value.ResourceVersion, value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
+	return err
 }
 
 func writeAttemptProjection(ctx context.Context, tx *sql.Tx, value statestore.AttemptProjection) error {

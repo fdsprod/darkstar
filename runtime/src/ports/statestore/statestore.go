@@ -27,6 +27,7 @@ const (
 	AggregateOperation  AggregateType = "operation"
 	AggregateAssessment AggregateType = "assessment"
 	AggregateInput      AggregateType = "input"
+	AggregatePermission AggregateType = "permission"
 )
 
 // ActorType identifies the authority that caused an event.
@@ -445,6 +446,50 @@ type InputRequestProjection struct {
 	UpdatedAt          time.Time               `json:"updatedAt"`
 }
 
+type ProviderPermissionStatus string
+
+const (
+	ProviderPermissionPending          ProviderPermissionStatus = "pending"
+	ProviderPermissionDecisionRecorded ProviderPermissionStatus = "decision_recorded"
+	ProviderPermissionResponded        ProviderPermissionStatus = "responded"
+)
+
+type ProviderPermissionDecisionProjection struct {
+	Decision   string    `json:"decision"`
+	ActionKey  string    `json:"-"`
+	Actor      Actor     `json:"actor"`
+	RecordedAt time.Time `json:"recordedAt"`
+}
+
+type ProviderPermissionReceiptProjection struct {
+	ProviderRequestID string    `json:"providerRequestId"`
+	DeliveredAt       time.Time `json:"deliveredAt"`
+}
+
+// ProviderPermissionProjection is separate from workflow approvals and input
+// requests so neither can accidentally grant provider authority.
+type ProviderPermissionProjection struct {
+	PermissionRequestID string                                `json:"id"`
+	RunID               string                                `json:"runId"`
+	AttemptID           string                                `json:"attemptId"`
+	NodeID              string                                `json:"nodeId"`
+	ProviderThreadID    string                                `json:"providerThreadId"`
+	ProviderTurnID      string                                `json:"providerTurnId"`
+	ProviderRequestID   string                                `json:"providerRequestId"`
+	InteractionKind     string                                `json:"interactionKind"`
+	Scope               JSONSnapshot                          `json:"scope"`
+	ScopeDigest         string                                `json:"scopeDigest"`
+	PolicyDigest        string                                `json:"policyDigest"`
+	Evidence            JSONSnapshot                          `json:"evidence"`
+	Status              ProviderPermissionStatus              `json:"status"`
+	Decision            *ProviderPermissionDecisionProjection `json:"decision,omitempty"`
+	Receipt             *ProviderPermissionReceiptProjection  `json:"receipt,omitempty"`
+	ResourceVersion     uint64                                `json:"resourceVersion"`
+	LastGlobalPosition  uint64                                `json:"lastGlobalPosition"`
+	CreatedAt           time.Time                             `json:"createdAt"`
+	UpdatedAt           time.Time                             `json:"updatedAt"`
+}
+
 // LeaseScopeKind identifies the resource whose mutations are fenced.
 type LeaseScopeKind string
 
@@ -576,6 +621,9 @@ type Store interface {
 	InputRequests(context.Context, InputRequestStatus) ([]InputRequestProjection, error)
 	InputRequestsForRun(context.Context, string) ([]InputRequestProjection, error)
 	InputRequestsForAttempt(context.Context, string) ([]InputRequestProjection, error)
+	ProviderPermission(context.Context, string) (ProviderPermissionProjection, error)
+	ProviderPermissions(context.Context, ProviderPermissionStatus) ([]ProviderPermissionProjection, error)
+	ProviderPermissionsForAttempt(context.Context, string) ([]ProviderPermissionProjection, error)
 	RebuildProjections(context.Context) error
 	AcquireLease(context.Context, AcquireLeaseRequest) (Lease, error)
 	HeartbeatLease(context.Context, LeaseGuard, time.Duration) (Lease, error)
