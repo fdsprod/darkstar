@@ -1,4 +1,5 @@
 import { AppLink } from "../app/router";
+import { EmptyState } from "../components/InteractionPatterns";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageStructure";
 
@@ -11,12 +12,12 @@ export function PlaceholderPage({ eyebrow, title, description, action }: {
   return (
     <div className="page placeholder-page">
       <PageHeader eyebrow={eyebrow} title={title} description={description} breadcrumbs={[{ label: title }]} />
-      <section className="empty-panel">
-        <span className="empty-panel__icon"><Icon name="activity" /></span>
-        <h2>This view is ready for live data</h2>
-        <p>The application shell and route are in place. Authoritative content will appear here as the local API is connected.</p>
-        {action ? <AppLink className="button" to={action.to}>{action.label}<Icon name="arrow-right" /></AppLink> : null}
-      </section>
+      <EmptyState
+        kind="unavailable"
+        title="That dashboard page does not exist"
+        message="Check the address, or return to a known dashboard location."
+        action={action ? <AppLink className="navigation-action" to={action.to}>{action.label}<Icon name="arrow-right" /></AppLink> : undefined}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
@@ -50,4 +50,33 @@ test("meaningful dashboard selections are encoded in shareable URLs", async () =
   assert.match(agents, /next\.set\("permissionId", value\.id\)/);
   assert.match(artifact, /next\.set\("revision", String\(version\)\)/);
   assert.match(settings, /nextParams\.set\("tab", next\)/);
+});
+
+test("shared interaction patterns distinguish actions, async states, and empty states", async () => {
+  const [patterns, structure, styles, pageNames] = await Promise.all([
+    read("../src/components/InteractionPatterns.tsx"),
+    read("../src/components/PageStructure.tsx"),
+    read("../src/styles.css"),
+    readdir(new URL("../src/pages/", import.meta.url)),
+  ]);
+  const pages = (await Promise.all(pageNames.filter((name) => name.endsWith(".tsx")).map((name) => read(`../src/pages/${name}`)))).join("\n");
+
+  for (const component of ["ActionBar", "SectionHeader", "StatusBadge", "AsyncPanel", "EmptyState", "ActionGuidance"]) {
+    assert.match(patterns, new RegExp(`export function ${component}`));
+  }
+  for (const state of ["loading", "success", "error", "stale", "cancelled", "validation"]) assert.match(patterns, new RegExp(`"${state}"`));
+  for (const kind of ["empty", "filtered", "awaiting", "unavailable"]) assert.match(patterns, new RegExp(`"${kind}"`));
+  assert.match(patterns, /aria-busy=\{busy\}/);
+  assert.match(patterns, /role=\{failure \? "alert" : "status"\}/);
+  assert.match(structure, /<ActionBar/);
+  assert.match(structure, /<StatusBadge tone="readonly"/);
+  assert.match(styles, /\.dialog-draft-note/);
+  assert.match(pages, /Closing discards unsaved changes/);
+  assert.doesNotMatch(pages, /<AppLink[^>]*className="button/);
+  assert.doesNotMatch(pages, />Back<\/button>/);
+  assert.doesNotMatch(pages, /This view is ready for live data/);
+  assert.match(pages, /kind="filtered"/);
+  assert.match(pages, /kind="awaiting"/);
+  assert.match(pages, /kind="unavailable"/);
+  assert.match(pages, /aria-describedby=\{!canCreate \? "create-work-guidance"/);
 });

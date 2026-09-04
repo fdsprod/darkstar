@@ -4,6 +4,7 @@ import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { tabKeyTarget } from "../accessibility/keyboard";
 import { useRouter } from "../app/router";
+import { EmptyState } from "../components/InteractionPatterns";
 import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { formatDate, SummaryFact } from "./WorkDetailPage";
@@ -192,6 +193,6 @@ function DefinitionTab({ selected, decoded }: { selected: Schemas["WorkflowVersi
 }
 
 function DecodeNotice() { return <div className="workflow-detail-error" role="status">This installed definition uses fields the dashboard cannot safely decode. Graph and API-backed route preview remain available.</div>; }
-function WorkflowEmpty() { return <div className="workflow-empty"><span aria-hidden="true">◇</span><h2>Select an installed workflow</h2><p>Choose one immutable version to inspect its graph, contracts, and preview routes.</p></div>; }
+function WorkflowEmpty() { return <EmptyState kind="awaiting" title="Select an installed workflow" message="Choose one immutable version to inspect its graph, contracts, and preview routes." />; }
 function workflowKey(value: Schemas["WorkflowVersionSummary"]) { return `${value.name}\u0000${value.version}\u0000${value.digest}`; }
 function previewError(cause: unknown) { if (cause instanceof ApiRequestError && cause.status === 422) return "The daemon rejected this candidate route. Review its boundaries, required nodes, and run inputs."; if (cause instanceof ApiRequestError && cause.status === 404) return "This workflow version is no longer installed."; return "The route preview could not be completed. Check daemon health and try again."; }

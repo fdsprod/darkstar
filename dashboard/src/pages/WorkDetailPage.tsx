@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
+import { AsyncPanel, EmptyState, SectionHeader } from "../components/InteractionPatterns";
 import { PageHeader, type BreadcrumbItem } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { humanize, shortIdentifier, statusTone } from "./runDetailModel";
@@ -32,7 +33,7 @@ export function WorkDetailPage() {
   const runs = [...view.runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id));
   return (
     <div className="page detail-page">
-      <PageHeader className="detail-header" eyebrow={`${project?.name ?? "Work item"} · Priority ${view.work.priority}`} title={view.work.title} description="Durable request and run history. Status changes shown here come from daemon projections." breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(view.work.id) }]} status={<StatusPill status={view.work.status} />} actions={<AppLink className="button button--primary" to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(view.work.id)}&ingest=1`}>Add evidence</AppLink>} />
+      <PageHeader className="detail-header" eyebrow={`${project?.name ?? "Work item"} · Priority ${view.work.priority}`} title={view.work.title} description="Durable request and run history. Status changes shown here come from daemon projections." breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(view.work.id) }]} status={<StatusPill status={view.work.status} />} actions={<AppLink className="navigation-action" to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(view.work.id)}&ingest=1`}>Add evidence →</AppLink>} />
 
       <section className="detail-summary" aria-label="Work item summary">
         <SummaryFact label="Identifier" value={view.work.id} mono />
@@ -42,7 +43,7 @@ export function WorkDetailPage() {
       </section>
 
       <section className="detail-section">
-        <div className="section-heading"><div><p className="eyebrow">Execution history</p><h2>Runs</h2></div><span className="section-count">{runs.length}</span></div>
+        <SectionHeader eyebrow="Execution history" title="Runs" meta={<span className="section-count">{runs.length}</span>} />
         {runs.length === 0 ? <EmptyDetail title="No runs yet" message="Start this work from the lifecycle board after selecting an installed workflow." /> : (
           <div className="run-list">
             {runs.map((run) => (
@@ -58,7 +59,7 @@ export function WorkDetailPage() {
       </section>
 
       <section className="detail-section work-plan-evidence">
-        <div className="section-heading"><div><p className="eyebrow">Accepted-plan targets</p><h2>Stories &amp; implementation points</h2></div><span className="section-count">{view.stories.length} / {view.points.length}</span></div>
+        <SectionHeader eyebrow="Accepted-plan targets" title={<>Stories &amp; implementation points</>} meta={<span className="section-count">{view.stories.length} / {view.points.length}</span>} />
         {view.stories.length === 0 ? <EmptyDetail title="No accepted-plan targets" message="Stories and points appear here when the work plan is durably recorded." /> : <div className="story-targets">{view.stories.map((story) => { const points = view.points.filter((point) => point.storyId === story.id).sort((left, right) => left.position - right.position || left.id.localeCompare(right.id)); return <article key={story.id}><header><div><strong>{story.title}</strong><code>{shortIdentifier(story.id)}</code></div><div><AppLink to={`/artifacts?targetKind=story&targetId=${encodeURIComponent(story.id)}&ingest=1`}>Add story evidence</AppLink><StatusPill status={story.status} /></div></header>{points.length ? <ol>{points.map((point) => <li key={point.id}><span><strong>{point.title}</strong><code>{shortIdentifier(point.id)} · revision {point.revision}</code></span><AppLink to={`/artifacts?targetKind=implementation_point&targetId=${encodeURIComponent(point.id)}&ingest=1`}>Add evidence</AppLink><StatusPill status={point.status} /></li>)}</ol> : <p>No implementation points are recorded for this story.</p>}</article>; })}</div>}
       </section>
     </div>
@@ -66,11 +67,11 @@ export function WorkDetailPage() {
 }
 
 export function DetailLoading({ label, pageTitle, breadcrumbs }: { label: string; pageTitle?: string; breadcrumbs?: BreadcrumbItem[] }) {
-  return <div className={pageTitle ? "page detail-page" : undefined} aria-busy="true" aria-live="polite">{pageTitle && <PageHeader eyebrow="Loading authoritative state" title={pageTitle} description={label} breadcrumbs={breadcrumbs} readOnly="Loading" />}<div className="detail-loading"><span /><span /><span /><p>{label}…</p></div></div>;
+  return <div className={pageTitle ? "page detail-page" : undefined}>{pageTitle && <PageHeader eyebrow="Loading authoritative state" title={pageTitle} description={label} breadcrumbs={breadcrumbs} readOnly="Loading" />}<AsyncPanel state="loading" title={label} message="Waiting for the local API to return authoritative state." /></div>;
 }
 
 export function DetailFailure({ title, message, pageTitle, breadcrumbs }: { title: string; message: string; pageTitle?: string; breadcrumbs?: BreadcrumbItem[] }) {
-  return <div className={pageTitle ? "page detail-page" : undefined}>{pageTitle && <PageHeader eyebrow="Unavailable" title={pageTitle} description={message} breadcrumbs={breadcrumbs} readOnly="Read-only" />}<div className="detail-failure" role="alert"><p className="eyebrow">Unable to load</p><h2>{title}</h2><p>{message}</p><AppLink className="button" to="/board">Return to board</AppLink></div></div>;
+  return <div className={pageTitle ? "page detail-page" : undefined}>{pageTitle && <PageHeader eyebrow="Unavailable" title={pageTitle} description={message} breadcrumbs={breadcrumbs} readOnly="Read-only" />}<AsyncPanel state="error" title={title} message={message} action={<AppLink className="navigation-action" to="/board">Return to board →</AppLink>} /></div>;
 }
 
 export function StatusPill({ status }: { status: string }) {
@@ -82,7 +83,7 @@ export function SummaryFact({ label, value, mono = false }: { label: string; val
 }
 
 export function EmptyDetail({ title, message }: { title: string; message: string }) {
-  return <div className="detail-empty"><strong>{title}</strong><p>{message}</p></div>;
+  return <EmptyState kind="awaiting" title={title} message={message} compact />;
 }
 
 export function formatDate(value: string) {

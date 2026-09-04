@@ -4,6 +4,7 @@ import { apiClient, ApiRequestError } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
 import { Icon } from "../components/Icon";
+import { ActionGuidance, AsyncPanel, EmptyState } from "../components/InteractionPatterns";
 import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import {
@@ -92,9 +93,11 @@ export function BoardPage() {
 
   const loading = state.hydration === "loading";
   const filtered = Boolean(projectId || workflowId || query || view === "attention");
+  const canCreate = state.snapshot.projects.some((project) => project.status === "active");
   return (
     <div className="page page--board">
-      <PageHeader className="board-page-header" eyebrow="Operational workspace" title="Lifecycle board" description="Live, server-authoritative work from intake through verified delivery." breadcrumbs={[{ label: "Board" }]} actions={<button className="button button--primary" type="button" onClick={() => createDialog.current?.showModal()} disabled={!state.snapshot.projects.some((project) => project.status === "active")}><Icon name="create" />Create work</button>} />
+      <PageHeader className="board-page-header" eyebrow="Operational workspace" title="Lifecycle board" description="Live, server-authoritative work from intake through verified delivery." breadcrumbs={[{ label: "Board" }]} actions={<button className="button button--primary" type="button" aria-describedby={!canCreate ? "create-work-guidance" : undefined} onClick={() => createDialog.current?.showModal()} disabled={!canCreate}><Icon name="create" />Create work</button>} />
+      {!canCreate && <ActionGuidance id="create-work-guidance">Create Work is unavailable until an active project is registered.</ActionGuidance>}
 
       <div className="board-toolbar" aria-label="Board controls">
         <div className="view-tabs" aria-label="Board view">
@@ -109,15 +112,16 @@ export function BoardPage() {
         </div>
       </div>
 
-      {state.hydration === "error" && <div className="board-notice board-notice--error" role="alert"><strong>Board data is unavailable.</strong><span>{state.message}</span><button type="button" onClick={() => void refresh()}>Try again</button></div>}
-      {actionMessage && <div className={`board-notice board-notice--${actionMessage.kind}`} role={actionMessage.kind === "error" ? "alert" : "status"}>{actionMessage.text}</div>}
+      {state.hydration === "error" && <AsyncPanel compact state="error" title="Board data is unavailable" message={state.message} action={<button className="button" type="button" onClick={() => void refresh()}>Retry</button>} />}
+      {pendingAction && <AsyncPanel compact state="loading" title="Run command pending" message={<>Updating run <code>{pendingAction.split(":").slice(1).join(":")}</code> through the local API.</>} />}
+      {actionMessage && <AsyncPanel compact state={actionMessage.kind} title={actionMessage.kind === "success" ? "Command accepted" : "Command failed"} message={actionMessage.text} />}
 
       <section className="board-preview" aria-label="Work lifecycle" aria-busy={loading || state.hydration === "refreshing"}>
         {LIFECYCLE_COLUMNS.map((lifecycle) => <BoardColumn key={lifecycle} lifecycle={lifecycle} cards={cards.filter((card) => card.lifecycle === lifecycle)} count={counts[lifecycle]} loading={loading} pendingAction={pendingAction} onAction={runCardAction} onCreate={() => createDialog.current?.showModal()} />)}
       </section>
 
-      {!loading && cards.length === 0 && filtered && <p className="board-zero-results">No work matches these filters. <button type="button" onClick={() => { setProjectId(""); setWorkflowId(""); setQuery(""); setView("all"); }}>Show all work</button></p>}
-      {!loading && !state.snapshot.projects.some((project) => project.status === "active") && <p className="board-setup-note">Register an active project with <code>darkstar project add</code> before creating work.</p>}
+      {!loading && cards.length === 0 && filtered && <EmptyState compact kind="filtered" title="No work matches these filters" message="The active project, workflow, search, or attention filters exclude every work item." action={<button type="button" className="button" onClick={() => { setProjectId(""); setWorkflowId(""); setQuery(""); setView("all"); }}>Clear filters</button>} />}
+      {!loading && !canCreate && <p className="board-setup-note">Register an active project with <code>darkstar project add</code> before creating work.</p>}
       <CreateWorkDialog dialogRef={createDialog} projects={state.snapshot.projects} onCreated={refresh} />
       <StartRunDialog dialogRef={startDialog} card={startCard} workflows={workflows} onRefresh={refresh} onStarted={() => setActionMessage({ kind: "success", text: "Run created. The board now reflects daemon state." })} />
     </div>
@@ -158,26 +162,27 @@ function CreateWorkDialog({ dialogRef, projects, onCreated }: { dialogRef: RefOb
   const [projectId, setProjectId] = useState(""); const [title, setTitle] = useState(""); const [priority, setPriority] = useState("0");
   const [submitting, setSubmitting] = useState(false); const [error, setError] = useState("");
   useEffect(() => { if (!projectId && activeProjects.length === 1) setProjectId(activeProjects[0].id); }, [activeProjects, projectId]);
-  function close() { dialogRef.current?.close(); if (new URLSearchParams(window.location.search).has("create")) navigate("/board", { replace: true }); }
+  function close() { if (!submitting) { dialogRef.current?.close(); if (new URLSearchParams(window.location.search).has("create")) navigate("/board", { replace: true }); } }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(""); setSubmitting(true);
-    try { const body = buildCreateWorkItemRequest({ projectId, title, priority: Number(priority) }); await apiClient.createWorkItem(body, `dashboard-create-work-${crypto.randomUUID()}`); await onCreated(); setTitle(""); setPriority("0"); close(); }
+    try { const body = buildCreateWorkItemRequest({ projectId, title, priority: Number(priority) }); await apiClient.createWorkItem(body, `dashboard-create-work-${crypto.randomUUID()}`); await onCreated(); setTitle(""); setPriority("0"); dialogRef.current?.close(); }
     catch (cause) { setError(cause instanceof Error && !(cause instanceof ApiRequestError) ? cause.message : safeActionError(cause)); }
     finally { setSubmitting(false); }
   }
-  return <dialog ref={dialogRef} className="work-dialog" onCancel={(event) => { event.preventDefault(); close(); }} onClose={() => { if (new URLSearchParams(window.location.search).has("create")) navigate("/board", { replace: true }); }}><form onSubmit={(event) => void submit(event)}>
-    <header className="work-dialog__header"><div><p className="eyebrow">New work item</p><h2>Create requested outcome</h2></div><button className="icon-button" type="button" aria-label="Close create work dialog" onClick={close}><Icon name="x" /></button></header>
+  return <dialog ref={dialogRef} className="work-dialog" onCancel={(event) => { event.preventDefault(); close(); }} onClose={() => { if (new URLSearchParams(window.location.search).has("create")) navigate("/board", { replace: true }); }}><form aria-busy={submitting} onSubmit={(event) => void submit(event)}>
+    <header className="work-dialog__header"><div><p className="eyebrow">New work item</p><h2>Create requested outcome</h2></div><button className="icon-button" type="button" aria-label="Close create work dialog" disabled={submitting} onClick={close}><Icon name="x" /></button></header>
     <p className="work-dialog__intro">Create authored work in a registered project. Route selection happens from the durable work record.</p>
     <label className="field"><span>Project</span><select required autoFocus value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="" disabled>Choose a project</option>{activeProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
     <label className="field"><span>Requested outcome</span><textarea required rows={4} maxLength={500} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Describe the result you want DARKSTAR to deliver" /><small>{title.length}/500</small></label>
     <label className="field field--priority"><span>Priority</span><input required type="number" inputMode="numeric" min="0" step="1" value={priority} onChange={(event) => setPriority(event.target.value)} /><small>Higher values are scheduled first.</small></label>
     {error && <p className="form-error" role="alert">{error}</p>}
-    <footer className="work-dialog__footer"><button className="button" type="button" onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || activeProjects.length === 0}>{submitting ? "Creating…" : "Create work"}</button></footer>
+    <footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button className="button" type="button" disabled={submitting} onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || activeProjects.length === 0}>{submitting ? "Creating…" : "Create work"}</button></footer>
   </form></dialog>;
 }
 
 function StartRunDialog({ dialogRef, card, workflows, onRefresh, onStarted }: { dialogRef: RefObject<HTMLDialogElement | null>; card?: BoardCard; workflows: Schemas["WorkflowVersionSummary"][]; onRefresh(): Promise<void>; onStarted(): void }) {
   const [selection, setSelection] = useState(""); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState("");
+  function close() { if (!submitting) { dialogRef.current?.close(); setError(""); } }
   useEffect(() => { if (!selection && workflows.length === 1) setSelection(`${workflows[0].name}\u0000${workflows[0].version}`); }, [selection, workflows]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!card) return; const [workflowId, workflowVersion] = selection.split("\u0000"); if (!workflowId || !workflowVersion) return setError("Choose a workflow version.");
@@ -186,12 +191,12 @@ function StartRunDialog({ dialogRef, card, workflows, onRefresh, onStarted }: { 
     catch (cause) { setError(safeActionError(cause)); await onRefresh().catch(() => undefined); }
     finally { setSubmitting(false); }
   }
-  return <dialog ref={dialogRef} className="work-dialog work-dialog--compact"><form onSubmit={(event) => void submit(event)}>
-    <header className="work-dialog__header"><div><p className="eyebrow">Start run</p><h2>{card?.work.title ?? "Choose a workflow"}</h2></div><button className="icon-button" type="button" aria-label="Close start run dialog" onClick={() => dialogRef.current?.close()}><Icon name="x" /></button></header>
+  return <dialog ref={dialogRef} className="work-dialog work-dialog--compact" onCancel={(event) => { if (submitting) event.preventDefault(); }} onClose={() => { if (!submitting) setError(""); }}><form aria-busy={submitting} onSubmit={(event) => void submit(event)}>
+    <header className="work-dialog__header"><div><p className="eyebrow">Start run</p><h2>{card?.work.title ?? "Choose a workflow"}</h2></div><button className="icon-button" type="button" aria-label="Close start run dialog" disabled={submitting} onClick={close}><Icon name="x" /></button></header>
     <p className="work-dialog__intro">This creates a durable run pinned to the selected installed workflow version.</p>
     <label className="field"><span>Workflow version</span><select required autoFocus value={selection} onChange={(event) => setSelection(event.target.value)}><option value="" disabled>Choose a workflow</option>{workflows.map((workflow) => <option key={`${workflow.name}:${workflow.version}:${workflow.digest}`} value={`${workflow.name}\u0000${workflow.version}`}>{workflow.name} · {workflow.version} ({workflow.sourceScope})</option>)}</select></label>
     {workflows.length === 0 && <p className="form-error" role="status">No installed workflows are available. Install one with the CLI first.</p>}{error && <p className="form-error" role="alert">{error}</p>}
-    <footer className="work-dialog__footer"><button className="button" type="button" onClick={() => dialogRef.current?.close()}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || workflows.length === 0}>{submitting ? "Starting…" : "Start run"}</button></footer>
+    <footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button className="button" type="button" disabled={submitting} onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || workflows.length === 0}>{submitting ? "Starting…" : "Start run"}</button></footer>
   </form></dialog>;
 }
 

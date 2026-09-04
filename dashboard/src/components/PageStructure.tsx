@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AppLink } from "../app/router";
+import { ActionBar, StatusBadge } from "./InteractionPatterns";
 
 export interface BreadcrumbItem {
   label: string;
@@ -25,7 +26,7 @@ export function PageHeader({ eyebrow, title, description, breadcrumbs, status, a
     {breadcrumbs?.length ? <Breadcrumbs items={breadcrumbs} /> : null}
     <header className={`page-header ${className}`.trim()}>
       <div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="page-header__description">{description}</p></div>
-      {(status || actions || readOnly) && <div className="page-header__aside">{status}{readOnly && <span className="preview-only-badge">{readOnly}</span>}{actions}</div>}
+      {(status || actions || readOnly) && <div className="page-header__aside">{status}{readOnly && <StatusBadge tone="readonly">{readOnly}</StatusBadge>}{actions && <ActionBar label="Page actions">{actions}</ActionBar>}</div>}
     </header>
   </>;
 }
