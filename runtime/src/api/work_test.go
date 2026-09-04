@@ -3,12 +3,14 @@ package api
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"darkstar/src/adapters/statestore/sqlite"
+	"darkstar/src/core/identity"
 	"darkstar/src/core/workmanagement"
 	"darkstar/src/ports/statestore"
 )
@@ -56,6 +58,19 @@ func TestProjectAndWorkAPICommands(t *testing.T) {
 	if created.WorkItemID == imported.WorkItemID || imported.Title != "DAR-65" {
 		t.Fatalf("created = %#v, imported = %#v", created, imported)
 	}
+	storyLater, storyFirst := identity.Random("story_"), identity.Random("story_")
+	pointLater, pointFirst, pointSecond := identity.Random("point_"), identity.Random("point_"), identity.Random("point_")
+	const sourceHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	_, err = database.Append(ctx,
+		workProjectionEvent(statestore.AggregateStory, storyLater, "story.created", fmt.Sprintf(`{"workItemId":%q,"title":"Later story","sourceHash":%q,"priority":90,"position":2}`, created.WorkItemID, sourceHash)),
+		workProjectionEvent(statestore.AggregateStory, storyFirst, "story.created", fmt.Sprintf(`{"workItemId":%q,"title":"First story","sourceHash":%q,"priority":10,"position":1}`, created.WorkItemID, sourceHash)),
+		workProjectionEvent(statestore.AggregatePoint, pointLater, "point.created", fmt.Sprintf(`{"storyId":%q,"revision":1,"title":"Later point","sourceHash":%q,"priority":90,"position":1,"dependencies":[]}`, storyLater, sourceHash)),
+		workProjectionEvent(statestore.AggregatePoint, pointSecond, "point.created", fmt.Sprintf(`{"storyId":%q,"revision":1,"title":"Second point","sourceHash":%q,"priority":90,"position":2,"dependencies":[]}`, storyFirst, sourceHash)),
+		workProjectionEvent(statestore.AggregatePoint, pointFirst, "point.created", fmt.Sprintf(`{"storyId":%q,"revision":1,"title":"First point","sourceHash":%q,"priority":10,"position":1,"dependencies":[]}`, storyFirst, sourceHash)),
+	)
+	if err != nil {
+		t.Fatalf("append work hierarchy: %v", err)
+	}
 
 	listResponse := workRequest(t, endpoint, http.MethodGet, "/api/v1/work-items?projectId="+project.ProjectID, "", "")
 	var workItems []statestore.WorkItemProjection
@@ -70,6 +85,12 @@ func TestProjectAndWorkAPICommands(t *testing.T) {
 	_ = showResponse.Body.Close()
 	if view.SchemaVersion != 1 || view.Work.WorkItemID != created.WorkItemID {
 		t.Fatalf("work view = %#v", view)
+	}
+	if len(view.Stories) != 2 || view.Stories[0].StoryID != storyFirst || view.Stories[1].StoryID != storyLater {
+		t.Fatalf("work stories = %#v", view.Stories)
+	}
+	if len(view.Points) != 3 || view.Points[0].PointID != pointFirst || view.Points[1].PointID != pointSecond || view.Points[2].PointID != pointLater {
+		t.Fatalf("work points = %#v", view.Points)
 	}
 }
 
@@ -100,4 +121,12 @@ func workRequest(t *testing.T, endpoint Endpoint, method, resource, body, key st
 		t.Fatal(err)
 	}
 	return response
+}
+
+func workProjectionEvent(aggregateType statestore.AggregateType, aggregateID, kind, data string) statestore.PendingEvent {
+	return statestore.PendingEvent{
+		SchemaVersion: 1, ID: identity.Random("event_"), AggregateType: aggregateType, AggregateID: aggregateID,
+		Kind: kind, OccurredAt: time.Now().UTC(), CorrelationID: aggregateID, CommandID: identity.Random("command_"),
+		Actor: statestore.Actor{Type: statestore.ActorSystem, ID: "work-api-test"}, Data: []byte(data), Metadata: []byte(`{}`),
+	}
 }

@@ -65,9 +65,9 @@ func (service *Service) Assess(ctx context.Context, request Request) (impactasse
 	if !strings.HasPrefix(request.Evidence.ArtifactID, "artifact_") || request.Evidence.Version == 0 || strings.TrimSpace(request.Target.ID) == "" {
 		return impactassessment.Assessment{}, errors.New("exact evidence and binding target are required")
 	}
-	request.RunID = strings.TrimSpace(request.RunID)
-	if request.RunID == "" && request.Target.Kind == artifactbinding.TargetRun {
-		request.RunID = request.Target.ID
+	request, targetNodeID, err := normalizeScope(request)
+	if err != nil {
+		return impactassessment.Assessment{}, err
 	}
 	evidence, err := service.artifacts.ArtifactVersion(ctx, request.Evidence)
 	if err != nil {
@@ -103,7 +103,7 @@ func (service *Service) Assess(ctx context.Context, request Request) (impactasse
 	if err != nil {
 		return impactassessment.Assessment{}, fmt.Errorf("read active attempts: %w", err)
 	}
-	active = scopedAttempts(active, request)
+	active = scopedAttempts(active, request, targetNodeID)
 	for _, attempt := range active {
 		coverage, err := service.coverage(ctx, attempt, request.Evidence)
 		if err != nil {
@@ -115,7 +115,7 @@ func (service *Service) Assess(ctx context.Context, request Request) (impactasse
 		}
 	}
 
-	completedTarget, err := service.completedNodeTarget(ctx, request)
+	completedTarget, err := service.completedNodeTarget(ctx, request, targetNodeID)
 	if err != nil {
 		return impactassessment.Assessment{}, err
 	}
@@ -160,7 +160,7 @@ func (service *Service) coverage(ctx context.Context, attempt statestore.Attempt
 	return coverage, nil
 }
 
-func (service *Service) completedNodeTarget(ctx context.Context, request Request) (bool, error) {
+func (service *Service) completedNodeTarget(ctx context.Context, request Request, targetNodeID string) (bool, error) {
 	if request.RunID == "" || request.Target.Kind != artifactbinding.TargetNode {
 		return false, nil
 	}
@@ -169,14 +169,14 @@ func (service *Service) completedNodeTarget(ctx context.Context, request Request
 		return false, fmt.Errorf("read target node state: %w", err)
 	}
 	for _, node := range nodes {
-		if node.NodeID == request.Target.ID && node.Status.Terminal() {
+		if node.NodeID == targetNodeID && node.Status.Terminal() {
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func scopedAttempts(values []statestore.AttemptProjection, request Request) []statestore.AttemptProjection {
+func scopedAttempts(values []statestore.AttemptProjection, request Request, targetNodeID string) []statestore.AttemptProjection {
 	if request.RunID == "" {
 		return []statestore.AttemptProjection{}
 	}
@@ -185,13 +185,38 @@ func scopedAttempts(values []statestore.AttemptProjection, request Request) []st
 		if request.RunID != "" && attempt.RunID != request.RunID {
 			continue
 		}
-		if request.Target.Kind == artifactbinding.TargetNode && attempt.NodeID != request.Target.ID {
+		if request.Target.Kind == artifactbinding.TargetNode && attempt.NodeID != targetNodeID {
 			continue
 		}
 		result = append(result, attempt)
 	}
 	sort.Slice(result, func(left, right int) bool { return result[left].AttemptID < result[right].AttemptID })
 	return result
+}
+
+// normalizeScope resolves the one runtime scope used by assessment. A node
+// binding carries its run and node identity together as <runId>/<nodeId>; an
+// optional request runId may confirm that identity but cannot override it.
+func normalizeScope(request Request) (Request, string, error) {
+	request.RunID = strings.TrimSpace(request.RunID)
+	if request.Target.Kind == artifactbinding.TargetRun && request.RunID == "" {
+		request.RunID = request.Target.ID
+	}
+	if request.Target.Kind != artifactbinding.TargetNode {
+		return request, "", nil
+	}
+	if request.Target.ID != strings.TrimSpace(request.Target.ID) || strings.Count(request.Target.ID, "/") != 1 {
+		return Request{}, "", errors.New("node target ID must be <runId>/<nodeId>")
+	}
+	runID, nodeID, _ := strings.Cut(request.Target.ID, "/")
+	if runID == "" || nodeID == "" {
+		return Request{}, "", errors.New("node target ID must be <runId>/<nodeId>")
+	}
+	if request.RunID != "" && request.RunID != runID {
+		return Request{}, "", errors.New("runId must match the run in the node target ID")
+	}
+	request.RunID = runID
+	return request, nodeID, nil
 }
 
 func splitEffects(values []artifactlineage.Invalidation) ([]impactassessment.ArtifactEffect, []impactassessment.ArtifactEffect) {

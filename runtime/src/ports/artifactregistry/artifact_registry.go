@@ -2,8 +2,12 @@
 package artifactregistry
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"time"
 
 	"darkstar/src/ports/artifactstore"
@@ -66,6 +70,13 @@ type OperationProvenance struct {
 }
 
 func (OperationProvenance) isProvenance() {}
+func (value OperationProvenance) MarshalJSON() ([]byte, error) {
+	type wire OperationProvenance
+	return json.Marshal(struct {
+		Origin string `json:"origin"`
+		wire
+	}{Origin: "operation", wire: wire(value)})
+}
 
 // AttemptProvenance describes content produced by one exact provider attempt.
 type AttemptProvenance struct {
@@ -77,6 +88,13 @@ type AttemptProvenance struct {
 }
 
 func (AttemptProvenance) isProvenance() {}
+func (value AttemptProvenance) MarshalJSON() ([]byte, error) {
+	type wire AttemptProvenance
+	return json.Marshal(struct {
+		Origin string `json:"origin"`
+		wire
+	}{Origin: "attempt", wire: wire(value)})
+}
 
 // Producer fingerprints the component that supplied or generated the version.
 type Producer struct {
@@ -129,6 +147,74 @@ type ArtifactVersion struct {
 	Metadata          map[string]string     `json:"metadata"`
 	Provenance        Provenance            `json:"provenance"`
 	CreatedAt         time.Time             `json:"createdAt"`
+}
+
+// UnmarshalJSON restores the closed provenance union used by the authenticated
+// API. The custom decoder keeps CLI/API round trips strict even though
+// Provenance is represented by an interface inside the core model.
+func (value *ArtifactVersion) UnmarshalJSON(content []byte) error {
+	type wire ArtifactVersion
+	var decoded struct {
+		wire
+		Provenance json.RawMessage `json:"provenance"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return errors.New("artifact version must contain one JSON object")
+	}
+	var discriminator struct {
+		Origin string `json:"origin"`
+	}
+	if err := json.Unmarshal(decoded.Provenance, &discriminator); err != nil {
+		return fmt.Errorf("decode artifact provenance: %w", err)
+	}
+	var provenance Provenance
+	switch discriminator.Origin {
+	case "operation":
+		var candidate struct {
+			Origin      string      `json:"origin"`
+			OperationID string      `json:"operationId"`
+			Source      *VersionRef `json:"source,omitempty"`
+		}
+		if err := decodeProvenance(decoded.Provenance, &candidate); err != nil {
+			return err
+		}
+		provenance = OperationProvenance{OperationID: candidate.OperationID, Source: candidate.Source}
+	case "attempt":
+		var candidate struct {
+			Origin      string      `json:"origin"`
+			RunID       string      `json:"runId"`
+			NodeID      string      `json:"nodeId"`
+			AttemptID   string      `json:"attemptId"`
+			OperationID string      `json:"operationId"`
+			Source      *VersionRef `json:"source,omitempty"`
+		}
+		if err := decodeProvenance(decoded.Provenance, &candidate); err != nil {
+			return err
+		}
+		provenance = AttemptProvenance{RunID: candidate.RunID, NodeID: candidate.NodeID, AttemptID: candidate.AttemptID, OperationID: candidate.OperationID, Source: candidate.Source}
+	default:
+		return fmt.Errorf("unsupported artifact provenance origin %q", discriminator.Origin)
+	}
+	decoded.wire.Provenance = provenance
+	*value = ArtifactVersion(decoded.wire)
+	return nil
+}
+
+func decodeProvenance(content []byte, destination any) error {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return fmt.Errorf("decode artifact provenance: %w", err)
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return errors.New("artifact provenance must contain one JSON object")
+	}
+	return nil
 }
 
 // Registry allocates and reads immutable versions. Repeating an identical

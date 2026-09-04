@@ -17,7 +17,7 @@ import (
 func TestAssessmentNeverClaimsUnsuppliedEvidenceReachedActiveAttempt(t *testing.T) {
 	t.Parallel()
 	evidence := artifactregistry.VersionRef{ArtifactID: "artifact_evidence", Version: 1}
-	target := artifactbinding.Target{Kind: artifactbinding.TargetNode, ID: "design"}
+	target := artifactbinding.Target{Kind: artifactbinding.TargetNode, ID: "run_one/design"}
 	service := newService(t, fixture{
 		evidence: evidence, target: target, roles: []string{"note"},
 		attempts: []statestore.AttemptProjection{{AttemptID: "attempt_active", RunID: "run_one", NodeID: "design", Status: statestore.AttemptRunning}},
@@ -65,7 +65,7 @@ func TestPendingFreezeCanContinueAndExactManifestEntryIsSupplied(t *testing.T) {
 func TestRevisionImpactAndCompletedTargetProduceScopedProposals(t *testing.T) {
 	t.Parallel()
 	evidence := artifactregistry.VersionRef{ArtifactID: "artifact_evidence", Version: 2}
-	target := artifactbinding.Target{Kind: artifactbinding.TargetNode, ID: "design"}
+	target := artifactbinding.Target{Kind: artifactbinding.TargetNode, ID: "run_one/design"}
 	service := newService(t, fixture{
 		evidence: evidence, target: target, roles: []string{"dataset"},
 		affected: []artifactlineage.Invalidation{
@@ -81,6 +81,55 @@ func TestRevisionImpactAndCompletedTargetProduceScopedProposals(t *testing.T) {
 	want := []impactassessment.Action{impactassessment.ActionInvalidate, impactassessment.ActionRevise, impactassessment.ActionInsert}
 	if got := actions(assessment.Proposals); !reflect.DeepEqual(got, want) {
 		t.Fatalf("actions = %#v, want %#v", got, want)
+	}
+}
+
+func TestNodeTargetDerivesAndEnforcesCompositeRunScope(t *testing.T) {
+	t.Parallel()
+	evidence := artifactregistry.VersionRef{ArtifactID: "artifact_evidence", Version: 1}
+	target := artifactbinding.Target{Kind: artifactbinding.TargetNode, ID: "run_one/design"}
+	service := newService(t, fixture{
+		evidence: evidence, target: target, roles: []string{"note"},
+		attempts: []statestore.AttemptProjection{
+			{AttemptID: "attempt_other_node", RunID: "run_one", NodeID: "build", Status: statestore.AttemptRunning},
+			{AttemptID: "attempt_other_run", RunID: "run_two", NodeID: "design", Status: statestore.AttemptRunning},
+			{AttemptID: "attempt_target", RunID: "run_one", NodeID: "design", Status: statestore.AttemptRunning},
+		},
+		manifests: map[string]contextmanifest.Manifest{
+			"attempt_target": {ManifestID: "manifest_target", Entries: []contextmanifest.Entry{{ArtifactID: evidence.ArtifactID, ArtifactVersion: evidence.Version}}},
+		},
+	})
+	assessment, err := service.Assess(context.Background(), Request{Evidence: evidence, Target: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assessment.RunID != "run_one" || len(assessment.Coverage) != 1 || assessment.Coverage[0].AttemptID != "attempt_target" {
+		t.Fatalf("assessment scope = %#v", assessment)
+	}
+
+	_, err = service.Assess(context.Background(), Request{Evidence: evidence, Target: target, RunID: "run_two"})
+	if err == nil || err.Error() != "runId must match the run in the node target ID" {
+		t.Fatalf("mismatched run error = %v", err)
+	}
+}
+
+func TestNodeTargetRejectsNonCompositeIdentityWithoutChangingOtherTargets(t *testing.T) {
+	t.Parallel()
+	evidence := artifactregistry.VersionRef{ArtifactID: "artifact_evidence", Version: 1}
+	for _, targetID := range []string{"design", "/design", "run_one/", "run_one/design/extra", " run_one/design"} {
+		target := artifactbinding.Target{Kind: artifactbinding.TargetNode, ID: targetID}
+		service := newService(t, fixture{evidence: evidence, target: target})
+		_, err := service.Assess(context.Background(), Request{Evidence: evidence, Target: target})
+		if err == nil || err.Error() != "node target ID must be <runId>/<nodeId>" {
+			t.Fatalf("target %q error = %v", targetID, err)
+		}
+	}
+
+	runTarget := artifactbinding.Target{Kind: artifactbinding.TargetRun, ID: "run_one"}
+	service := newService(t, fixture{evidence: evidence, target: runTarget})
+	assessment, err := service.Assess(context.Background(), Request{Evidence: evidence, Target: runTarget})
+	if err != nil || assessment.RunID != "run_one" {
+		t.Fatalf("run assessment = %#v, error = %v", assessment, err)
 	}
 }
 

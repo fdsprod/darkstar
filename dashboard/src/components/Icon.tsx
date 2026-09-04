@@ -1,11 +1,12 @@
 import type { SVGProps } from "react";
 
-export type IconName = "activity" | "agents" | "arrow-right" | "board" | "checkpoints" | "chevron-down" | "create" | "menu" | "search" | "settings" | "spark" | "workflow" | "x";
+export type IconName = "activity" | "agents" | "arrow-right" | "artifact" | "board" | "checkpoints" | "chevron-down" | "create" | "menu" | "search" | "settings" | "spark" | "workflow" | "x";
 
 const paths: Record<IconName, React.ReactNode> = {
   activity: <path d="M3 12h4l2-6 4 12 2-6h6" />,
   agents: <><circle cx="9" cy="8" r="3" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.5a3 3 0 0 1 0 5.8M17.5 14a5 5 0 0 1 3 4.6" /></>,
   "arrow-right": <path d="M5 12h14M14 7l5 5-5 5" />,
+  artifact: <><path d="M6 3h9l3 3v15H6z" /><path d="M15 3v4h4M9 12h6M9 16h6" /></>,
   board: <><rect x="3" y="4" width="7" height="16" rx="1.5" /><rect x="14" y="4" width="7" height="9" rx="1.5" /></>,
   checkpoints: <path d="M6 3v18M6 5h11l-2 4 2 4H6" />,
   "chevron-down": <path d="m7 9 5 5 5-5" />,

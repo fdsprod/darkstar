@@ -10,6 +10,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"sort"
 	"strings"
@@ -21,11 +22,14 @@ import (
 	"darkstar/src/ports/artifactbinding"
 	"darkstar/src/ports/artifactlineage"
 	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactstore"
 	"darkstar/src/ports/impactassessment"
 	"darkstar/src/ports/representationregistry"
 )
 
 const PolicyVersion = "artifact-context/v1alpha1"
+
+var ErrContentWithheld = errors.New("artifact content is withheld")
 
 type IngestInput struct {
 	ArtifactID  string                       `json:"artifactId,omitempty"`
@@ -76,7 +80,19 @@ type LintResult struct {
 	Issues   []LintIssue                 `json:"issues"`
 }
 
+// Content is an exact immutable stream plus the metadata required for safe
+// authenticated HTTP delivery. Callers must close Reader.
+type Content struct {
+	Reader           io.ReadCloser
+	Digest           string
+	Size             int64
+	MediaType        string
+	FileName         string
+	RepresentationID string
+}
+
 type Service struct {
+	store           artifactstore.Store
 	artifacts       artifactregistry.Registry
 	bindings        artifactbinding.Store
 	lineage         artifactlineage.Store
@@ -87,11 +103,11 @@ type Service struct {
 	now             func() time.Time
 }
 
-func New(artifacts artifactregistry.Registry, bindings artifactbinding.Store, lineage artifactlineage.Store, representations representationregistry.Registry, ingestion *artifactingest.Service, derivation *artifactderive.Service, impact *lateevidence.Service) (*Service, error) {
-	if artifacts == nil || bindings == nil || lineage == nil || representations == nil || ingestion == nil || derivation == nil || impact == nil {
+func New(store artifactstore.Store, artifacts artifactregistry.Registry, bindings artifactbinding.Store, lineage artifactlineage.Store, representations representationregistry.Registry, ingestion *artifactingest.Service, derivation *artifactderive.Service, impact *lateevidence.Service) (*Service, error) {
+	if store == nil || artifacts == nil || bindings == nil || lineage == nil || representations == nil || ingestion == nil || derivation == nil || impact == nil {
 		return nil, errors.New("complete artifact operation services are required")
 	}
-	return &Service{artifacts: artifacts, bindings: bindings, lineage: lineage, representations: representations, ingestion: ingestion, derivation: derivation, impact: impact, now: time.Now}, nil
+	return &Service{store: store, artifacts: artifacts, bindings: bindings, lineage: lineage, representations: representations, ingestion: ingestion, derivation: derivation, impact: impact, now: time.Now}, nil
 }
 
 func (service *Service) Ingest(ctx context.Context, input IngestInput, idempotencyKey string) (artifactingest.Result, error) {
@@ -194,6 +210,41 @@ func (service *Service) Show(ctx context.Context, artifactID string, version uin
 
 func (service *Service) Representations(ctx context.Context, reference artifactregistry.VersionRef) ([]representationregistry.Representation, error) {
 	return service.representations.ForArtifact(ctx, reference)
+}
+
+// OriginalContent opens one exact stored original and verifies the registered
+// digest at the artifact-store boundary before any bytes reach a client.
+func (service *Service) OriginalContent(ctx context.Context, reference artifactregistry.VersionRef) (Content, error) {
+	artifact, err := service.artifacts.ArtifactVersion(ctx, reference)
+	if err != nil {
+		return Content{}, err
+	}
+	if artifact.Status != artifactregistry.StatusStored {
+		return Content{}, ErrContentWithheld
+	}
+	reader, err := service.store.Open(ctx, artifactstore.OpenRequest{Locator: artifact.Locator, ExpectedDigest: artifact.BlobDigest})
+	if err != nil {
+		return Content{}, fmt.Errorf("open artifact original: %w", err)
+	}
+	return Content{Reader: reader, Digest: artifact.BlobDigest, Size: artifact.Size, MediaType: artifact.DetectedMediaType, FileName: artifact.SourceName}, nil
+}
+
+// RepresentationContent opens one exact derived representation. Withheld
+// representations remain visible as metadata but their bytes never cross this
+// boundary.
+func (service *Service) RepresentationContent(ctx context.Context, representationID string) (Content, error) {
+	representation, err := service.representations.Representation(ctx, representationID)
+	if err != nil {
+		return Content{}, err
+	}
+	if representation.Disclosure == representationregistry.DisclosureWithheld {
+		return Content{}, ErrContentWithheld
+	}
+	reader, err := service.store.Open(ctx, artifactstore.OpenRequest{Locator: representation.Locator, ExpectedDigest: representation.Digest})
+	if err != nil {
+		return Content{}, fmt.Errorf("open artifact representation: %w", err)
+	}
+	return Content{Reader: reader, Digest: representation.Digest, Size: representation.Size, MediaType: representation.MediaType, FileName: representation.RepresentationID, RepresentationID: representation.RepresentationID}, nil
 }
 
 func (service *Service) Extract(ctx context.Context, reference artifactregistry.VersionRef, idempotencyKey string) (artifactderive.Result, error) {

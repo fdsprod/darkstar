@@ -25,6 +25,13 @@ export interface AgentLogChunk {
   bytes: Uint8Array;
 }
 
+export interface ArtifactContent {
+  blob: Blob;
+  mediaType: string;
+  filename?: string;
+  digest?: string;
+}
+
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code: string;
@@ -91,11 +98,17 @@ export class DarkstarApiClient {
   retryRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("retryRun", { path: { runId }, body: {}, resourceVersion, idempotencyKey, signal }); }
   cancelRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("cancelRun", { path: { runId }, resourceVersion, idempotencyKey, signal }); }
   listArtifacts(targetKind?: Schemas["ArtifactTargetKind"], targetId?: string, signal?: AbortSignal) { return this.operation("listArtifacts", { query: { targetKind, targetId }, signal }); }
+  ingestArtifact(body: Schemas["ArtifactIngestRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("ingestArtifact", { body, idempotencyKey, signal }); }
+  attachArtifact(body: Schemas["ArtifactAttachRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("attachArtifact", { body, idempotencyKey, signal }); }
   getArtifact(artifactId: string, version?: number, signal?: AbortSignal) { return this.operation("getArtifact", { path: { artifactId }, query: { version }, signal }); }
   reviseArtifact(artifactId: string, resourceVersion: number, body: Schemas["ArtifactIngestRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("reviseArtifact", { path: { artifactId }, body, resourceVersion, idempotencyKey, signal }); }
+  extractArtifact(artifactId: string, version: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("extractArtifact", { path: { artifactId }, query: { version }, idempotencyKey, signal }); }
+  listArtifactRepresentations(artifactId: string, version: number, signal?: AbortSignal) { return this.operation("listArtifactRepresentations", { path: { artifactId }, query: { version }, signal }); }
   diffArtifactVersions(artifactId: string, from: number, to: number, signal?: AbortSignal) { return this.operation("diffArtifactVersions", { path: { artifactId }, query: { from, to }, signal }); }
   lintArtifact(artifactId: string, version: number, signal?: AbortSignal) { return this.operation("lintArtifact", { path: { artifactId }, query: { version }, signal }); }
   assessArtifactImpact(artifactId: string, version: number, body: Schemas["ArtifactImpactRequest"], signal?: AbortSignal) { return this.operation("assessArtifactImpact", { path: { artifactId }, query: { version }, body, signal }); }
+  readArtifactContent(artifactId: string, version: number, signal?: AbortSignal) { return this.readArtifactBlob(`/api/v1/artifacts/${encodeURIComponent(artifactId)}/content?version=${version}`, signal); }
+  readRepresentationContent(representationId: string, signal?: AbortSignal) { return this.readArtifactBlob(`/api/v1/representations/${encodeURIComponent(representationId)}/content`, signal); }
   listCheckpoints(query: { class?: "workflow_checkpoint"; runId?: string; status?: "pending" | "approved" | "changes_requested" | "rejected" | "denied" | "cancelled" | "expired" } = {}, signal?: AbortSignal) { return this.operation("listCheckpoints", { query, signal }); }
   getCheckpointHistory(checkpointId: string, signal?: AbortSignal) { return this.operation("getCheckpointHistory", { path: { checkpointId }, signal }); }
   getApproval(approvalId: string, signal?: AbortSignal) { return this.operation("getApproval", { path: { approvalId }, signal }); }
@@ -128,6 +141,17 @@ export class DarkstarApiClient {
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (nextOffset !== offset + bytes.length || nextOffset > size) throw new Error("Agent log response returned inconsistent cursor metadata.");
     return { offset, nextOffset, size, complete: completeValue === "true", bytes };
+  }
+
+  private async readArtifactBlob(path: string, signal?: AbortSignal): Promise<ArtifactContent> {
+    const headers = new Headers({ Accept: "*/*" });
+    const authorization = typeof this.authorization === "function" ? this.authorization() : this.authorization;
+    if (authorization) headers.set("Authorization", authorization);
+    const response = await this.fetcher(path, { headers, credentials: "same-origin", signal });
+    if (!response.ok) throw await toApiError(response);
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1];
+    return { blob: await response.blob(), mediaType: response.headers.get("content-type") ?? "application/octet-stream", ...(filename ? { filename } : {}), ...(response.headers.get("x-darkstar-content-digest") ? { digest: response.headers.get("x-darkstar-content-digest")! } : {}) };
   }
 }
 

@@ -56,12 +56,13 @@ type ProjectView struct {
 	WorkItems     []statestore.WorkItemProjection `json:"workItems"`
 }
 
-// WorkView combines one work item with its current run and story projections.
+// WorkView combines one work item with its current run, story, and point projections.
 type WorkView struct {
 	SchemaVersion int                           `json:"schemaVersion"`
 	Work          statestore.WorkItemProjection `json:"work"`
 	Runs          []statestore.RunProjection    `json:"runs"`
 	Stories       []statestore.StoryProjection  `json:"stories"`
+	Points        []statestore.PointProjection  `json:"points"`
 }
 
 // Service owns project and work-item public commands.
@@ -184,7 +185,8 @@ func (s *Service) WorkItems(ctx context.Context, projectID string) ([]statestore
 	return s.store.WorkItemsForProject(ctx, projectID)
 }
 
-// WorkItem returns one work item and its directly owned runs and stories.
+// WorkItem returns one work item and its directly owned runs and stories, plus
+// the points owned by those stories in deterministic story/point order.
 func (s *Service) WorkItem(ctx context.Context, workItemID string) (WorkView, error) {
 	work, err := s.store.WorkItem(ctx, workItemID)
 	if err != nil {
@@ -198,7 +200,15 @@ func (s *Service) WorkItem(ctx context.Context, workItemID string) (WorkView, er
 	if err != nil {
 		return WorkView{}, err
 	}
-	return WorkView{SchemaVersion: 1, Work: work, Runs: runs, Stories: stories}, nil
+	points := make([]statestore.PointProjection, 0)
+	for _, story := range stories {
+		storyPoints, err := s.store.PointsForStory(ctx, story.StoryID)
+		if err != nil {
+			return WorkView{}, err
+		}
+		points = append(points, storyPoints...)
+	}
+	return WorkView{SchemaVersion: 1, Work: work, Runs: runs, Stories: stories, Points: points}, nil
 }
 
 func (s *Service) createWork(ctx context.Context, scope, projectID, title, source string, priority int, idempotencyKey string, request any) (statestore.WorkItemProjection, error) {

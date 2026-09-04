@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +16,9 @@ import (
 	"darkstar/src/core/artifactops"
 	"darkstar/src/core/lateevidence"
 	"darkstar/src/ports/artifactbinding"
+	"darkstar/src/ports/artifactlineage"
 	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/contentprocessor"
 	"darkstar/src/ports/impactassessment"
 	"darkstar/src/ports/representationregistry"
 )
@@ -78,6 +82,131 @@ func TestArtifactListRoutePassesExactTargetFilter(t *testing.T) {
 	}
 }
 
+func TestArtifactWireResponsePreservesExactNestedRepresentationAndProvenance(t *testing.T) {
+	when := time.Date(2026, 9, 4, 20, 0, 0, 0, time.UTC)
+	artifact := artifactregistry.ArtifactVersion{
+		ArtifactID: "artifact_one", Version: 2, SourceKind: artifactregistry.SourcePaste, SourceName: "note.json",
+		BlobDigest: strings.Repeat("a", 64), Size: 2, DeclaredMediaType: "application/json", DetectedMediaType: "application/json", Locator: "sha256/aa",
+		Sensitivity: artifactregistry.SensitivityInternal, Trust: "untrusted", Creator: "user:local", Status: artifactregistry.StatusStored,
+		Producer: artifactregistry.Producer{Name: "darkstar-ingest", Version: "1"}, Roles: []string{"note"}, Tags: []string{}, Metadata: map[string]string{},
+		Provenance: artifactregistry.AttemptProvenance{RunID: "run_one", NodeID: "design", AttemptID: "attempt_one", OperationID: "operation_one"}, CreatedAt: when,
+	}
+	representation := representationregistry.Representation{
+		RepresentationID: "representation_one", Artifact: artifactregistry.VersionRef{ArtifactID: artifact.ArtifactID, Version: artifact.Version},
+		Kind: contentprocessor.RepresentationStructured, Processor: contentprocessor.Descriptor{Name: "common", Version: "1", MediaTypes: []string{"application/json"}},
+		MediaType: "application/json", Locator: "sha256/bb", Digest: strings.Repeat("b", 64), Size: 2, TokenEstimate: 1,
+		Disclosure: representationregistry.DisclosureRaw, Diagnostics: []string{}, Metadata: map[string]string{}, CreatedAt: when,
+	}
+	service := &stubArtifactService{showValue: artifactops.ArtifactView{Artifact: artifact, Freshness: artifactlineage.FreshnessCurrent, Representations: []representationregistry.Representation{representation}}}
+	server, endpoint := startArtifactTestServer(t, service)
+	defer closeTestServer(t, server)
+
+	response := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one?version=2", endpoint.AuthorizationHeader())
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	var decoded artifactops.ArtifactView
+	decodeJSON(t, response, &decoded)
+	provenance, ok := decoded.Artifact.Provenance.(artifactregistry.AttemptProvenance)
+	if !ok || provenance.AttemptID != "attempt_one" {
+		t.Fatalf("provenance = %#v", decoded.Artifact.Provenance)
+	}
+	if len(decoded.Representations) != 1 || decoded.Representations[0].Artifact.Version != 2 || decoded.Representations[0].Processor.Name != "common" {
+		t.Fatalf("representations = %#v", decoded.Representations)
+	}
+}
+
+func TestArtifactContentRoutesUseSafeAuthenticatedHeaders(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	service := &stubArtifactService{
+		originalBytes:       []byte("<script>unsafe original</script>"),
+		originalMeta:        artifactops.Content{Digest: digest, Size: 32, MediaType: "text/html", FileName: "report\"\r\nX-Evil: yes.html"},
+		representationBytes: []byte("safe preview"),
+		representationMeta:  artifactops.Content{Digest: strings.Repeat("b", 64), Size: 12, MediaType: "text/plain; charset=utf-8", FileName: "representation_preview", RepresentationID: "representation_preview"},
+	}
+	server, endpoint := startArtifactTestServer(t, service)
+	defer closeTestServer(t, server)
+
+	unauthorized, err := http.Get(endpoint.BaseURL() + "/api/v1/artifacts/artifact_one/content?version=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unauthorized.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d", unauthorized.StatusCode)
+	}
+	_ = unauthorized.Body.Close()
+
+	original := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one/content?version=1", endpoint.AuthorizationHeader())
+	defer func() { _ = original.Body.Close() }()
+	content, err := io.ReadAll(original.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.StatusCode != http.StatusOK || string(content) != string(service.originalBytes) {
+		t.Fatalf("original response = %d %q", original.StatusCode, content)
+	}
+	if got := original.Header.Get("Content-Type"); got != "application/octet-stream" {
+		t.Fatalf("original Content-Type = %q", got)
+	}
+	if disposition := original.Header.Get("Content-Disposition"); !strings.HasPrefix(disposition, "attachment;") || strings.ContainsAny(disposition, "\r\n") || original.Header.Get("X-Evil") != "" {
+		t.Fatalf("unsafe original disposition = %q", disposition)
+	}
+	if original.Header.Get("ETag") != `"`+digest+`"` || original.Header.Get("X-Darkstar-Content-Digest") != "sha256="+digest {
+		t.Fatalf("original digest headers = %q / %q", original.Header.Get("ETag"), original.Header.Get("X-Darkstar-Content-Digest"))
+	}
+	if original.Header.Get("Cache-Control") != "no-store" || original.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("safe response headers missing: %#v", original.Header)
+	}
+
+	preview := get(t, endpoint.BaseURL()+"/api/v1/representations/representation_preview/content", endpoint.AuthorizationHeader())
+	defer func() { _ = preview.Body.Close() }()
+	previewContent, err := io.ReadAll(preview.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.StatusCode != http.StatusOK || preview.Header.Get("Content-Type") != "text/plain" || !strings.HasPrefix(preview.Header.Get("Content-Disposition"), "inline;") || string(previewContent) != "safe preview" {
+		t.Fatalf("preview response = %d %q %#v", preview.StatusCode, previewContent, preview.Header)
+	}
+
+	service.representationBytes = []byte("<script>unsafe preview</script>")
+	service.representationMeta.Size = int64(len(service.representationBytes))
+	service.representationMeta.MediaType = "text/html"
+	unsafePreview := get(t, endpoint.BaseURL()+"/api/v1/representations/representation_preview/content", endpoint.AuthorizationHeader())
+	defer func() { _ = unsafePreview.Body.Close() }()
+	if unsafePreview.StatusCode != http.StatusOK || unsafePreview.Header.Get("Content-Type") != "application/octet-stream" || !strings.HasPrefix(unsafePreview.Header.Get("Content-Disposition"), "attachment;") {
+		t.Fatalf("unsafe preview headers = %d %#v", unsafePreview.StatusCode, unsafePreview.Header)
+	}
+
+	headRequest, err := http.NewRequestWithContext(context.Background(), http.MethodHead, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one/content?version=1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headRequest.Header.Set("Authorization", endpoint.AuthorizationHeader())
+	headResponse, err := (&http.Client{Timeout: 5 * time.Second}).Do(headRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = headResponse.Body.Close() }()
+	headBody, err := io.ReadAll(headResponse.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if headResponse.StatusCode != http.StatusOK || len(headBody) != 0 || headResponse.Header.Get("Content-Length") != "32" || headResponse.Header.Get("ETag") != `"`+digest+`"` {
+		t.Fatalf("HEAD response = %d %q %#v", headResponse.StatusCode, headBody, headResponse.Header)
+	}
+}
+
+func TestWithheldRepresentationContentFailsClosed(t *testing.T) {
+	service := &stubArtifactService{representationErr: artifactops.ErrContentWithheld}
+	server, endpoint := startArtifactTestServer(t, service)
+	defer closeTestServer(t, server)
+
+	response := get(t, endpoint.BaseURL()+"/api/v1/representations/representation_secret/content", endpoint.AuthorizationHeader())
+	defer func() { _ = response.Body.Close() }()
+	assertAPIError(t, response, http.StatusForbidden, "ARTIFACT_CONTENT_WITHHELD")
+}
+
 func startArtifactTestServer(t *testing.T, service ArtifactService) (*Server, Endpoint) {
 	t.Helper()
 	server, err := NewServer(t.TempDir())
@@ -98,9 +227,16 @@ func startArtifactTestServer(t *testing.T, service ArtifactService) (*Server, En
 }
 
 type stubArtifactService struct {
-	ingestInput artifactops.IngestInput
-	ingestKey   string
-	listInput   artifactops.ListInput
+	ingestInput         artifactops.IngestInput
+	ingestKey           string
+	listInput           artifactops.ListInput
+	originalBytes       []byte
+	originalMeta        artifactops.Content
+	originalErr         error
+	representationBytes []byte
+	representationMeta  artifactops.Content
+	representationErr   error
+	showValue           artifactops.ArtifactView
 }
 
 func (service *stubArtifactService) Ingest(_ context.Context, input artifactops.IngestInput, key string) (artifactingest.Result, error) {
@@ -125,7 +261,10 @@ func (service *stubArtifactService) List(_ context.Context, input artifactops.Li
 	return []artifactops.ArtifactView{}, nil
 }
 
-func (*stubArtifactService) Show(context.Context, string, uint64) (artifactops.ArtifactView, error) {
+func (service *stubArtifactService) Show(context.Context, string, uint64) (artifactops.ArtifactView, error) {
+	if service.showValue.Artifact.ArtifactID != "" {
+		return service.showValue, nil
+	}
 	return artifactops.ArtifactView{}, errors.New("not implemented")
 }
 
@@ -147,6 +286,24 @@ func (*stubArtifactService) Lint(context.Context, artifactregistry.VersionRef) (
 
 func (*stubArtifactService) Impact(context.Context, lateevidence.Request) (impactassessment.Assessment, error) {
 	return impactassessment.Assessment{}, errors.New("not implemented")
+}
+
+func (service *stubArtifactService) OriginalContent(context.Context, artifactregistry.VersionRef) (artifactops.Content, error) {
+	if service.originalErr != nil {
+		return artifactops.Content{}, service.originalErr
+	}
+	value := service.originalMeta
+	value.Reader = io.NopCloser(bytes.NewReader(service.originalBytes))
+	return value, nil
+}
+
+func (service *stubArtifactService) RepresentationContent(context.Context, string) (artifactops.Content, error) {
+	if service.representationErr != nil {
+		return artifactops.Content{}, service.representationErr
+	}
+	value := service.representationMeta
+	value.Reader = io.NopCloser(bytes.NewReader(service.representationBytes))
+	return value, nil
 }
 
 var _ ArtifactService = (*stubArtifactService)(nil)

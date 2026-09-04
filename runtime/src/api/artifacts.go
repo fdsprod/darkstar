@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
@@ -35,6 +36,8 @@ type ArtifactService interface {
 	Diff(context.Context, string, uint64, uint64) (artifactops.VersionDiff, error)
 	Lint(context.Context, artifactregistry.VersionRef) (artifactops.LintResult, error)
 	Impact(context.Context, lateevidence.Request) (impactassessment.Assessment, error)
+	OriginalContent(context.Context, artifactregistry.VersionRef) (artifactops.Content, error)
+	RepresentationContent(context.Context, string) (artifactops.Content, error)
 }
 
 func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Request, requestID string) {
@@ -53,6 +56,10 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 	}
 	if segments[2] == "artifact-bindings" {
 		s.serveArtifactBindings(response, request, requestID, service, segments[3:])
+		return
+	}
+	if segments[2] == "representations" {
+		s.serveRepresentationContent(response, request, requestID, service, segments[3:])
 		return
 	}
 	if segments[2] != "artifacts" {
@@ -91,6 +98,26 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	switch segments[4] {
+	case "content":
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writeArtifactMethod(response, requestID, "GET, HEAD")
+			return
+		}
+		if len(request.URL.Query()) != 1 || len(request.URL.Query()["version"]) != 1 {
+			writeArtifactError(response, requestID, errors.New("content requests require exactly one version query parameter"))
+			return
+		}
+		version, err := queryVersion(request.URL.Query(), "version", true)
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		content, err := service.OriginalContent(request.Context(), artifactregistry.VersionRef{ArtifactID: artifactID, Version: version})
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
+		serveArtifactContent(response, request, content, false)
 	case "revisions":
 		if request.Method != http.MethodPost {
 			writeArtifactMethod(response, requestID, "POST")
@@ -221,6 +248,79 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 	}
 }
 
+func (s *Server) serveRepresentationContent(response http.ResponseWriter, request *http.Request, requestID string, service ArtifactService, remainder []string) {
+	if len(remainder) != 2 || remainder[1] != "content" {
+		writeArtifactError(response, requestID, representationregistry.ErrNotFound)
+		return
+	}
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		writeArtifactMethod(response, requestID, "GET, HEAD")
+		return
+	}
+	if request.URL.RawQuery != "" || !strings.HasPrefix(remainder[0], "representation_") {
+		writeArtifactError(response, requestID, representationregistry.ErrNotFound)
+		return
+	}
+	content, err := service.RepresentationContent(request.Context(), remainder[0])
+	if err != nil {
+		writeArtifactError(response, requestID, err)
+		return
+	}
+	serveArtifactContent(response, request, content, true)
+}
+
+func serveArtifactContent(response http.ResponseWriter, request *http.Request, content artifactops.Content, allowInline bool) {
+	defer func() { _ = content.Reader.Close() }()
+	mediaType, disposition := artifactContentHeaders(content.MediaType, allowInline)
+	response.Header().Set("Content-Type", mediaType)
+	response.Header().Set("Content-Disposition", disposition+`; filename="`+safeArtifactFileName(content.FileName)+`"`)
+	response.Header().Set("Content-Length", strconv.FormatInt(content.Size, 10))
+	response.Header().Set("ETag", `"`+content.Digest+`"`)
+	response.Header().Set("X-Darkstar-Content-Digest", "sha256="+content.Digest)
+	if request.Method == http.MethodHead {
+		response.WriteHeader(http.StatusOK)
+		return
+	}
+	response.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(response, content.Reader)
+}
+
+func artifactContentHeaders(value string, allowInline bool) (string, string) {
+	base, _, err := mime.ParseMediaType(value)
+	if err != nil {
+		return "application/octet-stream", "attachment"
+	}
+	base = strings.ToLower(base)
+	if allowInline {
+		switch base {
+		case "text/plain", "text/markdown", "text/csv", "application/json", "image/png", "image/jpeg", "image/webp":
+			return base, "inline"
+		}
+	}
+	return "application/octet-stream", "attachment"
+}
+
+func safeArtifactFileName(value string) string {
+	value = strings.Map(func(character rune) rune {
+		switch {
+		case character >= 'a' && character <= 'z', character >= 'A' && character <= 'Z', character >= '0' && character <= '9':
+			return character
+		case character == '.', character == '-', character == '_', character == ' ':
+			return character
+		default:
+			return '_'
+		}
+	}, value)
+	value = strings.Trim(value, " .")
+	if value == "" || value == "." || value == ".." {
+		return "artifact-download"
+	}
+	if len(value) > 180 {
+		value = value[:180]
+	}
+	return value
+}
+
 func (s *Server) serveArtifactCollection(response http.ResponseWriter, request *http.Request, requestID string, service ArtifactService) {
 	switch request.Method {
 	case http.MethodPost:
@@ -342,6 +442,8 @@ func writeArtifactError(response http.ResponseWriter, requestID string, err erro
 	status, code, message := http.StatusBadRequest, "VALIDATION_FAILED", err.Error()
 	if errors.Is(err, artifactregistry.ErrNotFound) || errors.Is(err, artifactbinding.ErrNotFound) || errors.Is(err, representationregistry.ErrNotFound) {
 		status, code, message = http.StatusNotFound, "NOT_FOUND", "The requested artifact resource was not found."
+	} else if errors.Is(err, artifactops.ErrContentWithheld) {
+		status, code, message = http.StatusForbidden, "ARTIFACT_CONTENT_WITHHELD", "Artifact content is withheld by inspection or disclosure policy."
 	} else if errors.Is(err, artifactregistry.ErrVersionConflict) || errors.Is(err, artifactbinding.ErrConflict) || errors.Is(err, artifactbinding.ErrStateConflict) || errors.Is(err, lateevidence.ErrEvidenceNotBound) {
 		status, code = http.StatusConflict, "ARTIFACT_CONFLICT"
 	}

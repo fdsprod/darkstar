@@ -154,7 +154,7 @@ source fingerprints.
 | `GET /api/v1/work-items?projectId=...` | List all work or filter by one exact project. |
 | `POST /api/v1/work-items` | Create authored work from a title and priority. |
 | `POST /api/v1/work-items/import` | Import an external source reference with an optional local title. |
-| `GET /api/v1/work-items/{workItemId}` | Show work with its run and story projections. |
+| `GET /api/v1/work-items/{workItemId}` | Show work with its run, story, and implementation-point projections in deterministic hierarchy order. |
 
 The create and import request shapes are distinct so a request cannot be both
 authored and externally sourced. Project and work lifecycle status remains the

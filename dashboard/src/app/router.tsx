@@ -10,6 +10,7 @@ import {
 
 import { BoardPage } from "../pages/BoardPage";
 import { ArtifactPage } from "../pages/ArtifactPage";
+import { ArtifactsPage } from "../pages/ArtifactsPage";
 import { AgentsPage } from "../pages/AgentsPage";
 import { CheckpointsPage } from "../pages/CheckpointsPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
@@ -18,7 +19,7 @@ import { RunReadinessPage } from "../pages/RunReadinessPage";
 import { WorkDetailPage } from "../pages/WorkDetailPage";
 import { WorkflowsPage } from "../pages/WorkflowsPage";
 
-export type AppRouteId = "board" | "work" | "run" | "readiness" | "checkpoints" | "agents" | "workflows" | "settings" | "artifact" | "not-found";
+export type AppRouteId = "board" | "work" | "run" | "readiness" | "checkpoints" | "agents" | "workflows" | "settings" | "artifacts" | "artifact" | "not-found";
 
 export interface AppRoute {
   id: AppRouteId;
@@ -37,6 +38,7 @@ const routePatterns = [
   { id: "agents", path: "/agents", title: "Agents", section: "Workspace" },
   { id: "workflows", path: "/workflows", title: "Workflows", section: "Workspace" },
   { id: "settings", path: "/settings", title: "Settings & Health", section: "System" },
+  { id: "artifacts", path: "/artifacts", title: "Artifacts", section: "Workspace" },
   { id: "artifact", path: "/artifacts/:artifactId", title: "Artifact", section: "Artifacts" },
 ] as const;
 
@@ -128,6 +130,7 @@ export function RouteView() {
     case "checkpoints": return <CheckpointsPage />;
     case "agents": return <AgentsPage />;
     case "workflows": return <WorkflowsPage />;
+    case "artifacts": return <ArtifactsPage />;
     case "settings": return <PlaceholderPage eyebrow="System" title="Settings & Health" description="Understand effective configuration and the readiness of the daemon, repositories, providers, and delivery integrations." />;
     case "work": return <WorkDetailPage />;
     case "run": return <RunDetailPage />;

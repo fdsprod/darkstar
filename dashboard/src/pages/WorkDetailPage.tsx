@@ -38,7 +38,7 @@ export function WorkDetailPage() {
           <h1>{view.work.title}</h1>
           <p className="page-header__description">Durable request and run history. Status changes shown here come from daemon projections.</p>
         </div>
-        <StatusPill status={view.work.status} />
+        <div className="run-header-actions"><StatusPill status={view.work.status} /><AppLink className="button button--primary" to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(view.work.id)}&ingest=1`}>Add evidence</AppLink></div>
       </header>
 
       <section className="detail-summary" aria-label="Work item summary">
@@ -62,6 +62,11 @@ export function WorkDetailPage() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="detail-section work-plan-evidence">
+        <div className="section-heading"><div><p className="eyebrow">Accepted-plan targets</p><h2>Stories &amp; implementation points</h2></div><span className="section-count">{view.stories.length} / {view.points.length}</span></div>
+        {view.stories.length === 0 ? <EmptyDetail title="No accepted-plan targets" message="Stories and points appear here when the work plan is durably recorded." /> : <div className="story-targets">{view.stories.map((story) => { const points = view.points.filter((point) => point.storyId === story.id).sort((left, right) => left.position - right.position || left.id.localeCompare(right.id)); return <article key={story.id}><header><div><strong>{story.title}</strong><code>{shortIdentifier(story.id)}</code></div><div><AppLink to={`/artifacts?targetKind=story&targetId=${encodeURIComponent(story.id)}&ingest=1`}>Add story evidence</AppLink><StatusPill status={story.status} /></div></header>{points.length ? <ol>{points.map((point) => <li key={point.id}><span><strong>{point.title}</strong><code>{shortIdentifier(point.id)} · revision {point.revision}</code></span><AppLink to={`/artifacts?targetKind=implementation_point&targetId=${encodeURIComponent(point.id)}&ingest=1`}>Add evidence</AppLink><StatusPill status={point.status} /></li>)}</ol> : <p>No implementation points are recorded for this story.</p>}</article>; })}</div>}
       </section>
     </div>
   );

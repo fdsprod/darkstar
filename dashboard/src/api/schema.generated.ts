@@ -14,7 +14,9 @@ export interface components {
     "CreateWorkItemRequest": { "projectId": string; "title": string; "priority"?: number; };
     "ImportWorkItemRequest": { "projectId": string; "sourceReference": string; "title"?: string; "priority"?: number; };
     "WorkItem": { "id": string; "projectId": string; "title": string; "sourceHash": string; "priority": number; "status": "open" | "active" | "completed" | "cancelled"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
-    "WorkItemView": { "schemaVersion": 1; "work": components["schemas"]["WorkItem"]; "runs": Array<components["schemas"]["Run"]>; "stories": Array<{  }>; };
+    "StoryProjection": { "id": string; "workItemId": string; "title": string; "sourceHash": string; "priority": number; "position": number; "status": "planned" | "ready" | "running" | "completed" | "cancelled" | "retired"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
+    "PointProjection": { "id": string; "storyId": string; "revision": number; "title": string; "sourceHash": string; "priority": number; "position": number; "dependencies": Array<string>; "status": "planned" | "ready" | "running" | "validating" | "awaiting_approval" | "accepted" | "committed" | "published" | "failed" | "rejected" | "superseded" | "reconcile_required"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
+    "WorkItemView": { "schemaVersion": 1; "work": components["schemas"]["WorkItem"]; "runs": Array<components["schemas"]["Run"]>; "stories": Array<components["schemas"]["StoryProjection"]>; "points": Array<components["schemas"]["PointProjection"]>; };
     "WorkflowDocument": unknown | unknown;
     "WorkflowVersionSummary": { "name": string; "version": string; "digest": string; "sourceScope": "default" | "user" | "project"; "sourceReference": string; "installedAt": string; };
     "WorkflowCandidateRequest": { "document": components["schemas"]["WorkflowDocument"]; "sourceScope": "default" | "user" | "project"; "sourceReference": string; };
@@ -26,18 +28,26 @@ export interface components {
     "WorkflowGraph": { "workflow": components["schemas"]["WorkflowIdentity"]; "nodes": Array<{ "id": string; "type": "reasoning" | "gate" | "command" | "approval" | "subworkflow" | "point_execution"; "entry"?: boolean; "terminal"?: boolean; }>; "edges": Array<{ "id": string; "from": string; "to": string; }>; };
     "WorkflowPreviewRequest": { "range": { "from"?: string; "until"?: Array<string>; }; "context": { "runInputs"?: { [key: string]: unknown; }; "acceptedOutputs"?: { [key: string]: unknown; }; "requiredNodes"?: Array<string>; }; };
     "WorkflowRoutePreview": { "workflow": components["schemas"]["WorkflowIdentity"]; "route": components["schemas"]["FrozenRoute"]; };
-    "Artifact": unknown;
-    "ArtifactRepresentation": unknown;
-    "ArtifactBinding": unknown;
-    "ArtifactImpactAssessment": unknown;
-    "ArtifactTargetKind": "project" | "work" | "run" | "node" | "checkpoint" | "decision" | "story" | "implementation_point";
     "ArtifactVersionRef": { "artifactId": string; "version": number; };
+    "ArtifactProducer": { "name": string; "version": string; };
+    "ArtifactProvenance": { "origin": "operation"; "operationId": string; "source"?: components["schemas"]["ArtifactVersionRef"]; } | { "origin": "attempt"; "runId": string; "nodeId": string; "attemptId": string; "operationId": string; "source"?: components["schemas"]["ArtifactVersionRef"]; };
+    "Artifact": { "artifactId": string; "version": number; "sourceKind": "file" | "paste" | "stdin" | "generated" | "external"; "sourceName": string; "blobDigest": string; "size": number; "declaredMediaType": string; "detectedMediaType": string; "locator": string; "sensitivity": "unknown" | "public" | "internal" | "sensitive" | "secret"; "trust": "untrusted"; "creator": string; "status": "stored" | "stored_uninspectable" | "quarantined"; "producer": components["schemas"]["ArtifactProducer"]; "roles": Array<string>; "tags": Array<string>; "metadata": { [key: string]: string; }; "provenance": components["schemas"]["ArtifactProvenance"]; "createdAt": string; };
+    "ContentProcessorDescriptor": { "name": string; "version": string; "mediaTypes": Array<string>; };
+    "ContentProcessorSupport": { "state": "supported" | "unsupported" | "quarantined"; "mediaType": string; "diagnostics": Array<string>; };
+    "ArtifactRepresentation": { "representationId": string; "artifact": components["schemas"]["ArtifactVersionRef"]; "representationKind": "text" | "structured" | "table" | "image" | "preview" | "descriptor"; "processor": components["schemas"]["ContentProcessorDescriptor"]; "mediaType": string; "locator": string; "digest": string; "size": number; "tokenEstimate": number; "truncated": boolean; "disclosure": "raw" | "redacted" | "withheld"; "diagnostics": Array<string>; "metadata": { [key: string]: string; }; "createdAt": string; };
+    "ArtifactBinding": { "bindingId": string; "version": number; "state": "bound" | "unbound"; "artifact": components["schemas"]["ArtifactVersionRef"]; "target": components["schemas"]["ArtifactTarget"]; "createdAt": string; };
+    "ArtifactTargetKind": "project" | "work" | "run" | "node" | "checkpoint" | "decision" | "story" | "implementation_point";
     "ArtifactTarget": { "kind": components["schemas"]["ArtifactTargetKind"]; "id": string; };
     "ArtifactIngestRequest": { "artifactId"?: string; "sourceKind": "file" | "paste" | "stdin" | "generated" | "external"; "sourceName": string; "mediaType": string; "content": string; "sensitivity"?: "unknown" | "public" | "internal" | "sensitive" | "secret"; "creator"?: string; "roles"?: Array<string>; "tags"?: Array<string>; };
-    "ArtifactIngestResult": { "artifact": components["schemas"]["Artifact"]; "created": boolean; "duplicateOf"?: components["schemas"]["ArtifactVersionRef"]; "capability": {  }; "diagnostics": Array<string>; };
+    "ArtifactIngestResult": { "artifact": components["schemas"]["Artifact"]; "created": boolean; "duplicateOf"?: components["schemas"]["ArtifactVersionRef"]; "capability": components["schemas"]["ContentProcessorSupport"]; "diagnostics": Array<string>; };
+    "ArtifactExtractionResult": { "support": components["schemas"]["ContentProcessorSupport"]; "representations": Array<components["schemas"]["ArtifactRepresentation"]>; "diagnostics": Array<string>; "limited": boolean; };
     "ArtifactView": { "artifact": components["schemas"]["Artifact"]; "freshness": "current" | "potentially_stale" | "invalidated"; "representations": Array<components["schemas"]["ArtifactRepresentation"]>; };
     "ArtifactAttachRequest": { "bindingId"?: string; "artifact": components["schemas"]["ArtifactVersionRef"]; "target": components["schemas"]["ArtifactTarget"]; };
     "ArtifactImpactRequest": { "target": components["schemas"]["ArtifactTarget"]; "runId"?: string; };
+    "ArtifactAttemptCoverage": { "attemptId": string; "nodeId": string; "manifestId"?: string; "state": "supplied" | "pending_freeze" | "not_supplied" | "unavailable"; };
+    "ArtifactEffect": { "artifact": components["schemas"]["ArtifactVersionRef"]; "freshness": "potentially_stale" | "invalidated"; };
+    "ArtifactImpactProposal": { "action": "continue"; "reason": string; } | { "action": "refresh"; "attemptId": string; "reason": string; } | { "action": "revise"; "artifacts": Array<components["schemas"]["ArtifactEffect"]>; "reason": string; } | { "action": "insert"; "runId": string; "target": components["schemas"]["ArtifactTarget"]; "roles": Array<string>; "reason": string; } | { "action": "invalidate"; "artifacts": Array<components["schemas"]["ArtifactEffect"]>; "reason": string; };
+    "ArtifactImpactAssessment": { "kind": "impact_assessment"; "schemaVersion": 1; "evidence": components["schemas"]["ArtifactVersionRef"]; "target": components["schemas"]["ArtifactTarget"]; "runId"?: string; "roles": Array<string>; "coverage": Array<components["schemas"]["ArtifactAttemptCoverage"]>; "proposals": Array<components["schemas"]["ArtifactImpactProposal"]>; };
     "ArtifactLintResult": { "artifact": components["schemas"]["ArtifactVersionRef"]; "valid": boolean; "issues": Array<{ "code": string; "message": string; }>; };
     "ArtifactVersionDiff": { "artifactId": string; "from": number; "to": number; "changed": Array<"content" | "mediaType" | "sensitivity" | "roles" | "tags">; "fromDigest": string; "toDigest": string; "representations": { "from": Array<string>; "to": Array<string>; }; };
     "ReviewActor": { "type": "user" | "system" | "provider" | "external"; "id": string; };
@@ -148,13 +158,15 @@ export interface ApiOperations {
     "listArtifacts": { method: "GET"; path: "/api/v1/artifacts"; response: Array<components["schemas"]["ArtifactView"]>; body: never; };
     "ingestArtifact": { method: "POST"; path: "/api/v1/artifacts"; response: components["schemas"]["ArtifactIngestResult"]; body: components["schemas"]["ArtifactIngestRequest"]; };
     "getArtifact": { method: "GET"; path: "/api/v1/artifacts/{artifactId}"; response: components["schemas"]["ArtifactView"]; body: never; };
+    "readArtifactContent": { method: "GET"; path: "/api/v1/artifacts/{artifactId}/content"; response: string; body: never; };
     "reviseArtifact": { method: "POST"; path: "/api/v1/artifacts/{artifactId}/revisions"; response: components["schemas"]["ArtifactIngestResult"]; body: components["schemas"]["ArtifactIngestRequest"]; };
     "diffArtifactVersions": { method: "GET"; path: "/api/v1/artifacts/{artifactId}/diff"; response: components["schemas"]["ArtifactVersionDiff"]; body: never; };
-    "extractArtifact": { method: "POST"; path: "/api/v1/artifacts/{artifactId}/extract"; response: {  }; body: never; };
+    "extractArtifact": { method: "POST"; path: "/api/v1/artifacts/{artifactId}/extract"; response: components["schemas"]["ArtifactExtractionResult"]; body: never; };
     "lintArtifact": { method: "GET"; path: "/api/v1/artifacts/{artifactId}/lint"; response: components["schemas"]["ArtifactLintResult"]; body: never; };
     "listArtifactRepresentations": { method: "GET"; path: "/api/v1/artifacts/{artifactId}/representations"; response: Array<components["schemas"]["ArtifactRepresentation"]>; body: never; };
     "assessArtifactImpact": { method: "POST"; path: "/api/v1/artifacts/{artifactId}/impact"; response: components["schemas"]["ArtifactImpactAssessment"]; body: components["schemas"]["ArtifactImpactRequest"]; };
     "attachArtifact": { method: "POST"; path: "/api/v1/artifact-bindings"; response: components["schemas"]["ArtifactBinding"]; body: components["schemas"]["ArtifactAttachRequest"]; };
+    "readArtifactRepresentationContent": { method: "GET"; path: "/api/v1/representations/{representationId}/content"; response: string; body: never; };
     "listAgents": { method: "GET"; path: "/api/v1/agents"; response: components["schemas"]["AgentList"]; body: never; };
     "getAgent": { method: "GET"; path: "/api/v1/agents/{attemptId}"; response: components["schemas"]["Agent"]; body: never; };
     "readAgentLog": { method: "GET"; path: "/api/v1/agents/{attemptId}/logs"; response: string; body: never; };
@@ -209,6 +221,7 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "listArtifacts": { method: "GET", path: "/api/v1/artifacts" },
   "ingestArtifact": { method: "POST", path: "/api/v1/artifacts" },
   "getArtifact": { method: "GET", path: "/api/v1/artifacts/{artifactId}" },
+  "readArtifactContent": { method: "GET", path: "/api/v1/artifacts/{artifactId}/content" },
   "reviseArtifact": { method: "POST", path: "/api/v1/artifacts/{artifactId}/revisions" },
   "diffArtifactVersions": { method: "GET", path: "/api/v1/artifacts/{artifactId}/diff" },
   "extractArtifact": { method: "POST", path: "/api/v1/artifacts/{artifactId}/extract" },
@@ -216,6 +229,7 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "listArtifactRepresentations": { method: "GET", path: "/api/v1/artifacts/{artifactId}/representations" },
   "assessArtifactImpact": { method: "POST", path: "/api/v1/artifacts/{artifactId}/impact" },
   "attachArtifact": { method: "POST", path: "/api/v1/artifact-bindings" },
+  "readArtifactRepresentationContent": { method: "GET", path: "/api/v1/representations/{representationId}/content" },
   "listAgents": { method: "GET", path: "/api/v1/agents" },
   "getAgent": { method: "GET", path: "/api/v1/agents/{attemptId}" },
   "readAgentLog": { method: "GET", path: "/api/v1/agents/{attemptId}/logs" },

@@ -146,11 +146,11 @@ function WorkCard({ card, pendingAction, onAction }: { card: BoardCard; pendingA
     <AppLink className="work-card__title" to={`/work/${encodeURIComponent(card.work.id)}`}>{card.work.title}</AppLink>
     <div className="work-card__metadata"><span title={card.work.id}>{compactId(card.work.id)}</span><span>Priority {card.work.priority}</span></div>
     {card.run ? <div className="work-card__run"><AppLink to={`/work/${encodeURIComponent(card.work.id)}/run/${encodeURIComponent(card.run.id)}`}>{card.run.workflowId} · v{card.run.workflowVersion}</AppLink><span className={`run-status run-status--${card.lifecycle}`}><span aria-hidden="true" />{humanize(card.run.status)}</span></div> : <p className="work-card__unrouted">Route not selected</p>}
-    {actions.length > 0 && <div className="work-card__actions" aria-label={`Actions for ${card.work.title}`}>{actions.map((action) => {
+    <div className="work-card__actions" aria-label={`Actions for ${card.work.title}`}><AppLink className="card-action" to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(card.work.id)}&ingest=1`}>Add evidence</AppLink>{actions.map((action) => {
       const key = `${action}:${card.run?.id ?? card.work.id}`;
       const pending = pendingAction === key;
       return <button key={action} type="button" className={action === "cancel" ? "card-action card-action--danger" : "card-action"} disabled={Boolean(pendingAction)} onClick={() => void onAction(card, action)}>{pending ? "Working…" : action === "start" ? "Start run" : actionLabels[action]}</button>;
-    })}</div>}
+    })}</div>
   </article>;
 }
 

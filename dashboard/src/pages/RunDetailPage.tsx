@@ -68,7 +68,7 @@ export function RunDetailPage() {
       <nav className="detail-breadcrumb" aria-label="Breadcrumb"><AppLink to="/board">Board</AppLink><span aria-hidden="true">/</span><AppLink to={`/work/${encodeURIComponent(work.id)}`}>{shortIdentifier(work.id)}</AppLink><span aria-hidden="true">/</span><span>{shortIdentifier(view.run.id)}</span></nav>
       <header className="page-header detail-header run-detail-header">
         <div><p className="eyebrow">Run · {shortIdentifier(view.run.id)}</p><h1>{work.title}</h1><p className="page-header__description">{view.run.workflowId} · v{view.run.workflowVersion}. Node visits, attempts, and evidence are read from durable projections.</p></div>
-        <div className="run-header-actions"><StatusPill status={view.run.status} /><AppLink className="button" to={`/checkpoints?runId=${encodeURIComponent(view.run.id)}`}>Checkpoints</AppLink><AppLink className="button" to={`/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(view.run.id)}/readiness`}>Readiness</AppLink>{controls.map((control) => <button className="button" type="button" key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : humanize(control)}</button>)}</div>
+        <div className="run-header-actions"><StatusPill status={view.run.status} /><AppLink className="button" to={`/artifacts?targetKind=run&targetId=${encodeURIComponent(view.run.id)}&ingest=1`}>Add evidence</AppLink><AppLink className="button" to={`/checkpoints?runId=${encodeURIComponent(view.run.id)}`}>Checkpoints</AppLink><AppLink className="button" to={`/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(view.run.id)}/readiness`}>Readiness</AppLink>{controls.map((control) => <button className="button" type="button" key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : humanize(control)}</button>)}</div>
       </header>
       {actionMessage && <p className="detail-action-message" role="status">{actionMessage}</p>}
       {error && <p className="detail-action-message detail-action-message--error" role="alert">{error}</p>}
@@ -83,7 +83,7 @@ export function RunDetailPage() {
       <div className="run-detail-grid">
         <main className="run-detail-primary">
           <RoutePanel run={view.run} visits={visits} />
-          <NodeTimeline visits={visits} attempts={view.attempts} unlinkedAttempts={unlinkedAttempts} />
+          <NodeTimeline runId={view.run.id} visits={visits} attempts={view.attempts} unlinkedAttempts={unlinkedAttempts} />
           <EventTimeline view={view} />
         </main>
         <aside className="run-detail-aside" aria-label="Run evidence">
@@ -121,12 +121,12 @@ function RoutePanel({ run, visits }: { run: Schemas["Run"]; visits: Schemas["Nod
   </section>;
 }
 
-function NodeTimeline({ visits, attempts, unlinkedAttempts }: { visits: Schemas["NodeVisit"][]; attempts: Schemas["Attempt"][]; unlinkedAttempts: Schemas["Attempt"][] }) {
+function NodeTimeline({ runId, visits, attempts, unlinkedAttempts }: { runId: string; visits: Schemas["NodeVisit"][]; attempts: Schemas["Attempt"][]; unlinkedAttempts: Schemas["Attempt"][] }) {
   return <section className="detail-section">
     <div className="section-heading"><div><p className="eyebrow">Durable execution</p><h2>Node visits and attempts</h2></div><span className="section-count">{visits.length}</span></div>
     {visits.length === 0 ? <EmptyDetail title="No node visits recorded" message="The run has not activated a node visit." /> : <ol className="node-timeline">{visits.map((visit) => {
       const visitAttempts = attemptsForVisit(attempts, visit.id);
-      return <li key={visit.id} className="node-visit"><span className={`timeline-marker timeline-marker--${statusTone(visit.status)}`} aria-hidden="true" /><div className="node-visit__body"><header><div><strong>{visit.nodeId}</strong><span>{shortIdentifier(visit.id)} · revision {visit.resourceVersion}</span></div><StatusPill status={visit.status} /></header><p className="node-visit__time">Activated {formatDate(visit.createdAt)} · updated {formatDate(visit.updatedAt)}</p>{visitAttempts.length === 0 ? <p className="attempt-empty">No attempt recorded for this visit.</p> : <div className="attempt-list">{visitAttempts.map((attempt, index) => <AttemptRow key={attempt.id} attempt={attempt} ordinal={index + 1} />)}</div>}</div></li>;
+      return <li key={visit.id} className="node-visit"><span className={`timeline-marker timeline-marker--${statusTone(visit.status)}`} aria-hidden="true" /><div className="node-visit__body"><header><div><strong>{visit.nodeId}</strong><span>{shortIdentifier(visit.id)} · revision {visit.resourceVersion}</span></div><div className="node-visit__actions"><AppLink to={`/artifacts?targetKind=node&targetId=${encodeURIComponent(`${runId}/${visit.nodeId}`)}&ingest=1`}>Add evidence</AppLink><StatusPill status={visit.status} /></div></header><p className="node-visit__time">Activated {formatDate(visit.createdAt)} · updated {formatDate(visit.updatedAt)}</p>{visitAttempts.length === 0 ? <p className="attempt-empty">No attempt recorded for this visit.</p> : <div className="attempt-list">{visitAttempts.map((attempt, index) => <AttemptRow key={attempt.id} attempt={attempt} ordinal={index + 1} />)}</div>}</div></li>;
     })}</ol>}
     {unlinkedAttempts.length > 0 && <div className="unlinked-attempts"><h3>Point or legacy attempts</h3><p>These attempts do not name a durable node visit, so they are kept separate rather than guessed into the timeline.</p>{unlinkedAttempts.map((attempt, index) => <AttemptRow key={attempt.id} attempt={attempt} ordinal={index + 1} />)}</div>}
   </section>;
@@ -134,7 +134,7 @@ function NodeTimeline({ visits, attempts, unlinkedAttempts }: { visits: Schemas[
 
 function AttemptRow({ attempt, ordinal }: { attempt: Schemas["Attempt"]; ordinal: number }) {
   const target = attempt.pointId ? `${attempt.pointId} · point revision ${attempt.pointRevision}` : attempt.nodeId ?? "Unscoped attempt";
-  return <article className="attempt-row"><div className="attempt-row__ordinal">{ordinal}</div><div className="attempt-row__copy"><strong>{attempt.provider} · {target}</strong><span>{shortIdentifier(attempt.id)} · sequence {attempt.lastSequence}</span>{attempt.providerThreadId && <span>Provider thread {shortIdentifier(attempt.providerThreadId)}</span>}{attempt.logReference && <code>Log {attempt.logReference}</code>}</div><StatusPill status={attempt.status} /></article>;
+  return <article className="attempt-row"><div className="attempt-row__ordinal">{ordinal}</div><div className="attempt-row__copy"><strong>{attempt.provider} · {target}</strong><span>{shortIdentifier(attempt.id)} · sequence {attempt.lastSequence}</span>{attempt.providerThreadId && <span>Provider thread {shortIdentifier(attempt.providerThreadId)}</span>}{attempt.logReference && <code>Log {attempt.logReference}</code>}{attempt.pointId && <AppLink className="attempt-evidence-link" to={`/artifacts?targetKind=implementation_point&targetId=${encodeURIComponent(attempt.pointId)}&ingest=1`}>Add point evidence</AppLink>}</div><StatusPill status={attempt.status} /></article>;
 }
 
 function EventTimeline({ view }: { view: RunView }) {

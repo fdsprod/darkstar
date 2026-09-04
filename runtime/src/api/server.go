@@ -488,7 +488,8 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/artifacts" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifacts/") ||
-		path.Clean(request.URL.Path) == "/api/v1/artifact-bindings" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifact-bindings/") {
+		path.Clean(request.URL.Path) == "/api/v1/artifact-bindings" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifact-bindings/") ||
+		strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/representations/") {
 		s.serveArtifacts(response, request, requestID)
 		return
 	}

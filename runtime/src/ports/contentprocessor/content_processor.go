@@ -17,9 +17,9 @@ type Processor interface {
 }
 
 type Descriptor struct {
-	Name       string
-	Version    string
-	MediaTypes []string
+	Name       string   `json:"name"`
+	Version    string   `json:"version"`
+	MediaTypes []string `json:"mediaTypes"`
 }
 
 type SourceDescriptor struct {
@@ -39,9 +39,9 @@ const (
 )
 
 type Support struct {
-	State       SupportState
-	MediaType   string
-	Diagnostics []string
+	State       SupportState `json:"state"`
+	MediaType   string       `json:"mediaType"`
+	Diagnostics []string     `json:"diagnostics"`
 }
 
 type Limits struct {
