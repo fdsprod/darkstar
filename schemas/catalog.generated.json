@@ -49,6 +49,14 @@
       "version": "v1alpha1"
     },
     {
+      "file": "effective-configuration-v1alpha1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/effective-configuration-v1alpha1.schema.json",
+      "name": "effective-configuration-v1alpha1",
+      "sha256": "3fe5cb9b4b396f2766b9a11ca8cf9c2b280ed1dd98d45a762892d25b7d0acf66",
+      "version": "v1alpha1"
+    },
+    {
       "file": "endpoint-v1alpha1.schema.json",
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/endpoint-v1alpha1.schema.json",
@@ -69,7 +77,7 @@
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "acbb0edac0c7b99a7e1a464cec5bd14b1092a8dfe45a020b935e41224e6af392",
+      "sha256": "c8ce133c0d1a7dfbfa63c3b3821ee5faf2d58dbe2ac7c1eaf1b5e7368fa05232",
       "version": "v1alpha1"
     },
     {

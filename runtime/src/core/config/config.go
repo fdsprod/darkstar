@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -133,6 +135,108 @@ type Effective struct {
 type ResolvedValue struct {
 	value  any
 	source Source
+}
+
+// EffectiveReportSchemaVersion is the strict public projection version.
+const EffectiveReportSchemaVersion = 1
+
+// ValueKind identifies how an effective configuration value is represented.
+type ValueKind string
+
+const (
+	ValueString   ValueKind = "string"
+	ValueNumber   ValueKind = "number"
+	ValueBoolean  ValueKind = "boolean"
+	ValueNull     ValueKind = "null"
+	ValueJSON     ValueKind = "json"
+	ValueRedacted ValueKind = "redacted"
+)
+
+// FileScope is the closed set of ordinary configuration-file scopes.
+type FileScope string
+
+const (
+	FileScopeUser    FileScope = "user"
+	FileScopeProject FileScope = "project"
+)
+
+// File identifies one ordinary configuration file location. Secret files are
+// intentionally not representable in this response.
+type File struct {
+	Scope FileScope `json:"scope"`
+	Path  string    `json:"path"`
+}
+
+// DisplayValue is the safe, exact textual representation of a resolved value.
+type DisplayValue struct {
+	Kind    ValueKind `json:"kind"`
+	Display string    `json:"display"`
+}
+
+// Entry is one effective value with its winning source attribution.
+type Entry struct {
+	Path   string       `json:"path"`
+	Value  DisplayValue `json:"value"`
+	Source Source       `json:"source"`
+}
+
+// EffectiveReport is the read-only, redacted public configuration projection.
+type EffectiveReport struct {
+	SchemaVersion int     `json:"schemaVersion"`
+	ProjectRoot   string  `json:"projectRoot"`
+	Files         []File  `json:"files"`
+	Entries       []Entry `json:"entries"`
+}
+
+var (
+	secretTextPattern = regexp.MustCompile(`(?i)(?:\bbearer\s+\S+|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:authorization|password|passphrase|secret|token|api[_-]?key|credential|client[_-]?secret|private[_-]?key)\b\s*[:=]\s*\S+)`)
+	jwtPattern        = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
+	credentialPattern = regexp.MustCompile(`(?i)(?:[a-z][a-z0-9+.-]*://[^/@\s:]+:[^/@\s]+@|\b(?:github_pat_|gh[pousr]_|sk-)[A-Za-z0-9_-]{12,})`)
+)
+
+// NewEffectiveReport constructs a stable, path-sorted projection. It rejects
+// file descriptors outside ordinary user/project configuration so callers
+// cannot accidentally disclose a secrets-file location through this shape.
+func NewEffectiveReport(projectRoot string, files []File, effective Effective) (EffectiveReport, error) {
+	if !filepath.IsAbs(projectRoot) {
+		return EffectiveReport{}, fmt.Errorf("project root must be absolute: %q", projectRoot)
+	}
+	if len(files) != 2 {
+		return EffectiveReport{}, errors.New("effective configuration requires user and project file locations")
+	}
+	report := EffectiveReport{
+		SchemaVersion: EffectiveReportSchemaVersion,
+		ProjectRoot:   filepath.Clean(projectRoot),
+		Files:         make([]File, len(files)),
+		Entries:       make([]Entry, 0, len(effective.sources)),
+	}
+	seenFileScopes := make(map[FileScope]bool, len(files))
+	for index, file := range files {
+		if file.Scope != FileScopeUser && file.Scope != FileScopeProject {
+			return EffectiveReport{}, fmt.Errorf("configuration file scope must be user or project, got %q", file.Scope)
+		}
+		if seenFileScopes[file.Scope] {
+			return EffectiveReport{}, fmt.Errorf("duplicate %s configuration file", file.Scope)
+		}
+		seenFileScopes[file.Scope] = true
+		if !filepath.IsAbs(file.Path) {
+			return EffectiveReport{}, fmt.Errorf("%s configuration path must be absolute: %q", file.Scope, file.Path)
+		}
+		report.Files[index] = File{Scope: file.Scope, Path: filepath.Clean(file.Path)}
+	}
+	for pointer, source := range effective.sources {
+		value, found := valueAtPointer(effective.values, pointer)
+		if !found {
+			return EffectiveReport{}, fmt.Errorf("configuration source path %q has no value", pointer)
+		}
+		display, err := safeDisplay(pointer, value)
+		if err != nil {
+			return EffectiveReport{}, fmt.Errorf("display configuration value %q: %w", pointer, err)
+		}
+		report.Entries = append(report.Entries, Entry{Path: pointer, Value: display, Source: source})
+	}
+	sort.Slice(report.Entries, func(i, j int) bool { return report.Entries[i].Path < report.Entries[j].Path })
+	return report, nil
 }
 
 // Value returns a defensive copy of the resolved value.
@@ -318,4 +422,116 @@ func cloneValue(value any) (any, error) {
 	default:
 		return nil, fmt.Errorf("unsupported value type %T", value)
 	}
+}
+
+func valueAtPointer(values map[string]any, pointer string) (any, bool) {
+	if !strings.HasPrefix(pointer, "/") {
+		return nil, false
+	}
+	var current any = values
+	for _, encoded := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
+		segment := strings.ReplaceAll(strings.ReplaceAll(encoded, "~1", "/"), "~0", "~")
+		object, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current, ok = object[segment]
+		if !ok {
+			return nil, false
+		}
+	}
+	return current, true
+}
+
+func safeDisplay(pointer string, value any) (DisplayValue, error) {
+	if secretPath(pointer) || secretValue(value) {
+		return DisplayValue{Kind: ValueRedacted, Display: "[redacted]"}, nil
+	}
+	switch value := value.(type) {
+	case nil:
+		return DisplayValue{Kind: ValueNull, Display: "null"}, nil
+	case string:
+		return DisplayValue{Kind: ValueString, Display: value}, nil
+	case bool:
+		return DisplayValue{Kind: ValueBoolean, Display: strconv.FormatBool(value)}, nil
+	case int:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatInt(int64(value), 10)}, nil
+	case int8:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatInt(int64(value), 10)}, nil
+	case int16:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatInt(int64(value), 10)}, nil
+	case int32:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatInt(int64(value), 10)}, nil
+	case int64:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatInt(value, 10)}, nil
+	case uint:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatUint(uint64(value), 10)}, nil
+	case uint8:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatUint(uint64(value), 10)}, nil
+	case uint16:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatUint(uint64(value), 10)}, nil
+	case uint32:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatUint(uint64(value), 10)}, nil
+	case uint64:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatUint(value, 10)}, nil
+	case float32:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatFloat(float64(value), 'g', -1, 32)}, nil
+	case float64:
+		return DisplayValue{Kind: ValueNumber, Display: strconv.FormatFloat(value, 'g', -1, 64)}, nil
+	case map[string]any, []any:
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return DisplayValue{}, err
+		}
+		return DisplayValue{Kind: ValueJSON, Display: string(encoded)}, nil
+	default:
+		return DisplayValue{}, fmt.Errorf("unsupported value type %T", value)
+	}
+}
+
+func secretPath(pointer string) bool {
+	for _, encoded := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
+		segment := strings.ReplaceAll(strings.ReplaceAll(encoded, "~1", "/"), "~0", "~")
+		if secretKey(segment) {
+			return true
+		}
+	}
+	return false
+}
+
+func secretKey(key string) bool {
+	normalized := strings.ToLower(key)
+	normalized = strings.NewReplacer("_", "", "-", "", ".", "", " ", "").Replace(normalized)
+	switch normalized {
+	case "authorization", "cookie", "setcookie", "password", "passphrase", "secret", "secrets", "token", "accesstoken", "refreshtoken", "apikey", "credential", "credentials", "clientsecret", "privatekey":
+		return true
+	default:
+		// Effective configuration is a display surface, so prefer conservative
+		// withholding over leaking an opaque credential under a compound name.
+		return strings.Contains(normalized, "password") || strings.Contains(normalized, "passphrase") ||
+			strings.Contains(normalized, "secret") || strings.Contains(normalized, "token") ||
+			strings.Contains(normalized, "credential") || strings.Contains(normalized, "privatekey") ||
+			strings.Contains(normalized, "accesskey") || strings.Contains(normalized, "apikey") ||
+			strings.HasSuffix(normalized, "signingkey") || strings.HasSuffix(normalized, "encryptionkey")
+	}
+}
+
+func secretValue(value any) bool {
+	switch value := value.(type) {
+	case string:
+		return secretTextPattern.MatchString(value) || jwtPattern.MatchString(value) || credentialPattern.MatchString(value)
+	case map[string]any:
+		for key, item := range value {
+			if secretKey(key) || secretValue(item) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range value {
+			if secretValue(item) {
+				return true
+			}
+		}
+	}
+	return false
 }

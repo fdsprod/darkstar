@@ -36,7 +36,16 @@ func TestProjectAndWorkAPICommands(t *testing.T) {
 	defer closeTestServer(t, server)
 	endpoint, _ := server.Endpoint()
 
-	projectResponse := workRequest(t, endpoint, http.MethodPost, "/api/v1/projects", `{"name":"DARKSTAR","source":"C:\\src\\darkstar"}`, "project-command")
+	relativeResponse := workRequest(t, endpoint, http.MethodPost, "/api/v1/projects", `{"name":"Relative","source":"relative/path"}`, "relative-project-command")
+	assertAPIError(t, relativeResponse, http.StatusBadRequest, "VALIDATION_FAILED")
+	_ = relativeResponse.Body.Close()
+	missingSource := filepath.Join(t.TempDir(), "missing")
+	missingResponse := workRequest(t, endpoint, http.MethodPost, "/api/v1/projects", fmt.Sprintf(`{"name":"Missing","source":%q}`, missingSource), "missing-project-command")
+	assertAPIError(t, missingResponse, http.StatusBadRequest, "VALIDATION_FAILED")
+	_ = missingResponse.Body.Close()
+
+	projectSource := t.TempDir()
+	projectResponse := workRequest(t, endpoint, http.MethodPost, "/api/v1/projects", fmt.Sprintf(`{"name":"DARKSTAR","source":%q}`, projectSource), "project-command")
 	if projectResponse.StatusCode != http.StatusCreated {
 		t.Fatalf("project status = %d", projectResponse.StatusCode)
 	}

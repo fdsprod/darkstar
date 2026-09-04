@@ -13,6 +13,7 @@ import (
 
 	"darkstar/src/adapters/provider/fake"
 	"darkstar/src/adapters/statestore/sqlite"
+	"darkstar/src/core/config"
 	"darkstar/src/core/health"
 	"darkstar/src/daemon"
 	"darkstar/src/ports"
@@ -143,6 +144,52 @@ func TestReportReturnsCompleteHealthySnapshot(t *testing.T) {
 		if report.Checks[index].Subsystem != subsystem || report.Checks[index].Status != health.StatusHealthy {
 			t.Fatalf("check %d = %#v, want healthy %s", index, report.Checks[index], subsystem)
 		}
+	}
+}
+
+func TestEffectiveConfigurationUsesStartupProjectAndNeverLoadsSecrets(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	paths := testPaths(root)
+	projectRoot := filepath.Join(root, "project")
+	if err := os.MkdirAll(paths.Config, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".darkstar"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.Config, "config.yaml"), []byte("provider:\n  name: user-provider\n  timeout: 30\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.Config, "secrets.yaml"), []byte("token: never-load-this\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".darkstar", "config.yaml"), []byte("provider:\n  timeout: 60\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := New(Options{Paths: paths, ProjectRoot: projectRoot, Runner: fakeRunner{}}).EffectiveConfigurationForProject(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.SchemaVersion != config.EffectiveReportSchemaVersion || report.ProjectRoot != projectRoot || len(report.Files) != 2 {
+		t.Fatalf("report identity = %#v", report)
+	}
+	if report.Files[0].Path == filepath.Join(paths.Config, "secrets.yaml") || report.Files[1].Path == filepath.Join(paths.Config, "secrets.yaml") {
+		t.Fatalf("report files include secrets.yaml: %#v", report.Files)
+	}
+	if len(report.Entries) != 2 || report.Entries[0].Path != "/provider/name" || report.Entries[1].Path != "/provider/timeout" {
+		t.Fatalf("entries = %#v", report.Entries)
+	}
+	if report.Entries[1].Value.Display != "60" || report.Entries[1].Source.Scope() != config.ScopeProject {
+		t.Fatalf("project override = %#v", report.Entries[1])
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "never-load-this") || strings.Contains(strings.ToLower(string(encoded)), "secrets.yaml") {
+		t.Fatalf("configuration report disclosed secrets file content or path: %s", encoded)
 	}
 }
 

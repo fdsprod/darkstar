@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/effective-configuration-v1alpha1.schema.json",
+  "title": "DARKSTAR effective configuration report v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "projectRoot", "files", "entries"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "projectRoot": {"type": "string", "minLength": 1},
+    "files": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/file"}
+    },
+    "entries": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/entry"}
+    }
+  },
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "path"],
+      "properties": {
+        "scope": {"enum": ["user", "project"]},
+        "path": {"type": "string", "minLength": 1}
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "value", "source"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^(?:/(?:[^~/]|~0|~1)+)+$"},
+        "value": {"$ref": "#/$defs/value"},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "display"],
+      "properties": {
+        "kind": {"enum": ["string", "number", "boolean", "null", "json", "redacted"]},
+        "display": {"type": "string"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "reference"],
+      "properties": {
+        "scope": {"enum": ["default", "user", "project", "run", "cli"]},
+        "reference": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

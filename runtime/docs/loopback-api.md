@@ -59,6 +59,17 @@ entire diagnostic. The optional absolute `projectRoot` query selects the Git and
 project-configuration context; the CLI always supplies its current directory so
 a persistent per-user daemon does not report a repository left over from startup.
 
+`GET /api/v1/configuration/effective` is authenticated and read-only. It returns
+schema version 1, the selected absolute project root, the ordinary user and
+project configuration file locations, and effective entries sorted by JSON
+Pointer. Each entry carries its winning `default`, `user`, `project`, `run`, or
+`cli` source plus an exact display string for safe string, number, boolean,
+`null`, or JSON values. Secret-like paths and values are represented only as
+`{"kind":"redacted","display":"[redacted]"}`. The endpoint never loads or
+lists `secrets.yaml`, and it exposes no configuration write or validation
+mutation. Omitting `projectRoot` selects the daemon's startup project; a supplied
+value must be absolute.
+
 `GET /api/v1/events` is an authenticated Server-Sent Events feed over the
 authoritative global event sequence. Each message ID is its decimal global
 position, `Last-Event-ID` resumes strictly after that position, and live commits

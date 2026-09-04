@@ -16,6 +16,7 @@ import { CheckpointsPage } from "../pages/CheckpointsPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
 import { RunDetailPage } from "../pages/RunDetailPage";
 import { RunReadinessPage } from "../pages/RunReadinessPage";
+import { SettingsPage } from "../pages/SettingsPage";
 import { WorkDetailPage } from "../pages/WorkDetailPage";
 import { WorkflowsPage } from "../pages/WorkflowsPage";
 
@@ -131,7 +132,7 @@ export function RouteView() {
     case "agents": return <AgentsPage />;
     case "workflows": return <WorkflowsPage />;
     case "artifacts": return <ArtifactsPage />;
-    case "settings": return <PlaceholderPage eyebrow="System" title="Settings & Health" description="Understand effective configuration and the readiness of the daemon, repositories, providers, and delivery integrations." />;
+    case "settings": return <SettingsPage />;
     case "work": return <WorkDetailPage />;
     case "run": return <RunDetailPage />;
     case "readiness": return <RunReadinessPage />;

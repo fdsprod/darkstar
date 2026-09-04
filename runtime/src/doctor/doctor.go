@@ -154,6 +154,44 @@ func (doctor *Doctor) Report(ctx context.Context) (health.Report, error) {
 	return doctor.ReportForProject(ctx, "")
 }
 
+// EffectiveConfigurationForProject resolves ordinary user and project
+// configuration and returns its safe public projection. An empty project root
+// uses the daemon's startup project root. The separate secrets file is never
+// passed to the layered resolver.
+func (doctor *Doctor) EffectiveConfigurationForProject(ctx context.Context, projectRoot string) (config.EffectiveReport, error) {
+	if doctor == nil {
+		return config.EffectiveReport{}, errors.New("doctor is not configured")
+	}
+	if err := ctx.Err(); err != nil {
+		return config.EffectiveReport{}, err
+	}
+	if projectRoot == "" {
+		projectRoot = doctor.projectRoot
+	} else if !filepath.IsAbs(projectRoot) {
+		return config.EffectiveReport{}, errors.New("configuration project root must be absolute")
+	}
+	if !filepath.IsAbs(projectRoot) {
+		return config.EffectiveReport{}, errors.New("configuration project root is unavailable")
+	}
+	projectRoot = filepath.Clean(projectRoot)
+	locations, err := configuration.ResolveFileLocations(doctor.paths, projectRoot)
+	if err != nil {
+		return config.EffectiveReport{}, err
+	}
+	defaults, err := config.Defaults(map[string]any{})
+	if err != nil {
+		return config.EffectiveReport{}, err
+	}
+	effective, err := configuration.Resolve(defaults, locations)
+	if err != nil {
+		return config.EffectiveReport{}, err
+	}
+	return config.NewEffectiveReport(projectRoot, []config.File{
+		{Scope: config.FileScopeUser, Path: locations.UserConfig},
+		{Scope: config.FileScopeProject, Path: locations.ProjectConfig},
+	}, effective)
+}
+
 // ReportForProject uses projectRoot for repository and project-configuration
 // checks. An empty value uses the daemon's startup project root.
 func (doctor *Doctor) ReportForProject(ctx context.Context, projectRoot string) (health.Report, error) {

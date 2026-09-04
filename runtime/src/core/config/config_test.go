@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"darkstar/src/core/config"
@@ -115,6 +116,117 @@ func TestSourceMarshalsAsStablePublicShape(t *testing.T) {
 	}
 	if got, want := string(encoded), `{"scope":"cli","reference":"command line"}`; got != want {
 		t.Fatalf("json.Marshal() = %s, want %s", got, want)
+	}
+}
+
+func TestEffectiveReportSortsEntriesAndPreservesSafeDisplays(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	userPath := filepath.Join(root, "config", "config.yaml")
+	projectPath := filepath.Join(root, "project", ".darkstar", "config.yaml")
+	defaults := mustDefaults(t, map[string]any{
+		"zeta":   true,
+		"count":  12,
+		"nil":    nil,
+		"nested": map[string]any{"safe": "literal value"},
+		"array":  []any{"one", 2},
+	})
+	user := mustUser(t, userPath, map[string]any{"zeta": false})
+	effective, err := config.Resolve(defaults, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := config.NewEffectiveReport(filepath.Join(root, "project"), []config.File{
+		{Scope: config.FileScopeUser, Path: userPath},
+		{Scope: config.FileScopeProject, Path: projectPath},
+	}, effective)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.SchemaVersion != 1 || report.ProjectRoot != filepath.Join(root, "project") || len(report.Files) != 2 {
+		t.Fatalf("report identity = %#v", report)
+	}
+	want := []struct {
+		path    string
+		kind    config.ValueKind
+		display string
+	}{
+		{path: "/array", kind: config.ValueJSON, display: `["one",2]`},
+		{path: "/count", kind: config.ValueNumber, display: "12"},
+		{path: "/nested/safe", kind: config.ValueString, display: "literal value"},
+		{path: "/nil", kind: config.ValueNull, display: "null"},
+		{path: "/zeta", kind: config.ValueBoolean, display: "false"},
+	}
+	if len(report.Entries) != len(want) {
+		t.Fatalf("entries = %#v", report.Entries)
+	}
+	for index, expected := range want {
+		entry := report.Entries[index]
+		if entry.Path != expected.path || entry.Value.Kind != expected.kind || entry.Value.Display != expected.display {
+			t.Fatalf("entry %d = %#v, want %#v", index, entry, expected)
+		}
+	}
+	if report.Entries[4].Source.Scope() != config.ScopeUser || report.Entries[4].Source.Reference() != userPath {
+		t.Fatalf("winning source = %#v", report.Entries[4].Source)
+	}
+}
+
+func TestEffectiveReportRedactsSecretPathsAndSecretLikeValues(t *testing.T) {
+	t.Parallel()
+	secret := "never-emit-this-value"
+	awsSecret := "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+	clientSecret := "opaque-client-secret-value"
+	defaults := mustDefaults(t, map[string]any{
+		"apiToken":           secret,
+		"awsSecretAccessKey": awsSecret,
+		"clientSecretValue":  clientSecret,
+		"safeName":           "Authorization: Bearer " + secret,
+		"nested":             []any{map[string]any{"password": secret}},
+		"ordinary":           "visible",
+	})
+	effective, err := config.Resolve(defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	report, err := config.NewEffectiveReport(root, []config.File{
+		{Scope: config.FileScopeUser, Path: filepath.Join(root, "config.yaml")},
+		{Scope: config.FileScopeProject, Path: filepath.Join(root, ".darkstar", "config.yaml")},
+	}, effective)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), awsSecret) || strings.Contains(string(encoded), clientSecret) {
+		t.Fatalf("report disclosed secret: %s", encoded)
+	}
+	redacted := 0
+	for _, entry := range report.Entries {
+		if entry.Value.Kind == config.ValueRedacted && entry.Value.Display == "[redacted]" {
+			redacted++
+		}
+	}
+	if redacted != 5 {
+		t.Fatalf("redacted entries = %d, report = %#v", redacted, report)
+	}
+}
+
+func TestEffectiveReportRejectsSecretFileScope(t *testing.T) {
+	t.Parallel()
+	defaults := mustDefaults(t, nil)
+	effective, err := config.Resolve(defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if _, err := config.NewEffectiveReport(root, []config.File{
+		{Scope: config.FileScope("secret"), Path: filepath.Join(root, "secrets.yaml")},
+		{Scope: config.FileScopeProject, Path: filepath.Join(root, ".darkstar", "config.yaml")},
+	}, effective); err == nil {
+		t.Fatal("NewEffectiveReport() accepted a secret file descriptor")
 	}
 }
 

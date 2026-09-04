@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -60,6 +62,12 @@ func (s *Server) serveProjects(response http.ResponseWriter, request *http.Reque
 				writeWorkError(response, requestID, err)
 				return
 			}
+			canonicalSource, err := existingAbsoluteDirectory(input.Source)
+			if err != nil {
+				writeWorkError(response, requestID, err)
+				return
+			}
+			input.Source = canonicalSource
 			value, err := service.RegisterProject(request.Context(), input, key)
 			if err != nil {
 				writeWorkError(response, requestID, err)
@@ -92,6 +100,19 @@ func (s *Server) serveProjects(response http.ResponseWriter, request *http.Reque
 		return
 	}
 	writeJSON(response, http.StatusOK, value)
+}
+
+func existingAbsoluteDirectory(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || !filepath.IsAbs(value) {
+		return "", fmtWorkInvalid("project source must be an existing absolute directory")
+	}
+	canonical := filepath.Clean(value)
+	info, err := os.Stat(canonical)
+	if err != nil || !info.IsDir() {
+		return "", fmtWorkInvalid("project source must be an existing absolute directory")
+	}
+	return canonical, nil
 }
 
 func (s *Server) serveWorkItems(response http.ResponseWriter, request *http.Request, requestID string) {

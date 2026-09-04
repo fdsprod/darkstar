@@ -74,13 +74,17 @@ export class DarkstarApiClient {
       signal: options.signal,
     });
     if (!response.ok) throw await toApiError(response);
-    if (response.status === 204) return undefined as ApiOperations[TId]["response"];
+    if (response.status === 204) return undefined as unknown as ApiOperations[TId]["response"];
     return response.json() as Promise<ApiOperations[TId]["response"]>;
   }
 
   getHealth(signal?: AbortSignal) { return this.operation("getHealth", { signal }); }
   getApiRoot(signal?: AbortSignal) { return this.operation("getApiRoot", { signal }); }
+  getDoctorReport(projectRoot?: string, signal?: AbortSignal) { return this.operation("getDoctorReport", { query: { projectRoot }, signal }); }
+  getEffectiveConfiguration(projectRoot?: string, signal?: AbortSignal) { return this.operation("getEffectiveConfiguration", { query: { projectRoot }, signal }); }
   listProjects(signal?: AbortSignal) { return this.operation("listProjects", { signal }); }
+  registerProject(body: Schemas["ProjectRegistration"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("registerProject", { body, idempotencyKey, signal }); }
+  getProject(projectId: string, signal?: AbortSignal) { return this.operation("getProject", { path: { projectId }, signal }); }
   listWorkItems(projectId?: string, signal?: AbortSignal) { return this.operation("listWorkItems", { query: { projectId }, signal }); }
   listRuns(query: { after?: string; limit?: number } = {}, signal?: AbortSignal) { return this.operation("listRuns", { query, signal }); }
   getRun(runId: string, signal?: AbortSignal) { return this.operation("getRun", { path: { runId }, signal }); }
