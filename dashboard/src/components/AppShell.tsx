@@ -6,13 +6,20 @@ import { Icon, type IconName } from "./Icon";
 
 interface NavItem { label: string; to: string; icon: IconName; routeIds: string[] }
 
-const primaryNavigation: NavItem[] = [
-  { label: "Board", to: "/board", icon: "board", routeIds: ["board", "work", "run", "readiness"] },
-  { label: "Checkpoints", to: "/checkpoints", icon: "checkpoints", routeIds: ["checkpoints"] },
-  { label: "Agents", to: "/agents", icon: "agents", routeIds: ["agents"] },
-  { label: "Workflows", to: "/workflows", icon: "workflow", routeIds: ["workflows"] },
-  { label: "Artifacts", to: "/artifacts", icon: "artifact", routeIds: ["artifacts", "artifact"] },
+const navigationGroups: Array<{ label: string; items: NavItem[] }> = [
+  { label: "Work", items: [{ label: "Board", to: "/board", icon: "board", routeIds: ["board", "work", "run", "readiness"] }] },
+  { label: "Operations", items: [
+    { label: "Checkpoints", to: "/checkpoints", icon: "checkpoints", routeIds: ["checkpoints"] },
+    { label: "Agents", to: "/agents", icon: "agents", routeIds: ["agents"] },
+  ] },
+  { label: "Library", items: [
+    { label: "Workflows", to: "/workflows", icon: "workflow", routeIds: ["workflows"] },
+    { label: "Artifacts", to: "/artifacts", icon: "artifact", routeIds: ["artifacts", "artifact"] },
+  ] },
+  { label: "System", items: [{ label: "Settings & Health", to: "/settings", icon: "settings", routeIds: ["settings"] }] },
 ];
+
+const primaryNavigation = navigationGroups.flatMap((group) => group.items);
 
 export function AppShell() {
   const { route } = useRouter();
@@ -95,28 +102,22 @@ export function AppShell() {
           <button ref={closeNavigationRef} className="icon-button sidebar__close" type="button" aria-label="Close navigation" onClick={() => closeNavigation()}><Icon name="x" /></button>
         </div>
 
-        <div className="workspace-switcher" aria-label="Current workspace">
+        <div className="workspace-switcher workspace-identity" aria-label="Current workspace">
           <span className="workspace-switcher__avatar">SF</span>
-          <span className="workspace-switcher__copy"><strong>Software Factory</strong><small>Local workspace</small></span>
-          <Icon name="chevron-down" />
+          <span className="workspace-switcher__copy"><strong>Software Factory</strong><small>Local workspace · switching unavailable</small></span>
         </div>
 
         <nav className="primary-nav" aria-label="Primary">
-          <p className="nav-label">Workspace</p>
-          {primaryNavigation.map((item) => {
-            const active = item.routeIds.includes(route.id);
-            return (
-              <AppLink key={item.to} to={item.to} className="nav-item" ariaCurrent={active ? "page" : undefined} onNavigate={() => closeNavigation(false)}>
-                <Icon name={item.icon} /><span>{item.label}</span>
-              </AppLink>
-            );
-          })}
+          {navigationGroups.map((group) => <section className="nav-group" aria-labelledby={`nav-${group.label.toLowerCase()}`} key={group.label}>
+            <p className="nav-label" id={`nav-${group.label.toLowerCase()}`}>{group.label}</p>
+            {group.items.map((item) => {
+              const active = item.routeIds.includes(route.id);
+              return <AppLink key={item.to} to={item.to} className="nav-item" ariaCurrent={active ? "page" : undefined} onNavigate={() => closeNavigation(false)}><Icon name={item.icon} /><span>{item.label}</span></AppLink>;
+            })}
+          </section>)}
         </nav>
 
         <div className="sidebar__footer">
-          <AppLink to="/settings" className="nav-item" ariaCurrent={route.id === "settings" ? "page" : undefined} onNavigate={() => closeNavigation(false)}>
-            <Icon name="settings" /><span>Settings & Health</span>
-          </AppLink>
           <div className="control-plane" data-connection={state.connection} aria-live="polite">
             <span className="control-plane__indicator" aria-hidden="true" />
             <span><strong>Local control plane</strong><small>{connectionLabel(state.connection, state.hydration)}</small></span>
@@ -134,7 +135,6 @@ export function AppShell() {
             <button className="command-button" type="button" onClick={() => paletteRef.current?.showModal()}>
               <Icon name="search" /><span>Search or jump to…</span><kbd>Ctrl K</kbd>
             </button>
-            <AppLink className="button button--primary button--compact" to="/board?create=1"><Icon name="create" /><span>Create work</span></AppLink>
           </div>
         </header>
         <main ref={mainRef} id="main-content" className="main-content" tabIndex={-1}><RouteView /></main>

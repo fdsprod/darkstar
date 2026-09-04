@@ -4,6 +4,7 @@ import { apiClient, ApiRequestError } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
 import { Icon } from "../components/Icon";
+import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import {
   LIFECYCLE_COLUMNS,
@@ -93,10 +94,7 @@ export function BoardPage() {
   const filtered = Boolean(projectId || workflowId || query || view === "attention");
   return (
     <div className="page page--board">
-      <header className="page-header board-page-header">
-        <div><p className="eyebrow">Operational workspace</p><h1>Lifecycle board</h1><p className="page-header__description">Live, server-authoritative work from intake through verified delivery.</p></div>
-        <button className="button button--primary" type="button" onClick={() => createDialog.current?.showModal()} disabled={!state.snapshot.projects.some((project) => project.status === "active")}><Icon name="create" />Create work</button>
-      </header>
+      <PageHeader className="board-page-header" eyebrow="Operational workspace" title="Lifecycle board" description="Live, server-authoritative work from intake through verified delivery." breadcrumbs={[{ label: "Board" }]} actions={<button className="button button--primary" type="button" onClick={() => createDialog.current?.showModal()} disabled={!state.snapshot.projects.some((project) => project.status === "active")}><Icon name="create" />Create work</button>} />
 
       <div className="board-toolbar" aria-label="Board controls">
         <div className="view-tabs" aria-label="Board view">

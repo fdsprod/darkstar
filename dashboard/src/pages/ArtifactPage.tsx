@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
+import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, formatDate, StatusPill, SummaryFact } from "./WorkDetailPage";
 import { humanize, shortIdentifier } from "./runDetailModel";
@@ -11,9 +12,11 @@ import { buildArtifactRevisionRequest, buildArtifactTarget, decodeArtifactImpact
 type Schemas = components["schemas"];
 
 export function ArtifactPage() {
-  const { route, search } = useRouter();
+  const { route, search, navigate } = useRouter();
   const { state } = useDashboardState();
   const artifactId = route.params.artifactId;
+  const params = useMemo(() => new URLSearchParams(search), [search]);
+  const requestedVersion = Number.parseInt(params.get("revision") ?? "", 10);
   const [revisions, setRevisions] = useState<DecodedArtifactView[]>();
   const [selectedVersion, setSelectedVersion] = useState<number>();
   const [error, setError] = useState("");
@@ -32,12 +35,15 @@ export function ArtifactPage() {
       }
       latestVersionRef.current = all[0].artifact.version;
       setRevisions(all);
-      setSelectedVersion((current) => all.some((value) => value.artifact.version === (preferredVersion ?? current)) ? (preferredVersion ?? current) : all[0].artifact.version);
+      setSelectedVersion((current) => {
+        const desired = preferredVersion ?? (Number.isSafeInteger(requestedVersion) ? requestedVersion : current);
+        return all.some((value) => value.artifact.version === desired) ? desired : all[0].artifact.version;
+      });
       setError("");
     } catch (cause) {
       if (!signal?.aborted) setError(artifactLoadError(cause));
     }
-  }, [artifactId]);
+  }, [artifactId, requestedVersion]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -45,9 +51,14 @@ export function ArtifactPage() {
     return () => abort.abort();
   }, [load, state.cursor]);
 
-  if (error && !revisions) return <DetailFailure title="Artifact unavailable" message={error} />;
-  if (!revisions || selectedVersion === undefined) return <DetailLoading label="Loading artifact revisions" />;
+  if (error && !revisions) return <DetailFailure title="Artifact unavailable" message={error} pageTitle="Artifact" breadcrumbs={[{ label: "Artifacts", to: "/artifacts" }, { label: shortIdentifier(artifactId) }]} />;
+  if (!revisions || selectedVersion === undefined) return <DetailLoading label="Loading artifact revisions" pageTitle="Artifact" breadcrumbs={[{ label: "Artifacts", to: "/artifacts" }, { label: shortIdentifier(artifactId) }]} />;
   const selected = revisions.find((value) => value.artifact.version === selectedVersion) ?? revisions[0];
+  function selectVersion(version: number, replace = false) {
+    setSelectedVersion(version);
+    const next = new URLSearchParams(params); next.set("revision", String(version));
+    navigate(`/artifacts/${encodeURIComponent(artifactId)}?${next}`, { replace });
+  }
 
   async function extract() {
     setExtracting(true); setError("");
@@ -57,13 +68,13 @@ export function ArtifactPage() {
   }
 
   return <div className="page detail-page artifact-page">
-    <nav className="detail-breadcrumb" aria-label="Breadcrumb"><AppLink to="/board">Board</AppLink><span aria-hidden="true">/</span><span>Artifacts</span><span aria-hidden="true">/</span><span>{shortIdentifier(artifactId)}</span></nav>
-    <header className="page-header detail-header artifact-header"><div><p className="eyebrow">Immutable artifact · revision {selected.artifact.version}</p><h1>{selected.artifact.sourceName}</h1><p className="page-header__description">Inspect exact source metadata, safe derived previews, provenance, extraction state, and read-only late-evidence impact.</p></div><div className="run-header-actions"><StatusPill status={selected.artifact.status} />{selected.artifact.status === "stored" ? <DownloadOriginal view={selected} /> : <span className="artifact-download-policy">Original preserved; download unavailable by inspection policy.</span>}<button type="button" className="button" disabled={extracting} onClick={() => void extract()}>{extracting ? "Extracting…" : selected.representations.length ? "Retry extraction" : "Extract"}</button><button type="button" className="button button--primary" disabled={selected.artifact.version !== revisions[0].artifact.version} title={selected.artifact.version !== revisions[0].artifact.version ? "Select the latest revision before creating a new version." : undefined} onClick={() => revisionDialog.current?.showModal()}>{selected.artifact.version === revisions[0].artifact.version ? "Create revision" : "Select latest to revise"}</button></div></header>
+    <PageHeader className="detail-header artifact-header" eyebrow={`Immutable artifact · revision ${selected.artifact.version}`} title={selected.artifact.sourceName} description="Inspect exact source metadata, safe derived previews, provenance, extraction state, and read-only late-evidence impact." breadcrumbs={[{ label: "Artifacts", to: "/artifacts" }, { label: shortIdentifier(artifactId), to: `/artifacts/${encodeURIComponent(artifactId)}` }, { label: `Revision ${selected.artifact.version}` }]} status={<StatusPill status={selected.artifact.status} />} actions={<>{selected.artifact.status === "stored" ? <DownloadOriginal view={selected} /> : <span className="artifact-download-policy">Original preserved; download unavailable by inspection policy.</span>}<button type="button" className="button" disabled={extracting} onClick={() => void extract()}>{extracting ? "Extracting…" : selected.representations.length ? "Retry extraction" : "Extract"}</button><button type="button" className="button button--primary" disabled={selected.artifact.version !== revisions[0].artifact.version} aria-describedby={selected.artifact.version !== revisions[0].artifact.version ? "artifact-revision-guidance" : undefined} onClick={() => revisionDialog.current?.showModal()}>{selected.artifact.version === revisions[0].artifact.version ? "Create revision" : "Select latest to revise"}</button></>} />
+    {selected.artifact.version !== revisions[0].artifact.version && <p id="artifact-revision-guidance" className="action-guidance">Select the latest revision before creating a new version.</p>}
     {notice && <p className="detail-action-message" role="status">{notice}</p>}
     {error && <p className="detail-action-message detail-action-message--error" role="alert">{error}</p>}
     <section className="detail-summary artifact-summary" aria-label="Artifact summary"><SummaryFact label="Artifact" value={selected.artifact.artifactId} mono /><SummaryFact label="Revision" value={String(selected.artifact.version)} /><SummaryFact label="Freshness" value={humanize(selected.freshness)} /><SummaryFact label="Created" value={formatDate(selected.artifact.createdAt)} /></section>
-    <div className="artifact-layout"><aside className="artifact-revision-rail" aria-label="Artifact revisions"><div className="section-heading"><div><p className="eyebrow">Recorded history</p><h2>Revisions</h2></div><span className="section-count">{revisions.length}</span></div><ol>{revisions.map((revision) => <li key={revision.artifact.version}><button type="button" aria-current={revision.artifact.version === selected.artifact.version ? "true" : undefined} onClick={() => setSelectedVersion(revision.artifact.version)}><span>v{revision.artifact.version}</span><strong>{revision.artifact.sourceName}</strong><small>{formatDate(revision.artifact.createdAt)}</small><em>{humanize(revision.freshness)}</em></button></li>)}</ol><p>Versions are ordered from the artifact registry. The dashboard does not infer missing revisions.</p></aside><section className="artifact-primary"><ArtifactMetadata view={selected} /><RevisionComparison artifactId={artifactId} selected={selected} revisions={revisions} /><Representations values={selected.representations} /><ImpactPanel view={selected} search={search} /><Provenance view={selected} /></section></div>
-    <RevisionDialog refValue={revisionDialog} artifact={selected} onCreated={async (version) => { setNotice(`Artifact revision ${version} was durably stored.`); await load(undefined, version); }} onStale={async () => { setNotice("Artifact state changed before the revision completed. Review the refreshed history before trying again."); await load(); }} />
+    <div className="artifact-layout"><aside className="artifact-revision-rail" aria-label="Artifact revisions"><div className="section-heading"><div><p className="eyebrow">Recorded history</p><h2>Revisions</h2></div><span className="section-count">{revisions.length}</span></div><ol>{revisions.map((revision) => <li key={revision.artifact.version}><button type="button" aria-current={revision.artifact.version === selected.artifact.version ? "true" : undefined} onClick={() => selectVersion(revision.artifact.version)}><span>v{revision.artifact.version}</span><strong>{revision.artifact.sourceName}</strong><small>{formatDate(revision.artifact.createdAt)}</small><em>{humanize(revision.freshness)}</em></button></li>)}</ol><p>Versions are ordered from the artifact registry. The dashboard does not infer missing revisions.</p></aside><section className="artifact-primary"><ArtifactMetadata view={selected} /><RevisionComparison artifactId={artifactId} selected={selected} revisions={revisions} /><Representations values={selected.representations} /><ImpactPanel view={selected} search={search} /><Provenance view={selected} /></section></div>
+    <RevisionDialog refValue={revisionDialog} artifact={selected} onCreated={async (version) => { setNotice(`Artifact revision ${version} was durably stored.`); selectVersion(version, true); await load(undefined, version); }} onStale={async () => { setNotice("Artifact state changed before the revision completed. Review the refreshed history before trying again."); await load(); }} />
   </div>;
 }
 

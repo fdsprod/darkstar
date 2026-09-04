@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { tabKeyTarget } from "../accessibility/keyboard";
+import { useRouter } from "../app/router";
+import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { formatDate, SummaryFact } from "./WorkDetailPage";
 import { humanize, shortIdentifier } from "./runDetailModel";
@@ -14,15 +16,18 @@ const workflowTabs: WorkflowTab[] = ["preview", "graph", "readiness", "definitio
 
 export function WorkflowsPage() {
   const { state } = useDashboardState();
+  const { search, navigate } = useRouter();
+  const params = useMemo(() => new URLSearchParams(search), [search]);
   const [catalog, setCatalog] = useState<Schemas["WorkflowVersionSummary"][]>([]);
-  const [selectedKey, setSelectedKey] = useState("");
   const [query, setQuery] = useState("");
   const [catalogState, setCatalogState] = useState<"loading" | "ready" | "error">("loading");
   const [definition, setDefinition] = useState<Schemas["WorkflowDefinition"]>();
   const [graph, setGraph] = useState<Schemas["WorkflowGraph"]>();
   const [detailError, setDetailError] = useState("");
-  const [tab, setTab] = useState<WorkflowTab>("preview");
+  const tab = workflowTabs.includes(params.get("tab") as WorkflowTab) ? params.get("tab") as WorkflowTab : "preview";
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  function setTab(next: WorkflowTab) { const value = new URLSearchParams(params); value.set("tab", next); navigate(`/workflows?${value}`); }
+  function selectWorkflow(key: string) { const value = new URLSearchParams(params); value.set("workflow", key); navigate(`/workflows?${value}`); }
   function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     const target = tabKeyTarget(index, event.key, workflowTabs.length);
     if (target === undefined) return;
@@ -35,12 +40,13 @@ export function WorkflowsPage() {
     void apiClient.listWorkflows(undefined, abort.signal).then((values) => {
       const sorted = sortWorkflowVersions(values);
       setCatalog(sorted); setCatalogState("ready");
-      setSelectedKey((current) => sorted.some((item) => workflowKey(item) === current) ? current : sorted[0] ? workflowKey(sorted[0]) : "");
     }).catch(() => { if (!abort.signal.aborted) setCatalogState("error"); });
     return () => abort.abort();
   }, [state.cursor]);
 
-  const selected = catalog.find((item) => workflowKey(item) === selectedKey);
+  const requestedKey = params.get("workflow") ?? "";
+  const selected = catalog.find((item) => workflowKey(item) === requestedKey) ?? catalog[0];
+  const selectedKey = selected ? workflowKey(selected) : "";
   useEffect(() => {
     if (!selected) { setDefinition(undefined); setGraph(undefined); return; }
     const abort = new AbortController();
@@ -57,7 +63,7 @@ export function WorkflowsPage() {
   const visibleCatalog = catalog.filter((item) => `${item.name} ${item.version} ${item.sourceScope}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   return <div className="page workflows-page">
-    <header className="page-header workflows-header"><div><p className="eyebrow">Configuration</p><h1>Workflows</h1><p className="page-header__description">Inspect installed immutable workflow versions and preview a validated route without changing a run.</p></div><span className="preview-only-badge">Read-only catalog</span></header>
+    <PageHeader className="workflows-header" eyebrow="Configuration" title="Workflows" description="Inspect installed immutable workflow versions and preview a validated route without changing a run." breadcrumbs={[{ label: "Workflows" }]} readOnly="Read-only catalog" />
     {catalogState === "error" && <div className="board-notice board-notice--error" role="alert"><strong>Workflow catalog unavailable.</strong><span>Check daemon health and try again.</span></div>}
     <div className="workflow-layout">
       <aside className="workflow-catalog" aria-label="Installed workflow versions">
@@ -65,7 +71,7 @@ export function WorkflowsPage() {
         <div className="workflow-catalog__heading"><span>Installed versions</span><strong>{catalog.length}</strong></div>
         {catalogState === "loading" && <p className="workflow-catalog__empty" aria-live="polite">Loading installed workflows…</p>}
         {catalogState === "ready" && visibleCatalog.length === 0 && <p className="workflow-catalog__empty">{catalog.length ? "No versions match this filter." : "No workflows are installed. Install one with the CLI first."}</p>}
-        <div className="workflow-version-list">{visibleCatalog.map((item) => <button type="button" key={workflowKey(item)} className="workflow-version" aria-pressed={workflowKey(item) === selectedKey} onClick={() => setSelectedKey(workflowKey(item))}><span className="workflow-version__mark" aria-hidden="true">◇</span><span><strong>{item.name}</strong><small>v{item.version} · {humanize(item.sourceScope)}</small></span></button>)}</div>
+        <div className="workflow-version-list">{visibleCatalog.map((item) => <button type="button" key={workflowKey(item)} className="workflow-version" aria-pressed={workflowKey(item) === selectedKey} onClick={() => selectWorkflow(workflowKey(item))}><span className="workflow-version__mark" aria-hidden="true">◇</span><span><strong>{item.name}</strong><small>v{item.version} · {humanize(item.sourceScope)}</small></span></button>)}</div>
       </aside>
 
       <section className="workflow-workspace">

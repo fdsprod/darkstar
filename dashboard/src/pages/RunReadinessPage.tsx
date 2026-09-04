@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
+import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, formatDate, StatusPill, SummaryFact } from "./WorkDetailPage";
 import { humanize, shortIdentifier } from "./runDetailModel";
@@ -57,12 +58,11 @@ export function RunReadinessPage() {
     return () => abort.abort();
   }, [load, state.cursor]);
 
-  if (error && !run) return <DetailFailure title="Readiness unavailable" message={error} />;
-  if (!run || !work || (!view && !missing)) return <DetailLoading label="Loading run readiness" />;
+  if (error && !run) return <DetailFailure title="Readiness unavailable" message={error} pageTitle="Readiness" breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(workId), to: `/work/${encodeURIComponent(workId)}` }, { label: shortIdentifier(runId), to: `/work/${encodeURIComponent(workId)}/run/${encodeURIComponent(runId)}` }, { label: "Readiness" }]} />;
+  if (!run || !work || (!view && !missing)) return <DetailLoading label="Loading run readiness" pageTitle="Readiness" breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(workId), to: `/work/${encodeURIComponent(workId)}` }, { label: shortIdentifier(runId), to: `/work/${encodeURIComponent(workId)}/run/${encodeURIComponent(runId)}` }, { label: "Readiness" }]} />;
 
   return <div className="page detail-page readiness-page">
-    <nav className="detail-breadcrumb" aria-label="Breadcrumb"><AppLink to="/board">Board</AppLink><span aria-hidden="true">/</span><AppLink to={`/work/${encodeURIComponent(work.id)}`}>{shortIdentifier(work.id)}</AppLink><span aria-hidden="true">/</span><AppLink to={`/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(run.id)}`}>{shortIdentifier(run.id)}</AppLink><span aria-hidden="true">/</span><span>Readiness</span></nav>
-    <header className="page-header detail-header readiness-header"><div><p className="eyebrow">Run readiness · {shortIdentifier(run.id)}</p><h1>{work.title}</h1><p className="page-header__description">Review the latest durable assessment and record one server-authorized choice. Readiness decisions do not directly resume, extend, or cancel the run.</p></div><StatusPill status={run.status} /></header>
+    <PageHeader className="detail-header readiness-header" eyebrow={`Run readiness · ${shortIdentifier(run.id)}`} title={work.title} description="Review the latest durable assessment and record one server-authorized choice. Readiness decisions do not directly resume, extend, or cancel the run." breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(work.id), to: `/work/${encodeURIComponent(work.id)}` }, { label: shortIdentifier(run.id), to: `/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(run.id)}` }, { label: "Readiness" }]} status={<StatusPill status={run.status} />} readOnly={view?.status === "decided" ? "Decision recorded" : undefined} />
     {notice && <p className="detail-action-message" role="status">{notice}</p>}
     {error && <p className="detail-action-message detail-action-message--error" role="alert">{error}</p>}
     {missing ? <NoAssessment runId={run.id} /> : view && <ReadinessWorkspace view={view} run={run} dialogRef={dialogRef} onAccepted={(next, message) => { acceptView(next); setNotice(message); }} onStale={async () => { setNotice("The readiness assessment changed or was already decided. Review the refreshed assessment before choosing again."); await load(); }} />}

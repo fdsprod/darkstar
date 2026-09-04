@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 
 import { ApiRequestError, apiClient } from "../api/client";
 import { AppLink, useRouter } from "../app/router";
+import { PageHeader } from "../components/PageStructure";
 import { tabKeyTarget } from "../accessibility/keyboard";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, formatDate, StatusPill } from "./WorkDetailPage";
@@ -40,10 +41,10 @@ export function ArtifactsPage() {
   const latest = useMemo(() => latestArtifacts(items ?? []), [items]);
   function closeDialog() { dialog.current?.close(); if (params.has("ingest")) { const next = new URLSearchParams(params); next.delete("ingest"); navigate(`/artifacts${next.size ? `?${next}` : ""}`, { replace: true }); } }
 
-  if (error && !items) return <DetailFailure title="Evidence unavailable" message={error} />;
-  if (!items) return <DetailLoading label="Loading artifact registry" />;
+  if (error && !items) return <DetailFailure title="Evidence unavailable" message={error} pageTitle="Artifacts" breadcrumbs={[{ label: "Artifacts" }]} />;
+  if (!items) return <DetailLoading label="Loading artifact registry" pageTitle="Artifacts" breadcrumbs={[{ label: "Artifacts" }]} />;
   return <div className="page artifacts-page">
-    <header className="page-header artifacts-header"><div><p className="eyebrow">Immutable evidence registry</p><h1>Artifacts</h1><p className="page-header__description">Ingest files or pasted evidence, bind an exact version to execution scope, and inspect durable representations and provenance.</p></div><button type="button" className="button button--primary" onClick={() => dialog.current?.showModal()}>Add evidence</button></header>
+    <PageHeader className="artifacts-header" eyebrow="Immutable evidence registry" title="Artifacts" description="Ingest files or pasted evidence, bind an exact version to execution scope, and inspect durable representations and provenance." breadcrumbs={[{ label: "Artifacts" }]} actions={<button type="button" className="button button--primary" onClick={() => dialog.current?.showModal()}>Add evidence</button>} />
     {notice && <p className="detail-action-message" role="status">{notice}</p>}{error && <p className="detail-action-message detail-action-message--error" role="alert">{error}</p>}
     <ArtifactFilters params={params} navigate={navigate} count={latest.length} />
     {requestedTarget && <p className="artifact-scope-note">Showing exact versions actively bound to <strong>{humanize(requestedTarget.kind)}</strong> <code>{requestedTarget.id}</code>.</p>}

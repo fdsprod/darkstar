@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
+import { PageHeader, type BreadcrumbItem } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { humanize, shortIdentifier, statusTone } from "./runDetailModel";
 
@@ -24,22 +25,14 @@ export function WorkDetailPage() {
     return () => abort.abort();
   }, [state.cursor, workId]);
 
-  if (error) return <DetailFailure title="Work item unavailable" message={error} />;
-  if (!view) return <DetailLoading label="Loading work item" />;
+  if (error) return <DetailFailure title="Work item unavailable" message={error} pageTitle="Work item" breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(workId) }]} />;
+  if (!view) return <DetailLoading label="Loading work item" pageTitle="Work item" breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(workId) }]} />;
 
   const project = state.snapshot.projects.find((candidate) => candidate.id === view.work.projectId);
   const runs = [...view.runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id));
   return (
     <div className="page detail-page">
-      <nav className="detail-breadcrumb" aria-label="Breadcrumb"><AppLink to="/board">Board</AppLink><span aria-hidden="true">/</span><span>{shortIdentifier(view.work.id)}</span></nav>
-      <header className="page-header detail-header">
-        <div>
-          <p className="eyebrow">{project?.name ?? "Work item"} · Priority {view.work.priority}</p>
-          <h1>{view.work.title}</h1>
-          <p className="page-header__description">Durable request and run history. Status changes shown here come from daemon projections.</p>
-        </div>
-        <div className="run-header-actions"><StatusPill status={view.work.status} /><AppLink className="button button--primary" to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(view.work.id)}&ingest=1`}>Add evidence</AppLink></div>
-      </header>
+      <PageHeader className="detail-header" eyebrow={`${project?.name ?? "Work item"} · Priority ${view.work.priority}`} title={view.work.title} description="Durable request and run history. Status changes shown here come from daemon projections." breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(view.work.id) }]} status={<StatusPill status={view.work.status} />} actions={<AppLink className="button button--primary" to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(view.work.id)}&ingest=1`}>Add evidence</AppLink>} />
 
       <section className="detail-summary" aria-label="Work item summary">
         <SummaryFact label="Identifier" value={view.work.id} mono />
@@ -72,12 +65,12 @@ export function WorkDetailPage() {
   );
 }
 
-export function DetailLoading({ label }: { label: string }) {
-  return <div className="page detail-page" aria-busy="true" aria-live="polite"><div className="detail-loading"><span /><span /><span /><p>{label}…</p></div></div>;
+export function DetailLoading({ label, pageTitle, breadcrumbs }: { label: string; pageTitle?: string; breadcrumbs?: BreadcrumbItem[] }) {
+  return <div className={pageTitle ? "page detail-page" : undefined} aria-busy="true" aria-live="polite">{pageTitle && <PageHeader eyebrow="Loading authoritative state" title={pageTitle} description={label} breadcrumbs={breadcrumbs} readOnly="Loading" />}<div className="detail-loading"><span /><span /><span /><p>{label}…</p></div></div>;
 }
 
-export function DetailFailure({ title, message }: { title: string; message: string }) {
-  return <div className="page detail-page"><div className="detail-failure" role="alert"><p className="eyebrow">Unable to load</p><h1>{title}</h1><p>{message}</p><AppLink className="button" to="/board">Return to board</AppLink></div></div>;
+export function DetailFailure({ title, message, pageTitle, breadcrumbs }: { title: string; message: string; pageTitle?: string; breadcrumbs?: BreadcrumbItem[] }) {
+  return <div className={pageTitle ? "page detail-page" : undefined}>{pageTitle && <PageHeader eyebrow="Unavailable" title={pageTitle} description={message} breadcrumbs={breadcrumbs} readOnly="Read-only" />}<div className="detail-failure" role="alert"><p className="eyebrow">Unable to load</p><h2>{title}</h2><p>{message}</p><AppLink className="button" to="/board">Return to board</AppLink></div></div>;
 }
 
 export function StatusPill({ status }: { status: string }) {

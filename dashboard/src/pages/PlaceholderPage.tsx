@@ -1,5 +1,6 @@
 import { AppLink } from "../app/router";
 import { Icon } from "../components/Icon";
+import { PageHeader } from "../components/PageStructure";
 
 export function PlaceholderPage({ eyebrow, title, description, action }: {
   eyebrow: string;
@@ -9,13 +10,7 @@ export function PlaceholderPage({ eyebrow, title, description, action }: {
 }) {
   return (
     <div className="page placeholder-page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">{eyebrow}</p>
-          <h1>{title}</h1>
-          <p className="page-header__description">{description}</p>
-        </div>
-      </header>
+      <PageHeader eyebrow={eyebrow} title={title} description={description} breadcrumbs={[{ label: title }]} />
       <section className="empty-panel">
         <span className="empty-panel__icon"><Icon name="activity" /></span>
         <h2>This view is ready for live data</h2>

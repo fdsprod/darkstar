@@ -4,6 +4,7 @@ import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { tabKeyTarget } from "../accessibility/keyboard";
 import { useRouter } from "../app/router";
+import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, formatDate } from "./WorkDetailPage";
 import {
@@ -96,10 +97,7 @@ export function SettingsPage() {
   }
 
   return <div className="page settings-page">
-    <header className="page-header settings-header">
-      <div><p className="eyebrow">Local control plane</p><h1>Settings &amp; Health</h1><p className="page-header__description">Inspect daemon readiness, provider capability, registered projects, and source-attributed effective configuration. Remediation text is guidance, never an executable dashboard action.</p></div>
-      <button type="button" className="button button--primary" disabled={refreshing} onClick={() => { setNotice(""); setRefreshVersion((value) => value + 1); }}>{refreshing ? "Refreshing…" : "Refresh checks"}</button>
-    </header>
+    <PageHeader className="settings-header" eyebrow="Local control plane" title="Settings & Health" description="Inspect daemon readiness, provider capability, registered projects, and source-attributed effective configuration. Remediation text is guidance, never an executable dashboard action." breadcrumbs={[{ label: "Settings & Health" }]} actions={<button type="button" className="button button--primary" disabled={refreshing} onClick={() => { setNotice(""); setRefreshVersion((value) => value + 1); }}>{refreshing ? "Refreshing…" : "Refresh checks"}</button>} />
     {notice && <p className="detail-action-message" role="status">{notice}</p>}
     <form className="settings-context" aria-label="Project diagnostic context" onSubmit={applyProjectContext}>
       <label><span>Project root <small>optional</small></span><input value={rootDraft} onChange={(event) => setRootDraft(event.target.value)} placeholder="Use daemon startup context" /></label>

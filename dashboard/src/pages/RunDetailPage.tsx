@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
+import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, EmptyDetail, formatDate, StatusPill, SummaryFact } from "./WorkDetailPage";
 import { attemptsForVisit, eventCategory, humanize, shortIdentifier, sortNodeVisits, statusTone, terminalBoundary } from "./runDetailModel";
@@ -54,8 +55,8 @@ export function RunDetailPage() {
     } finally { setAction(""); }
   };
 
-  if (error && !view) return <DetailFailure title="Run unavailable" message={error} />;
-  if (!view || !work) return <DetailLoading label="Loading run timeline" />;
+  if (error && !view) return <DetailFailure title="Run unavailable" message={error} pageTitle="Run" breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(workId), to: `/work/${encodeURIComponent(workId)}` }, { label: shortIdentifier(runId) }]} />;
+  if (!view || !work) return <DetailLoading label="Loading run timeline" pageTitle="Run" breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(workId), to: `/work/${encodeURIComponent(workId)}` }, { label: shortIdentifier(runId) }]} />;
 
   const routeSnapshot = view.run.routeSnapshot;
   const visits = sortNodeVisits(view.nodes);
@@ -65,11 +66,7 @@ export function RunDetailPage() {
 
   return (
     <div className="page detail-page run-detail-page">
-      <nav className="detail-breadcrumb" aria-label="Breadcrumb"><AppLink to="/board">Board</AppLink><span aria-hidden="true">/</span><AppLink to={`/work/${encodeURIComponent(work.id)}`}>{shortIdentifier(work.id)}</AppLink><span aria-hidden="true">/</span><span>{shortIdentifier(view.run.id)}</span></nav>
-      <header className="page-header detail-header run-detail-header">
-        <div><p className="eyebrow">Run · {shortIdentifier(view.run.id)}</p><h1>{work.title}</h1><p className="page-header__description">{view.run.workflowId} · v{view.run.workflowVersion}. Node visits, attempts, and evidence are read from durable projections.</p></div>
-        <div className="run-header-actions"><StatusPill status={view.run.status} /><AppLink className="button" to={`/artifacts?targetKind=run&targetId=${encodeURIComponent(view.run.id)}&ingest=1`}>Add evidence</AppLink><AppLink className="button" to={`/checkpoints?runId=${encodeURIComponent(view.run.id)}`}>Checkpoints</AppLink><AppLink className="button" to={`/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(view.run.id)}/readiness`}>Readiness</AppLink>{controls.map((control) => <button className="button" type="button" key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : humanize(control)}</button>)}</div>
-      </header>
+      <PageHeader className="detail-header run-detail-header" eyebrow={`Run · ${shortIdentifier(view.run.id)}`} title={work.title} description={<>{view.run.workflowId} · v{view.run.workflowVersion}. Node visits, attempts, and evidence are read from durable projections.</>} breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(work.id), to: `/work/${encodeURIComponent(work.id)}` }, { label: shortIdentifier(view.run.id) }]} status={<StatusPill status={view.run.status} />} actions={<><AppLink className="button" to={`/artifacts?targetKind=run&targetId=${encodeURIComponent(view.run.id)}&ingest=1`}>Add evidence</AppLink><AppLink className="button" to={`/checkpoints?runId=${encodeURIComponent(view.run.id)}`}>Checkpoints</AppLink><AppLink className="button button--primary" to={`/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(view.run.id)}/readiness`}>Readiness</AppLink>{controls.map((control) => <button className="button" type="button" key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : humanize(control)}</button>)}</>} />
       {actionMessage && <p className="detail-action-message" role="status">{actionMessage}</p>}
       {error && <p className="detail-action-message detail-action-message--error" role="alert">{error}</p>}
 

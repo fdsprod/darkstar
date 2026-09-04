@@ -38,14 +38,15 @@ svg { width: 18px; height: 18px; flex: 0 0 auto; }
 .brand__mark { display: grid; width: 22px; height: 22px; place-items: center; border: 1px solid #3a4a64; border-radius: 7px; background: linear-gradient(145deg, #151c29, #0b0f17); box-shadow: inset 0 1px rgb(255 255 255 / 6%); transform: rotate(45deg); }
 .brand__mark span { display: block; width: 7px; height: 7px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 14px rgb(140 180 255 / 70%); }
 .icon-button.sidebar__close { display: none; }
-.workspace-switcher { display: grid; grid-template-columns: 28px minmax(0, 1fr) 16px; gap: 9px; align-items: center; margin: 16px 0 22px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: #0c111a; }
+.workspace-switcher { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 9px; align-items: center; margin: 16px 0 22px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: #0c111a; }
 .workspace-switcher__avatar { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 6px; background: #242c3b; color: #cbd8ef; font-size: var(--font-caption); font-weight: 600; }
 .workspace-switcher__copy { min-width: 0; }
 .workspace-switcher strong, .workspace-switcher small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-switcher strong { font-size: var(--font-label); font-weight: 500; }
 .workspace-switcher small { margin-top: 2px; color: var(--text-muted); font-size: var(--font-caption); }
 .workspace-switcher > svg { width: 14px; color: var(--text-muted); }
-.primary-nav { display: flex; flex-direction: column; gap: 3px; }
+.primary-nav { display: flex; flex-direction: column; gap: 14px; }
+.nav-group { display: flex; flex-direction: column; gap: 3px; }
 .nav-label { margin: 0 0 7px; padding: 0 9px; color: #738095; font-size: var(--font-caption); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .nav-item { position: relative; display: flex; min-height: 34px; align-items: center; gap: 10px; padding: 0 9px; border-radius: 7px; color: #8e98aa; font-size: var(--font-body); transition: background-color 140ms ease, color 140ms ease; }
 .nav-item svg { width: 16px; }
@@ -88,6 +89,7 @@ kbd, .key-button { padding: 2px 5px; border: 1px solid #293140; border-radius: 4
 .main-content { min-height: calc(100vh - 64px); min-width: 0; }
 .page { min-width: 0; padding: var(--space-6) clamp(var(--space-3), 3vw, 2.125rem) 3rem; }
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin: 0 auto 28px; }
+.page-header__aside { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .eyebrow { margin: 0 0 7px; color: #789bd9; font-size: var(--font-caption); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
 .page-header h1 { margin: 0; color: #f2f4f8; font-size: var(--font-page-title); font-weight: 500; line-height: var(--line-page-title); letter-spacing: -.03em; overflow-wrap: anywhere; }
 .page-header__description { max-width: 650px; margin: var(--space-2) 0 0; color: var(--text-secondary); font-size: var(--font-body); line-height: var(--line-body); }
@@ -229,7 +231,10 @@ select:focus-visible, textarea:focus-visible, .field input:focus-visible { outli
 
 /* Work and run detail */
 .detail-page { max-width: 1420px; margin: 0 auto; }
-.detail-breadcrumb { display: flex; align-items: center; gap: 7px; margin-bottom: 18px; color: var(--text-muted); font-size: var(--font-caption); }
+.detail-breadcrumb { margin-bottom: 18px; color: var(--text-muted); font-size: var(--font-caption); }
+.detail-breadcrumb ol { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.detail-breadcrumb li { display: inline-flex; align-items: center; gap: 7px; }
+.detail-breadcrumb [aria-current="page"] { color: var(--text-secondary); }
 .detail-breadcrumb a:hover { color: var(--accent); }
 .detail-breadcrumb span[aria-hidden] { color: #3e4757; }
 .detail-header { align-items: center; margin-bottom: 20px; }
