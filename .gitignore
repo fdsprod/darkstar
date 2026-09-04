@@ -1,6 +1,7 @@
 # Build output
 /out/
 /dashboard/dist/
+/runtime/src/dashboardassets/dist/
 
 # JavaScript dependencies and caches
 /node_modules/

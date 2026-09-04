@@ -7,6 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$repositoryRoot = Split-Path -Parent $PSScriptRoot
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "darkstar-repro-$([Guid]::NewGuid().ToString('N'))"
 $firstDirectory = Join-Path $temporaryRoot "first"
 $secondDirectory = Join-Path $temporaryRoot "second"
@@ -18,6 +19,21 @@ function Get-Sha256 {
 }
 
 try {
+    # Compile the dashboard once, then prove that two Go builds embed the exact
+    # same staged output. This also keeps the reproducibility check usable from
+    # a clean checkout instead of relying on a preceding Build.ps1 invocation.
+    & (Join-Path $PSScriptRoot "Assert-Toolchain.ps1")
+    Push-Location $repositoryRoot
+    try {
+        & npm run build
+        if ($LASTEXITCODE -ne 0) {
+            throw "Dashboard build failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
     & (Join-Path $PSScriptRoot "Build.ps1") -Version $Version -OutputDirectory $firstDirectory -SkipDashboard
     & (Join-Path $PSScriptRoot "Package.ps1") -Version $Version -BinaryPath (Join-Path $firstDirectory "darkstar.exe") -OutputDirectory $firstDirectory
 

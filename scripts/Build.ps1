@@ -31,12 +31,35 @@ Push-Location $repositoryRoot
 try {
     New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
+    if (-not $SkipDashboard) {
+        & npm run build
+        if ($LASTEXITCODE -ne 0) {
+            throw "Dashboard build failed with exit code $LASTEXITCODE."
+        }
+    }
+
+    $dashboardBuildDirectory = Join-Path $repositoryRoot "dashboard/dist"
+    $dashboardIndex = Join-Path $dashboardBuildDirectory "index.html"
+    if (-not (Test-Path -LiteralPath $dashboardIndex -PathType Leaf)) {
+        throw "Dashboard output '$dashboardIndex' does not exist. Run without -SkipDashboard first."
+    }
+    $dashboardEmbedDirectory = Join-Path $repositoryRoot "runtime/src/dashboardassets/dist"
+    $expectedEmbedDirectory = [IO.Path]::GetFullPath((Join-Path $repositoryRoot "runtime/src/dashboardassets/dist"))
+    if ([IO.Path]::GetFullPath($dashboardEmbedDirectory) -ne $expectedEmbedDirectory) {
+        throw "Dashboard embed staging path resolved outside its expected location."
+    }
+    if (Test-Path -LiteralPath $dashboardEmbedDirectory) {
+        Remove-Item -LiteralPath $dashboardEmbedDirectory -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $dashboardEmbedDirectory | Out-Null
+    Copy-Item -Path (Join-Path $dashboardBuildDirectory "*") -Destination $dashboardEmbedDirectory -Recurse -Force
+
     $env:CGO_ENABLED = "0"
     $env:GOARCH = "amd64"
     $env:GOOS = "windows"
     $env:GOTOOLCHAIN = "local"
 
-    & go -C runtime build -mod=readonly -trimpath -buildvcs=false "-ldflags=$linkerFlags" -o $binaryPath ./src/cmd/darkstar
+    & go -C runtime build -mod=readonly -trimpath -buildvcs=false -tags=dashboard "-ldflags=$linkerFlags" -o $binaryPath ./src/cmd/darkstar
     if ($LASTEXITCODE -ne 0) {
         throw "Go build failed with exit code $LASTEXITCODE."
     }
@@ -55,13 +78,6 @@ try {
     New-Item -ItemType Directory -Force -Path $schemaDirectory | Out-Null
     foreach ($schemaName in @("planning-artifact-v1alpha1.schema.json", "delivery-evidence-v1alpha1.schema.json")) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot "schemas/$schemaName") -Destination $schemaDirectory -Force
-    }
-
-    if (-not $SkipDashboard) {
-        & npm run build
-        if ($LASTEXITCODE -ne 0) {
-            throw "Dashboard build failed with exit code $LASTEXITCODE."
-        }
     }
 }
 finally {

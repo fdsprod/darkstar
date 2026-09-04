@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"path"
@@ -17,6 +18,7 @@ import (
 
 	"darkstar/src/core/health"
 	"darkstar/src/core/workflow"
+	"darkstar/src/dashboardassets"
 	"darkstar/src/ports/workflowstore"
 )
 
@@ -51,6 +53,7 @@ type Server struct {
 	artifacts ArtifactService
 	approvals ApprovalService
 	workflows WorkflowService
+	dashboard fs.FS
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
@@ -74,6 +77,7 @@ func NewServer(runtimeDirectory string) (*Server, error) {
 		recovery:                RecoveryStatus{},
 		streamPollInterval:      100 * time.Millisecond,
 		streamKeepaliveInterval: 15 * time.Second,
+		dashboard:               dashboardassets.Files(),
 	}, nil
 }
 
@@ -378,6 +382,14 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 			APIVersions:   SupportedVersions(),
 			Recovery:      s.recovery,
 		})
+		return
+	}
+	if !isAPIPath(request.URL.Path) {
+		s.mu.RLock()
+		endpoint := s.endpoint
+		assets := s.dashboard
+		s.mu.RUnlock()
+		serveDashboard(response, request, assets, endpoint)
 		return
 	}
 	if !s.authenticate(request) {

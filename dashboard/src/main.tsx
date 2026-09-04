@@ -1,17 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import "./api/bootstrap";
+import { App } from "./app/App";
+import { AppErrorBoundary } from "./app/AppErrorBoundary";
 import "./styles.css";
-
-function Dashboard() {
-  return (
-    <main className="shell" aria-labelledby="app-title">
-      <p className="eyebrow">Deterministic orchestration</p>
-      <h1 id="app-title">DARKSTAR</h1>
-      <p className="status">Dashboard module ready.</p>
-    </main>
-  );
-}
 
 const root = document.getElementById("root");
 
@@ -21,6 +14,8 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <Dashboard />
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
   </StrictMode>,
 );

@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit --pretty false && vite build",
-    "check": "tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.node.json && npm test",
+    "api:generate": "node scripts/generate-api-client.mjs",
+    "api:check": "node scripts/generate-api-client.mjs --check",
+    "build": "npm run api:check && tsc --noEmit --pretty false && vite build",
+    "check": "npm run api:check && tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.node.json && npm test",
     "test": "node --test"
   },
   "dependencies": {

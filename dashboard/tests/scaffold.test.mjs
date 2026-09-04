@@ -13,5 +13,5 @@ test("dashboard source mounts the application", async () => {
   const source = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
 
   assert.match(source, /createRoot\(root\)\.render/);
-  assert.match(source, /<Dashboard \/>/);
+  assert.match(source, /<App \/>/);
 });
