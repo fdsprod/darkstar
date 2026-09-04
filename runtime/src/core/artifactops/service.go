@@ -95,6 +95,10 @@ func New(artifacts artifactregistry.Registry, bindings artifactbinding.Store, li
 }
 
 func (service *Service) Ingest(ctx context.Context, input IngestInput, idempotencyKey string) (artifactingest.Result, error) {
+	return service.ingest(ctx, input, idempotencyKey, nil)
+}
+
+func (service *Service) ingest(ctx context.Context, input IngestInput, idempotencyKey string, expectedPreviousVersion *uint64) (artifactingest.Result, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return artifactingest.Result{}, errors.New("idempotency key is required")
 	}
@@ -108,19 +112,19 @@ func (service *Service) Ingest(ctx context.Context, input IngestInput, idempoten
 		input.Sensitivity = artifactregistry.SensitivityInternal
 	}
 	return service.ingestion.Ingest(ctx, artifactingest.Request{
-		ArtifactID: input.ArtifactID, OperationID: stableID("operation_", "ingest\x00"+idempotencyKey), IdempotencyKey: idempotencyKey,
+		ArtifactID: input.ArtifactID, ExpectedPreviousVersion: expectedPreviousVersion, OperationID: stableID("operation_", "ingest\x00"+idempotencyKey), IdempotencyKey: idempotencyKey,
 		SourceKind: input.SourceKind, SourceName: input.SourceName, DeclaredMediaType: input.MediaType,
 		Content: bytes.NewReader(input.Content), Sensitivity: input.Sensitivity, Creator: input.Creator,
 		Roles: input.Roles, Tags: input.Tags,
 	})
 }
 
-func (service *Service) Revise(ctx context.Context, artifactID string, input IngestInput, idempotencyKey string) (artifactingest.Result, error) {
-	if !strings.HasPrefix(artifactID, "artifact_") {
+func (service *Service) Revise(ctx context.Context, artifactID string, baseVersion uint64, input IngestInput, idempotencyKey string) (artifactingest.Result, error) {
+	if !strings.HasPrefix(artifactID, "artifact_") || baseVersion == 0 {
 		return artifactingest.Result{}, errors.New("artifact ID is required")
 	}
 	input.ArtifactID = artifactID
-	return service.Ingest(ctx, input, idempotencyKey)
+	return service.ingest(ctx, input, idempotencyKey, &baseVersion)
 }
 
 func (service *Service) Attach(ctx context.Context, input AttachInput, idempotencyKey string) (artifactbinding.Version, error) {

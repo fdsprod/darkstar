@@ -82,6 +82,20 @@ export class DarkstarApiClient {
   resumeRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("resumeRun", { path: { runId }, resourceVersion, idempotencyKey, signal }); }
   retryRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("retryRun", { path: { runId }, body: {}, resourceVersion, idempotencyKey, signal }); }
   cancelRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("cancelRun", { path: { runId }, resourceVersion, idempotencyKey, signal }); }
+  listArtifacts(targetKind?: Schemas["ArtifactTargetKind"], targetId?: string, signal?: AbortSignal) { return this.operation("listArtifacts", { query: { targetKind, targetId }, signal }); }
+  getArtifact(artifactId: string, version?: number, signal?: AbortSignal) { return this.operation("getArtifact", { path: { artifactId }, query: { version }, signal }); }
+  reviseArtifact(artifactId: string, resourceVersion: number, body: Schemas["ArtifactIngestRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("reviseArtifact", { path: { artifactId }, body, resourceVersion, idempotencyKey, signal }); }
+  diffArtifactVersions(artifactId: string, from: number, to: number, signal?: AbortSignal) { return this.operation("diffArtifactVersions", { path: { artifactId }, query: { from, to }, signal }); }
+  lintArtifact(artifactId: string, version: number, signal?: AbortSignal) { return this.operation("lintArtifact", { path: { artifactId }, query: { version }, signal }); }
+  assessArtifactImpact(artifactId: string, version: number, body: Schemas["ArtifactImpactRequest"], signal?: AbortSignal) { return this.operation("assessArtifactImpact", { path: { artifactId }, query: { version }, body, signal }); }
+  listCheckpoints(query: { class?: "workflow_checkpoint"; runId?: string; status?: "pending" | "approved" | "changes_requested" | "rejected" | "denied" | "cancelled" | "expired" } = {}, signal?: AbortSignal) { return this.operation("listCheckpoints", { query, signal }); }
+  getCheckpointHistory(checkpointId: string, signal?: AbortSignal) { return this.operation("getCheckpointHistory", { path: { checkpointId }, signal }); }
+  getApproval(approvalId: string, signal?: AbortSignal) { return this.operation("getApproval", { path: { approvalId }, signal }); }
+  decideApproval(approvalId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["ArtifactCheckpointDecisionRequest"], signal?: AbortSignal) { return this.operation("decideApproval", { path: { approvalId }, body, resourceVersion, idempotencyKey, signal }); }
+  listInputRequests(query: { runId?: string; attemptId?: string; status?: "pending" | "answer_recorded" | "answered" } = {}, signal?: AbortSignal) { return this.operation("listInputRequests", { query, signal }); }
+  getInputRequest(inputRequestId: string, signal?: AbortSignal) { return this.operation("getInputRequest", { path: { inputRequestId }, signal }); }
+  answerInputRequest(inputRequestId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["InputRequestAnswerRequest"], signal?: AbortSignal) { return this.operation("answerInputRequest", { path: { inputRequestId }, body, resourceVersion, idempotencyKey, signal }); }
+  retryInputDelivery(inputRequestId: string, resourceVersion: number, signal?: AbortSignal) { return this.operation("retryInputRequestDelivery", { path: { inputRequestId }, resourceVersion, signal }); }
 }
 
 async function toApiError(response: Response) {

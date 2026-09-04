@@ -69,7 +69,7 @@
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "d8e6a8db302f898e02b04856de244afcd39f468ffbe52e15b3c9ccafaff15cae",
+      "sha256": "c2c3831fa82a503caa52d4b0751e8ec4dd96abe266832e5c865f7f59b6f6c202",
       "version": "v1alpha1"
     },
     {
@@ -109,7 +109,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/runtime-event-v1alpha1.schema.json",
       "name": "runtime-event-v1alpha1",
-      "sha256": "20ee7b4ccb94e9501dd95f473ded20e1dc470d5888b66b67221bcf93c7901534",
+      "sha256": "dfd82a73d151943b7380b1729bcabcda47a084d4b9c07a3dd6b87d7057e6279a",
       "version": "v1alpha1"
     },
     {

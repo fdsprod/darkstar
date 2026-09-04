@@ -60,7 +60,7 @@ const (
 type Decision struct {
 	Action    Action           `json:"action"`
 	Effect    Effect           `json:"effect"`
-	ActionKey string           `json:"actionKey"`
+	ActionKey string           `json:"-"`
 	Actor     statestore.Actor `json:"actor"`
 	Comment   string           `json:"comment,omitempty"`
 	DecidedAt time.Time        `json:"decidedAt"`
@@ -84,9 +84,15 @@ type Round struct {
 	State             State                          `json:"state"`
 	Decision          *Decision                      `json:"decision,omitempty"`
 	AffectedArtifacts []artifactlineage.Invalidation `json:"affectedArtifacts"`
+	AllowedActions    []Action                       `json:"allowedActions"`
 	ResourceVersion   uint64                         `json:"resourceVersion"`
 	CreatedAt         time.Time                      `json:"createdAt"`
 	UpdatedAt         time.Time                      `json:"updatedAt"`
+}
+
+type Queue struct {
+	SchemaVersion int     `json:"schemaVersion"`
+	Items         []Round `json:"items"`
 }
 
 // History is the complete ordered review record for one checkpoint.
@@ -100,6 +106,7 @@ type Store interface {
 	Append(context.Context, ...statestore.PendingEvent) ([]statestore.Event, error)
 	Approval(context.Context, string) (statestore.ApprovalProjection, error)
 	ApprovalsForCheckpoint(context.Context, string) ([]statestore.ApprovalProjection, error)
+	CheckpointApprovals(context.Context, string, statestore.ApprovalStatus) ([]statestore.ApprovalProjection, error)
 	EventByCommand(context.Context, string, string) (statestore.Event, error)
 	Node(context.Context, string) (statestore.NodeProjection, error)
 }

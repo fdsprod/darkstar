@@ -5,6 +5,7 @@
 
 # JavaScript dependencies and caches
 /node_modules/
+/dashboard/node_modules/
 *.tsbuildinfo
 
 # Go test/build artifacts

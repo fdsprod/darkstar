@@ -21,6 +21,9 @@ var approvalIDPattern = regexp.MustCompile(`^approval_[0-9A-HJKMNP-TV-Z]{26}$`)
 // ApprovalService is the artifact checkpoint decision boundary published by the API.
 type ApprovalService interface {
 	Decide(context.Context, checkpoint.DecisionRequest) (checkpointport.Round, error)
+	Round(context.Context, string) (checkpointport.Round, error)
+	History(context.Context, string) (checkpointport.History, error)
+	List(context.Context, checkpoint.ListRequest) (checkpointport.Queue, error)
 }
 
 type approvalDecisionBody struct {
@@ -38,24 +41,45 @@ func (s *Server) serveApprovals(response http.ResponseWriter, request *http.Requ
 		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "APPROVAL_SERVICE_UNAVAILABLE", Message: "Artifact checkpoint decisions are not configured.", RequestID: requestID, Retryable: true})
 		return
 	}
-	if request.Method != http.MethodPost {
-		response.Header().Set("Allow", "POST")
-		writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
-		return
-	}
 	if request.URL.RawQuery != "" {
 		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Approval decisions do not accept query parameters.", RequestID: requestID})
 		return
 	}
 	clean := path.Clean(request.URL.Path)
-	prefix, suffix := "/api/v1/approvals/", "/decisions"
-	if !strings.HasPrefix(clean, prefix) || !strings.HasSuffix(clean, suffix) {
+	prefix := "/api/v1/approvals/"
+	if !strings.HasPrefix(clean, prefix) {
 		writeAPIError(response, http.StatusNotFound, apiError{SchemaVersion: 1, Code: "NOT_FOUND", Message: "The requested approval was not found.", RequestID: requestID})
 		return
 	}
-	approvalID := strings.TrimSuffix(strings.TrimPrefix(clean, prefix), suffix)
+	relative := strings.TrimPrefix(clean, prefix)
+	segments := strings.Split(relative, "/")
+	approvalID := segments[0]
 	if !approvalIDPattern.MatchString(approvalID) {
 		writeAPIError(response, http.StatusNotFound, apiError{SchemaVersion: 1, Code: "NOT_FOUND", Message: "The requested approval was not found.", RequestID: requestID})
+		return
+	}
+	if len(segments) == 1 {
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			response.Header().Set("Allow", "GET, HEAD")
+			writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
+			return
+		}
+		round, err := service.Round(request.Context(), approvalID)
+		if err != nil {
+			writeApprovalError(response, requestID, err)
+			return
+		}
+		response.Header().Set("ETag", `"`+strconv.FormatUint(round.ResourceVersion, 10)+`"`)
+		writeJSON(response, http.StatusOK, round)
+		return
+	}
+	if len(segments) != 2 || segments[1] != "decisions" {
+		writeAPIError(response, http.StatusNotFound, apiError{SchemaVersion: 1, Code: "NOT_FOUND", Message: "The requested approval was not found.", RequestID: requestID})
+		return
+	}
+	if request.Method != http.MethodPost {
+		response.Header().Set("Allow", "POST")
+		writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
 		return
 	}
 	key, ok := requireIdempotencyKey(response, request, requestID)
@@ -85,6 +109,62 @@ func (s *Server) serveApprovals(response http.ResponseWriter, request *http.Requ
 	}
 	response.Header().Set("ETag", `"`+strconv.FormatUint(result.ResourceVersion, 10)+`"`)
 	writeJSON(response, http.StatusOK, result)
+}
+
+func (s *Server) serveCheckpoints(response http.ResponseWriter, request *http.Request, requestID string) {
+	s.mu.RLock()
+	service := s.approvals
+	s.mu.RUnlock()
+	if service == nil {
+		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "APPROVAL_SERVICE_UNAVAILABLE", Message: "Artifact checkpoint queries are not configured.", RequestID: requestID, Retryable: true})
+		return
+	}
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		response.Header().Set("Allow", "GET, HEAD")
+		writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
+		return
+	}
+	clean := path.Clean(request.URL.Path)
+	if clean == "/api/v1/checkpoints" {
+		query := request.URL.Query()
+		unknown := false
+		for key := range query {
+			if key != "class" && key != "runId" && key != "status" {
+				unknown = true
+			}
+		}
+		if unknown || len(query) > 3 || len(query["class"]) > 1 || len(query["runId"]) > 1 || len(query["status"]) > 1 {
+			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Checkpoint filters must be singular class, runId, and status values.", RequestID: requestID})
+			return
+		}
+		class := query.Get("class")
+		if class != "" && class != "workflow_checkpoint" {
+			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Checkpoint class must be workflow_checkpoint.", RequestID: requestID})
+			return
+		}
+		queue, err := service.List(request.Context(), checkpoint.ListRequest{RunID: query.Get("runId"), Status: statestore.ApprovalStatus(query.Get("status"))})
+		if err != nil {
+			writeApprovalError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, queue)
+		return
+	}
+	if request.URL.RawQuery != "" {
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Checkpoint history does not accept query parameters.", RequestID: requestID})
+		return
+	}
+	checkpointID := strings.TrimPrefix(clean, "/api/v1/checkpoints/")
+	if !strings.HasPrefix(checkpointID, "checkpoint_") || strings.Contains(checkpointID, "/") {
+		writeAPIError(response, http.StatusNotFound, apiError{SchemaVersion: 1, Code: "NOT_FOUND", Message: "The requested checkpoint was not found.", RequestID: requestID})
+		return
+	}
+	history, err := service.History(request.Context(), checkpointID)
+	if err != nil {
+		writeApprovalError(response, requestID, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, history)
 }
 
 func parseIfMatch(value string) (uint64, error) {

@@ -56,6 +56,11 @@ type DecisionRequest struct {
 	Actor                   statestore.Actor
 }
 
+type ListRequest struct {
+	RunID  string
+	Status statestore.ApprovalStatus
+}
+
 // Service composes immutable artifact metadata, revision invalidations, and
 // durable approval events without making workflow transitions itself.
 type Service struct {
@@ -237,6 +242,43 @@ func (service *Service) History(ctx context.Context, checkpointID string) (check
 	return result, nil
 }
 
+// Round returns one exact review round with its decision and lineage effects.
+func (service *Service) Round(ctx context.Context, approvalID string) (checkpointport.Round, error) {
+	if !strings.HasPrefix(approvalID, "approval_") {
+		return checkpointport.Round{}, fmt.Errorf("%w: approval ID is required", ErrInvalidRequest)
+	}
+	return service.round(ctx, approvalID)
+}
+
+// List returns full actionable checkpoint rounds. An omitted status selects
+// pending attention items; callers use an explicit terminal status for history
+// slices and History for all rounds of one checkpoint.
+func (service *Service) List(ctx context.Context, request ListRequest) (checkpointport.Queue, error) {
+	status := request.Status
+	if status == "" {
+		status = statestore.ApprovalPending
+	}
+	if request.RunID != "" && !strings.HasPrefix(request.RunID, "run_") {
+		return checkpointport.Queue{}, ErrInvalidRequest
+	}
+	if !validCheckpointStatus(status) {
+		return checkpointport.Queue{}, ErrInvalidRequest
+	}
+	values, err := service.store.CheckpointApprovals(ctx, request.RunID, status)
+	if err != nil {
+		return checkpointport.Queue{}, err
+	}
+	items := make([]checkpointport.Round, 0, len(values))
+	for _, value := range values {
+		round, roundErr := service.roundFromProjection(ctx, value)
+		if roundErr != nil {
+			return checkpointport.Queue{}, roundErr
+		}
+		items = append(items, round)
+	}
+	return checkpointport.Queue{SchemaVersion: 1, Items: items}, nil
+}
+
 func (service *Service) round(ctx context.Context, approvalID string) (checkpointport.Round, error) {
 	value, err := service.store.Approval(ctx, approvalID)
 	if err != nil {
@@ -262,6 +304,11 @@ func (service *Service) roundFromProjection(ctx context.Context, value statestor
 	if value.Decision != nil {
 		round.Decision = &checkpointport.Decision{Action: checkpointport.Action(value.Decision.Action), Effect: effectFor(checkpointport.Action(value.Decision.Action)),
 			ActionKey: value.Decision.ActionKey, Actor: value.Decision.Actor, Comment: value.Decision.Comment, DecidedAt: value.Decision.DecidedAt}
+	}
+	if round.State == checkpointport.StatePending {
+		round.AllowedActions = []checkpointport.Action{checkpointport.ActionApprove, checkpointport.ActionRequestChanges, checkpointport.ActionReject}
+	} else {
+		round.AllowedActions = []checkpointport.Action{}
 	}
 	return round, nil
 }
@@ -300,7 +347,19 @@ func validateDecision(request DecisionRequest) error {
 	if len(request.Comment) > 4096 {
 		return fmt.Errorf("%w: comment exceeds 4096 bytes", ErrInvalidRequest)
 	}
+	if (request.Action == checkpointport.ActionRequestChanges || request.Action == checkpointport.ActionReject) && strings.TrimSpace(request.Comment) == "" {
+		return fmt.Errorf("%w: request_changes and reject require an explanatory comment", ErrInvalidRequest)
+	}
 	return nil
+}
+
+func validCheckpointStatus(status statestore.ApprovalStatus) bool {
+	switch status {
+	case statestore.ApprovalPending, statestore.ApprovalApproved, statestore.ApprovalChangesRequested, statestore.ApprovalRejected:
+		return true
+	default:
+		return false
+	}
 }
 
 func validActor(actor statestore.Actor) bool {

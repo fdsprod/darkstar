@@ -53,15 +53,20 @@ func runArtifact(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		}
 		return writeArtifactResult(result, fmt.Sprintf("Ingested %s@%d.", result.Artifact.ArtifactID, result.Artifact.Version), false, jsonOutput, stdout, stderr, command)
 	case "revise":
-		if len(args) < 3 || !strings.HasPrefix(args[1], "artifact_") {
-			return artifactArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected artifact revise <artifact-id> with one content source"))
+		if len(args) < 3 {
+			return artifactArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected artifact revise <artifact-id>@<base-version> with one content source"))
+		}
+		base, err := parseArtifactReference(args[1])
+		if err != nil {
+			return artifactArgumentError(stdout, stderr, jsonOutput, command, err)
 		}
 		input, err := parseArtifactContent(args[2:])
 		if err != nil {
 			return artifactArgumentError(stdout, stderr, jsonOutput, command, err)
 		}
 		var result artifactingest.Result
-		err = session.DoJSON(ctx, http.MethodPost, "artifacts/"+url.PathEscape(args[1])+"/revisions", input, &result, clientHeader("Idempotency-Key", newIdempotencyKey()))
+		err = session.DoJSON(ctx, http.MethodPost, "artifacts/"+url.PathEscape(base.ArtifactID)+"/revisions", input, &result,
+			clientHeader("Idempotency-Key", newIdempotencyKey()), clientHeader("If-Match", fmt.Sprintf(`"%d"`, base.Version)))
 		if err != nil {
 			return writeClientError(stdout, stderr, jsonOutput, command, err)
 		}

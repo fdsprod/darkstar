@@ -1,0 +1,120 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+
+import { ApiRequestError, apiClient } from "../api/client";
+import type { components } from "../api/schema.generated";
+import { AppLink, useRouter } from "../app/router";
+import { useDashboardState } from "../state/DashboardStateProvider";
+import { DetailFailure, DetailLoading, formatDate, StatusPill, SummaryFact } from "./WorkDetailPage";
+import { humanize, shortIdentifier } from "./runDetailModel";
+import { buildArtifactRevisionRequest, decodeArtifactView, decodeArtifactViews, previousRevision, revisionsForArtifact, type ArtifactRevisionInput, type DecodedArtifactView } from "./artifactModel";
+
+type Schemas = components["schemas"];
+
+export function ArtifactPage() {
+  const { route } = useRouter();
+  const { state } = useDashboardState();
+  const artifactId = route.params.artifactId;
+  const [revisions, setRevisions] = useState<DecodedArtifactView[]>();
+  const [selectedVersion, setSelectedVersion] = useState<number>();
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const revisionDialog = useRef<HTMLDialogElement>(null);
+  const latestVersionRef = useRef<number | undefined>(undefined);
+
+  const load = useCallback(async (signal?: AbortSignal, preferredVersion?: number) => {
+    try {
+      const all = revisionsForArtifact(decodeArtifactViews(await apiClient.listArtifacts(undefined, undefined, signal)), artifactId);
+      if (!all.length) throw new MissingArtifactError();
+      if (latestVersionRef.current !== undefined && latestVersionRef.current !== all[0].artifact.version) {
+        if (revisionDialog.current?.open) revisionDialog.current.close();
+        setNotice(`Artifact history refreshed. Revision ${all[0].artifact.version} is now latest. Review it before creating another revision.`);
+      }
+      latestVersionRef.current = all[0].artifact.version;
+      setRevisions(all);
+      setSelectedVersion((current) => all.some((value) => value.artifact.version === (preferredVersion ?? current)) ? (preferredVersion ?? current) : all[0].artifact.version);
+      setError("");
+    } catch (cause) {
+      if (!signal?.aborted) setError(artifactLoadError(cause));
+    }
+  }, [artifactId]);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    void load(abort.signal);
+    return () => abort.abort();
+  }, [load, state.cursor]);
+
+  if (error && !revisions) return <DetailFailure title="Artifact unavailable" message={error} />;
+  if (!revisions || selectedVersion === undefined) return <DetailLoading label="Loading artifact revisions" />;
+  const selected = revisions.find((value) => value.artifact.version === selectedVersion) ?? revisions[0];
+
+  return <div className="page detail-page artifact-page">
+    <nav className="detail-breadcrumb" aria-label="Breadcrumb"><AppLink to="/board">Board</AppLink><span aria-hidden="true">/</span><span>Artifacts</span><span aria-hidden="true">/</span><span>{shortIdentifier(artifactId)}</span></nav>
+    <header className="page-header detail-header artifact-header"><div><p className="eyebrow">Immutable artifact · revision {selected.artifact.version}</p><h1>{selected.artifact.sourceName}</h1><p className="page-header__description">Inspect immutable revision evidence, representation disclosure, differences, and provenance without exposing stored blob content.</p></div><div className="run-header-actions"><StatusPill status={selected.artifact.status} /><button type="button" className="button button--primary" disabled={selected.artifact.version !== revisions[0].artifact.version} title={selected.artifact.version !== revisions[0].artifact.version ? "Select the latest revision before creating a new version." : undefined} onClick={() => revisionDialog.current?.showModal()}>{selected.artifact.version === revisions[0].artifact.version ? "Create revision" : "Select latest to revise"}</button></div></header>
+    {notice && <p className="detail-action-message" role="status">{notice}</p>}
+    {error && <p className="detail-action-message detail-action-message--error" role="alert">{error}</p>}
+    <section className="detail-summary artifact-summary" aria-label="Artifact summary"><SummaryFact label="Artifact" value={selected.artifact.artifactId} mono /><SummaryFact label="Revision" value={String(selected.artifact.version)} /><SummaryFact label="Freshness" value={humanize(selected.freshness)} /><SummaryFact label="Created" value={formatDate(selected.artifact.createdAt)} /></section>
+    <div className="artifact-layout"><aside className="artifact-revision-rail" aria-label="Artifact revisions"><div className="section-heading"><div><p className="eyebrow">Recorded history</p><h2>Revisions</h2></div><span className="section-count">{revisions.length}</span></div><ol>{revisions.map((revision) => <li key={revision.artifact.version}><button type="button" aria-current={revision.artifact.version === selected.artifact.version ? "true" : undefined} onClick={() => setSelectedVersion(revision.artifact.version)}><span>v{revision.artifact.version}</span><strong>{revision.artifact.sourceName}</strong><small>{formatDate(revision.artifact.createdAt)}</small><em>{humanize(revision.freshness)}</em></button></li>)}</ol><p>Versions are ordered from the artifact registry. The dashboard does not infer missing revisions.</p></aside><main className="artifact-primary"><ArtifactMetadata view={selected} /><RevisionComparison artifactId={artifactId} selected={selected} revisions={revisions} /><Representations values={selected.representations} /><Provenance view={selected} /></main></div>
+    <RevisionDialog refValue={revisionDialog} artifact={selected} onCreated={async (version) => { setNotice(`Artifact revision ${version} was durably stored.`); await load(undefined, version); }} onStale={async () => { setNotice("Artifact state changed before the revision completed. Review the refreshed history before trying again."); await load(); }} />
+  </div>;
+}
+
+function ArtifactMetadata({ view }: { view: DecodedArtifactView }) {
+  const value = view.artifact;
+  return <section className="detail-section artifact-metadata"><div className="section-heading"><div><p className="eyebrow">Stored boundary</p><h2>Revision metadata</h2></div><span className={`artifact-freshness artifact-freshness--${view.freshness}`}>{humanize(view.freshness)}</span></div><dl><Fact label="Declared media" value={value.declaredMediaType} mono /><Fact label="Detected media" value={value.detectedMediaType} mono /><Fact label="Source" value={`${humanize(value.sourceKind)} · ${value.sourceName}`} /><Fact label="Creator" value={value.creator} /><Fact label="Sensitivity" value={humanize(value.sensitivity)} /><Fact label="Trust" value={value.trust} /><Fact label="Size" value={formatBytes(value.size)} /><Fact label="Blob digest" value={value.blobDigest} mono /><Fact label="Registry locator" value={value.locator} mono /></dl><TokenGroup title="Roles" values={value.roles} /><TokenGroup title="Tags" values={value.tags} />{Object.keys(value.metadata).length > 0 && <div className="artifact-metadata-map"><h3>Metadata</h3>{Object.entries(value.metadata).map(([key, item]) => <p key={key}><code>{key}</code><span>{item}</span></p>)}</div>}</section>;
+}
+
+function RevisionComparison({ artifactId, selected, revisions }: { artifactId: string; selected: DecodedArtifactView; revisions: DecodedArtifactView[] }) {
+  const prior = previousRevision(revisions, selected.artifact.version);
+  const [diff, setDiff] = useState<Schemas["ArtifactVersionDiff"]>();
+  const [lint, setLint] = useState<Schemas["ArtifactLintResult"]>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const abort = new AbortController();
+    setDiff(undefined); setLint(undefined); setError("");
+    void Promise.all([
+      apiClient.lintArtifact(artifactId, selected.artifact.version, abort.signal),
+      prior ? apiClient.diffArtifactVersions(artifactId, prior.artifact.version, selected.artifact.version, abort.signal) : Promise.resolve(undefined),
+    ]).then(([nextLint, nextDiff]) => { setLint(nextLint); setDiff(nextDiff); }).catch((cause) => { if (!abort.signal.aborted) setError(cause instanceof ApiRequestError && cause.status === 404 ? "Revision comparison evidence is no longer available." : "Revision validation evidence could not be loaded."); });
+    return () => abort.abort();
+  }, [artifactId, prior?.artifact.version, selected.artifact.version]);
+  return <section className="detail-section revision-comparison"><div className="section-heading"><div><p className="eyebrow">Exact version evidence</p><h2>Validation &amp; changes</h2></div>{lint && <span className={`artifact-lint artifact-lint--${lint.valid ? "valid" : "invalid"}`}>{lint.valid ? "Valid" : `${lint.issues.length} findings`}</span>}</div>{error && <p className="form-error" role="alert">{error}</p>}{!prior ? <p className="readiness-empty-copy">This is the first recorded revision; there is no earlier version to compare.</p> : !diff ? <p className="readiness-empty-copy">Loading the exact v{prior.artifact.version} → v{selected.artifact.version} comparison…</p> : <><p className="revision-boundary">v{diff.from} <span aria-hidden="true">→</span> v{diff.to}</p>{diff.changed.length ? <ul className="revision-changes">{diff.changed.map((item) => <li key={item}>{humanize(item)}</li>)}</ul> : <p className="readiness-empty-copy">No tracked content or metadata fields changed.</p>}<div className="revision-digests"><code title={diff.fromDigest}>{shortIdentifier(diff.fromDigest)}</code><span aria-hidden="true">→</span><code title={diff.toDigest}>{shortIdentifier(diff.toDigest)}</code></div></>}{lint && (lint.issues.length ? <ul className="artifact-lint-list">{lint.issues.map((issue, index) => <li key={`${issue.code}:${index}`}><code>{issue.code}</code><span>{issue.message}</span></li>)}</ul> : <p className="artifact-valid-note">No lint findings were recorded for this exact revision.</p>)}</section>;
+}
+
+function Representations({ values }: { values: DecodedArtifactView["representations"] }) {
+  return <section className="detail-section"><div className="section-heading"><div><p className="eyebrow">Derived inspection</p><h2>Representations</h2></div><span className="section-count">{values.length}</span></div>{values.length ? <div className="artifact-representations">{values.map((value) => <article key={value.representationId}><header><span>{humanize(value.representationKind)}</span><strong>{humanize(value.disclosure)}</strong></header><code>{shortIdentifier(value.representationId)}</code><p>{value.mediaType} · {formatBytes(value.size)} · {value.tokenEstimate} estimated tokens</p><small>{value.processorName} {value.processorVersion}{value.truncated ? " · truncated" : ""}</small>{value.diagnostics.length > 0 && <ul>{value.diagnostics.map((item, index) => <li key={index}>{item}</li>)}</ul>}</article>)}</div> : <p className="readiness-empty-copy">No derived representations are recorded for this revision.</p>}</section>;
+}
+
+function Provenance({ view }: { view: DecodedArtifactView }) {
+  const value = view.artifact.provenance;
+  return <section className="detail-section artifact-provenance"><div className="section-heading"><div><p className="eyebrow">Affected lineage</p><h2>Provenance</h2></div><span className="scope-badge">{value.origin}</span></div><p className="panel-context">These are recorded origin links. Revision order alone is not treated as dependency lineage.</p><dl><Fact label="Operation" value={value.operationId} mono />{value.origin === "attempt" && <><Fact label="Run" value={value.runId} mono /><Fact label="Node" value={value.nodeId} mono /><Fact label="Attempt" value={value.attemptId} mono /></>}{value.sourceArtifactId && <div><dt>Source artifact</dt><dd><AppLink to={`/artifacts/${encodeURIComponent(value.sourceArtifactId)}`}>{value.sourceArtifactId}</AppLink></dd></div>}</dl></section>;
+}
+
+function RevisionDialog({ refValue, artifact, onCreated, onStale }: { refValue: React.RefObject<HTMLDialogElement | null>; artifact: DecodedArtifactView; onCreated(version: number): Promise<void>; onStale(): Promise<void> }) {
+  const [input, setInput] = useState<ArtifactRevisionInput>({ sourceName: artifact.artifact.sourceName, mediaType: artifact.artifact.declaredMediaType, content: "", sensitivity: artifact.artifact.sensitivity, roles: artifact.artifact.roles.join(", "), tags: artifact.artifact.tags.join(", ") });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => setInput({ sourceName: artifact.artifact.sourceName, mediaType: artifact.artifact.declaredMediaType, content: "", sensitivity: artifact.artifact.sensitivity, roles: artifact.artifact.roles.join(", "), tags: artifact.artifact.tags.join(", ") }), [artifact.artifact.artifactId, artifact.artifact.version]);
+  function close() { if (!submitting) { refValue.current?.close(); setError(""); } }
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    let body: Schemas["ArtifactIngestRequest"];
+    try { body = buildArtifactRevisionRequest(input); } catch (cause) { setError(cause instanceof Error ? cause.message : "Revision input is invalid."); return; }
+    setSubmitting(true); setError("");
+    try {
+      const result = await apiClient.reviseArtifact(artifact.artifact.artifactId, artifact.artifact.version, body, `dashboard-artifact-revision-${crypto.randomUUID()}`);
+      const created = decodeArtifactView({ artifact: result.artifact, freshness: "current", representations: [] });
+      refValue.current?.close(); setInput((current) => ({ ...current, content: "" })); await onCreated(created.artifact.version);
+    } catch (cause) {
+      if (cause instanceof ApiRequestError && (cause.status === 409 || cause.status === 412)) { refValue.current?.close(); await onStale(); }
+      else setError("The artifact revision could not be stored. Check daemon health and review the fields.");
+    } finally { setSubmitting(false); }
+  }
+  return <dialog ref={refValue} className="work-dialog artifact-revision-dialog" aria-labelledby="artifact-revision-title" onCancel={(event) => { if (submitting) event.preventDefault(); }} onClose={() => { if (!submitting) setError(""); }}><form aria-busy={submitting} onSubmit={(event) => void submit(event)}><header className="work-dialog__header"><div><p className="eyebrow">New immutable version</p><h2 id="artifact-revision-title">Revise {shortIdentifier(artifact.artifact.artifactId)}</h2></div><button type="button" className="icon-button" aria-label="Close artifact revision" onClick={close}>×</button></header><p className="work-dialog__intro">Paste the complete replacement content. Stored blob content is intentionally not loaded back into this form.</p><div className="artifact-form-grid"><label className="field"><span>Source name</span><input required value={input.sourceName} onChange={(event) => setInput({ ...input, sourceName: event.target.value })} /></label><label className="field"><span>Media type</span><input required value={input.mediaType} onChange={(event) => setInput({ ...input, mediaType: event.target.value })} placeholder="text/markdown" /></label><label className="field"><span>Sensitivity</span><select value={input.sensitivity} onChange={(event) => setInput({ ...input, sensitivity: event.target.value as ArtifactRevisionInput["sensitivity"] })}><option value="unknown">Unknown</option><option value="public">Public</option><option value="internal">Internal</option><option value="sensitive">Sensitive</option><option value="secret">Secret</option></select></label><label className="field"><span>Roles <small>comma separated</small></span><input value={input.roles} onChange={(event) => setInput({ ...input, roles: event.target.value })} /></label><label className="field artifact-content-field"><span>Complete replacement content</span><textarea autoFocus rows={10} value={input.content} onChange={(event) => setInput({ ...input, content: event.target.value })} /></label><label className="field artifact-content-field"><span>Tags <small>comma separated</small></span><input value={input.tags} onChange={(event) => setInput({ ...input, tags: event.target.value })} /></label></div>{error && <p className="form-error" role="alert">{error}</p>}<footer className="work-dialog__footer"><button type="button" className="button" disabled={submitting} onClick={close}>Back</button><button type="submit" className="button button--primary" disabled={submitting}>{submitting ? "Storing…" : "Store revision"}</button></footer></form></dialog>;
+}
+
+function TokenGroup({ title, values }: { title: string; values: string[] }) { return <div className="artifact-token-group"><h3>{title}</h3>{values.length ? <div>{values.map((value) => <code key={value}>{value}</code>)}</div> : <p>None recorded</p>}</div>; }
+function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) { return <div><dt>{label}</dt><dd className={mono ? "mono" : undefined} title={mono ? value : undefined}>{value}</dd></div>; }
+function formatBytes(value: number) { if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`; return `${(value / (1024 * 1024)).toFixed(1)} MB`; }
+function artifactLoadError(cause: unknown) { if (cause instanceof MissingArtifactError || (cause instanceof ApiRequestError && cause.status === 404)) return "The requested artifact does not exist."; if (cause instanceof Error && !(cause instanceof ApiRequestError)) return "Artifact data does not match the supported dashboard contract."; return "Authoritative artifact data is temporarily unavailable. Check daemon health and try again."; }
+class MissingArtifactError extends Error {}

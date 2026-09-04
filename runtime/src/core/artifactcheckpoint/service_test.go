@@ -119,6 +119,7 @@ func TestDecisionIdempotencyIsBoundToExactPayload(t *testing.T) {
 	}
 	conflict := request
 	conflict.Action = checkpointport.ActionReject
+	conflict.Comment = "candidate is unsafe"
 	if _, err := service.Decide(ctx, conflict); !errors.Is(err, checkpointport.ErrIdempotencyConflict) {
 		t.Fatalf("conflicting replay error = %v", err)
 	}
@@ -295,6 +296,16 @@ func (store *memoryStore) ApprovalsForCheckpoint(_ context.Context, id string) (
 		}
 	}
 	sort.Slice(values, func(left, right int) bool { return values[left].CheckpointRevision < values[right].CheckpointRevision })
+	return values, nil
+}
+
+func (store *memoryStore) CheckpointApprovals(_ context.Context, runID string, status statestore.ApprovalStatus) ([]statestore.ApprovalProjection, error) {
+	values := make([]statestore.ApprovalProjection, 0)
+	for _, value := range store.approvals {
+		if value.Class == statestore.ApprovalWorkflowCheckpoint && value.Status == status && (runID == "" || value.RunID == runID) {
+			values = append(values, value)
+		}
+	}
 	return values, nil
 }
 

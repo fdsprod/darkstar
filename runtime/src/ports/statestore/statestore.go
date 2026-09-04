@@ -26,6 +26,7 @@ const (
 	AggregateApproval   AggregateType = "approval"
 	AggregateOperation  AggregateType = "operation"
 	AggregateAssessment AggregateType = "assessment"
+	AggregateInput      AggregateType = "input"
 )
 
 // ActorType identifies the authority that caused an event.
@@ -402,6 +403,48 @@ type ReadinessAssessmentProjection struct {
 	UpdatedAt          time.Time                    `json:"updatedAt"`
 }
 
+// InputRequestStatus is the exactly-once delivery lifecycle for one provider
+// user-input question.
+type InputRequestStatus string
+
+const (
+	InputRequestPending        InputRequestStatus = "pending"
+	InputRequestAnswerRecorded InputRequestStatus = "answer_recorded"
+	InputRequestAnswered       InputRequestStatus = "answered"
+)
+
+type InputAnswerProjection struct {
+	Answer     JSONSnapshot `json:"answer"`
+	ActionKey  string       `json:"-"`
+	Actor      Actor        `json:"actor"`
+	RecordedAt time.Time    `json:"recordedAt"`
+}
+
+type InputReceiptProjection struct {
+	ProviderRequestID string    `json:"providerRequestId"`
+	DeliveredAt       time.Time `json:"deliveredAt"`
+}
+
+// InputRequestProjection is independent from approval state: answers carry no
+// permission authority and approvals cannot satisfy user questions.
+type InputRequestProjection struct {
+	InputRequestID     string                  `json:"id"`
+	RunID              string                  `json:"runId"`
+	AttemptID          string                  `json:"attemptId"`
+	NodeID             string                  `json:"nodeId"`
+	ProviderThreadID   string                  `json:"providerThreadId"`
+	ProviderRequestID  string                  `json:"providerRequestId"`
+	ScopeDigest        string                  `json:"scopeDigest"`
+	Request            JSONSnapshot            `json:"request"`
+	Status             InputRequestStatus      `json:"status"`
+	Answer             *InputAnswerProjection  `json:"answer,omitempty"`
+	Receipt            *InputReceiptProjection `json:"receipt,omitempty"`
+	ResourceVersion    uint64                  `json:"resourceVersion"`
+	LastGlobalPosition uint64                  `json:"lastGlobalPosition"`
+	CreatedAt          time.Time               `json:"createdAt"`
+	UpdatedAt          time.Time               `json:"updatedAt"`
+}
+
 // LeaseScopeKind identifies the resource whose mutations are fenced.
 type LeaseScopeKind string
 
@@ -529,6 +572,10 @@ type Store interface {
 	Approval(context.Context, string) (ApprovalProjection, error)
 	ReadinessAssessment(context.Context, string) (ReadinessAssessmentProjection, error)
 	LatestReadinessAssessmentForRun(context.Context, string) (ReadinessAssessmentProjection, error)
+	InputRequest(context.Context, string) (InputRequestProjection, error)
+	InputRequests(context.Context, InputRequestStatus) ([]InputRequestProjection, error)
+	InputRequestsForRun(context.Context, string) ([]InputRequestProjection, error)
+	InputRequestsForAttempt(context.Context, string) ([]InputRequestProjection, error)
 	RebuildProjections(context.Context) error
 	AcquireLease(context.Context, AcquireLeaseRequest) (Lease, error)
 	HeartbeatLease(context.Context, LeaseGuard, time.Duration) (Lease, error)

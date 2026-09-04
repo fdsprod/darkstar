@@ -14,7 +14,7 @@ INSERT INTO global_positions(singleton, last_position) VALUES (1, 0);
 
 CREATE TABLE aggregates (
   aggregate_id TEXT PRIMARY KEY,
-  aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('project', 'work', 'story', 'point', 'run', 'visit', 'attempt', 'artifact', 'approval', 'operation', 'assessment')),
+  aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('project', 'work', 'story', 'point', 'run', 'visit', 'attempt', 'artifact', 'approval', 'operation', 'assessment', 'input')),
   revision INTEGER NOT NULL CHECK (revision >= 0),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -29,7 +29,8 @@ CREATE TABLE aggregates (
     (aggregate_type = 'artifact' AND aggregate_id GLOB 'artifact_*') OR
     (aggregate_type = 'approval' AND aggregate_id GLOB 'approval_*') OR
     (aggregate_type = 'operation' AND aggregate_id GLOB 'operation_*') OR
-    (aggregate_type = 'assessment' AND aggregate_id GLOB 'assessment_*')
+    (aggregate_type = 'assessment' AND aggregate_id GLOB 'assessment_*') OR
+    (aggregate_type = 'input' AND aggregate_id GLOB 'input_*')
   )
 ) STRICT;
 
@@ -725,3 +726,38 @@ CREATE TABLE readiness_assessment_projection (
 
 CREATE INDEX readiness_assessment_projection_run_latest
 ON readiness_assessment_projection(run_id, last_global_position DESC, assessment_id DESC);
+
+CREATE TABLE input_request_projection (
+  input_request_id TEXT PRIMARY KEY CHECK (input_request_id GLOB 'input_*'),
+  run_id TEXT NOT NULL CHECK (run_id GLOB 'run_*'),
+  attempt_id TEXT NOT NULL CHECK (attempt_id GLOB 'attempt_*'),
+  node_id TEXT NOT NULL CHECK (node_id <> ''),
+  provider_thread_id TEXT NOT NULL CHECK (provider_thread_id <> ''),
+  provider_request_id TEXT NOT NULL CHECK (provider_request_id <> ''),
+  scope_digest TEXT NOT NULL CHECK (length(scope_digest) = 64 AND scope_digest NOT GLOB '*[^0-9a-f]*'),
+  request_json TEXT NOT NULL CHECK (json_valid(request_json) AND json_type(request_json) = 'object'),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'answer_recorded', 'answered')),
+  answer_json TEXT CHECK (answer_json IS NULL OR json_valid(answer_json)),
+  answer_action_key TEXT,
+  answered_by_type TEXT CHECK (answered_by_type IS NULL OR answered_by_type IN ('user', 'external')),
+  answered_by_id TEXT,
+  answer_recorded_at TEXT,
+  receipt_provider_request_id TEXT,
+  delivered_at TEXT,
+  resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
+  last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(attempt_id, provider_request_id),
+  CHECK (
+    (status = 'pending' AND answer_json IS NULL AND answer_action_key IS NULL AND answered_by_type IS NULL AND answered_by_id IS NULL AND answer_recorded_at IS NULL AND receipt_provider_request_id IS NULL AND delivered_at IS NULL) OR
+    (status = 'answer_recorded' AND answer_json IS NOT NULL AND answer_action_key IS NOT NULL AND answered_by_type IS NOT NULL AND answered_by_id IS NOT NULL AND answer_recorded_at IS NOT NULL AND receipt_provider_request_id IS NULL AND delivered_at IS NULL) OR
+    (status = 'answered' AND answer_json IS NOT NULL AND answer_action_key IS NOT NULL AND answered_by_type IS NOT NULL AND answered_by_id IS NOT NULL AND answer_recorded_at IS NOT NULL AND receipt_provider_request_id = provider_request_id AND delivered_at IS NOT NULL)
+  )
+) STRICT;
+
+CREATE INDEX input_request_projection_run
+ON input_request_projection(run_id, created_at, input_request_id);
+
+CREATE INDEX input_request_projection_attempt
+ON input_request_projection(attempt_id, created_at, input_request_id);

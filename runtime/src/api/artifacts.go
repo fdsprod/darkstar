@@ -25,7 +25,7 @@ const maxArtifactRequestBytes = 36 << 20
 
 type ArtifactService interface {
 	Ingest(context.Context, artifactops.IngestInput, string) (artifactingest.Result, error)
-	Revise(context.Context, string, artifactops.IngestInput, string) (artifactingest.Result, error)
+	Revise(context.Context, string, uint64, artifactops.IngestInput, string) (artifactingest.Result, error)
 	Attach(context.Context, artifactops.AttachInput, string) (artifactbinding.Version, error)
 	Detach(context.Context, string, string) (artifactbinding.Version, error)
 	List(context.Context, artifactops.ListInput) ([]artifactops.ArtifactView, error)
@@ -96,6 +96,11 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 			writeArtifactMethod(response, requestID, "POST")
 			return
 		}
+		baseVersion, err := parseIfMatch(request.Header.Get("If-Match"))
+		if err != nil {
+			writeArtifactError(response, requestID, err)
+			return
+		}
 		var input artifactops.IngestInput
 		if err := decodeArtifactJSON(request, &input); err != nil {
 			writeArtifactError(response, requestID, err)
@@ -106,11 +111,12 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 			writeArtifactError(response, requestID, err)
 			return
 		}
-		value, err := service.Revise(request.Context(), artifactID, input, key)
+		value, err := service.Revise(request.Context(), artifactID, baseVersion, input, key)
 		if err != nil {
 			writeArtifactError(response, requestID, err)
 			return
 		}
+		response.Header().Set("ETag", `"`+strconv.FormatUint(value.Artifact.Version, 10)+`"`)
 		writeJSON(response, http.StatusCreated, value)
 	case "diff":
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {

@@ -28,6 +28,7 @@ var (
 		statestore.AggregateAttempt: "attempt_", statestore.AggregateArtifact: "artifact_",
 		statestore.AggregateApproval: "approval_", statestore.AggregateOperation: "operation_",
 		statestore.AggregateAssessment: "assessment_",
+		statestore.AggregateInput:      "input_",
 	}
 )
 
@@ -410,6 +411,30 @@ func (d *Database) LatestReadinessAssessmentForRun(ctx context.Context, runID st
 	return value, nil
 }
 
+func (d *Database) InputRequest(ctx context.Context, id string) (statestore.InputRequestProjection, error) {
+	value, err := readInputRequestProjection(ctx, d.sql, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return statestore.InputRequestProjection{}, &NotFoundError{Kind: "input request", ID: id}
+	}
+	if err != nil {
+		return statestore.InputRequestProjection{}, fmt.Errorf("read input request projection: %w", err)
+	}
+	return value, nil
+}
+
+// InputRequests returns the global user-attention queue in deterministic order.
+func (d *Database) InputRequests(ctx context.Context, status statestore.InputRequestStatus) ([]statestore.InputRequestProjection, error) {
+	return queryInputRequests(ctx, d.sql, ` WHERE status = ? ORDER BY created_at, input_request_id`, status)
+}
+
+func (d *Database) InputRequestsForRun(ctx context.Context, runID string) ([]statestore.InputRequestProjection, error) {
+	return queryInputRequests(ctx, d.sql, ` WHERE run_id = ? ORDER BY created_at, input_request_id`, runID)
+}
+
+func (d *Database) InputRequestsForAttempt(ctx context.Context, attemptID string) ([]statestore.InputRequestProjection, error) {
+	return queryInputRequests(ctx, d.sql, ` WHERE attempt_id = ? ORDER BY created_at, input_request_id`, attemptID)
+}
+
 // ApprovalsForCheckpoint returns immutable candidate requests in revision order.
 func (d *Database) ApprovalsForCheckpoint(ctx context.Context, checkpointID string) ([]statestore.ApprovalProjection, error) {
 	rows, err := d.sql.QueryContext(ctx, approvalSelect+` WHERE checkpoint_id = ? ORDER BY checkpoint_revision`, checkpointID)
@@ -429,6 +454,32 @@ func (d *Database) ApprovalsForCheckpoint(ctx context.Context, checkpointID stri
 		return nil, fmt.Errorf("iterate artifact checkpoint approvals: %w", err)
 	}
 	return values, nil
+}
+
+// CheckpointApprovals returns full artifact-checkpoint rounds in attention
+// order. Empty runID selects all runs; status is always explicit.
+func (d *Database) CheckpointApprovals(ctx context.Context, runID string, status statestore.ApprovalStatus) ([]statestore.ApprovalProjection, error) {
+	query := approvalSelect + ` WHERE class = ? AND status = ?`
+	args := []any{statestore.ApprovalWorkflowCheckpoint, status}
+	if runID != "" {
+		query += ` AND run_id = ?`
+		args = append(args, runID)
+	}
+	query += ` ORDER BY created_at, approval_id`
+	rows, err := d.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query checkpoint approvals: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	values := make([]statestore.ApprovalProjection, 0)
+	for rows.Next() {
+		value, scanErr := scanApprovalProjection(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan checkpoint approval: %w", scanErr)
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
 }
 
 // EventByCommand returns the immutable event owned by one aggregate-scoped
@@ -477,7 +528,7 @@ func (d *Database) RebuildProjections(ctx context.Context) (err error) {
 	if closeErr != nil {
 		return fmt.Errorf("close replay events: %w", closeErr)
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM point_dependencies; DELETE FROM attempt_projection; DELETE FROM point_projection; DELETE FROM story_projection; DELETE FROM work_item_projection; DELETE FROM project_projection; DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM approval_projection; DELETE FROM readiness_assessment_projection; DELETE FROM projection_checkpoints`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM point_dependencies; DELETE FROM attempt_projection; DELETE FROM point_projection; DELETE FROM story_projection; DELETE FROM work_item_projection; DELETE FROM project_projection; DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM approval_projection; DELETE FROM readiness_assessment_projection; DELETE FROM input_request_projection; DELETE FROM projection_checkpoints`); err != nil {
 		return fmt.Errorf("clear projections: %w", err)
 	}
 	for _, event := range events {
@@ -727,6 +778,19 @@ func applyProjection(ctx context.Context, tx *sql.Tx, event statestore.Event) er
 			return err
 		}
 		return writeReadinessAssessmentProjection(ctx, tx, next)
+	case statestore.AggregateInput:
+		current, err := readInputRequestProjection(ctx, tx, event.AggregateID)
+		var existing *statestore.InputRequestProjection
+		if err == nil {
+			existing = &current
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		next, applies, err := projection.ReduceInputRequest(existing, event)
+		if err != nil || !applies {
+			return err
+		}
+		return writeInputRequestProjection(ctx, tx, next)
 	default:
 		return nil
 	}
@@ -797,6 +861,68 @@ const readinessAssessmentSelect = `SELECT assessment_id, run_id, node_id, dispos
 	policy_digest, submission_json, route_context_json, status, decision_id, decision_choice, decision_remedy_code,
 	decision_reason, decision_effect_status, decided_by_type, decided_by_id, decided_at,
 	resource_version, last_global_position, created_at, updated_at FROM readiness_assessment_projection`
+
+const inputRequestSelect = `SELECT input_request_id, run_id, attempt_id, node_id, provider_thread_id,
+	provider_request_id, scope_digest, request_json, status, answer_json, answer_action_key, answered_by_type,
+	answered_by_id, answer_recorded_at, receipt_provider_request_id, delivered_at,
+	resource_version, last_global_position, created_at, updated_at FROM input_request_projection`
+
+func readInputRequestProjection(ctx context.Context, query rowQueryer, id string) (statestore.InputRequestProjection, error) {
+	return scanInputRequestProjection(query.QueryRowContext(ctx, inputRequestSelect+` WHERE input_request_id = ?`, id))
+}
+
+func scanInputRequestProjection(row rowScanner) (statestore.InputRequestProjection, error) {
+	var value statestore.InputRequestProjection
+	var answer, actionKey, actorType, actorID, answerAt, receiptID, deliveredAt sql.NullString
+	var createdAt, updatedAt string
+	err := row.Scan(&value.InputRequestID, &value.RunID, &value.AttemptID, &value.NodeID, &value.ProviderThreadID,
+		&value.ProviderRequestID, &value.ScopeDigest, &value.Request, &value.Status, &answer, &actionKey, &actorType,
+		&actorID, &answerAt, &receiptID, &deliveredAt, &value.ResourceVersion, &value.LastGlobalPosition, &createdAt, &updatedAt)
+	if err != nil {
+		return statestore.InputRequestProjection{}, err
+	}
+	if answer.Valid {
+		when, parseErr := parseTime(answerAt.String)
+		if parseErr != nil {
+			return statestore.InputRequestProjection{}, parseErr
+		}
+		value.Answer = &statestore.InputAnswerProjection{Answer: statestore.JSONSnapshot(answer.String), ActionKey: actionKey.String,
+			Actor: statestore.Actor{Type: statestore.ActorType(actorType.String), ID: actorID.String}, RecordedAt: when}
+	}
+	if receiptID.Valid {
+		when, parseErr := parseTime(deliveredAt.String)
+		if parseErr != nil {
+			return statestore.InputRequestProjection{}, parseErr
+		}
+		value.Receipt = &statestore.InputReceiptProjection{ProviderRequestID: receiptID.String, DeliveredAt: when}
+	}
+	value.CreatedAt, err = parseTime(createdAt)
+	if err == nil {
+		value.UpdatedAt, err = parseTime(updatedAt)
+	}
+	return value, err
+}
+
+type rowsQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func queryInputRequests(ctx context.Context, query rowsQueryer, suffix string, args ...any) ([]statestore.InputRequestProjection, error) {
+	rows, err := query.QueryContext(ctx, inputRequestSelect+suffix, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query input requests: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	values := make([]statestore.InputRequestProjection, 0)
+	for rows.Next() {
+		value, scanErr := scanInputRequestProjection(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
 
 func readReadinessAssessmentProjection(ctx context.Context, query rowQueryer, id string) (statestore.ReadinessAssessmentProjection, error) {
 	return scanReadinessAssessmentProjection(query.QueryRowContext(ctx, readinessAssessmentSelect+` WHERE assessment_id = ?`, id))
@@ -988,6 +1114,34 @@ func writeReadinessAssessmentProjection(ctx context.Context, tx *sql.Tx, value s
 		actorType, actorID, decidedAt, value.ResourceVersion, value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("write readiness assessment projection %s: %w", value.AssessmentID, err)
+	}
+	return nil
+}
+
+func writeInputRequestProjection(ctx context.Context, tx *sql.Tx, value statestore.InputRequestProjection) error {
+	var answer, actionKey, actorType, actorID, answerAt, receiptID, deliveredAt any
+	if value.Answer != nil {
+		answer, actionKey, actorType, actorID, answerAt = string(value.Answer.Answer), value.Answer.ActionKey,
+			value.Answer.Actor.Type, value.Answer.Actor.ID, formatTime(value.Answer.RecordedAt)
+	}
+	if value.Receipt != nil {
+		receiptID, deliveredAt = value.Receipt.ProviderRequestID, formatTime(value.Receipt.DeliveredAt)
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO input_request_projection(
+		input_request_id, run_id, attempt_id, node_id, provider_thread_id, provider_request_id, scope_digest,
+		request_json, status, answer_json, answer_action_key, answered_by_type, answered_by_id, answer_recorded_at,
+		receipt_provider_request_id, delivered_at, resource_version, last_global_position, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(input_request_id) DO UPDATE SET status=excluded.status, answer_json=excluded.answer_json,
+		answer_action_key=excluded.answer_action_key, answered_by_type=excluded.answered_by_type,
+		answered_by_id=excluded.answered_by_id, answer_recorded_at=excluded.answer_recorded_at,
+		receipt_provider_request_id=excluded.receipt_provider_request_id, delivered_at=excluded.delivered_at,
+		resource_version=excluded.resource_version, last_global_position=excluded.last_global_position, updated_at=excluded.updated_at`,
+		value.InputRequestID, value.RunID, value.AttemptID, value.NodeID, value.ProviderThreadID, value.ProviderRequestID,
+		value.ScopeDigest, string(value.Request), value.Status, answer, actionKey, actorType, actorID, answerAt,
+		receiptID, deliveredAt, value.ResourceVersion, value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
+	if err != nil {
+		return fmt.Errorf("write input request projection %s: %w", value.InputRequestID, err)
 	}
 	return nil
 }

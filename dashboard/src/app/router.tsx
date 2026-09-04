@@ -9,6 +9,8 @@ import {
 } from "react";
 
 import { BoardPage } from "../pages/BoardPage";
+import { ArtifactPage } from "../pages/ArtifactPage";
+import { CheckpointsPage } from "../pages/CheckpointsPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
 import { RunDetailPage } from "../pages/RunDetailPage";
 import { RunReadinessPage } from "../pages/RunReadinessPage";
@@ -122,14 +124,14 @@ export function RouteView() {
   const { route } = useRouter();
   switch (route.id) {
     case "board": return <BoardPage />;
-    case "checkpoints": return <PlaceholderPage eyebrow="Attention queue" title="Checkpoints" description="Review workflow decisions, provider permissions, external delivery, and requested input from one durable inbox." />;
+    case "checkpoints": return <CheckpointsPage />;
     case "agents": return <PlaceholderPage eyebrow="Execution" title="Agents" description="Inspect queued and active attempts, their bounded authority, workspaces, and live logs." />;
     case "workflows": return <WorkflowsPage />;
     case "settings": return <PlaceholderPage eyebrow="System" title="Settings & Health" description="Understand effective configuration and the readiness of the daemon, repositories, providers, and delivery integrations." />;
     case "work": return <WorkDetailPage />;
     case "run": return <RunDetailPage />;
     case "readiness": return <RunReadinessPage />;
-    case "artifact": return <PlaceholderPage eyebrow="Artifact" title={shortIdentifier(route.params.artifactId)} description="Inspect immutable revisions, representations, provenance, bindings, and freshness." />;
+    case "artifact": return <ArtifactPage />;
     default: return <PlaceholderPage eyebrow="404" title="Page not found" description="The requested dashboard location does not exist." action={{ label: "Return to board", to: "/board" }} />;
   }
 }

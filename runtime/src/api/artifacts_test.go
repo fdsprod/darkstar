@@ -108,7 +108,7 @@ func (service *stubArtifactService) Ingest(_ context.Context, input artifactops.
 	return artifactingest.Result{Artifact: artifactregistry.ArtifactVersion{ArtifactID: "artifact_one", Version: 1}}, nil
 }
 
-func (*stubArtifactService) Revise(context.Context, string, artifactops.IngestInput, string) (artifactingest.Result, error) {
+func (*stubArtifactService) Revise(context.Context, string, uint64, artifactops.IngestInput, string) (artifactingest.Result, error) {
 	return artifactingest.Result{}, errors.New("not implemented")
 }
 

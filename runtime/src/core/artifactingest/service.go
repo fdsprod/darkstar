@@ -35,18 +35,19 @@ type CapabilityResolver interface {
 // Request is one logical immutable ingestion. SourceKind is a closed choice;
 // source-specific helpers populate it for files, pastes, and stdin.
 type Request struct {
-	ArtifactID        string
-	OperationID       string
-	IdempotencyKey    string
-	SourceKind        artifactregistry.SourceKind
-	SourceName        string
-	Content           io.Reader
-	DeclaredMediaType string
-	Sensitivity       artifactregistry.Sensitivity
-	Creator           string
-	Roles             []string
-	Tags              []string
-	Metadata          map[string]string
+	ArtifactID              string
+	ExpectedPreviousVersion *uint64
+	OperationID             string
+	IdempotencyKey          string
+	SourceKind              artifactregistry.SourceKind
+	SourceName              string
+	Content                 io.Reader
+	DeclaredMediaType       string
+	Sensitivity             artifactregistry.Sensitivity
+	Creator                 string
+	Roles                   []string
+	Tags                    []string
+	Metadata                map[string]string
 }
 
 // Result keeps duplicate storage and processor support as derived observations;
@@ -123,7 +124,7 @@ func (s *Service) Ingest(ctx context.Context, request Request) (Result, error) {
 		return Result{}, errors.New("artifact store returned no durable storage time")
 	}
 	artifact, created, err := s.registry.Register(ctx, artifactregistry.RegisterRequest{
-		ArtifactID: request.ArtifactID, IdempotencyKey: request.IdempotencyKey,
+		ArtifactID: request.ArtifactID, ExpectedPreviousVersion: request.ExpectedPreviousVersion, IdempotencyKey: request.IdempotencyKey,
 		SourceKind: request.SourceKind, SourceName: request.SourceName,
 		BlobDigest: blob.Digest, Size: blob.Size, DeclaredMediaType: request.DeclaredMediaType,
 		DetectedMediaType: assessment.mediaType, Locator: blob.Locator, Sensitivity: request.Sensitivity,

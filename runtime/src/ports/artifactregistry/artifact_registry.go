@@ -87,24 +87,25 @@ type Producer struct {
 // RegisterRequest contains all immutable facts for a new artifact version.
 // IdempotencyKey names this logical registration and is scoped to ArtifactID.
 type RegisterRequest struct {
-	ArtifactID        string
-	IdempotencyKey    string
-	SourceKind        SourceKind
-	SourceName        string
-	BlobDigest        string
-	Size              int64
-	DeclaredMediaType string
-	DetectedMediaType string
-	Locator           artifactstore.Locator
-	Sensitivity       Sensitivity
-	Creator           string
-	Status            Status
-	Producer          Producer
-	Roles             []string
-	Tags              []string
-	Metadata          map[string]string
-	Provenance        Provenance
-	CreatedAt         time.Time
+	ArtifactID              string
+	ExpectedPreviousVersion *uint64
+	IdempotencyKey          string
+	SourceKind              SourceKind
+	SourceName              string
+	BlobDigest              string
+	Size                    int64
+	DeclaredMediaType       string
+	DetectedMediaType       string
+	Locator                 artifactstore.Locator
+	Sensitivity             Sensitivity
+	Creator                 string
+	Status                  Status
+	Producer                Producer
+	Roles                   []string
+	Tags                    []string
+	Metadata                map[string]string
+	Provenance              Provenance
+	CreatedAt               time.Time
 }
 
 // ArtifactVersion is one immutable metadata snapshot tied to exact bytes.

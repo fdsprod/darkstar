@@ -172,7 +172,7 @@ accept or return JSON:
 | `POST /api/v1/artifacts` | Ingest one file, paste, or stdin payload as an immutable artifact version. |
 | `GET /api/v1/artifacts` | List latest versions, optionally filtering by exact `targetKind` and `targetId`. |
 | `GET /api/v1/artifacts/{artifactId}?version=N` | Show an exact version; omit `version` only to request latest. |
-| `POST /api/v1/artifacts/{artifactId}/revisions` | Add a new immutable version to an existing artifact identity. |
+| `POST /api/v1/artifacts/{artifactId}/revisions` | Add a new immutable version from the exact version named by `If-Match`. |
 | `GET /api/v1/artifacts/{artifactId}/diff?from=N&to=M` | Compare content, media type, sensitivity, roles, tags, and representation kinds. |
 | `POST /api/v1/artifacts/{artifactId}/extract?version=N` | Derive safe representations with the configured processor set. |
 | `GET /api/v1/artifacts/{artifactId}/lint?version=N` | Report storage, freshness, representation, and diagnostic findings. |
@@ -192,11 +192,26 @@ Artifact review decisions use
 `POST /api/v1/approvals/{approvalId}/decisions` with both `Idempotency-Key` and
 a quoted `If-Match` resource version. The body binds `approve`,
 `request_changes`, or `reject` to the exact candidate `scopeDigest` and frozen
-`policyDigest`, with an optional bounded feedback comment. An exact retry
+`policyDigest`. `request_changes` and `reject` require a non-empty bounded
+feedback comment. An exact retry
 returns the original round; a changed payload under the same key or a new
 decision against an already-resolved round returns a stable approval conflict.
 Each requested revision receives a new approval ID while retaining the stable
 checkpoint ID, prior draft, feedback, and revision-driven descendant effects.
+
+`GET /api/v1/checkpoints` is the authoritative attention queue and defaults to
+pending `workflow_checkpoint` rounds; it accepts optional `runId` and `status`
+filters and returns full actionable rounds. `GET /api/v1/approvals/{approvalId}`
+returns one round, while `GET /api/v1/checkpoints/{checkpointId}` returns every
+revision round in order. Allowed actions are always derived by the server.
+
+Provider questions are distinct resources. `GET /api/v1/input-requests` defaults
+to the global pending-input queue and accepts optional `runId`, `attemptId`, or
+`status`. `POST /api/v1/input-requests/{id}/answer` records an arbitrary JSON
+answer before provider delivery and requires `Idempotency-Key`, `If-Match`, and
+the exact scope digest. A delivery failure leaves truthful `answer_recorded`
+state; `POST /api/v1/input-requests/{id}/delivery-retries` uses the server-held
+provider action key, so clients do not need to persist or receive it.
 
 The CLI client performs this discovery and negotiation once per finite command.
 For missing or unreachable endpoint state it idempotently autostarts the daemon,

@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -74,9 +75,41 @@ func TestApprovalDecisionAPIMapsResolvedAndIdempotencyConflicts(t *testing.T) {
 	_ = response.Body.Close()
 }
 
+func TestCheckpointQueueIsDiscoverableWithoutKnownID(t *testing.T) {
+	server, err := NewServer(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &recordingApprovalService{queue: checkpointport.Queue{SchemaVersion: 1, Items: []checkpointport.Round{{ApprovalID: "approval_00000000000000000000000000", AllowedActions: []checkpointport.Action{checkpointport.ActionApprove}}}}}
+	if err := server.SetApprovals(service); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Start(context.Background(), 1234, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestServer(t, server)
+	endpoint, _ := server.Endpoint()
+	request, _ := http.NewRequest(http.MethodGet, endpoint.BaseURL()+"/api/v1/checkpoints?class=workflow_checkpoint&status=pending", nil)
+	request.Header.Set("Authorization", endpoint.AuthorizationHeader())
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var queue checkpointport.Queue
+	if err := json.NewDecoder(response.Body).Decode(&queue); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || service.listRequest.Status != "pending" || len(queue.Items) != 1 || len(queue.Items[0].AllowedActions) != 1 {
+		t.Fatalf("response=%d request=%#v queue=%#v", response.StatusCode, service.listRequest, queue)
+	}
+}
+
 type recordingApprovalService struct {
-	request checkpoint.DecisionRequest
-	err     error
+	request     checkpoint.DecisionRequest
+	listRequest checkpoint.ListRequest
+	queue       checkpointport.Queue
+	err         error
 }
 
 func (service *recordingApprovalService) Decide(_ context.Context, request checkpoint.DecisionRequest) (checkpointport.Round, error) {
@@ -85,6 +118,22 @@ func (service *recordingApprovalService) Decide(_ context.Context, request check
 		return checkpointport.Round{}, service.err
 	}
 	return checkpointport.Round{ApprovalID: request.ApprovalID, ResourceVersion: request.ExpectedResourceVersion + 1}, nil
+}
+
+func (service *recordingApprovalService) Round(context.Context, string) (checkpointport.Round, error) {
+	return checkpointport.Round{}, service.err
+}
+
+func (service *recordingApprovalService) History(context.Context, string) (checkpointport.History, error) {
+	return checkpointport.History{}, service.err
+}
+
+func (service *recordingApprovalService) List(_ context.Context, request checkpoint.ListRequest) (checkpointport.Queue, error) {
+	service.listRequest = request
+	if service.queue.Items == nil {
+		service.queue = checkpointport.Queue{SchemaVersion: 1, Items: []checkpointport.Round{}}
+	}
+	return service.queue, service.err
 }
 
 func approvalRequest(t *testing.T, endpoint Endpoint, approvalID, body, key, ifMatch string) *http.Response {

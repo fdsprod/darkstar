@@ -686,9 +686,18 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 			"providerVersion": event.ProviderVersion, "payload": json.RawMessage(event.Payload),
 			"logReference": current.LogReference,
 		}
-		if _, err = s.store.Append(ctx, pendingEvent("attempt.provider_event", statestore.AggregateAttempt, current.AttemptID,
+		events := []statestore.PendingEvent{pendingEvent("attempt.provider_event", statestore.AggregateAttempt, current.AttemptID,
 			current.ResourceVersion, current.RunID, fmt.Sprintf("provider:%s:%d", current.AttemptID, event.Sequence),
-			statestore.ActorProvider, "fake", event.OccurredAt, data)); err != nil {
+			statestore.ActorProvider, "fake", event.OccurredAt, data)}
+		if event.Kind == provider.EventUserInputRequested {
+			checkpoint, present, checkpointErr := provider.InteractionCheckpointFromEvent(event)
+			if checkpointErr != nil || !present || checkpoint.Kind != provider.InteractionUser {
+				s.failAttempt(current.AttemptID, current.RunID, errors.New("user-input event has no valid user checkpoint"))
+				return
+			}
+			events = append(events, inputRequestedEvent(current, handle, event, checkpoint))
+		}
+		if _, err = s.store.Append(ctx, events...); err != nil {
 			return
 		}
 		line, _ := json.Marshal(map[string]any{"sequence": event.Sequence, "kind": event.Kind, "payload": json.RawMessage(event.Payload)})

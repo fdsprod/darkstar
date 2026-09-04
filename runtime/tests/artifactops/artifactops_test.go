@@ -2,6 +2,7 @@ package artifactops_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -59,12 +60,18 @@ func TestArtifactOperationsCoverIngestBindingInspectionRevisionAndImpact(t *test
 		t.Fatalf("Impact() = %#v, %v", assessment, err)
 	}
 
-	second, err := service.Revise(ctx, reference.ArtifactID, artifactops.IngestInput{
+	second, err := service.Revise(ctx, reference.ArtifactID, reference.Version, artifactops.IngestInput{
 		SourceKind: artifactregistry.SourcePaste, SourceName: "evidence.json", MediaType: "application/json",
 		Content: []byte(`{"answer":42}`), Roles: []string{"note"},
 	}, "ingest-second")
 	if err != nil || second.Artifact.Version != 2 {
 		t.Fatalf("Revise() = %#v, %v", second, err)
+	}
+	if _, err := service.Revise(ctx, reference.ArtifactID, reference.Version, artifactops.IngestInput{
+		SourceKind: artifactregistry.SourcePaste, SourceName: "stale.json", MediaType: "application/json",
+		Content: []byte(`{"stale":true}`),
+	}, "stale-revision"); !errors.Is(err, artifactregistry.ErrVersionConflict) {
+		t.Fatalf("stale revision error = %v, want version conflict", err)
 	}
 	diff, err := service.Diff(ctx, reference.ArtifactID, 1, 2)
 	if err != nil || !reflect.DeepEqual(diff.Changed, []string{"content"}) {

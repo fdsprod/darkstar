@@ -50,6 +50,7 @@ type Server struct {
 	exporter  RunExporter
 	runs      RunService
 	agents    AgentService
+	inputs    InputRequestService
 	work      WorkService
 	artifacts ArtifactService
 	approvals ApprovalService
@@ -199,6 +200,20 @@ func (s *Server) SetAgents(agents AgentService) error {
 		return errors.New("API agent service is required")
 	}
 	s.agents = agents
+	return nil
+}
+
+// SetInputRequests installs user-input queries and answer delivery before Start.
+func (s *Server) SetInputRequests(inputs InputRequestService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API input-request service can only be set before start")
+	}
+	if inputs == nil {
+		return errors.New("API input-request service is required")
+	}
+	s.inputs = inputs
 	return nil
 }
 
@@ -479,6 +494,14 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/approvals/") {
 		s.serveApprovals(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/checkpoints" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/checkpoints/") {
+		s.serveCheckpoints(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/input-requests" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/input-requests/") {
+		s.serveInputRequests(response, request, requestID)
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/workflows" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/workflows/") {

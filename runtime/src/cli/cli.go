@@ -51,9 +51,12 @@ Commands:
   agent      Inspect and control queued or running agents
   api        Inspect the autostarted local API
   artifact   Ingest, bind, inspect, derive, lint, and revise artifacts
+  approval   Inspect and decide artifact review approvals
+  checkpoint List and inspect artifact review checkpoints
   daemon     Run and control the per-user daemon
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
+  input      List, inspect, answer, and retry provider input requests
   project    Register, list, and inspect projects
   run        Start, inspect, control, watch, and export runs
   work       Create, import, list, and inspect work
@@ -95,6 +98,21 @@ Agent commands:
   agent logs <attempt-id> [--follow] [--json]
   agent cancel <attempt-id> [--idempotency-key <key>] [--json]
 
+Approval and checkpoint commands:
+  approval show <approval-id> [--json]
+  approval decide <approval-id> <approve|request_changes|reject> [--comment <text>] [--idempotency-key <key>] [--json]
+  checkpoint list [--run <run-id>] [--status <pending|approved|changes_requested|rejected>] [--json]
+  checkpoint show <checkpoint-id> [--json]
+  checkpoint approve <approval-id> [--message <text>] [--json]
+  checkpoint request-changes|reject <approval-id> --message <text> [--json]
+  checkpoint answer <input-id> --file <answers.json> [--json]
+
+Input commands:
+  input list [--run <run-id> | --attempt <attempt-id>] [--status <pending|answer_recorded|answered>] [--json]
+  input show <input-id> [--json]
+  input answer <input-id> --answer <json> [--idempotency-key <key>] [--json]
+  input retry <input-id> [--json]
+
 Artifact commands:
   artifact ingest (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--role <role>] [--json]
   artifact attach <artifact-id>@<version> --to <kind>:<id> [--json]
@@ -103,7 +121,7 @@ Artifact commands:
   artifact show <artifact-id>@<version> [--json]
   artifact diff <artifact-id> --from <version> --to <version> [--json]
   artifact extract|lint|representations <artifact-id>@<version> [--json]
-  artifact revise <artifact-id> (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--json]
+  artifact revise <artifact-id>@<base-version> (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--json]
   artifact impact <artifact-id>@<version> --target <kind>:<id> [--run <run-id>] [--json]
 
 Workflow commands:
@@ -179,12 +197,18 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runAPI(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "agent":
 		return runAgent(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "approval":
+		return runApproval(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "artifact":
 		return runArtifact(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "checkpoint":
+		return runCheckpoint(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "doctor":
 		return runDoctor(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "project":
 		return runProject(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "input":
+		return runInput(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "run":
 		return runRun(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "work":
@@ -386,6 +410,13 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return err
 	}
 	if err := service.server.SetAgents(executions); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		service.executions = nil
+		return err
+	}
+	if err := service.server.SetInputRequests(executions); err != nil {
 		_ = executions.Close()
 		_ = database.Close()
 		service.database = nil

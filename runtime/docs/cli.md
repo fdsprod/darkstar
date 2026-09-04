@@ -129,7 +129,7 @@ Artifact commands use the same daemon-owned application service as the HTTP API:
 
 ```text
 darkstar artifact ingest (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--role <role>]... [--tag <tag>]... [--sensitivity <level>]
-darkstar artifact revise <artifact-id> (--file <path> | --paste <text> | --stdin) [metadata options]
+darkstar artifact revise <artifact-id>@<base-version> (--file <path> | --paste <text> | --stdin) [metadata options]
 darkstar artifact attach <artifact-id>@<version> --to <kind>:<id>
 darkstar artifact detach <binding-id>
 darkstar artifact list [--target <kind>:<id>]
@@ -147,10 +147,28 @@ inferred from its extension unless overridden. Sensitivity is one of `unknown`,
 `work`, `run`, `node`, `checkpoint`, `decision`, `story`, or
 `implementation_point`. Mutations generate a fresh idempotency key, while all
 version-sensitive reads require an exact `<artifact-id>@<version>` reference.
+Revision writes use the same exact reference as an optimistic concurrency base.
 
 Human `artifact lint` exits with class 7 when findings exist. In machine mode,
 every successful artifact command returns `{"schemaVersion":1,"result":...}`;
 the `result` value is the same resource returned by the HTTP operation.
+
+## Checkpoint and input commands
+
+```text
+darkstar checkpoint list [--run <run-id>] [--status <status>]
+darkstar checkpoint show <checkpoint-id>
+darkstar approval show <approval-id>
+darkstar approval decide <approval-id> <approve|request_changes|reject> [--comment <text>]
+darkstar input list [--run <run-id> | --attempt <attempt-id>] [--status <status>]
+darkstar input show <input-id>
+darkstar input answer <input-id> --answer <json>
+darkstar input retry <input-id>
+```
+
+Checkpoint and input lists are authoritative attention queues. Approval decisions
+bind the current server-supplied scope, policy, and resource version. Input
+answers are not approvals; delivery retry reuses the hidden durable provider key.
 
 ## Workflow commands
 

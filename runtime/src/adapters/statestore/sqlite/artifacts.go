@@ -58,6 +58,15 @@ func (d *Database) Register(ctx context.Context, request artifactregistry.Regist
 	if !errors.Is(err, sql.ErrNoRows) {
 		return artifactregistry.ArtifactVersion{}, false, fmt.Errorf("read artifact registration: %w", err)
 	}
+	if normalized.ExpectedPreviousVersion != nil {
+		var latest uint64
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) FROM artifact_versions WHERE artifact_id = ?`, normalized.ArtifactID).Scan(&latest); err != nil {
+			return artifactregistry.ArtifactVersion{}, false, fmt.Errorf("read artifact base version: %w", err)
+		}
+		if latest != *normalized.ExpectedPreviousVersion {
+			return artifactregistry.ArtifactVersion{}, false, fmt.Errorf("%w: artifact %s expected base version %d, found %d", artifactregistry.ErrVersionConflict, normalized.ArtifactID, *normalized.ExpectedPreviousVersion, latest)
+		}
+	}
 
 	_, err = tx.ExecContext(ctx, `INSERT INTO artifact_versions(
 		artifact_id, version, idempotency_key, source_kind, source_name, blob_digest, size,

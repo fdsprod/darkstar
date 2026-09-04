@@ -35,11 +35,23 @@ export interface components {
     "ArtifactTarget": { "kind": components["schemas"]["ArtifactTargetKind"]; "id": string; };
     "ArtifactIngestRequest": { "artifactId"?: string; "sourceKind": "file" | "paste" | "stdin" | "generated" | "external"; "sourceName": string; "mediaType": string; "content": string; "sensitivity"?: "unknown" | "public" | "internal" | "sensitive" | "secret"; "creator"?: string; "roles"?: Array<string>; "tags"?: Array<string>; };
     "ArtifactIngestResult": { "artifact": components["schemas"]["Artifact"]; "created": boolean; "duplicateOf"?: components["schemas"]["ArtifactVersionRef"]; "capability": {  }; "diagnostics": Array<string>; };
-    "ArtifactView": { "artifact": components["schemas"]["Artifact"]; "freshness": "current" | "stale" | "invalid"; "representations": Array<components["schemas"]["ArtifactRepresentation"]>; };
+    "ArtifactView": { "artifact": components["schemas"]["Artifact"]; "freshness": "current" | "potentially_stale" | "invalidated"; "representations": Array<components["schemas"]["ArtifactRepresentation"]>; };
     "ArtifactAttachRequest": { "bindingId"?: string; "artifact": components["schemas"]["ArtifactVersionRef"]; "target": components["schemas"]["ArtifactTarget"]; };
     "ArtifactImpactRequest": { "target": components["schemas"]["ArtifactTarget"]; "runId"?: string; };
     "ArtifactLintResult": { "artifact": components["schemas"]["ArtifactVersionRef"]; "valid": boolean; "issues": Array<{ "code": string; "message": string; }>; };
     "ArtifactVersionDiff": { "artifactId": string; "from": number; "to": number; "changed": Array<"content" | "mediaType" | "sensitivity" | "roles" | "tags">; "fromDigest": string; "toDigest": string; "representations": { "from": Array<string>; "to": Array<string>; }; };
+    "ReviewActor": { "type": "user" | "system" | "provider" | "external"; "id": string; };
+    "ArtifactInvalidation": { "trigger": components["schemas"]["ArtifactVersionRef"]; "descendant": components["schemas"]["ArtifactVersionRef"]; "freshness": "current" | "potentially_stale" | "invalidated"; "createdAt": string; };
+    "ArtifactCheckpointDecision": { "action": "approve" | "request_changes" | "reject"; "effect": "accept_candidate" | "start_revision" | "reject_visit"; "actor": components["schemas"]["ReviewActor"]; "comment"?: string; "decidedAt": string; };
+    "ArtifactCheckpointRound": { "approvalId": string; "checkpointId": string; "runId": string; "visitId": string; "nodeId": string; "attemptId": string; "revision": number; "candidate": components["schemas"]["ArtifactVersionRef"]; "candidateDigest": string; "scopeDigest": string; "policyDigest": string; "mode": "approve" | "approve_on_change"; "maxRevisions"?: number; "state": "pending" | "approved" | "changes_requested" | "rejected"; "decision"?: components["schemas"]["ArtifactCheckpointDecision"]; "affectedArtifacts": Array<components["schemas"]["ArtifactInvalidation"]>; "allowedActions": Array<"approve" | "request_changes" | "reject">; "resourceVersion": number; "createdAt": string; "updatedAt": string; };
+    "ArtifactCheckpointQueue": { "schemaVersion": 1; "items": Array<components["schemas"]["ArtifactCheckpointRound"]>; };
+    "ArtifactCheckpointHistory": { "checkpointId": string; "rounds": Array<components["schemas"]["ArtifactCheckpointRound"]>; };
+    "ArtifactCheckpointDecisionRequest": { "action": "approve"; "scopeDigest": string; "policyDigest": string; "comment"?: string; } | { "action": "request_changes" | "reject"; "scopeDigest": string; "policyDigest": string; "comment": string; };
+    "InputRequestAnswer": { "answer": unknown; "actor": components["schemas"]["ReviewActor"]; "recordedAt": string; };
+    "InputRequestReceipt": { "providerRequestId": string; "deliveredAt": string; };
+    "InputRequest": { "id": string; "runId": string; "attemptId": string; "nodeId": string; "providerThreadId": string; "providerRequestId": string; "scopeDigest": string; "request": {  }; "status": "pending" | "answer_recorded" | "answered"; "answer"?: components["schemas"]["InputRequestAnswer"]; "receipt"?: components["schemas"]["InputRequestReceipt"]; "allowedActions": Array<"answer" | "retry_delivery">; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
+    "InputRequestList": { "schemaVersion": 1; "items": Array<components["schemas"]["InputRequest"]>; };
+    "InputRequestAnswerRequest": { "scopeDigest": string; "answer": unknown; };
     "RunExportManifest": unknown;
     "CreateRunRequest": { "workItemId": string; "workflowId": string; "workflowVersion": string; };
     "StartFakeRunRequest": { "scenario": "fake-success" | "fake-restart"; };
@@ -70,7 +82,7 @@ export interface components {
     "Run": { "id": string; "workItemId": string; "workflowId": string; "workflowVersion": string; "workflowDigest"?: string; "routeDigest"?: string; "routeSnapshot"?: components["schemas"]["FrozenRoute"]; "priority"?: number; "status": "pending" | "draft" | "ready" | "queued" | "running" | "waiting" | "blocked" | "completed" | "failed" | "cancelled" | "reconcile_required"; "resourceVersion": number; "lastGlobalPosition"?: number; "createdAt": string; "updatedAt": string; };
     "Attempt": { "id": string; "runId": string; "visitId"?: string; "nodeId"?: string; "pointId"?: string; "pointRevision"?: number; "priority"?: number; "scenario": string; "provider": string; "status": "created" | "starting" | "running" | "validating" | "succeeded" | "failed" | "cancelled" | "interrupted" | "reconcile_required"; "providerThreadId"?: string; "providerTurnId"?: string; "processOwnerId"?: string; "lastSequence": number; "logReference"?: string; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
     "NodeVisit": { "id": string; "runId": string; "nodeId": string; "status": "pending" | "ready" | "running" | "validating" | "waiting_checkpoint" | "succeeded" | "rejected" | "failed" | "cancelled"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
-    "RunTimelineEntry": { "id": string; "globalPosition": number; "aggregateType": "project" | "work" | "story" | "point" | "run" | "visit" | "attempt" | "artifact" | "approval" | "operation" | "assessment"; "aggregateId": string; "aggregateRevision": number; "kind": string; "occurredAt": string; "recordedAt": string; "actorType": "user" | "system" | "provider" | "external"; };
+    "RunTimelineEntry": { "id": string; "globalPosition": number; "aggregateType": "project" | "work" | "story" | "point" | "run" | "visit" | "attempt" | "artifact" | "approval" | "operation" | "assessment" | "input"; "aggregateId": string; "aggregateRevision": number; "kind": string; "occurredAt": string; "recordedAt": string; "actorType": "user" | "system" | "provider" | "external"; };
     "RunTimelinePageInfo": { "hasEarlier": boolean; "firstPosition"?: number; "lastPosition"?: number; };
     "RunCommandSummary": { "scope": string; "status": string; "responseStatus"?: number; "firstEventPosition"?: number; "lastEventPosition"?: number; "createdAt": string; "completedAt"?: string; };
     "RunCommandPageInfo": { "hasEarlier": boolean; };
@@ -101,7 +113,14 @@ export interface ApiOperations {
     "resumeRun": { method: "POST"; path: "/api/v1/runs/{runId}/resume"; response: components["schemas"]["Run"]; body: never; };
     "retryRun": { method: "POST"; path: "/api/v1/runs/{runId}/retry"; response: components["schemas"]["Run"]; body: components["schemas"]["RetryRunRequest"]; };
     "continueRun": { method: "POST"; path: "/api/v1/runs/{runId}/continue"; response: components["schemas"]["Run"]; body: components["schemas"]["ContinueRunRequest"]; };
-    "decideApproval": { method: "POST"; path: "/api/v1/approvals/{approvalId}/decisions"; response: {  }; body: { "action": "approve" | "acknowledge" | "request_changes" | "reject" | "satisfy_external" | "deny" | "allow_once" | "allow_for_session" | "cancel" | "expire"; "scopeDigest": string; "policyDigest": string; "comment"?: string; }; };
+    "decideApproval": { method: "POST"; path: "/api/v1/approvals/{approvalId}/decisions"; response: components["schemas"]["ArtifactCheckpointRound"]; body: components["schemas"]["ArtifactCheckpointDecisionRequest"]; };
+    "getApproval": { method: "GET"; path: "/api/v1/approvals/{approvalId}"; response: components["schemas"]["ArtifactCheckpointRound"]; body: never; };
+    "listCheckpoints": { method: "GET"; path: "/api/v1/checkpoints"; response: components["schemas"]["ArtifactCheckpointQueue"]; body: never; };
+    "getCheckpointHistory": { method: "GET"; path: "/api/v1/checkpoints/{checkpointId}"; response: components["schemas"]["ArtifactCheckpointHistory"]; body: never; };
+    "listInputRequests": { method: "GET"; path: "/api/v1/input-requests"; response: components["schemas"]["InputRequestList"]; body: never; };
+    "getInputRequest": { method: "GET"; path: "/api/v1/input-requests/{inputRequestId}"; response: components["schemas"]["InputRequest"]; body: never; };
+    "answerInputRequest": { method: "POST"; path: "/api/v1/input-requests/{inputRequestId}/answer"; response: components["schemas"]["InputRequest"]; body: components["schemas"]["InputRequestAnswerRequest"]; };
+    "retryInputRequestDelivery": { method: "POST"; path: "/api/v1/input-requests/{inputRequestId}/delivery-retries"; response: components["schemas"]["InputRequest"]; body: never; };
     "streamEvents": { method: "GET"; path: "/api/v1/events"; response: string; body: never; };
     "readLog": { method: "GET"; path: "/api/v1/logs/{reference}"; response: string; body: never; };
     "listWorkflows": { method: "GET"; path: "/api/v1/workflows"; response: Array<components["schemas"]["WorkflowVersionSummary"]>; body: never; };
@@ -148,6 +167,13 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "retryRun": { method: "POST", path: "/api/v1/runs/{runId}/retry" },
   "continueRun": { method: "POST", path: "/api/v1/runs/{runId}/continue" },
   "decideApproval": { method: "POST", path: "/api/v1/approvals/{approvalId}/decisions" },
+  "getApproval": { method: "GET", path: "/api/v1/approvals/{approvalId}" },
+  "listCheckpoints": { method: "GET", path: "/api/v1/checkpoints" },
+  "getCheckpointHistory": { method: "GET", path: "/api/v1/checkpoints/{checkpointId}" },
+  "listInputRequests": { method: "GET", path: "/api/v1/input-requests" },
+  "getInputRequest": { method: "GET", path: "/api/v1/input-requests/{inputRequestId}" },
+  "answerInputRequest": { method: "POST", path: "/api/v1/input-requests/{inputRequestId}/answer" },
+  "retryInputRequestDelivery": { method: "POST", path: "/api/v1/input-requests/{inputRequestId}/delivery-retries" },
   "streamEvents": { method: "GET", path: "/api/v1/events" },
   "readLog": { method: "GET", path: "/api/v1/logs/{reference}" },
   "listWorkflows": { method: "GET", path: "/api/v1/workflows" },
