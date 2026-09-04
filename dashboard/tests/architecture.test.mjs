@@ -57,6 +57,22 @@ test("shell has keyboard and screen-reader navigation affordances", async () => 
     read("../src/styles.css"),
   ]);
   assert.match(shell, /event\.key\.toLowerCase\(\) === "k"/);
+  assert.match(shell, /event\.key !== "ArrowDown" && event\.key !== "ArrowUp"/);
+  assert.match(shell, /aria-label="Search and navigate"/);
+  assert.match(shell, /aria-controls="application-navigation"/);
+  assert.match(shell, /aria-expanded=\{sidebarOpen\}/);
+  assert.match(shell, /inert=\{sidebarOpen \? true : undefined\}/);
+  assert.match(shell, /event\.key !== "Escape"/);
+  assert.match(shell, /window\.matchMedia\("\(max-width: 820px\)"\)/);
+  assert.match(shell, /closeNavigationRef\.current\?\.focus\(\)/);
+  assert.match(shell, /menuButtonRef\.current\?\.focus\(\)/);
+  assert.match(shell, /mainRef\.current\?\.focus\(\)/);
   assert.match(styles, /\.skip-link:focus/);
+  assert.match(styles, /\.board-search:focus-within/);
+  assert.match(styles, /\.command-palette__search:focus-within/);
+  assert.match(styles, /\.artifact-dropzone:focus-within/);
+  assert.match(styles, /\.sidebar \{[^}]*visibility: hidden;[^}]*pointer-events: none;/s);
+  assert.match(styles, /\.icon-button\.sidebar__close \{ display: none; \}/);
+  assert.match(styles, /\.icon-button\.menu-button \{ display: none; \}/);
   assert.match(styles, /prefers-reduced-motion/);
 });

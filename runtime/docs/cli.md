@@ -88,6 +88,21 @@ Line carrying its byte range so consumers can resume without replay. Attempt
 cancellation is idempotent and delegates to the daemon's provider/run control,
 preserving the same durable terminal evidence as run cancellation.
 
+Provider permission requests have direct CLI/API/dashboard parity:
+
+```text
+darkstar agent permissions list [--attempt <attempt-id>] [--status <status>]
+darkstar agent permissions show <permission-id>
+darkstar agent permissions decide <permission-id> <allow_once|deny|cancel> [--idempotency-key <key>]
+darkstar agent permissions retry <permission-id>
+```
+
+Decisions bind the daemon-reported interaction scope, policy digest, and
+resource version. A decision is recorded before provider delivery, and `retry`
+reuses that durable decision without broadening its scope. These operations
+produce the same permission audit events whether initiated from the dashboard
+or CLI.
+
 `darkstar run export <run-id> --output <file>` downloads the daemon-created ZIP
 without duplicating export or redaction logic in the client. The CLI resolves the
 output to an absolute path, writes a protected temporary file in the destination

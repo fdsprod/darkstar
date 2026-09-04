@@ -2,6 +2,7 @@ import {
   createContext,
   type MouseEvent,
   type ReactNode,
+  type Ref,
   useContext,
   useEffect,
   useMemo,
@@ -107,12 +108,13 @@ export function useRouter() {
   return router;
 }
 
-export function AppLink({ to, children, className, ariaCurrent, onNavigate }: {
+export function AppLink({ to, children, className, ariaCurrent, onNavigate, anchorRef }: {
   to: string;
   children: ReactNode;
   className?: string;
   ariaCurrent?: "page";
   onNavigate?: () => void;
+  anchorRef?: Ref<HTMLAnchorElement>;
 }) {
   const { navigate } = useRouter();
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -121,7 +123,7 @@ export function AppLink({ to, children, className, ariaCurrent, onNavigate }: {
     navigate(to);
     onNavigate?.();
   };
-  return <a href={to} className={className} aria-current={ariaCurrent} onClick={handleClick}>{children}</a>;
+  return <a ref={anchorRef} href={to} className={className} aria-current={ariaCurrent} onClick={handleClick}>{children}</a>;
 }
 
 export function RouteView() {

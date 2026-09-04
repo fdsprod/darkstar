@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
+import { tabKeyTarget } from "../accessibility/keyboard";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { formatDate, SummaryFact } from "./WorkDetailPage";
 import { humanize, shortIdentifier } from "./runDetailModel";
@@ -9,6 +10,7 @@ import { buildWorkflowPreviewRequest, decodeAuthoredWorkflow, previewImpact, rea
 
 type Schemas = components["schemas"];
 type WorkflowTab = "preview" | "graph" | "readiness" | "definition";
+const workflowTabs: WorkflowTab[] = ["preview", "graph", "readiness", "definition"];
 
 export function WorkflowsPage() {
   const { state } = useDashboardState();
@@ -20,6 +22,12 @@ export function WorkflowsPage() {
   const [graph, setGraph] = useState<Schemas["WorkflowGraph"]>();
   const [detailError, setDetailError] = useState("");
   const [tab, setTab] = useState<WorkflowTab>("preview");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const target = tabKeyTarget(index, event.key, workflowTabs.length);
+    if (target === undefined) return;
+    event.preventDefault(); setTab(workflowTabs[target]); tabRefs.current[target]?.focus();
+  }
 
   useEffect(() => {
     const abort = new AbortController();
@@ -60,25 +68,25 @@ export function WorkflowsPage() {
         <div className="workflow-version-list">{visibleCatalog.map((item) => <button type="button" key={workflowKey(item)} className="workflow-version" aria-pressed={workflowKey(item) === selectedKey} onClick={() => setSelectedKey(workflowKey(item))}><span className="workflow-version__mark" aria-hidden="true">◇</span><span><strong>{item.name}</strong><small>v{item.version} · {humanize(item.sourceScope)}</small></span></button>)}</div>
       </aside>
 
-      <main className="workflow-workspace">
+      <section className="workflow-workspace">
         {!selected ? <WorkflowEmpty /> : <>
           <header className="workflow-detail-header"><div><p className="eyebrow">Installed workflow</p><h2>{decoded?.displayName ?? selected.name}</h2><p>{selected.name} · v{selected.version}</p></div><span className={`scope-badge scope-badge--${selected.sourceScope}`}>{selected.sourceScope}</span></header>
           <section className="workflow-meta" aria-label="Selected workflow version"><SummaryFact label="Digest" value={shortIdentifier(selected.digest)} mono /><SummaryFact label="Source" value={selected.sourceReference} /><SummaryFact label="Installed" value={formatDate(selected.installedAt)} /><SummaryFact label="API version" value={decoded?.apiVersion ?? "Loading…"} /></section>
-          <div className="workflow-tabs" role="tablist" aria-label="Workflow inspection"><WorkflowTabButton id="preview" current={tab} set={setTab}>Route preview</WorkflowTabButton><WorkflowTabButton id="graph" current={tab} set={setTab}>Graph</WorkflowTabButton><WorkflowTabButton id="readiness" current={tab} set={setTab}>Authored readiness</WorkflowTabButton><WorkflowTabButton id="definition" current={tab} set={setTab}>Definition</WorkflowTabButton></div>
-          {detailError ? <div className="workflow-detail-error" role="alert">{detailError}</div> : !definition || !graph ? <div className="workflow-detail-loading" aria-busy="true">Loading immutable definition…</div> : <div role="tabpanel" aria-labelledby={`workflow-tab-${tab}`}>
-            {tab === "preview" && <PreviewTab selected={selected} graph={graph} decoded={decoded} />}
-            {tab === "graph" && <GraphTab graph={graph} decoded={decoded} />}
-            {tab === "readiness" && <ReadinessTab decoded={decoded} />}
-            {tab === "definition" && <DefinitionTab selected={selected} decoded={decoded} />}
-          </div>}
+          <div className="workflow-tabs" role="tablist" aria-label="Workflow inspection">{workflowTabs.map((value, index) => <WorkflowTabButton key={value} id={value} current={tab} set={setTab} buttonRef={(element) => { tabRefs.current[index] = element; }} onKeyDown={(event) => onTabKeyDown(event, index)}>{value === "preview" ? "Route preview" : value === "readiness" ? "Authored readiness" : value[0].toUpperCase() + value.slice(1)}</WorkflowTabButton>)}</div>
+          {detailError ? <div className="workflow-detail-error" role="alert">{detailError}</div> : !definition || !graph ? <div className="workflow-detail-loading" aria-busy="true">Loading immutable definition…</div> : <>
+            <div id="workflow-panel-preview" role="tabpanel" tabIndex={tab === "preview" ? 0 : -1} aria-labelledby="workflow-tab-preview" hidden={tab !== "preview"}>{tab === "preview" && <PreviewTab selected={selected} graph={graph} decoded={decoded} />}</div>
+            <div id="workflow-panel-graph" role="tabpanel" tabIndex={tab === "graph" ? 0 : -1} aria-labelledby="workflow-tab-graph" hidden={tab !== "graph"}>{tab === "graph" && <GraphTab graph={graph} decoded={decoded} />}</div>
+            <div id="workflow-panel-readiness" role="tabpanel" tabIndex={tab === "readiness" ? 0 : -1} aria-labelledby="workflow-tab-readiness" hidden={tab !== "readiness"}>{tab === "readiness" && <ReadinessTab decoded={decoded} />}</div>
+            <div id="workflow-panel-definition" role="tabpanel" tabIndex={tab === "definition" ? 0 : -1} aria-labelledby="workflow-tab-definition" hidden={tab !== "definition"}>{tab === "definition" && <DefinitionTab selected={selected} decoded={decoded} />}</div>
+          </>}
         </>}
-      </main>
+      </section>
     </div>
   </div>;
 }
 
-function WorkflowTabButton({ id, current, set, children }: { id: WorkflowTab; current: WorkflowTab; set(value: WorkflowTab): void; children: React.ReactNode }) {
-  return <button id={`workflow-tab-${id}`} role="tab" aria-selected={current === id} aria-controls={`workflow-panel-${id}`} type="button" onClick={() => set(id)}>{children}</button>;
+function WorkflowTabButton({ id, current, set, buttonRef, onKeyDown, children }: { id: WorkflowTab; current: WorkflowTab; set(value: WorkflowTab): void; buttonRef(value: HTMLButtonElement | null): void; onKeyDown(event: KeyboardEvent<HTMLButtonElement>): void; children: React.ReactNode }) {
+  return <button ref={buttonRef} id={`workflow-tab-${id}`} role="tab" tabIndex={current === id ? 0 : -1} aria-selected={current === id} aria-controls={`workflow-panel-${id}`} type="button" onKeyDown={onKeyDown} onClick={() => set(id)}>{children}</button>;
 }
 
 function PreviewTab({ selected, graph, decoded }: { selected: Schemas["WorkflowVersionSummary"]; graph: Schemas["WorkflowGraph"]; decoded?: AuthoredWorkflow }) {
@@ -107,7 +115,7 @@ function PreviewTab({ selected, graph, decoded }: { selected: Schemas["WorkflowV
     } finally { setLoading(false); }
   }
 
-  return <section id="workflow-panel-preview" className="workflow-panel workflow-preview-panel">
+  return <section className="workflow-panel workflow-preview-panel">
     <div className="preview-callout"><strong>Preview only</strong><span>This validates a candidate route against the installed version. It does not create a run, record a choice, or modify workflow state.</span></div>
     <div className="preview-grid"><form className="route-preview-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">Candidate request</p><h2>Route boundaries and context</h2></div></div>
@@ -156,13 +164,13 @@ function ChoiceGrid({ label, help, values, selected, onChange }: { label: string
 
 function GraphTab({ graph, decoded }: { graph: Schemas["WorkflowGraph"]; decoded?: AuthoredWorkflow }) {
   const authored = new Map(decoded?.nodes.map((node) => [node.id, node]));
-  return <section id="workflow-panel-graph" className="workflow-panel"><div className="section-heading"><div><p className="eyebrow">Authored topology</p><h2>Nodes and transitions</h2></div><span className="section-count">{graph.nodes.length}</span></div><div className="workflow-graph-list">{graph.nodes.map((node) => <article key={node.id}><span className="workflow-node-type">{humanize(node.type)}</span><h3>{authored.get(node.id)?.displayName ?? node.id}</h3><code>{node.id}</code><footer>{node.entry && <span>Entry-capable</span>}{node.terminal && <span>Terminal-capable</span>}</footer></article>)}</div><ResultCollection title="Authored edges" empty="No edges are authored." items={graph.edges.map((edge) => <div key={edge.id}><code>{edge.id}</code><span>{edge.from} → {edge.to}</span></div>)} /></section>;
+  return <section className="workflow-panel"><div className="section-heading"><div><p className="eyebrow">Authored topology</p><h2>Nodes and transitions</h2></div><span className="section-count">{graph.nodes.length}</span></div><div className="workflow-graph-list">{graph.nodes.map((node) => <article key={node.id}><span className="workflow-node-type">{humanize(node.type)}</span><h3>{authored.get(node.id)?.displayName ?? node.id}</h3><code>{node.id}</code><footer>{node.entry && <span>Entry-capable</span>}{node.terminal && <span>Terminal-capable</span>}</footer></article>)}</div><ResultCollection title="Authored edges" empty="No edges are authored." items={graph.edges.map((edge) => <div key={edge.id}><code>{edge.id}</code><span>{edge.from} → {edge.to}</span></div>)} /></section>;
 }
 
 function ReadinessTab({ decoded }: { decoded?: AuthoredWorkflow }) {
   if (!decoded) return <DecodeNotice />;
   const nodes = decoded.nodes.filter((node) => node.readiness || node.requiredInputs.length);
-  return <section id="workflow-panel-readiness" className="workflow-panel"><div className="authored-contract-callout"><strong>Authored contracts · not live readiness</strong><span>These requirements describe the installed workflow. They do not indicate whether a specific run is ready, blocked, or permitted to continue.</span></div>{nodes.length === 0 ? <p className="workflow-detail-loading">This workflow does not declare readable readiness contracts.</p> : <div className="readiness-contracts">{nodes.map((node) => <ReadinessContract key={node.id} node={node} />)}</div>}</section>;
+  return <section className="workflow-panel"><div className="authored-contract-callout"><strong>Authored contracts · not live readiness</strong><span>These requirements describe the installed workflow. They do not indicate whether a specific run is ready, blocked, or permitted to continue.</span></div>{nodes.length === 0 ? <p className="workflow-detail-loading">This workflow does not declare readable readiness contracts.</p> : <div className="readiness-contracts">{nodes.map((node) => <ReadinessContract key={node.id} node={node} />)}</div>}</section>;
 }
 
 function ReadinessContract({ node }: { node: AuthoredWorkflow["nodes"][number] }) {
@@ -174,7 +182,7 @@ function ContractList({ title, values }: { title: string; values: React.ReactNod
 
 function DefinitionTab({ selected, decoded }: { selected: Schemas["WorkflowVersionSummary"]; decoded?: AuthoredWorkflow }) {
   if (!decoded) return <DecodeNotice />;
-  return <section id="workflow-panel-definition" className="workflow-panel definition-summary"><div className="section-heading"><div><p className="eyebrow">Immutable definition</p><h2>{decoded.displayName ?? selected.name}</h2></div></div><dl><div><dt>Identity</dt><dd>{selected.name} · {selected.version}</dd></div><div><dt>Source</dt><dd>{selected.sourceScope} · {selected.sourceReference}</dd></div><div><dt>Default entry</dt><dd><code>{decoded.routeDefaults?.entry ?? "Not decoded"}</code></dd></div><div><dt>Default terminals</dt><dd>{decoded.routeDefaults?.terminals.map((item) => <code key={item}>{item}</code>) ?? "Not decoded"}</dd></div><div><dt>Nodes</dt><dd>{decoded.nodes.length}</dd></div></dl><h3>Route profiles</h3>{decoded.profiles.length ? <div className="profile-list">{decoded.profiles.map((profile) => <article key={profile.id}><strong>{profile.id}</strong><span>{profile.description ?? "No description"}</span><code>{profile.entry} → {profile.terminals.join(", ")}</code></article>)}</div> : <p className="workflow-detail-loading">No route profiles are declared.</p>}</section>;
+  return <section className="workflow-panel definition-summary"><div className="section-heading"><div><p className="eyebrow">Immutable definition</p><h2>{decoded.displayName ?? selected.name}</h2></div></div><dl><div><dt>Identity</dt><dd>{selected.name} · {selected.version}</dd></div><div><dt>Source</dt><dd>{selected.sourceScope} · {selected.sourceReference}</dd></div><div><dt>Default entry</dt><dd><code>{decoded.routeDefaults?.entry ?? "Not decoded"}</code></dd></div><div><dt>Default terminals</dt><dd>{decoded.routeDefaults?.terminals.map((item) => <code key={item}>{item}</code>) ?? "Not decoded"}</dd></div><div><dt>Nodes</dt><dd>{decoded.nodes.length}</dd></div></dl><h3>Route profiles</h3>{decoded.profiles.length ? <div className="profile-list">{decoded.profiles.map((profile) => <article key={profile.id}><strong>{profile.id}</strong><span>{profile.description ?? "No description"}</span><code>{profile.entry} → {profile.terminals.join(", ")}</code></article>)}</div> : <p className="workflow-detail-loading">No route profiles are declared.</p>}</section>;
 }
 
 function DecodeNotice() { return <div className="workflow-detail-error" role="status">This installed definition uses fields the dashboard cannot safely decode. Graph and API-backed route preview remain available.</div>; }

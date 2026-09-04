@@ -13,8 +13,8 @@ import {
   mergeAgentLogWindow,
   permissionActionPresentation,
   providerPermissionChanged,
-  tabKeyTarget,
 } from "../src/pages/agentsModel.ts";
+import { tabKeyTarget } from "../src/accessibility/keyboard.ts";
 
 function agent(id, status, overrides = {}) {
   return { attemptId: id, status, allowedActions: [], resourceVersion: 1, updatedAt: "2026-09-04T00:00:00Z", ...overrides };

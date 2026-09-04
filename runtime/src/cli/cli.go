@@ -466,7 +466,7 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	if err != nil {
 		return closeArtifactSetup(err)
 	}
-	artifacts, err := artifactops.New(artifactStore, database, database, database, database, ingestion, derivation, impact)
+	artifacts, err := artifactops.New(artifactStore, database, database, database, database, database, ingestion, derivation, impact)
 	if err != nil {
 		return closeArtifactSetup(err)
 	}

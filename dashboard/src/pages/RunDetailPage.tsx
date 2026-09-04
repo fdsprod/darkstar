@@ -81,11 +81,11 @@ export function RunDetailPage() {
       </section>
 
       <div className="run-detail-grid">
-        <main className="run-detail-primary">
+        <section className="run-detail-primary">
           <RoutePanel run={view.run} visits={visits} />
           <NodeTimeline runId={view.run.id} visits={visits} attempts={view.attempts} unlinkedAttempts={unlinkedAttempts} />
           <EventTimeline view={view} />
-        </main>
+        </section>
         <aside className="run-detail-aside" aria-label="Run evidence">
           <BoundaryPanel route={routeSnapshot} />
           <RecordedCommands view={view} />

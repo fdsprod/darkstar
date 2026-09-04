@@ -2,11 +2,14 @@ package artifactops_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"darkstar/src/adapters/artifactstore/folder"
 	"darkstar/src/adapters/contentprocessor/common"
@@ -21,6 +24,7 @@ import (
 	"darkstar/src/ports/contentprocessor"
 	"darkstar/src/ports/impactassessment"
 	"darkstar/src/ports/representationregistry"
+	"darkstar/src/ports/statestore"
 )
 
 func TestArtifactOperationsCoverIngestBindingInspectionRevisionAndImpact(t *testing.T) {
@@ -131,6 +135,109 @@ func TestArtifactOperationsCoverIngestBindingInspectionRevisionAndImpact(t *test
 	}
 }
 
+func TestArtifactMutationsAppendReplaySafeGlobalAuditEvents(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	service, database := newIntegrationService(t, ctx)
+	runID := "run_01K3Z1D0000000000000000000"
+	if _, err := database.Append(ctx, statestore.PendingEvent{
+		SchemaVersion: 1, ID: "event_01K3Z1D0000000000000000001", AggregateType: statestore.AggregateRun,
+		AggregateID: runID, ExpectedRevision: 0, Kind: "run.created", OccurredAt: testTime(),
+		CorrelationID: runID, CommandID: "seed-run", Actor: statestore.Actor{Type: statestore.ActorSystem, ID: "test"},
+		Data: json.RawMessage(`{"workItemId":"work_01K3Z1C1AAAAAAAAAAAAAAAAAA","workflowId":"delivery","workflowVersion":"1"}`), Metadata: json.RawMessage(`{}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	input := artifactops.IngestInput{
+		SourceKind: artifactregistry.SourcePaste, SourceName: "private-evidence.txt", MediaType: "text/plain",
+		Content: []byte("secret source bytes must not enter the event log"), Roles: []string{"evidence"},
+	}
+	first, err := service.Ingest(ctx, input, "audit-ingest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := artifactregistry.VersionRef{ArtifactID: first.Artifact.ArtifactID, Version: first.Artifact.Version}
+	if _, err := service.Extract(ctx, reference, "audit-extract"); err != nil {
+		t.Fatal(err)
+	}
+	target := artifactbinding.Target{Kind: artifactbinding.TargetRun, ID: runID}
+	attached, err := service.Attach(ctx, artifactops.AttachInput{Artifact: reference, Target: target}, "audit-attach")
+	if err != nil {
+		t.Fatal(err)
+	}
+	revisionInput := input
+	revisionInput.Content = []byte("revised secret source bytes")
+	second, err := service.Revise(ctx, reference.ArtifactID, reference.Version, revisionInput, "audit-revise")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := database.EventsAfter(ctx, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantKinds := []string{"artifact.ingested", "artifact.extracted", "artifact.attached", "artifact.revised"}
+	if len(events) != len(wantKinds) {
+		t.Fatalf("artifact audit event count = %d, want %d: %#v", len(events), len(wantKinds), events)
+	}
+	for index, event := range events {
+		if event.Kind != wantKinds[index] || event.AggregateType != statestore.AggregateOperation || event.AggregateRevision != 1 {
+			t.Errorf("event %d = %s/%s@%d, want %s/operation@1", index, event.Kind, event.AggregateType, event.AggregateRevision, wantKinds[index])
+		}
+		if event.Actor != (statestore.Actor{Type: statestore.ActorUser, ID: "local-user"}) {
+			t.Errorf("event %d actor = %#v", index, event.Actor)
+		}
+		if len(event.AggregateID) <= len("operation_") || event.AggregateID[:len("operation_")] != "operation_" {
+			t.Errorf("event %d aggregate ID = %q", index, event.AggregateID)
+		}
+		encoded := string(event.Data)
+		for _, forbidden := range []string{"secret source bytes", "revised secret", "locator", "private-evidence.txt"} {
+			if strings.Contains(encoded, forbidden) {
+				t.Errorf("event %d leaked %q in %s", index, forbidden, encoded)
+			}
+		}
+	}
+	if events[2].CorrelationID != runID {
+		t.Errorf("attach correlation = %q, want owning run %q", events[2].CorrelationID, runID)
+	}
+	var revisedData struct {
+		Artifact    artifactregistry.VersionRef `json:"artifact"`
+		BaseVersion uint64                      `json:"baseVersion"`
+	}
+	if err := json.Unmarshal(events[3].Data, &revisedData); err != nil || revisedData.BaseVersion != reference.Version || revisedData.Artifact.Version != second.Artifact.Version {
+		t.Fatalf("revised event data = %#v, %v", revisedData, err)
+	}
+	evidence, err := database.RunEvidence(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evidence.Events) != 2 || evidence.Events[1].Kind != "artifact.attached" {
+		t.Fatalf("run evidence events = %#v", evidence.Events)
+	}
+
+	if _, err := service.Ingest(ctx, input, "audit-ingest"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Extract(ctx, reference, "audit-extract"); err != nil {
+		t.Fatal(err)
+	}
+	if repeated, err := service.Attach(ctx, artifactops.AttachInput{BindingID: attached.BindingID, Artifact: reference, Target: target}, "audit-attach"); err != nil || repeated != attached {
+		t.Fatalf("replayed attach = %#v, %v", repeated, err)
+	}
+	if _, err := service.Revise(ctx, reference.ArtifactID, reference.Version, revisionInput, "audit-revise"); err != nil {
+		t.Fatal(err)
+	}
+	afterReplay, err := database.EventsAfter(ctx, 1, 20)
+	if err != nil || len(afterReplay) != len(events) {
+		t.Fatalf("events after exact replay = %d, %v; want %d", len(afterReplay), err, len(events))
+	}
+}
+
+func testTime() time.Time {
+	return time.Date(2026, time.September, 4, 12, 0, 0, 0, time.UTC)
+}
+
 func newIntegrationService(t *testing.T, ctx context.Context) (*artifactops.Service, *sqlite.Database) {
 	t.Helper()
 	store, err := folder.New(filepath.Join(t.TempDir(), "artifacts"))
@@ -154,7 +261,7 @@ func newIntegrationService(t *testing.T, ctx context.Context) (*artifactops.Serv
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := artifactops.New(store, database, database, database, database, ingestion, derivation, impact)
+	service, err := artifactops.New(store, database, database, database, database, database, ingestion, derivation, impact)
 	if err != nil {
 		t.Fatal(err)
 	}

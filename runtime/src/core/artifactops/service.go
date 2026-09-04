@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base32"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 
 	"darkstar/src/core/artifactderive"
 	"darkstar/src/core/artifactingest"
+	"darkstar/src/core/identity"
 	"darkstar/src/core/lateevidence"
 	"darkstar/src/ports/artifactbinding"
 	"darkstar/src/ports/artifactlineage"
@@ -25,6 +27,7 @@ import (
 	"darkstar/src/ports/artifactstore"
 	"darkstar/src/ports/impactassessment"
 	"darkstar/src/ports/representationregistry"
+	"darkstar/src/ports/statestore"
 )
 
 const PolicyVersion = "artifact-context/v1alpha1"
@@ -91,23 +94,30 @@ type Content struct {
 	RepresentationID string
 }
 
+// AuditEventStore is the append-only event boundary required for artifact
+// commands to participate in the same global evidence stream as run controls.
+type AuditEventStore interface {
+	Append(context.Context, ...statestore.PendingEvent) ([]statestore.Event, error)
+}
+
 type Service struct {
 	store           artifactstore.Store
 	artifacts       artifactregistry.Registry
 	bindings        artifactbinding.Store
 	lineage         artifactlineage.Store
 	representations representationregistry.Registry
+	audit           AuditEventStore
 	ingestion       *artifactingest.Service
 	derivation      *artifactderive.Service
 	impact          *lateevidence.Service
 	now             func() time.Time
 }
 
-func New(store artifactstore.Store, artifacts artifactregistry.Registry, bindings artifactbinding.Store, lineage artifactlineage.Store, representations representationregistry.Registry, ingestion *artifactingest.Service, derivation *artifactderive.Service, impact *lateevidence.Service) (*Service, error) {
-	if store == nil || artifacts == nil || bindings == nil || lineage == nil || representations == nil || ingestion == nil || derivation == nil || impact == nil {
+func New(store artifactstore.Store, artifacts artifactregistry.Registry, bindings artifactbinding.Store, lineage artifactlineage.Store, representations representationregistry.Registry, audit AuditEventStore, ingestion *artifactingest.Service, derivation *artifactderive.Service, impact *lateevidence.Service) (*Service, error) {
+	if store == nil || artifacts == nil || bindings == nil || lineage == nil || representations == nil || audit == nil || ingestion == nil || derivation == nil || impact == nil {
 		return nil, errors.New("complete artifact operation services are required")
 	}
-	return &Service{store: store, artifacts: artifacts, bindings: bindings, lineage: lineage, representations: representations, ingestion: ingestion, derivation: derivation, impact: impact, now: time.Now}, nil
+	return &Service{store: store, artifacts: artifacts, bindings: bindings, lineage: lineage, representations: representations, audit: audit, ingestion: ingestion, derivation: derivation, impact: impact, now: time.Now}, nil
 }
 
 func (service *Service) Ingest(ctx context.Context, input IngestInput, idempotencyKey string) (artifactingest.Result, error) {
@@ -127,12 +137,29 @@ func (service *Service) ingest(ctx context.Context, input IngestInput, idempoten
 	if input.Sensitivity == "" {
 		input.Sensitivity = artifactregistry.SensitivityInternal
 	}
-	return service.ingestion.Ingest(ctx, artifactingest.Request{
+	result, err := service.ingestion.Ingest(ctx, artifactingest.Request{
 		ArtifactID: input.ArtifactID, ExpectedPreviousVersion: expectedPreviousVersion, OperationID: stableID("operation_", "ingest\x00"+idempotencyKey), IdempotencyKey: idempotencyKey,
 		SourceKind: input.SourceKind, SourceName: input.SourceName, DeclaredMediaType: input.MediaType,
 		Content: bytes.NewReader(input.Content), Sensitivity: input.Sensitivity, Creator: input.Creator,
 		Roles: input.Roles, Tags: input.Tags,
 	})
+	if err != nil {
+		return artifactingest.Result{}, err
+	}
+	reference := artifactregistry.VersionRef{ArtifactID: result.Artifact.ArtifactID, Version: result.Artifact.Version}
+	data := artifactIngestedEventData{
+		Artifact: reference, BlobDigest: result.Artifact.BlobDigest, Size: result.Artifact.Size,
+		DetectedMediaType: result.Artifact.DetectedMediaType, Status: result.Artifact.Status,
+	}
+	kind := "artifact.ingested"
+	if expectedPreviousVersion != nil {
+		kind = "artifact.revised"
+		data.BaseVersion = expectedPreviousVersion
+	}
+	if err := service.recordAuditEvent(ctx, kind, identity.Deterministic("operation_", "audit\x00"+kind+"\x00"+idempotencyKey), idempotencyKey, reference.ArtifactID, data); err != nil {
+		return artifactingest.Result{}, fmt.Errorf("record %s audit event: %w", kind, err)
+	}
+	return result, nil
 }
 
 func (service *Service) Revise(ctx context.Context, artifactID string, baseVersion uint64, input IngestInput, idempotencyKey string) (artifactingest.Result, error) {
@@ -148,7 +175,21 @@ func (service *Service) Attach(ctx context.Context, input AttachInput, idempoten
 		input.BindingID = stableID("binding_", fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s", input.Artifact.ArtifactID, input.Artifact.Version, input.Target.Kind, input.Target.ID, idempotencyKey))
 	}
 	value, _, err := service.bindings.Bind(ctx, artifactbinding.BindRequest{BindingID: input.BindingID, IdempotencyKey: idempotencyKey, Artifact: input.Artifact, Target: input.Target, CreatedAt: service.now().UTC()})
-	return value, err
+	if err != nil {
+		return artifactbinding.Version{}, err
+	}
+	correlationID := value.Artifact.ArtifactID
+	if value.Target.Kind == artifactbinding.TargetRun && len(value.Target.ID) <= 128 {
+		correlationID = value.Target.ID
+	}
+	data := artifactAttachedEventData{
+		BindingID: value.BindingID, BindingVersion: value.Version,
+		Artifact: value.Artifact, Target: value.Target,
+	}
+	if err := service.recordAuditEvent(ctx, "artifact.attached", identity.Deterministic("operation_", "audit\x00attach\x00"+idempotencyKey), idempotencyKey, correlationID, data); err != nil {
+		return artifactbinding.Version{}, fmt.Errorf("record artifact.attached audit event: %w", err)
+	}
+	return value, nil
 }
 
 func (service *Service) Detach(ctx context.Context, bindingID, idempotencyKey string) (artifactbinding.Version, error) {
@@ -248,10 +289,69 @@ func (service *Service) RepresentationContent(ctx context.Context, representatio
 }
 
 func (service *Service) Extract(ctx context.Context, reference artifactregistry.VersionRef, idempotencyKey string) (artifactderive.Result, error) {
-	return service.derivation.Derive(ctx, artifactderive.Request{
+	result, err := service.derivation.Derive(ctx, artifactderive.Request{
 		Artifact: reference, OperationID: stableID("operation_", "extract\x00"+idempotencyKey),
 		IdempotencyKey: idempotencyKey, PolicyVersion: PolicyVersion,
 	})
+	if err != nil {
+		return artifactderive.Result{}, err
+	}
+	representations := make([]artifactExtractedRepresentation, len(result.Representations))
+	for index, representation := range result.Representations {
+		representations[index] = artifactExtractedRepresentation{
+			RepresentationID: representation.RepresentationID,
+			Kind:             string(representation.Kind),
+			Digest:           representation.Digest,
+		}
+	}
+	data := artifactExtractedEventData{Artifact: reference, SupportState: string(result.Support.State), Representations: representations}
+	if err := service.recordAuditEvent(ctx, "artifact.extracted", identity.Deterministic("operation_", "audit\x00extract\x00"+idempotencyKey), idempotencyKey, reference.ArtifactID, data); err != nil {
+		return artifactderive.Result{}, fmt.Errorf("record artifact.extracted audit event: %w", err)
+	}
+	return result, nil
+}
+
+type artifactIngestedEventData struct {
+	Artifact          artifactregistry.VersionRef `json:"artifact"`
+	BaseVersion       *uint64                     `json:"baseVersion,omitempty"`
+	BlobDigest        string                      `json:"blobDigest"`
+	Size              int64                       `json:"size"`
+	DetectedMediaType string                      `json:"detectedMediaType"`
+	Status            artifactregistry.Status     `json:"status"`
+}
+
+type artifactAttachedEventData struct {
+	BindingID      string                      `json:"bindingId"`
+	BindingVersion uint64                      `json:"bindingVersion"`
+	Artifact       artifactregistry.VersionRef `json:"artifact"`
+	Target         artifactbinding.Target      `json:"target"`
+}
+
+type artifactExtractedRepresentation struct {
+	RepresentationID string `json:"representationId"`
+	Kind             string `json:"kind"`
+	Digest           string `json:"digest"`
+}
+
+type artifactExtractedEventData struct {
+	Artifact        artifactregistry.VersionRef       `json:"artifact"`
+	SupportState    string                            `json:"supportState"`
+	Representations []artifactExtractedRepresentation `json:"representations"`
+}
+
+func (service *Service) recordAuditEvent(ctx context.Context, kind, operationID, commandID, correlationID string, data any) error {
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("encode event data: %w", err)
+	}
+	_, err = service.audit.Append(ctx, statestore.PendingEvent{
+		SchemaVersion: 1, ID: identity.Random("event_"), AggregateType: statestore.AggregateOperation,
+		AggregateID: operationID, ExpectedRevision: 0, Kind: kind, OccurredAt: service.now().UTC().Round(0),
+		CorrelationID: correlationID, CommandID: commandID,
+		Actor: statestore.Actor{Type: statestore.ActorUser, ID: "local-user"},
+		Data:  encoded, Metadata: json.RawMessage(`{}`),
+	})
+	return err
 }
 
 func (service *Service) Diff(ctx context.Context, artifactID string, from, to uint64) (VersionDiff, error) {

@@ -82,7 +82,7 @@ function ReadinessWorkspace({ view, run, dialogRef, onAccepted, onStale }: { vie
   return <>
     <DispositionPanel view={view} />
     <section className="detail-summary readiness-summary" aria-label="Readiness assessment summary"><SummaryFact label="Assessment" value={shortIdentifier(view.assessment.assessmentId)} mono /><SummaryFact label="Assessed node" value={view.assessment.nodeId} mono /><SummaryFact label="Resource version" value={String(view.resourceVersion)} /><SummaryFact label="Updated" value={formatDate(view.updatedAt)} /></section>
-    <div className="readiness-layout"><main className="readiness-primary"><ScorePanel scores={view.assessment.scores} /><FindingPanel groups={groups} />{view.assessment.routeChange && <RouteChangePanel current={run.routeSnapshot} change={view.assessment.routeChange} />}</main><aside className="readiness-sidebar"><DecisionPanel view={view} onChoose={choose} />{view.decision && <DecisionReceipt decision={view.decision} />}</aside></div>
+    <div className="readiness-layout"><section className="readiness-primary"><ScorePanel scores={view.assessment.scores} /><FindingPanel groups={groups} />{view.assessment.routeChange && <RouteChangePanel current={run.routeSnapshot} change={view.assessment.routeChange} />}</section><aside className="readiness-sidebar"><DecisionPanel view={view} onChoose={choose} />{view.decision && <DecisionReceipt decision={view.decision} />}</aside></div>
     <DecisionDialog dialogRef={dialogRef} view={view} action={selected} onAccepted={(next) => { setSelectedKey(""); onAccepted(next, "Readiness decision recorded. Any workflow effect remains pending and separate."); }} onStale={async () => { setSelectedKey(""); await onStale(); }} />
   </>;
 }

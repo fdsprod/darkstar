@@ -289,7 +289,7 @@ func pendingEvent(kind string, aggregateType statestore.AggregateType, aggregate
 	encoded, _ := json.Marshal(data)
 	return statestore.PendingEvent{SchemaVersion: 1, ID: identity.Random("event_"), AggregateType: aggregateType, AggregateID: aggregateID,
 		ExpectedRevision: 0, Kind: kind, OccurredAt: occurredAt, CorrelationID: correlationID, CommandID: commandID,
-		Actor: statestore.Actor{Type: statestore.ActorUser, ID: "cli"}, Data: encoded, Metadata: json.RawMessage(`{}`)}
+		Actor: statestore.Actor{Type: statestore.ActorUser, ID: "local-user"}, Data: encoded, Metadata: json.RawMessage(`{}`)}
 }
 
 func digest(value string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(value))) }

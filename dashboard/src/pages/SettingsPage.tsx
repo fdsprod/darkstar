@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
+import { tabKeyTarget } from "../accessibility/keyboard";
 import { useRouter } from "../app/router";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, formatDate } from "./WorkDetailPage";
@@ -80,11 +81,7 @@ export function SettingsPage() {
   }
 
   function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    let target: number | undefined;
-    if (event.key === "ArrowRight") target = (index + 1) % tabs.length;
-    if (event.key === "ArrowLeft") target = (index - 1 + tabs.length) % tabs.length;
-    if (event.key === "Home") target = 0;
-    if (event.key === "End") target = tabs.length - 1;
+    const target = tabKeyTarget(index, event.key, tabs.length);
     if (target === undefined) return;
     event.preventDefault();
     tabRefs.current[target]?.focus();

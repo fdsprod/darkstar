@@ -281,16 +281,16 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 	routeDigest := fmt.Sprintf("%x", sha256.Sum256(routeJSON))
 	events := make([]statestore.PendingEvent, 0, 4)
 	if work.Status == statestore.WorkItemOpen {
-		events = append(events, pendingEvent("work.started", statestore.AggregateWork, work.WorkItemID, work.ResourceVersion, runID, "work-start:"+runID, statestore.ActorUser, "cli", now, map[string]any{}))
+		events = append(events, pendingEvent("work.started", statestore.AggregateWork, work.WorkItemID, work.ResourceVersion, runID, "work-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}))
 	}
 	events = append(events,
-		pendingEvent("run.created", statestore.AggregateRun, runID, 0, runID, idempotencyKey, statestore.ActorUser, "cli", now, map[string]any{
+		pendingEvent("run.created", statestore.AggregateRun, runID, 0, runID, idempotencyKey, statestore.ActorUser, "local-user", now, map[string]any{
 			"workItemId": work.WorkItemID, "workflowId": preview.Workflow.Name, "workflowVersion": preview.Workflow.Version, "priority": work.Priority,
 		}),
 		pendingEvent("run.route_frozen", statestore.AggregateRun, runID, 1, runID, "route-frozen:"+runID, statestore.ActorSystem, "daemon", now, map[string]any{
 			"workflowDigest": preview.Workflow.Digest, "routeDigest": routeDigest, "routeSnapshot": json.RawMessage(routeJSON),
 		}),
-		pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "cli", now, map[string]any{}),
+		pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}),
 	)
 	committed, err := s.store.Append(ctx, events...)
 	if err != nil {
@@ -402,11 +402,11 @@ func (s *Service) Start(ctx context.Context, request StartRequest, idempotencyKe
 
 	logReference := strings.TrimPrefix(attemptID, "attempt_") + ".log"
 	events, err := s.store.Append(ctx,
-		pendingEvent("run.created", statestore.AggregateRun, runID, 0, runID, idempotencyKey, statestore.ActorUser, "cli", now, map[string]any{
+		pendingEvent("run.created", statestore.AggregateRun, runID, 0, runID, idempotencyKey, statestore.ActorUser, "local-user", now, map[string]any{
 			"workItemId": stableID("work_", runID), "workflowId": DefaultWorkflowID, "workflowVersion": DefaultWorkflowVersion,
 		}),
 		pendingEvent("run.route_frozen", statestore.AggregateRun, runID, 1, runID, "route-frozen:"+runID, statestore.ActorSystem, "daemon", now, map[string]any{}),
-		pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "cli", now, map[string]any{}),
+		pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}),
 		pendingEvent("visit.created", statestore.AggregateVisit, visitID, 0, runID, "visit-create:"+visitID, statestore.ActorSystem, "daemon", now, map[string]any{
 			"runId": runID, "nodeId": nodeID,
 		}),
