@@ -27,6 +27,7 @@ var (
 		statestore.AggregateRun: "run_", statestore.AggregateVisit: "visit_",
 		statestore.AggregateAttempt: "attempt_", statestore.AggregateArtifact: "artifact_",
 		statestore.AggregateApproval: "approval_", statestore.AggregateOperation: "operation_",
+		statestore.AggregateAssessment: "assessment_",
 	}
 )
 
@@ -384,6 +385,31 @@ func (d *Database) Approval(ctx context.Context, id string) (statestore.Approval
 	return projection, nil
 }
 
+// ReadinessAssessment returns one durable readiness-control projection.
+func (d *Database) ReadinessAssessment(ctx context.Context, id string) (statestore.ReadinessAssessmentProjection, error) {
+	value, err := readReadinessAssessmentProjection(ctx, d.sql, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return statestore.ReadinessAssessmentProjection{}, &NotFoundError{Kind: "readiness assessment", ID: id}
+	}
+	if err != nil {
+		return statestore.ReadinessAssessmentProjection{}, fmt.Errorf("read readiness assessment projection: %w", err)
+	}
+	return value, nil
+}
+
+// LatestReadinessAssessmentForRun returns the newest assessment using stable
+// creation time and identity ordering.
+func (d *Database) LatestReadinessAssessmentForRun(ctx context.Context, runID string) (statestore.ReadinessAssessmentProjection, error) {
+	value, err := scanReadinessAssessmentProjection(d.sql.QueryRowContext(ctx, readinessAssessmentSelect+` WHERE run_id = ? ORDER BY last_global_position DESC, assessment_id DESC LIMIT 1`, runID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return statestore.ReadinessAssessmentProjection{}, &NotFoundError{Kind: "readiness assessment for run", ID: runID}
+	}
+	if err != nil {
+		return statestore.ReadinessAssessmentProjection{}, fmt.Errorf("read latest readiness assessment: %w", err)
+	}
+	return value, nil
+}
+
 // ApprovalsForCheckpoint returns immutable candidate requests in revision order.
 func (d *Database) ApprovalsForCheckpoint(ctx context.Context, checkpointID string) ([]statestore.ApprovalProjection, error) {
 	rows, err := d.sql.QueryContext(ctx, approvalSelect+` WHERE checkpoint_id = ? ORDER BY checkpoint_revision`, checkpointID)
@@ -451,7 +477,7 @@ func (d *Database) RebuildProjections(ctx context.Context) (err error) {
 	if closeErr != nil {
 		return fmt.Errorf("close replay events: %w", closeErr)
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM point_dependencies; DELETE FROM attempt_projection; DELETE FROM point_projection; DELETE FROM story_projection; DELETE FROM work_item_projection; DELETE FROM project_projection; DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM approval_projection; DELETE FROM projection_checkpoints`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM point_dependencies; DELETE FROM attempt_projection; DELETE FROM point_projection; DELETE FROM story_projection; DELETE FROM work_item_projection; DELETE FROM project_projection; DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM approval_projection; DELETE FROM readiness_assessment_projection; DELETE FROM projection_checkpoints`); err != nil {
 		return fmt.Errorf("clear projections: %w", err)
 	}
 	for _, event := range events {
@@ -688,6 +714,19 @@ func applyProjection(ctx context.Context, tx *sql.Tx, event statestore.Event) er
 			return err
 		}
 		return writeApprovalProjection(ctx, tx, next)
+	case statestore.AggregateAssessment:
+		current, err := readReadinessAssessmentProjection(ctx, tx, event.AggregateID)
+		var existing *statestore.ReadinessAssessmentProjection
+		if err == nil {
+			existing = &current
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		next, applies, err := projection.ReduceReadinessAssessment(existing, event)
+		if err != nil || !applies {
+			return err
+		}
+		return writeReadinessAssessmentProjection(ctx, tx, next)
 	default:
 		return nil
 	}
@@ -753,6 +792,44 @@ const approvalSelect = `SELECT approval_id, run_id, class, status, checkpoint_id
 	max_revisions, scope_digest, policy_digest, decision_action, decision_action_key, decision_comment,
 	decided_by_type, decided_by_id, decided_at, resource_version, last_global_position, created_at, updated_at
 	FROM approval_projection`
+
+const readinessAssessmentSelect = `SELECT assessment_id, run_id, node_id, disposition, assessment_digest,
+	policy_digest, submission_json, route_context_json, status, decision_id, decision_choice, decision_remedy_code,
+	decision_reason, decision_effect_status, decided_by_type, decided_by_id, decided_at,
+	resource_version, last_global_position, created_at, updated_at FROM readiness_assessment_projection`
+
+func readReadinessAssessmentProjection(ctx context.Context, query rowQueryer, id string) (statestore.ReadinessAssessmentProjection, error) {
+	return scanReadinessAssessmentProjection(query.QueryRowContext(ctx, readinessAssessmentSelect+` WHERE assessment_id = ?`, id))
+}
+
+func scanReadinessAssessmentProjection(row rowScanner) (statestore.ReadinessAssessmentProjection, error) {
+	var value statestore.ReadinessAssessmentProjection
+	var createdAt, updatedAt string
+	var decisionID, choice, remedyCode, reason, effectStatus, actorType, actorID, decidedAt sql.NullString
+	err := row.Scan(&value.AssessmentID, &value.RunID, &value.NodeID, &value.Disposition, &value.AssessmentDigest,
+		&value.PolicyDigest, &value.Submission, &value.RouteContext, &value.Status, &decisionID, &choice, &remedyCode,
+		&reason, &effectStatus, &actorType, &actorID, &decidedAt,
+		&value.ResourceVersion, &value.LastGlobalPosition, &createdAt, &updatedAt)
+	if err != nil {
+		return statestore.ReadinessAssessmentProjection{}, err
+	}
+	if decisionID.Valid {
+		when, parseErr := parseTime(decidedAt.String)
+		if parseErr != nil {
+			return statestore.ReadinessAssessmentProjection{}, parseErr
+		}
+		value.Decision = &statestore.ReadinessDecisionProjection{
+			DecisionID: decisionID.String, Choice: choice.String, RemedyCode: remedyCode.String, Reason: reason.String,
+			EffectStatus: statestore.ReadinessEffectStatus(effectStatus.String),
+			Actor:        statestore.Actor{Type: statestore.ActorType(actorType.String), ID: actorID.String}, DecidedAt: when,
+		}
+	}
+	value.CreatedAt, err = parseTime(createdAt)
+	if err == nil {
+		value.UpdatedAt, err = parseTime(updatedAt)
+	}
+	return value, err
+}
 
 func readApprovalProjection(ctx context.Context, query rowQueryer, id string) (statestore.ApprovalProjection, error) {
 	return scanApprovalProjection(query.QueryRowContext(ctx, approvalSelect+` WHERE approval_id = ?`, id))
@@ -883,6 +960,34 @@ func writeApprovalProjection(ctx context.Context, tx *sql.Tx, value statestore.A
 		value.ResourceVersion, value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("write approval projection %s: %w", value.ApprovalID, err)
+	}
+	return nil
+}
+
+func writeReadinessAssessmentProjection(ctx context.Context, tx *sql.Tx, value statestore.ReadinessAssessmentProjection) error {
+	var decisionID, choice, remedyCode, reason, effectStatus, actorType, actorID, decidedAt any
+	if value.Decision != nil {
+		decisionID, choice, reason = value.Decision.DecisionID, value.Decision.Choice, value.Decision.Reason
+		effectStatus, actorType, actorID, decidedAt = value.Decision.EffectStatus, value.Decision.Actor.Type, value.Decision.Actor.ID, formatTime(value.Decision.DecidedAt)
+		if value.Decision.RemedyCode != "" {
+			remedyCode = value.Decision.RemedyCode
+		}
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO readiness_assessment_projection(
+		assessment_id, run_id, node_id, disposition, assessment_digest, policy_digest, submission_json, route_context_json,
+		status, decision_id, decision_choice, decision_remedy_code, decision_reason, decision_effect_status,
+		decided_by_type, decided_by_id, decided_at, resource_version, last_global_position, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(assessment_id) DO UPDATE SET status=excluded.status, decision_id=excluded.decision_id,
+		decision_choice=excluded.decision_choice, decision_remedy_code=excluded.decision_remedy_code,
+		decision_reason=excluded.decision_reason, decision_effect_status=excluded.decision_effect_status,
+		decided_by_type=excluded.decided_by_type, decided_by_id=excluded.decided_by_id, decided_at=excluded.decided_at,
+		resource_version=excluded.resource_version, last_global_position=excluded.last_global_position, updated_at=excluded.updated_at`,
+		value.AssessmentID, value.RunID, value.NodeID, value.Disposition, value.AssessmentDigest, value.PolicyDigest,
+		string(value.Submission), string(value.RouteContext), value.Status, decisionID, choice, remedyCode, reason, effectStatus,
+		actorType, actorID, decidedAt, value.ResourceVersion, value.LastGlobalPosition, formatTime(value.CreatedAt), formatTime(value.UpdatedAt))
+	if err != nil {
+		return fmt.Errorf("write readiness assessment projection %s: %w", value.AssessmentID, err)
 	}
 	return nil
 }

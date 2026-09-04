@@ -54,6 +54,21 @@ strictly extends a completed frozen route; and cancel closes active children and
 terminates a live provider handle. Every control accepts `--idempotency-key` for
 safe automation retries, and stale or illegal transitions fail explicitly.
 
+Readiness inspection and decisions are a separate command group:
+
+```text
+darkstar run readiness show <run-id> [--json]
+darkstar run readiness decide <run-id> --action <continue|accept_route_change|supply_input|cancel> --reason <text> [--remedy <code>] [--idempotency-key <key>] [--json]
+```
+
+The CLI reads the latest assessment immediately before deciding and sends its
+exact digest and resource version as concurrency guards. `supply_input`
+requires an authored `--remedy`; the other actions reject that option. A
+readiness `continue` is distinct from `run continue`, and readiness `cancel`
+records the assessment choice without cancelling the run. Route changes remain
+pending for the separately authorized workflow-control path; this command
+never silently reroutes a run.
+
 Agent operations expose the same provider attempts without requiring users to
 resolve run details or opaque log references:
 

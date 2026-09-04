@@ -15,16 +15,17 @@ var ErrNotFound = errors.New("state not found")
 type AggregateType string
 
 const (
-	AggregateProject   AggregateType = "project"
-	AggregateWork      AggregateType = "work"
-	AggregateStory     AggregateType = "story"
-	AggregatePoint     AggregateType = "point"
-	AggregateRun       AggregateType = "run"
-	AggregateVisit     AggregateType = "visit"
-	AggregateAttempt   AggregateType = "attempt"
-	AggregateArtifact  AggregateType = "artifact"
-	AggregateApproval  AggregateType = "approval"
-	AggregateOperation AggregateType = "operation"
+	AggregateProject    AggregateType = "project"
+	AggregateWork       AggregateType = "work"
+	AggregateStory      AggregateType = "story"
+	AggregatePoint      AggregateType = "point"
+	AggregateRun        AggregateType = "run"
+	AggregateVisit      AggregateType = "visit"
+	AggregateAttempt    AggregateType = "attempt"
+	AggregateArtifact   AggregateType = "artifact"
+	AggregateApproval   AggregateType = "approval"
+	AggregateOperation  AggregateType = "operation"
+	AggregateAssessment AggregateType = "assessment"
 )
 
 // ActorType identifies the authority that caused an event.
@@ -355,6 +356,52 @@ type ApprovalProjection struct {
 	UpdatedAt                time.Time                   `json:"updatedAt"`
 }
 
+// ReadinessAssessmentStatus is the closed durable lifecycle of one validated
+// readiness assessment.
+type ReadinessAssessmentStatus string
+
+const (
+	ReadinessAssessmentPending ReadinessAssessmentStatus = "pending"
+	ReadinessAssessmentDecided ReadinessAssessmentStatus = "decided"
+)
+
+// ReadinessEffectStatus records that a choice is durable without claiming its
+// workflow effect has been performed by a downstream coordinator.
+type ReadinessEffectStatus string
+
+const ReadinessEffectPending ReadinessEffectStatus = "pending"
+
+// ReadinessDecisionProjection exists only in the decided state.
+type ReadinessDecisionProjection struct {
+	DecisionID   string                `json:"decisionId"`
+	Choice       string                `json:"choice"`
+	RemedyCode   string                `json:"remedyCode,omitempty"`
+	Reason       string                `json:"reason"`
+	EffectStatus ReadinessEffectStatus `json:"effectStatus"`
+	Actor        Actor                 `json:"actor"`
+	DecidedAt    time.Time             `json:"decidedAt"`
+}
+
+// ReadinessAssessmentProjection is a rebuildable control boundary. Submission
+// and RouteContext are trusted immutable inputs used to reproduce validation;
+// presentation-only allowed actions are deliberately derived elsewhere.
+type ReadinessAssessmentProjection struct {
+	AssessmentID       string                       `json:"id"`
+	RunID              string                       `json:"runId"`
+	NodeID             string                       `json:"nodeId"`
+	Disposition        string                       `json:"disposition"`
+	AssessmentDigest   string                       `json:"assessmentDigest"`
+	PolicyDigest       string                       `json:"policyDigest"`
+	Submission         JSONSnapshot                 `json:"submission"`
+	RouteContext       JSONSnapshot                 `json:"routeContext"`
+	Status             ReadinessAssessmentStatus    `json:"status"`
+	Decision           *ReadinessDecisionProjection `json:"decision,omitempty"`
+	ResourceVersion    uint64                       `json:"resourceVersion"`
+	LastGlobalPosition uint64                       `json:"lastGlobalPosition"`
+	CreatedAt          time.Time                    `json:"createdAt"`
+	UpdatedAt          time.Time                    `json:"updatedAt"`
+}
+
 // LeaseScopeKind identifies the resource whose mutations are fenced.
 type LeaseScopeKind string
 
@@ -480,6 +527,8 @@ type Store interface {
 	BeginCommand(context.Context, BeginCommandRequest) (CommandEvidence, bool, error)
 	CompleteCommand(context.Context, CompleteCommandRequest) (CommandEvidence, error)
 	Approval(context.Context, string) (ApprovalProjection, error)
+	ReadinessAssessment(context.Context, string) (ReadinessAssessmentProjection, error)
+	LatestReadinessAssessmentForRun(context.Context, string) (ReadinessAssessmentProjection, error)
 	RebuildProjections(context.Context) error
 	AcquireLease(context.Context, AcquireLeaseRequest) (Lease, error)
 	HeartbeatLease(context.Context, LeaseGuard, time.Duration) (Lease, error)

@@ -301,13 +301,22 @@ func (submission *Submission) UnmarshalJSON(content []byte) error {
 	if wire.Kind != Kind || wire.SchemaVersion != SchemaVersion {
 		return errors.New("unsupported route/readiness assessment boundary")
 	}
-	findings := make([]Finding, 0, len(wire.Findings))
-	for index, raw := range wire.Findings {
+	findings, err := decodeFindings(wire.Findings)
+	if err != nil {
+		return err
+	}
+	*submission = Submission{AssessmentID: wire.AssessmentID, RunID: wire.RunID, NodeID: wire.NodeID, Scores: wire.Scores, Findings: findings, ProposedPatch: wire.ProposedPatch}
+	return nil
+}
+
+func decodeFindings(values []json.RawMessage) ([]Finding, error) {
+	findings := make([]Finding, 0, len(values))
+	for index, raw := range values {
 		var discriminator struct {
 			Level Level `json:"level"`
 		}
 		if err := json.Unmarshal(raw, &discriminator); err != nil {
-			return fmt.Errorf("findings[%d]: %w", index, err)
+			return nil, fmt.Errorf("findings[%d]: %w", index, err)
 		}
 		var finding Finding
 		switch discriminator.Level {
@@ -320,15 +329,14 @@ func (submission *Submission) UnmarshalJSON(content []byte) error {
 		case LevelInvariant:
 			finding = &InvariantFinding{}
 		default:
-			return fmt.Errorf("findings[%d] has unsupported level %q", index, discriminator.Level)
+			return nil, fmt.Errorf("findings[%d] has unsupported level %q", index, discriminator.Level)
 		}
 		if err := strictDecode(raw, finding); err != nil {
-			return fmt.Errorf("findings[%d]: %w", index, err)
+			return nil, fmt.Errorf("findings[%d]: %w", index, err)
 		}
 		findings = append(findings, finding)
 	}
-	*submission = Submission{AssessmentID: wire.AssessmentID, RunID: wire.RunID, NodeID: wire.NodeID, Scores: wire.Scores, Findings: findings, ProposedPatch: wire.ProposedPatch}
-	return nil
+	return findings, nil
 }
 
 type Disposition string
@@ -346,6 +354,58 @@ type Snapshot struct {
 	Digest      string      `json:"digest"`
 }
 
+// RouteChangeView is the presentation-safe form of a validated proposal. It
+// contains deterministic impact and authorization evidence, never an
+// executable proposal capability.
+type RouteChangeView struct {
+	PatchID           string                               `json:"patchId"`
+	Reason            string                               `json:"reason"`
+	Impact            workflow.RoutePatchImpact            `json:"impact"`
+	Candidate         workflow.RouteStateSnapshot          `json:"candidate"`
+	AuthorizationMode workflow.RoutePatchAuthorizationMode `json:"authorizationMode"`
+	ScopeDigest       string                               `json:"scopeDigest"`
+	ValidationDigest  string                               `json:"validationDigest"`
+	PolicyDigest      string                               `json:"policyDigest"`
+}
+
+// View is safe to expose to an operator. The provider-authored patch document
+// remains private; only the result of deterministic validation is visible.
+type View struct {
+	AssessmentID string                     `json:"assessmentId"`
+	RunID        string                     `json:"runId"`
+	NodeID       workflow.Identifier        `json:"nodeId"`
+	Scores       []Score                    `json:"scores"`
+	Findings     []Finding                  `json:"findings"`
+	Remedies     []workflow.ReadinessRemedy `json:"remedies"`
+	Disposition  Disposition                `json:"disposition"`
+	Digest       string                     `json:"digest"`
+	RouteChange  *RouteChangeView           `json:"routeChange,omitempty"`
+}
+
+func (view *View) UnmarshalJSON(content []byte) error {
+	var wire struct {
+		AssessmentID string                     `json:"assessmentId"`
+		RunID        string                     `json:"runId"`
+		NodeID       workflow.Identifier        `json:"nodeId"`
+		Scores       []Score                    `json:"scores"`
+		Findings     []json.RawMessage          `json:"findings"`
+		Remedies     []workflow.ReadinessRemedy `json:"remedies"`
+		Disposition  Disposition                `json:"disposition"`
+		Digest       string                     `json:"digest"`
+		RouteChange  *RouteChangeView           `json:"routeChange"`
+	}
+	if err := strictDecode(content, &wire); err != nil {
+		return err
+	}
+	findings, err := decodeFindings(wire.Findings)
+	if err != nil {
+		return err
+	}
+	*view = View{AssessmentID: wire.AssessmentID, RunID: wire.RunID, NodeID: wire.NodeID, Scores: wire.Scores,
+		Findings: findings, Remedies: wire.Remedies, Disposition: wire.Disposition, Digest: wire.Digest, RouteChange: wire.RouteChange}
+	return nil
+}
+
 // Assessment hides the validated patch proposal so provider output can never
 // be mistaken for executable workflow state.
 type Assessment struct {
@@ -353,6 +413,7 @@ type Assessment struct {
 	disposition Disposition
 	digest      string
 	proposal    *workflow.RoutePatchProposal
+	remedies    []workflow.ReadinessRemedy
 }
 
 func (assessment Assessment) Snapshot() Snapshot {
@@ -361,7 +422,28 @@ func (assessment Assessment) Snapshot() Snapshot {
 
 func (assessment Assessment) Disposition() Disposition { return assessment.disposition }
 
+func (assessment Assessment) View() View {
+	submission := cloneSubmission(assessment.submission)
+	view := View{
+		AssessmentID: submission.AssessmentID, RunID: submission.RunID, NodeID: submission.NodeID,
+		Scores: submission.Scores, Findings: submission.Findings,
+		Remedies:    append([]workflow.ReadinessRemedy(nil), assessment.remedies...),
+		Disposition: assessment.disposition, Digest: assessment.digest,
+	}
+	if assessment.proposal != nil {
+		patch := assessment.proposal.Patch()
+		view.RouteChange = &RouteChangeView{
+			PatchID: patch.Metadata.ID, Reason: patch.Spec.Reason,
+			Impact: assessment.proposal.Impact(), Candidate: assessment.proposal.Candidate(),
+			AuthorizationMode: assessment.proposal.AuthorizationMode(), ScopeDigest: assessment.proposal.ScopeDigest(),
+			ValidationDigest: assessment.proposal.ValidationDigest(), PolicyDigest: assessment.proposal.PolicyDigest(),
+		}
+	}
+	return view
+}
+
 var tokenPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,127}$`)
+var opaqueControlIDPattern = regexp.MustCompile(`^(assessment|decision)_[0-9A-HJKMNP-TV-Z]{26}$`)
 
 // Assess validates semantic evidence against the authored node contract and
 // validates any proposed route change through the ordinary route-patch path.
@@ -389,12 +471,24 @@ func Assess(document workflow.Document, current workflow.RouteState, context wor
 		}
 		proposal = &validated
 	}
-	encoded, err := json.Marshal(submission)
+	remedies := referencedRemedies(contract, submission.Findings)
+	digestInput := struct {
+		Submission       Submission  `json:"submission"`
+		Disposition      Disposition `json:"disposition"`
+		PolicyDigest     string      `json:"policyDigest"`
+		ScopeDigest      string      `json:"scopeDigest,omitempty"`
+		ValidationDigest string      `json:"validationDigest,omitempty"`
+	}{Submission: submission, Disposition: disposition, PolicyDigest: policyDigest}
+	if proposal != nil {
+		digestInput.ScopeDigest = proposal.ScopeDigest()
+		digestInput.ValidationDigest = proposal.ValidationDigest()
+	}
+	encoded, err := json.Marshal(digestInput)
 	if err != nil {
 		return Assessment{}, failure(ErrorInvalid, "encode normalized assessment", "/", err)
 	}
 	sum := sha256.Sum256(encoded)
-	return Assessment{submission: cloneSubmission(submission), disposition: disposition, digest: hex.EncodeToString(sum[:]), proposal: proposal}, nil
+	return Assessment{submission: cloneSubmission(submission), disposition: disposition, digest: hex.EncodeToString(sum[:]), proposal: proposal, remedies: remedies}, nil
 }
 
 type Choice string
@@ -402,12 +496,14 @@ type Choice string
 const (
 	ChoiceContinue          Choice = "continue"
 	ChoiceAcceptRouteChange Choice = "accept_route_change"
+	ChoiceSupplyInput       Choice = "supply_input"
 	ChoiceCancel            Choice = "cancel"
 )
 
 type DecisionRequest struct {
 	DecisionID string
 	Choice     Choice
+	RemedyCode string
 	Reason     string
 	Actor      statestore.Actor
 	DecidedAt  time.Time
@@ -419,6 +515,7 @@ type Decision struct {
 	AssessmentDigest string           `json:"assessmentDigest"`
 	RouteScopeDigest string           `json:"routeScopeDigest,omitempty"`
 	Choice           Choice           `json:"choice"`
+	RemedyCode       string           `json:"remedyCode,omitempty"`
 	Reason           string           `json:"reason"`
 	Actor            statestore.Actor `json:"actor"`
 	DecidedAt        time.Time        `json:"decidedAt"`
@@ -440,7 +537,7 @@ func (assessment Assessment) Decide(ctx context.Context, recorder DecisionRecord
 	}
 	decision := Decision{
 		DecisionID: request.DecisionID, AssessmentID: assessment.submission.AssessmentID, AssessmentDigest: assessment.digest,
-		Choice: request.Choice, Reason: request.Reason, Actor: request.Actor, DecidedAt: request.DecidedAt.UTC(),
+		Choice: request.Choice, RemedyCode: request.RemedyCode, Reason: request.Reason, Actor: request.Actor, DecidedAt: request.DecidedAt.UTC(),
 	}
 	if request.Choice == ChoiceAcceptRouteChange {
 		decision.RouteScopeDigest = assessment.proposal.ScopeDigest()
@@ -455,11 +552,11 @@ func (assessment Assessment) Decide(ctx context.Context, recorder DecisionRecord
 }
 
 func validateDecisionRequest(assessment Assessment, request DecisionRequest) error {
-	if !tokenPattern.MatchString(request.DecisionID) {
+	if !tokenPattern.MatchString(request.DecisionID) && !opaqueControlIDPattern.MatchString(request.DecisionID) {
 		return failure(ErrorDecisionInvalid, "decisionId must be a canonical token", "/decision/decisionId", nil)
 	}
-	if strings.TrimSpace(request.Reason) == "" || request.Reason != strings.TrimSpace(request.Reason) {
-		return failure(ErrorDecisionInvalid, "decision reason is required without surrounding whitespace", "/decision/reason", nil)
+	if strings.TrimSpace(request.Reason) == "" || request.Reason != strings.TrimSpace(request.Reason) || len(request.Reason) > 4096 {
+		return failure(ErrorDecisionInvalid, "decision reason is required without surrounding whitespace and may contain at most 4096 bytes", "/decision/reason", nil)
 	}
 	if request.Actor.Type != statestore.ActorUser && request.Actor.Type != statestore.ActorExternal {
 		return failure(ErrorDecisionInvalid, "route/readiness choices require a user or attributable external actor", "/decision/actor", nil)
@@ -469,24 +566,67 @@ func validateDecisionRequest(assessment Assessment, request DecisionRequest) err
 	}
 	switch request.Choice {
 	case ChoiceCancel:
+		if request.RemedyCode != "" {
+			return failure(ErrorDecisionInvalid, "cancel cannot select a remedy", "/decision/remedyCode", nil)
+		}
 		return nil
 	case ChoiceContinue:
+		if request.RemedyCode != "" {
+			return failure(ErrorDecisionInvalid, "continue cannot select a remedy", "/decision/remedyCode", nil)
+		}
 		if assessment.disposition == DispositionPolicyBlocked || assessment.disposition == DispositionInvariantBlocked {
 			return failure(ErrorDecisionInvalid, "an unsatisfied policy gate or violated invariant cannot be bypassed by continue", "/decision/choice", nil)
 		}
 		return nil
 	case ChoiceAcceptRouteChange:
+		if request.RemedyCode != "" {
+			return failure(ErrorDecisionInvalid, "route acceptance cannot select a remedy", "/decision/remedyCode", nil)
+		}
 		if assessment.proposal == nil {
 			return failure(ErrorDecisionInvalid, "assessment has no validated route change to accept", "/decision/choice", nil)
 		}
 		return nil
+	case ChoiceSupplyInput:
+		for _, remedy := range assessment.remedies {
+			if string(remedy.Code) == request.RemedyCode && remedy.Action == workflow.ReadinessSupplyInput {
+				return nil
+			}
+		}
+		return failure(ErrorDecisionInvalid, "supply_input requires a referenced authored supply_input remedy", "/decision/remedyCode", nil)
 	default:
 		return failure(ErrorDecisionInvalid, "decision choice is unsupported", "/decision/choice", nil)
 	}
 }
 
+func referencedRemedies(contract *workflow.ReadinessContract, findings []Finding) []workflow.ReadinessRemedy {
+	referenced := make(map[string]bool)
+	for _, finding := range findings {
+		switch value := finding.(type) {
+		case RecommendationFinding:
+			referenced[value.RemedyCode] = true
+		case *RecommendationFinding:
+			referenced[value.RemedyCode] = true
+		case PolicyGateFinding:
+			referenced[value.RemedyCode] = value.RemedyCode != ""
+		case *PolicyGateFinding:
+			referenced[value.RemedyCode] = value.RemedyCode != ""
+		case InvariantFinding:
+			referenced[value.RemedyCode] = value.RemedyCode != ""
+		case *InvariantFinding:
+			referenced[value.RemedyCode] = value.RemedyCode != ""
+		}
+	}
+	result := make([]workflow.ReadinessRemedy, 0, len(referenced))
+	for _, remedy := range contract.Remedies {
+		if referenced[string(remedy.Code)] {
+			result = append(result, remedy)
+		}
+	}
+	return result
+}
+
 func validateSubmission(document workflow.Document, current workflow.RouteState, submission Submission) error {
-	if !tokenPattern.MatchString(submission.AssessmentID) || strings.TrimSpace(submission.RunID) == "" || submission.RunID != current.RunID() {
+	if (!tokenPattern.MatchString(submission.AssessmentID) && !opaqueControlIDPattern.MatchString(submission.AssessmentID)) || strings.TrimSpace(submission.RunID) == "" || submission.RunID != current.RunID() {
 		return failure(ErrorInvalid, "assessment identity and current run must match", "/", nil)
 	}
 	node, exists := document.Spec.Nodes[submission.NodeID]

@@ -69,8 +69,13 @@ export class DarkstarApiClient {
   listWorkItems(projectId?: string, signal?: AbortSignal) { return this.operation("listWorkItems", { query: { projectId }, signal }); }
   listRuns(query: { after?: string; limit?: number } = {}, signal?: AbortSignal) { return this.operation("listRuns", { query, signal }); }
   getRun(runId: string, signal?: AbortSignal) { return this.operation("getRun", { path: { runId }, signal }); }
+  getRunReadiness(runId: string, signal?: AbortSignal) { return this.operation("getRunReadiness", { path: { runId }, signal }); }
+  decideRunReadiness(runId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["ReadinessDecisionRequest"], signal?: AbortSignal) { return this.operation("decideRunReadiness", { path: { runId }, body, resourceVersion, idempotencyKey, signal }); }
   getWorkItem(workItemId: string, signal?: AbortSignal) { return this.operation("getWorkItem", { path: { workItemId }, signal }); }
   listWorkflows(name?: string, signal?: AbortSignal) { return this.operation("listWorkflows", { query: { name }, signal }); }
+  showWorkflow(name: string, version?: string, signal?: AbortSignal) { return this.operation("showWorkflow", { query: { name, version }, signal }); }
+  graphWorkflow(name: string, version?: string, signal?: AbortSignal) { return this.operation("graphWorkflow", { query: { name, version }, signal }); }
+  previewWorkflowRoute(name: string, version: string | undefined, body: Schemas["WorkflowPreviewRequest"], signal?: AbortSignal) { return this.operation("previewWorkflowRoute", { query: { name, version }, body, signal }); }
   createWorkItem(body: Schemas["CreateWorkItemRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("createWorkItem", { body, idempotencyKey, signal }); }
   createRun(body: Schemas["CreateRunRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("createOrStartRun", { body, idempotencyKey, signal }); }
   pauseRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("pauseRun", { path: { runId }, resourceVersion, idempotencyKey, signal }); }

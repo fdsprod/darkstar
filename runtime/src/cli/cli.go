@@ -86,6 +86,8 @@ Run commands:
   run continue <run-id> --until <node> [--idempotency-key <key>] [--json]
   run cancel <run-id> [--idempotency-key <key>] [--json]
   run export <run-id> --output <file> [--json]
+  run readiness show <run-id> [--json]
+  run readiness decide <run-id> --action <continue|accept_route_change|supply_input|cancel> --reason <text> [--remedy <code>] [--idempotency-key <key>] [--json]
 
 Agent commands:
   agent list [--json]
@@ -384,6 +386,13 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return err
 	}
 	if err := service.server.SetAgents(executions); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		service.executions = nil
+		return err
+	}
+	if err := configureReadiness(service.server, database, workflowCatalog); err != nil {
 		_ = executions.Close()
 		_ = database.Close()
 		service.database = nil
@@ -838,7 +847,7 @@ type runExportOutput struct {
 
 func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "a run command is required (start, list, show, watch, pause, resume, retry, continue, cancel, export)", false, ExitInvalidInput)
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "a run command is required (start, list, show, watch, pause, resume, retry, continue, cancel, export, readiness)", false, ExitInvalidInput)
 	}
 	command := "darkstar run " + args[0]
 	switch args[0] {
@@ -938,6 +947,8 @@ func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
 		}
 		return runControl(command, "continue", runID, key, map[string]string{"until": until}, jsonOutput, stdout, stderr)
+	case "readiness":
+		return runReadiness(args[1:], jsonOutput, stdout, stderr)
 	case "export":
 		if len(args) != 4 || args[2] != "--output" || args[1] == "" || args[3] == "" {
 			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", "expected 'run export <run-id> --output <file>'", false, ExitInvalidInput)

@@ -113,6 +113,22 @@ commands return the updated run and `ETag`. A stale version returns
 `RUN_CONTROL_INVALID_TRANSITION`, and exact command retries replay their durable
 response without applying the transition twice.
 
+Run readiness is a separate assessment resource, not a run lifecycle shortcut:
+
+| Method and route | Operation |
+|---|---|
+| `GET /api/v1/runs/{runId}/readiness` | Return the latest persisted assessment, its findings and route impact, durable decision state, and the exact actions currently allowed by the server. |
+| `POST /api/v1/runs/{runId}/readiness/decisions` | Record `continue`, `accept_route_change`, `supply_input`, or `cancel` against the displayed assessment digest and resource version. |
+
+Decisions require `Idempotency-Key`, a quoted `If-Match` assessment resource
+version, the exact `assessmentDigest`, and an attributable reason. A
+`supply_input` choice also names one server-declared remedy. The request cannot
+contain route-patch operations or client-derived policy state. Successful
+recording returns the updated assessment and `ETag`; its downstream effect is
+reported as pending and is not confused with run `continue` or run `cancel`.
+Provider assessment submission remains inside the daemon rather than being
+published under the local user bearer token.
+
 `GET /api/v1/runs/{runId}/export` returns a finite `application/zip` support
 bundle. It contains `run.json`, correlated `events.jsonl`, `commands.json`, an
 `artifacts/index.json`, and every discovered log that remains locally available.

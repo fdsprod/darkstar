@@ -124,6 +124,41 @@ func TestHumanChoiceIsStoredBeforeRouteProposalIsReleased(t *testing.T) {
 	}
 }
 
+func TestViewExposesValidatedRouteChangeAndSupplyInputUsesAuthoredRemedy(t *testing.T) {
+	t.Parallel()
+	document, state := patchableRouteState(t)
+	document.Spec.Nodes["start"].Fields().Readiness.Remedies[0].Action = workflow.ReadinessSupplyInput
+	submission := baseSubmission()
+	submission.Findings = []routeassessment.Finding{routeassessment.RecommendationFinding{
+		Code: "research_useful", Summary: "Focused input may change the result.", Evidence: evidence(), RemedyCode: "add_research",
+	}}
+	patch := insertReviewPatch()
+	submission.ProposedPatch = &patch
+	assessment, err := routeassessment.Assess(document, state, workflow.RouteContext{}, strings.Repeat("a", 64), submission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := assessment.View()
+	if view.RouteChange == nil || view.RouteChange.PatchID != patch.Metadata.ID || view.RouteChange.Reason != patch.Spec.Reason ||
+		view.RouteChange.Candidate.Revision != 1 || len(view.RouteChange.Impact.AddedNodes) == 0 ||
+		view.RouteChange.AuthorizationMode != workflow.RoutePatchRequireApproval || view.RouteChange.PolicyDigest != strings.Repeat("a", 64) ||
+		len(view.RouteChange.ScopeDigest) != 64 || len(view.RouteChange.ValidationDigest) != 64 {
+		t.Fatalf("route change view = %#v", view.RouteChange)
+	}
+	recorder := &decisionRecorder{}
+	decision, proposal, err := assessment.Decide(context.Background(), recorder, routeassessment.DecisionRequest{
+		DecisionID: "decision_1", Choice: routeassessment.ChoiceSupplyInput, RemedyCode: "add_research", Reason: "Supply the requested input.",
+		Actor: statestore.Actor{Type: statestore.ActorUser, ID: "operator_1"}, DecidedAt: time.Unix(10, 0),
+	})
+	if err != nil || proposal != nil || decision.RemedyCode != "add_research" || len(recorder.values) != 1 {
+		t.Fatalf("decision = %#v, proposal = %#v, recorded = %#v, err = %v", decision, proposal, recorder.values, err)
+	}
+	request := routeassessment.DecisionRequest{DecisionID: "decision_2", Choice: routeassessment.ChoiceSupplyInput, RemedyCode: "unknown", Reason: "Supply it.", Actor: statestore.Actor{Type: statestore.ActorUser, ID: "operator_1"}, DecidedAt: time.Unix(10, 0)}
+	if _, _, err := assessment.Decide(context.Background(), &decisionRecorder{}, request); err == nil {
+		t.Fatal("undeclared supply-input remedy was accepted")
+	}
+}
+
 func TestStorageFailureAndBlockingFindingsReleaseNoRouteProposal(t *testing.T) {
 	t.Parallel()
 	document, state := patchableRouteState(t)

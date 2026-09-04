@@ -11,9 +11,11 @@ import {
 import { BoardPage } from "../pages/BoardPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
 import { RunDetailPage } from "../pages/RunDetailPage";
+import { RunReadinessPage } from "../pages/RunReadinessPage";
 import { WorkDetailPage } from "../pages/WorkDetailPage";
+import { WorkflowsPage } from "../pages/WorkflowsPage";
 
-export type AppRouteId = "board" | "work" | "run" | "checkpoints" | "agents" | "workflows" | "settings" | "artifact" | "not-found";
+export type AppRouteId = "board" | "work" | "run" | "readiness" | "checkpoints" | "agents" | "workflows" | "settings" | "artifact" | "not-found";
 
 export interface AppRoute {
   id: AppRouteId;
@@ -25,6 +27,7 @@ export interface AppRoute {
 
 const routePatterns = [
   { id: "board", path: "/board", title: "Board", section: "Workspace" },
+  { id: "readiness", path: "/work/:workId/run/:runId/readiness", title: "Readiness", section: "Run" },
   { id: "run", path: "/work/:workId/run/:runId", title: "Run", section: "Work" },
   { id: "work", path: "/work/:workId", title: "Work item", section: "Work" },
   { id: "checkpoints", path: "/checkpoints", title: "Checkpoints", section: "Workspace" },
@@ -121,10 +124,11 @@ export function RouteView() {
     case "board": return <BoardPage />;
     case "checkpoints": return <PlaceholderPage eyebrow="Attention queue" title="Checkpoints" description="Review workflow decisions, provider permissions, external delivery, and requested input from one durable inbox." />;
     case "agents": return <PlaceholderPage eyebrow="Execution" title="Agents" description="Inspect queued and active attempts, their bounded authority, workspaces, and live logs." />;
-    case "workflows": return <PlaceholderPage eyebrow="Configuration" title="Workflows" description="Inspect installed workflow versions, route profiles, validation findings, and execution boundaries." />;
+    case "workflows": return <WorkflowsPage />;
     case "settings": return <PlaceholderPage eyebrow="System" title="Settings & Health" description="Understand effective configuration and the readiness of the daemon, repositories, providers, and delivery integrations." />;
     case "work": return <WorkDetailPage />;
     case "run": return <RunDetailPage />;
+    case "readiness": return <RunReadinessPage />;
     case "artifact": return <PlaceholderPage eyebrow="Artifact" title={shortIdentifier(route.params.artifactId)} description="Inspect immutable revisions, representations, provenance, bindings, and freshness." />;
     default: return <PlaceholderPage eyebrow="404" title="Page not found" description="The requested dashboard location does not exist." action={{ label: "Return to board", to: "/board" }} />;
   }

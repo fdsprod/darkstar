@@ -293,6 +293,7 @@ func (proposal RoutePatchProposal) AuthorizationMode() RoutePatchAuthorizationMo
 }
 func (proposal RoutePatchProposal) ScopeDigest() string      { return proposal.scopeDigest }
 func (proposal RoutePatchProposal) ValidationDigest() string { return proposal.validationDigest }
+func (proposal RoutePatchProposal) PolicyDigest() string     { return proposal.policyDigest }
 
 // ProposeRoutePatch applies the ordered operations to a private override copy,
 // rederives the complete route, validates it, and returns deterministic impact

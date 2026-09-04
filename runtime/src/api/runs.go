@@ -53,6 +53,14 @@ func (s *Server) serveRuns(response http.ResponseWriter, request *http.Request, 
 	}
 	relative := strings.TrimPrefix(clean, "/api/v1/runs/")
 	segments := strings.Split(relative, "/")
+	if len(segments) == 2 && segments[1] == "readiness" {
+		s.serveRunReadiness(response, request, requestID, segments[0])
+		return
+	}
+	if len(segments) == 3 && segments[1] == "readiness" && segments[2] == "decisions" {
+		s.serveRunReadinessDecision(response, request, requestID, segments[0])
+		return
+	}
 	if len(segments) == 2 {
 		s.serveRunControl(response, request, requestID, runs, segments[0], segments[1])
 		return

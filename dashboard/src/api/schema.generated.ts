@@ -24,8 +24,8 @@ export interface components {
     "WorkflowDefinition": { "version": components["schemas"]["WorkflowVersionSummary"]; "document": components["schemas"]["WorkflowDocument"]; };
     "WorkflowIdentity": { "name": string; "version": string; "digest": string; };
     "WorkflowGraph": { "workflow": components["schemas"]["WorkflowIdentity"]; "nodes": Array<{ "id": string; "type": "reasoning" | "gate" | "command" | "approval" | "subworkflow" | "point_execution"; "entry"?: boolean; "terminal"?: boolean; }>; "edges": Array<{ "id": string; "from": string; "to": string; }>; };
-    "WorkflowPreviewRequest": { "range": { "from"?: string; "until"?: Array<string>; }; "context": { "runInputs"?: {  }; "acceptedOutputs"?: {  }; "requiredNodes"?: Array<string>; }; };
-    "WorkflowRoutePreview": { "workflow": components["schemas"]["WorkflowIdentity"]; "route": { "entry": string; "terminals": Array<string>; "nodes": Array<{  }>; "transitions": Array<{  }>; "excludedNodes": Array<{  }>; "inputRequirements": Array<{  }>; }; };
+    "WorkflowPreviewRequest": { "range": { "from"?: string; "until"?: Array<string>; }; "context": { "runInputs"?: { [key: string]: unknown; }; "acceptedOutputs"?: { [key: string]: unknown; }; "requiredNodes"?: Array<string>; }; };
+    "WorkflowRoutePreview": { "workflow": components["schemas"]["WorkflowIdentity"]; "route": components["schemas"]["FrozenRoute"]; };
     "Artifact": unknown;
     "ArtifactRepresentation": unknown;
     "ArtifactBinding": unknown;
@@ -45,6 +45,23 @@ export interface components {
     "StartFakeRunRequest": { "scenario": "fake-success" | "fake-restart"; };
     "RetryRunRequest": { "nodeId"?: string; };
     "ContinueRunRequest": { "until": string; };
+    "ReadinessEvidence": { "source": string; "observation": string; };
+    "ReadinessScore": { "name": string; "value": number; "evidence": Array<components["schemas"]["ReadinessEvidence"]>; };
+    "ReadinessInformationFinding": { "level": "information"; "code": string; "summary": string; "evidence": Array<components["schemas"]["ReadinessEvidence"]>; };
+    "ReadinessRecommendationFinding": { "level": "recommendation"; "code": string; "summary": string; "evidence": Array<components["schemas"]["ReadinessEvidence"]>; "remedyCode": string; };
+    "ReadinessPolicyGateFinding": { "level": "policy_gate"; "code": string; "summary": string; "evidence": Array<components["schemas"]["ReadinessEvidence"]>; "policy": string; "status": "satisfied" | "unsatisfied"; "remedyCode"?: string; };
+    "ReadinessInvariantFinding": { "level": "invariant"; "code": string; "summary": string; "evidence": Array<components["schemas"]["ReadinessEvidence"]>; "invariant": string; "status": "upheld" | "violated"; "remedyCode"?: string; };
+    "ReadinessFinding": components["schemas"]["ReadinessInformationFinding"] | components["schemas"]["ReadinessRecommendationFinding"] | components["schemas"]["ReadinessPolicyGateFinding"] | components["schemas"]["ReadinessInvariantFinding"];
+    "ReadinessRemedy": { "code": string; "target": string; "action": "supply_input" | "revise_artifact" | "clarify_decision" | "install_capability" | "rerun_validation"; "description": string; };
+    "ReadinessRouteImpact": { "addedNodes"?: Array<string>; "removedNodes"?: Array<string>; "addedTransitions"?: Array<string>; "removedTransitions"?: Array<string>; "previousTerminals": Array<string>; "proposedTerminals": Array<string>; };
+    "ReadinessRouteState": { "runId": string; "revision": number; "route": components["schemas"]["FrozenRoute"]; "overrides"?: Array<{ "transitionId": string; "enabled": boolean; }>; };
+    "ReadinessRouteChange": { "patchId": string; "reason": string; "impact": components["schemas"]["ReadinessRouteImpact"]; "candidate": components["schemas"]["ReadinessRouteState"]; "authorizationMode": "require_approval"; "scopeDigest": string; "validationDigest": string; "policyDigest": string; };
+    "ReadinessAssessment": { "assessmentId": string; "runId": string; "nodeId": string; "scores": Array<components["schemas"]["ReadinessScore"]>; "findings": Array<components["schemas"]["ReadinessFinding"]>; "remedies": Array<components["schemas"]["ReadinessRemedy"]>; "disposition": "ready" | "choice_required" | "policy_blocked" | "invariant_blocked"; "digest": string; "routeChange"?: components["schemas"]["ReadinessRouteChange"]; };
+    "ReadinessAllowedAction": { "choice": "continue"; } | { "choice": "accept_route_change"; } | { "choice": "supply_input"; "remedy": components["schemas"]["ReadinessRemedy"]; } | { "choice": "cancel"; };
+    "ReadinessActor": { "type": "user" | "external"; "id": string; };
+    "ReadinessDecision": { "decisionId": string; "choice": "continue" | "accept_route_change" | "supply_input" | "cancel"; "remedyCode"?: string; "reason": string; "effectStatus": "pending"; "actor": components["schemas"]["ReadinessActor"]; "decidedAt": string; };
+    "RunReadinessView": { "assessment": components["schemas"]["ReadinessAssessment"]; "status": "pending" | "decided"; "allowedActions": Array<components["schemas"]["ReadinessAllowedAction"]>; "decision"?: components["schemas"]["ReadinessDecision"]; "resourceVersion": number; "createdAt": string; "updatedAt": string; };
+    "ReadinessDecisionRequest": { "action": "continue" | "accept_route_change" | "cancel"; "assessmentDigest": string; "reason": string; } | { "action": "supply_input"; "assessmentDigest": string; "reason": string; "remedyCode": string; };
     "FrozenRouteNode": { "id": string; "join"?: {  }; };
     "FrozenRouteTransition": { "id": string; "from": string; "to": string; };
     "FrozenRouteExcludedNode": { "id": string; "reason": "before_entry" | "past_terminal" | "not_connected"; };
@@ -53,7 +70,7 @@ export interface components {
     "Run": { "id": string; "workItemId": string; "workflowId": string; "workflowVersion": string; "workflowDigest"?: string; "routeDigest"?: string; "routeSnapshot"?: components["schemas"]["FrozenRoute"]; "priority"?: number; "status": "pending" | "draft" | "ready" | "queued" | "running" | "waiting" | "blocked" | "completed" | "failed" | "cancelled" | "reconcile_required"; "resourceVersion": number; "lastGlobalPosition"?: number; "createdAt": string; "updatedAt": string; };
     "Attempt": { "id": string; "runId": string; "visitId"?: string; "nodeId"?: string; "pointId"?: string; "pointRevision"?: number; "priority"?: number; "scenario": string; "provider": string; "status": "created" | "starting" | "running" | "validating" | "succeeded" | "failed" | "cancelled" | "interrupted" | "reconcile_required"; "providerThreadId"?: string; "providerTurnId"?: string; "processOwnerId"?: string; "lastSequence": number; "logReference"?: string; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
     "NodeVisit": { "id": string; "runId": string; "nodeId": string; "status": "pending" | "ready" | "running" | "validating" | "waiting_checkpoint" | "succeeded" | "rejected" | "failed" | "cancelled"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
-    "RunTimelineEntry": { "id": string; "globalPosition": number; "aggregateType": "project" | "work" | "story" | "point" | "run" | "visit" | "attempt" | "artifact" | "approval" | "operation"; "aggregateId": string; "aggregateRevision": number; "kind": string; "occurredAt": string; "recordedAt": string; "actorType": "user" | "system" | "provider" | "external"; };
+    "RunTimelineEntry": { "id": string; "globalPosition": number; "aggregateType": "project" | "work" | "story" | "point" | "run" | "visit" | "attempt" | "artifact" | "approval" | "operation" | "assessment"; "aggregateId": string; "aggregateRevision": number; "kind": string; "occurredAt": string; "recordedAt": string; "actorType": "user" | "system" | "provider" | "external"; };
     "RunTimelinePageInfo": { "hasEarlier": boolean; "firstPosition"?: number; "lastPosition"?: number; };
     "RunCommandSummary": { "scope": string; "status": string; "responseStatus"?: number; "firstEventPosition"?: number; "lastEventPosition"?: number; "createdAt": string; "completedAt"?: string; };
     "RunCommandPageInfo": { "hasEarlier": boolean; };
@@ -76,6 +93,8 @@ export interface ApiOperations {
     "listRuns": { method: "GET"; path: "/api/v1/runs"; response: components["schemas"]["RunPage"]; body: never; };
     "createOrStartRun": { method: "POST"; path: "/api/v1/runs"; response: components["schemas"]["Run"]; body: components["schemas"]["CreateRunRequest"] | components["schemas"]["StartFakeRunRequest"]; };
     "getRun": { method: "GET"; path: "/api/v1/runs/{runId}"; response: components["schemas"]["RunView"]; body: never; };
+    "getRunReadiness": { method: "GET"; path: "/api/v1/runs/{runId}/readiness"; response: components["schemas"]["RunReadinessView"]; body: never; };
+    "decideRunReadiness": { method: "POST"; path: "/api/v1/runs/{runId}/readiness/decisions"; response: components["schemas"]["RunReadinessView"]; body: components["schemas"]["ReadinessDecisionRequest"]; };
     "exportRun": { method: "GET"; path: "/api/v1/runs/{runId}/export"; response: string; body: never; };
     "cancelRun": { method: "POST"; path: "/api/v1/runs/{runId}/cancel"; response: components["schemas"]["Run"]; body: never; };
     "pauseRun": { method: "POST"; path: "/api/v1/runs/{runId}/pause"; response: components["schemas"]["Run"]; body: never; };
@@ -120,6 +139,8 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "listRuns": { method: "GET", path: "/api/v1/runs" },
   "createOrStartRun": { method: "POST", path: "/api/v1/runs" },
   "getRun": { method: "GET", path: "/api/v1/runs/{runId}" },
+  "getRunReadiness": { method: "GET", path: "/api/v1/runs/{runId}/readiness" },
+  "decideRunReadiness": { method: "POST", path: "/api/v1/runs/{runId}/readiness/decisions" },
   "exportRun": { method: "GET", path: "/api/v1/runs/{runId}/export" },
   "cancelRun": { method: "POST", path: "/api/v1/runs/{runId}/cancel" },
   "pauseRun": { method: "POST", path: "/api/v1/runs/{runId}/pause" },

@@ -14,7 +14,7 @@ INSERT INTO global_positions(singleton, last_position) VALUES (1, 0);
 
 CREATE TABLE aggregates (
   aggregate_id TEXT PRIMARY KEY,
-  aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('project', 'work', 'story', 'point', 'run', 'visit', 'attempt', 'artifact', 'approval', 'operation')),
+  aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('project', 'work', 'story', 'point', 'run', 'visit', 'attempt', 'artifact', 'approval', 'operation', 'assessment')),
   revision INTEGER NOT NULL CHECK (revision >= 0),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -28,7 +28,8 @@ CREATE TABLE aggregates (
     (aggregate_type = 'attempt' AND aggregate_id GLOB 'attempt_*') OR
     (aggregate_type = 'artifact' AND aggregate_id GLOB 'artifact_*') OR
     (aggregate_type = 'approval' AND aggregate_id GLOB 'approval_*') OR
-    (aggregate_type = 'operation' AND aggregate_id GLOB 'operation_*')
+    (aggregate_type = 'operation' AND aggregate_id GLOB 'operation_*') OR
+    (aggregate_type = 'assessment' AND aggregate_id GLOB 'assessment_*')
   )
 ) STRICT;
 
@@ -686,3 +687,41 @@ BEFORE DELETE ON capability_records
 BEGIN
   SELECT RAISE(ABORT, 'capability records are immutable');
 END;
+
+CREATE TABLE readiness_assessment_projection (
+  assessment_id TEXT PRIMARY KEY CHECK (assessment_id GLOB 'assessment_*'),
+  run_id TEXT NOT NULL CHECK (run_id GLOB 'run_*'),
+  node_id TEXT NOT NULL CHECK (node_id <> ''),
+  disposition TEXT NOT NULL CHECK (disposition IN ('ready', 'choice_required', 'policy_blocked', 'invariant_blocked')),
+  assessment_digest TEXT NOT NULL CHECK (length(assessment_digest) = 64 AND assessment_digest NOT GLOB '*[^0-9a-f]*'),
+  policy_digest TEXT NOT NULL CHECK (length(policy_digest) = 64 AND policy_digest NOT GLOB '*[^0-9a-f]*'),
+  submission_json TEXT NOT NULL CHECK (json_valid(submission_json) AND json_type(submission_json) = 'object'),
+  route_context_json TEXT NOT NULL CHECK (json_valid(route_context_json) AND json_type(route_context_json) = 'object'),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'decided')),
+  decision_id TEXT,
+  decision_choice TEXT CHECK (decision_choice IS NULL OR decision_choice IN ('continue', 'accept_route_change', 'supply_input', 'cancel')),
+  decision_remedy_code TEXT,
+  decision_reason TEXT,
+  decision_effect_status TEXT CHECK (decision_effect_status IS NULL OR decision_effect_status = 'pending'),
+  decided_by_type TEXT CHECK (decided_by_type IS NULL OR decided_by_type IN ('user', 'external')),
+  decided_by_id TEXT,
+  decided_at TEXT,
+  resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
+  last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (
+    (status = 'pending' AND decision_id IS NULL AND decision_choice IS NULL AND decision_remedy_code IS NULL AND
+      decision_reason IS NULL AND decision_effect_status IS NULL AND decided_by_type IS NULL AND decided_by_id IS NULL AND decided_at IS NULL) OR
+    (status = 'decided' AND decision_id IS NOT NULL AND decision_choice IS NOT NULL AND decision_reason IS NOT NULL AND
+      decision_effect_status IS NOT NULL AND decided_by_type IS NOT NULL AND decided_by_id IS NOT NULL AND decided_at IS NOT NULL)
+  ),
+  CHECK (
+    (decision_choice = 'supply_input' AND decision_remedy_code IS NOT NULL AND decision_remedy_code <> '') OR
+    (decision_choice IS NULL AND decision_remedy_code IS NULL) OR
+    (decision_choice <> 'supply_input' AND decision_remedy_code IS NULL)
+  )
+) STRICT;
+
+CREATE INDEX readiness_assessment_projection_run_latest
+ON readiness_assessment_projection(run_id, last_global_position DESC, assessment_id DESC);

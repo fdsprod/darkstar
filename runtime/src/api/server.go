@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"darkstar/src/core/health"
+	"darkstar/src/core/readinesscontrol"
 	"darkstar/src/core/workflow"
 	"darkstar/src/dashboardassets"
 	"darkstar/src/ports/workflowstore"
@@ -52,11 +53,34 @@ type Server struct {
 	work      WorkService
 	artifacts ArtifactService
 	approvals ApprovalService
+	readiness ReadinessService
 	workflows WorkflowService
 	dashboard fs.FS
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
+}
+
+// ReadinessService exposes only operator-safe readiness queries and decisions.
+// Provider assessment submission remains an in-process orchestration boundary.
+type ReadinessService interface {
+	LatestForRun(context.Context, string) (readinesscontrol.View, error)
+	Decide(context.Context, readinesscontrol.DecisionRequest) (readinesscontrol.View, error)
+}
+
+// SetReadiness installs run-scoped readiness queries and decisions before the
+// endpoint is published.
+func (s *Server) SetReadiness(service ReadinessService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API readiness service can only be set before start")
+	}
+	if service == nil {
+		return errors.New("API readiness service is required")
+	}
+	s.readiness = service
+	return nil
 }
 
 // DoctorReporter produces the authenticated, detailed subsystem health report.
