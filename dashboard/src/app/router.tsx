@@ -34,6 +34,7 @@ const routePatterns = [
 
 interface RouterValue {
   route: AppRoute;
+  search: string;
   navigate: (to: string, options?: { replace?: boolean }) => void;
 }
 
@@ -48,7 +49,7 @@ function subscribe(listener: () => void) {
   };
 }
 
-function getPathname() { return window.location.pathname; }
+function getLocation() { return `${window.location.pathname}${window.location.search}`; }
 
 function matchRoute(pathname: string): AppRoute {
   const normalized = pathname !== "/" && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
@@ -71,8 +72,10 @@ function matchRoute(pathname: string): AppRoute {
 }
 
 export function RouterProvider({ children }: { children: ReactNode }) {
-  const pathname = useSyncExternalStore(subscribe, getPathname, () => "/board");
+  const location = useSyncExternalStore(subscribe, getLocation, () => "/board");
+  const [pathname, query = ""] = location.split("?", 2);
   const route = useMemo(() => matchRoute(pathname), [pathname]);
+  const search = query ? `?${query}` : "";
 
   const navigate = (to: string, options?: { replace?: boolean }) => {
     const current = `${window.location.pathname}${window.location.search}`;
@@ -83,7 +86,7 @@ export function RouterProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => { document.title = `${route.title} · DARKSTAR`; }, [route.title]);
-  const value = useMemo(() => ({ route, navigate }), [route]);
+  const value = useMemo(() => ({ route, search, navigate }), [route, search]);
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }
 
