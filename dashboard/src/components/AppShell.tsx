@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { AppLink, RouteView, useRouter } from "../app/router";
+import { useDashboardState } from "../state/DashboardStateProvider";
 import { Icon, type IconName } from "./Icon";
 
 interface NavItem { label: string; to: string; icon: IconName; routeIds: string[] }
@@ -14,6 +15,7 @@ const primaryNavigation: NavItem[] = [
 
 export function AppShell() {
   const { route } = useRouter();
+  const { state } = useDashboardState();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const paletteRef = useRef<HTMLDialogElement>(null);
 
@@ -63,9 +65,9 @@ export function AppShell() {
           <AppLink to="/settings" className="nav-item" ariaCurrent={route.id === "settings" ? "page" : undefined} onNavigate={() => setSidebarOpen(false)}>
             <Icon name="settings" /><span>Settings & Health</span>
           </AppLink>
-          <div className="control-plane">
+          <div className="control-plane" data-connection={state.connection} aria-live="polite">
             <span className="control-plane__indicator" aria-hidden="true" />
-            <span><strong>Local control plane</strong><small>Same-origin session</small></span>
+            <span><strong>Local control plane</strong><small>{connectionLabel(state.connection, state.hydration)}</small></span>
           </div>
         </div>
       </aside>
@@ -89,6 +91,15 @@ export function AppShell() {
       <CommandPalette dialogRef={paletteRef} />
     </div>
   );
+}
+
+function connectionLabel(connection: string, hydration: string) {
+  if (hydration === "loading") return "Loading authoritative state";
+  if (hydration === "error") return "State sync unavailable";
+  if (connection === "live") return "Live · event stream connected";
+  if (connection === "reconnecting") return "Reconnecting from cursor";
+  if (connection === "offline") return "Updates paused";
+  return "Connecting to event stream";
 }
 
 function CommandPalette({ dialogRef }: { dialogRef: RefObject<HTMLDialogElement | null> }) {

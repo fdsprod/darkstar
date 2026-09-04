@@ -1,10 +1,13 @@
 import { AppShell } from "../components/AppShell";
+import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { RouterProvider } from "./router";
 
 export function App() {
   return (
-    <RouterProvider>
-      <AppShell />
-    </RouterProvider>
+    <DashboardStateProvider>
+      <RouterProvider>
+        <AppShell />
+      </RouterProvider>
+    </DashboardStateProvider>
   );
 }

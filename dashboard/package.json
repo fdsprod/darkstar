@@ -8,7 +8,7 @@
     "api:check": "node scripts/generate-api-client.mjs --check",
     "build": "npm run api:check && tsc --noEmit --pretty false && vite build",
     "check": "npm run api:check && tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.node.json && npm test",
-    "test": "node --test"
+    "test": "node --experimental-strip-types --test"
   },
   "dependencies": {
     "react": "19.2.8",
