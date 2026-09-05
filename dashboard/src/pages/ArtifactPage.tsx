@@ -95,7 +95,7 @@ function RevisionComparison({ artifactId, selected, revisions }: { artifactId: s
     setDiff(undefined); setLint(undefined); setError("");
     void Promise.all([
       apiClient.lintArtifact(artifactId, selected.artifact.version, abort.signal),
-      prior ? apiClient.diffArtifactVersions(artifactId, prior.artifact.version, selected.artifact.version, abort.signal) : Promise.resolve(undefined),
+      prior ? apiClient.diffArtifactVersions(artifactId, prior.artifact.version, selected.artifact.version, {}, abort.signal) : Promise.resolve(undefined),
     ]).then(([nextLint, nextDiff]) => { setLint(nextLint); setDiff(nextDiff); }).catch((cause) => { if (!abort.signal.aborted) setError(cause instanceof ApiRequestError && cause.status === 404 ? "Revision comparison evidence is no longer available." : "Revision validation evidence could not be loaded."); });
     return () => abort.abort();
   }, [artifactId, prior?.artifact.version, selected.artifact.version]);

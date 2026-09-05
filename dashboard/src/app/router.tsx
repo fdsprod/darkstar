@@ -14,6 +14,7 @@ import { ArtifactPage } from "../pages/ArtifactPage";
 import { ArtifactsPage } from "../pages/ArtifactsPage";
 import { AgentsPage } from "../pages/AgentsPage";
 import { CheckpointsPage } from "../pages/CheckpointsPage";
+import { ArtifactReviewPage } from "../pages/ArtifactReviewPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
 import { RunDetailPage } from "../pages/RunDetailPage";
 import { RunReadinessPage } from "../pages/RunReadinessPage";
@@ -21,7 +22,7 @@ import { SettingsPage } from "../pages/SettingsPage";
 import { WorkDetailPage } from "../pages/WorkDetailPage";
 import { WorkflowsPage } from "../pages/WorkflowsPage";
 
-export type AppRouteId = "board" | "work" | "run" | "readiness" | "checkpoints" | "agents" | "workflows" | "settings" | "artifacts" | "artifact" | "not-found";
+export type AppRouteId = "board" | "work" | "run" | "readiness" | "checkpoints" | "artifact-review" | "agents" | "workflows" | "settings" | "artifacts" | "artifact" | "not-found";
 
 export interface AppRoute {
   id: AppRouteId;
@@ -36,6 +37,7 @@ const routePatterns = [
   { id: "readiness", path: "/work/:workId/run/:runId/readiness", title: "Readiness", section: "Run" },
   { id: "run", path: "/work/:workId/run/:runId", title: "Run", section: "Work" },
   { id: "work", path: "/work/:workId", title: "Work item", section: "Work" },
+  { id: "artifact-review", path: "/checkpoints/:approvalId/review", title: "Artifact review", section: "Run" },
   { id: "checkpoints", path: "/checkpoints", title: "Checkpoints", section: "Operations" },
   { id: "agents", path: "/agents", title: "Agents", section: "Operations" },
   { id: "workflows", path: "/workflows", title: "Workflows", section: "Library" },
@@ -131,6 +133,7 @@ export function RouteView() {
   switch (route.id) {
     case "board": return <BoardPage />;
     case "checkpoints": return <CheckpointsPage />;
+    case "artifact-review": return <ArtifactReviewPage />;
     case "agents": return <AgentsPage />;
     case "workflows": return <WorkflowsPage />;
     case "artifacts": return <ArtifactsPage />;

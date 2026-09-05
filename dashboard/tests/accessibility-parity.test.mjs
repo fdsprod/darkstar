@@ -122,6 +122,8 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
     ["cancelRun", "cancelRun", "darkstar run cancel", "run.cancelled"],
     ["decideRunReadiness", "decideRunReadiness", "darkstar run readiness decide", "readiness.decision_recorded"],
     ["decideApproval", "decideApproval", "darkstar approval decide", "approval.decided"],
+    ["submitCheckpointFeedback", "submitCheckpointFeedback", "darkstar review feedback", "approval.feedback_submitted"],
+    ["decideCheckpointReviewSession", "decideCheckpointReviewSession", "darkstar review approve|reject", "approval.decided"],
     ["answerInputRequest", "answerInputRequest", "darkstar input answer", "input.answer_recorded"],
     ["retryInputDelivery", "retryInputRequestDelivery", "darkstar input retry", "input.answer_delivered"],
     ["ingestArtifact", "ingestArtifact", "darkstar artifact ingest", "artifact.ingested"],

@@ -9,7 +9,7 @@ interface NavItem { label: string; to: string; icon: IconName; routeIds: string[
 const navigationGroups: Array<{ label: string; items: NavItem[] }> = [
   { label: "Work", items: [{ label: "Board", to: "/board", icon: "board", routeIds: ["board", "work", "run", "readiness"] }] },
   { label: "Operations", items: [
-    { label: "Checkpoints", to: "/checkpoints", icon: "checkpoints", routeIds: ["checkpoints"] },
+    { label: "Checkpoints", to: "/checkpoints", icon: "checkpoints", routeIds: ["checkpoints", "artifact-review"] },
     { label: "Agents", to: "/agents", icon: "agents", routeIds: ["agents"] },
   ] },
   { label: "Library", items: [

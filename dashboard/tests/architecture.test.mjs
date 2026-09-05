@@ -18,7 +18,7 @@ test("application entrypoint installs a safe top-level error boundary", async ()
 
 test("router owns all top-level dashboard destinations", async () => {
   const source = await read("../src/app/router.tsx");
-  for (const route of ["/board", "/work/:workId", "/checkpoints", "/agents", "/workflows", "/settings", "/artifacts/:artifactId"]) {
+  for (const route of ["/board", "/work/:workId", "/checkpoints", "/checkpoints/:approvalId/review", "/agents", "/workflows", "/settings", "/artifacts/:artifactId"]) {
     assert.ok(source.includes(route), `missing route ${route}`);
   }
   assert.match(source, /popstate/);
