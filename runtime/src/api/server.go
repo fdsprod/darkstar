@@ -265,8 +265,9 @@ func (s *Server) SetApprovals(approvals ApprovalService) error {
 type WorkflowService interface {
 	List(context.Context, string) ([]workflow.VersionSummary, error)
 	Library(context.Context) (workflow.Library, error)
+	AuthoringCatalog(context.Context) (workflow.AuthoringCatalog, error)
 	Definition(context.Context, string, string) (workflow.Definition, error)
-	ValidateCandidate(workflowstore.Candidate) workflow.ValidationReport
+	ValidateCandidate(context.Context, workflowstore.Candidate) workflow.ValidationReport
 	Install(context.Context, workflowstore.Candidate) (workflow.InstallResult, error)
 	Graph(context.Context, string, string) (workflow.Graph, error)
 	Preview(context.Context, string, string, workflow.RouteRequest, workflow.RouteContext) (workflow.RoutePreview, workflow.ValidationErrors, error)
@@ -276,6 +277,7 @@ type WorkflowService interface {
 	UpdateDraft(context.Context, workflow.DraftUpdateRequest) (workflowstore.Draft, error)
 	RenameDraft(context.Context, string, string, uint64) (workflowstore.Draft, error)
 	ValidateDraft(context.Context, string, uint64) (workflow.DraftValidationReport, error)
+	PreviewDraft(context.Context, string, uint64, workflow.RouteRequest, workflow.RouteContext) (workflow.DraftPreview, workflow.ValidationErrors, error)
 	PublishDraft(context.Context, workflow.DraftPublishRequest) (workflow.DraftPublishResult, error)
 	DiscardDraft(context.Context, string, uint64) error
 	ArchiveVersion(context.Context, string, string) (workflowstore.Archive, error)

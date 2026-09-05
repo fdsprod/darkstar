@@ -58,6 +58,31 @@ func TestWorkflowCLIInstallListGraphAndPreviewJSON(t *testing.T) {
 	if len(draftValidation.Findings) != 0 {
 		t.Fatalf("draft validation = %#v", draftValidation)
 	}
+	if draftValidation.DocumentDigest != draft.DocumentDigest || len(draftValidation.Digest) != 64 {
+		t.Fatalf("draft validation evidence = %#v", draftValidation)
+	}
+
+	var draftPreview workflow.DraftPreview
+	previewInput := filepath.Join(root, "preview-input.json")
+	if err := os.WriteFile(previewInput, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runCLIJSON(t, []string{"workflow", "draft-preview", draft.ID, "--revision", "1", "--from", "finish", "--until", "finish", "--input", previewInput, "--json"}, &struct {
+		SchemaVersion int                    `json:"schemaVersion"`
+		Result        *workflow.DraftPreview `json:"result"`
+	}{Result: &draftPreview})
+	if draftPreview.DraftID != draft.ID || draftPreview.Route.Entry != "finish" {
+		t.Fatalf("draft preview = %#v", draftPreview)
+	}
+
+	var authoringCatalog workflow.AuthoringCatalog
+	runCLIJSON(t, []string{"workflow", "authoring-catalog", "--json"}, &struct {
+		SchemaVersion int                        `json:"schemaVersion"`
+		Result        *workflow.AuthoringCatalog `json:"result"`
+	}{Result: &authoringCatalog})
+	if authoringCatalog.SchemaVersion != 1 || len(authoringCatalog.NodeTypes) != 6 || authoringCatalog.Workflows.Status != workflow.ReferenceKnown || len(authoringCatalog.Workflows.Items) != 1 || authoringCatalog.Agents.Status != workflow.ReferenceUnavailable || authoringCatalog.Skills.Status != workflow.ReferenceKnown {
+		t.Fatalf("authoring catalog = %#v", authoringCatalog)
+	}
 
 	var published workflow.DraftPublishResult
 	runCLIJSON(t, []string{"workflow", "draft-publish", draft.ID, "1.1.0", "--revision", "1", "--json"}, &struct {
@@ -66,6 +91,9 @@ func TestWorkflowCLIInstallListGraphAndPreviewJSON(t *testing.T) {
 	}{Result: &published})
 	if published.Published.Version != "1.1.0" {
 		t.Fatalf("published = %#v", published)
+	}
+	if len(published.SourceValidationDigest) != 64 {
+		t.Fatalf("publish source validation digest = %q", published.SourceValidationDigest)
 	}
 
 	var archived workflowstore.Archive

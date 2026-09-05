@@ -65,6 +65,13 @@ type workflowDraftPublishRequest struct {
 	ExpectedRevision uint64 `json:"expectedRevision"`
 }
 
+type workflowDraftPreviewRequest struct {
+	ID               string                `json:"id"`
+	ExpectedRevision uint64                `json:"expectedRevision"`
+	Range            workflow.RouteRequest `json:"range"`
+	Context          workflow.RouteContext `json:"context"`
+}
+
 type workflowArchiveRequest struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
@@ -120,6 +127,17 @@ func (s *Server) serveWorkflows(response http.ResponseWriter, request *http.Requ
 			return
 		}
 		value, err := service.Library(request.Context())
+		if err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
+	case "authoring-catalog":
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writeWorkflowMethod(response, requestID, "GET, HEAD")
+			return
+		}
+		value, err := service.AuthoringCatalog(request.Context())
 		if err != nil {
 			writeWorkflowError(response, requestID, err)
 			return
@@ -223,6 +241,26 @@ func (s *Server) serveWorkflows(response http.ResponseWriter, request *http.Requ
 			return
 		}
 		writeJSON(response, http.StatusOK, value)
+	case "drafts/preview":
+		if request.Method != http.MethodPost {
+			writeWorkflowMethod(response, requestID, "POST")
+			return
+		}
+		var input workflowDraftPreviewRequest
+		if err := decodeWorkflowJSON(request, &input); err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		value, issues, err := service.PreviewDraft(request.Context(), input.ID, input.ExpectedRevision, input.Range, input.Context)
+		if err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		if len(issues) != 0 {
+			writeWorkflowValidation(response, requestID, issues)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
 	case "drafts/publish":
 		if request.Method != http.MethodPost {
 			writeWorkflowMethod(response, requestID, "POST")
@@ -266,7 +304,7 @@ func (s *Server) serveWorkflows(response http.ResponseWriter, request *http.Requ
 		}
 		candidate := workflowstore.Candidate{Scope: input.SourceScope, Reference: input.SourceReference, Content: input.Document}
 		if action == "validate" {
-			writeJSON(response, http.StatusOK, service.ValidateCandidate(candidate))
+			writeJSON(response, http.StatusOK, service.ValidateCandidate(request.Context(), candidate))
 			return
 		}
 		result, err := service.Install(request.Context(), candidate)

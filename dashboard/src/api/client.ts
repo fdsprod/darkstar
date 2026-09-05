@@ -99,6 +99,7 @@ export class DarkstarApiClient {
   getWorkItem(workItemId: string, signal?: AbortSignal) { return this.operation("getWorkItem", { path: { workItemId }, signal }); }
   listWorkflows(name?: string, signal?: AbortSignal) { return this.operation("listWorkflows", { query: { name }, signal }); }
   getWorkflowLibrary(signal?: AbortSignal) { return this.operation("getWorkflowLibrary", { signal }); }
+  getWorkflowAuthoringCatalog(signal?: AbortSignal) { return this.operation("getWorkflowAuthoringCatalog", { signal }); }
   archiveWorkflowVersion(name: string, version: string, idempotencyKey: string, signal?: AbortSignal) { return this.operation("archiveWorkflowVersion", { body: { name, version }, idempotencyKey, signal }); }
   getWorkflowDraft(id: string, signal?: AbortSignal) { return this.operation("getWorkflowDraft", { query: { id }, signal }); }
   createWorkflowDraft(body: Schemas["WorkflowDraftCreateRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("createWorkflowDraft", { body, idempotencyKey, signal }); }
@@ -106,6 +107,7 @@ export class DarkstarApiClient {
   updateWorkflowDraft(body: Schemas["WorkflowDraftUpdateRequest"], signal?: AbortSignal) { return this.operation("updateWorkflowDraft", { body, signal }); }
   renameWorkflowDraft(body: Schemas["WorkflowDraftRenameRequest"], signal?: AbortSignal) { return this.operation("renameWorkflowDraft", { body, signal }); }
   validateWorkflowDraft(body: Schemas["WorkflowDraftRevisionRequest"], signal?: AbortSignal) { return this.operation("validateWorkflowDraft", { body, signal }); }
+  previewWorkflowDraft(body: Schemas["WorkflowDraftPreviewRequest"], signal?: AbortSignal) { return this.operation("previewWorkflowDraft", { body, signal }); }
   publishWorkflowDraft(body: Schemas["WorkflowDraftPublishRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("publishWorkflowDraft", { body, idempotencyKey, signal }); }
   discardWorkflowDraft(body: Schemas["WorkflowDraftRevisionRequest"], signal?: AbortSignal) { return this.operation("discardWorkflowDraft", { body, signal }); }
   showWorkflow(name: string, version?: string, signal?: AbortSignal) { return this.operation("showWorkflow", { query: { name, version }, signal }); }

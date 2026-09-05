@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"darkstar/src/core/config"
+	registryport "darkstar/src/ports/capabilityregistry"
 	"darkstar/src/ports/workflowstore"
 )
 
@@ -72,6 +74,107 @@ type Library struct {
 	Archives []workflowstore.Archive `json:"archives"`
 }
 
+// AuthoringCatalog is a server-derived set of closed schema options and
+// references observed in immutable installed definitions. Empty reference
+// groups are truthful: the editor must not invent unavailable profiles.
+type AuthoringCatalog struct {
+	SchemaVersion   int                      `json:"schemaVersion"`
+	NodeTypes       []NodeType               `json:"nodeTypes"`
+	ValueTypes      []ValueType              `json:"valueTypes"`
+	CheckpointModes []CheckpointMode         `json:"checkpointModes"`
+	PredicateOps    []string                 `json:"predicateOps"`
+	Agents          StringReferenceGroup     `json:"agents"`
+	Policies        StringReferenceGroup     `json:"policies"`
+	Schemas         StringReferenceGroup     `json:"schemas"`
+	Skills          CapabilityReferenceGroup `json:"skills"`
+	Tools           CapabilityReferenceGroup `json:"tools"`
+	Workflows       WorkflowReferenceGroup   `json:"workflows"`
+}
+
+type ReferenceGroupStatus string
+type ReferenceUnavailableReason string
+
+const (
+	ReferenceKnown                ReferenceGroupStatus       = "known"
+	ReferenceUnavailable          ReferenceGroupStatus       = "unavailable"
+	ReferenceNotConfigured        ReferenceUnavailableReason = "not_configured"
+	ReferenceDiscoveryUnsupported ReferenceUnavailableReason = "discovery_unsupported"
+	ReferenceReadFailed           ReferenceUnavailableReason = "read_failed"
+)
+
+type StringReferenceGroup struct {
+	Status ReferenceGroupStatus       `json:"status"`
+	Items  []string                   `json:"items,omitempty"`
+	Reason ReferenceUnavailableReason `json:"reason,omitempty"`
+}
+type CapabilityCatalogItem struct {
+	Name         string                    `json:"name"`
+	Kind         registryport.Kind         `json:"kind"`
+	Class        registryport.Class        `json:"class"`
+	Version      string                    `json:"version,omitempty"`
+	Fingerprint  string                    `json:"fingerprint"`
+	Availability registryport.Availability `json:"availability"`
+}
+type CapabilityReferenceGroup struct {
+	Status ReferenceGroupStatus       `json:"status"`
+	Items  []CapabilityCatalogItem    `json:"items,omitempty"`
+	Reason ReferenceUnavailableReason `json:"reason,omitempty"`
+}
+type WorkflowReferenceGroup struct {
+	Status ReferenceGroupStatus       `json:"status"`
+	Items  []VersionSummary           `json:"items,omitempty"`
+	Reason ReferenceUnavailableReason `json:"reason,omitempty"`
+}
+
+func (group StringReferenceGroup) MarshalJSON() ([]byte, error) {
+	if group.Status == ReferenceKnown {
+		items := group.Items
+		if items == nil {
+			items = []string{}
+		}
+		return json.Marshal(struct {
+			Status ReferenceGroupStatus `json:"status"`
+			Items  []string             `json:"items"`
+		}{group.Status, items})
+	}
+	return json.Marshal(struct {
+		Status ReferenceGroupStatus       `json:"status"`
+		Reason ReferenceUnavailableReason `json:"reason"`
+	}{group.Status, group.Reason})
+}
+func (group CapabilityReferenceGroup) MarshalJSON() ([]byte, error) {
+	if group.Status == ReferenceKnown {
+		items := group.Items
+		if items == nil {
+			items = []CapabilityCatalogItem{}
+		}
+		return json.Marshal(struct {
+			Status ReferenceGroupStatus    `json:"status"`
+			Items  []CapabilityCatalogItem `json:"items"`
+		}{group.Status, items})
+	}
+	return json.Marshal(struct {
+		Status ReferenceGroupStatus       `json:"status"`
+		Reason ReferenceUnavailableReason `json:"reason"`
+	}{group.Status, group.Reason})
+}
+func (group WorkflowReferenceGroup) MarshalJSON() ([]byte, error) {
+	if group.Status == ReferenceKnown {
+		items := group.Items
+		if items == nil {
+			items = []VersionSummary{}
+		}
+		return json.Marshal(struct {
+			Status ReferenceGroupStatus `json:"status"`
+			Items  []VersionSummary     `json:"items"`
+		}{group.Status, items})
+	}
+	return json.Marshal(struct {
+		Status ReferenceGroupStatus       `json:"status"`
+		Reason ReferenceUnavailableReason `json:"reason"`
+	}{group.Status, group.Reason})
+}
+
 type DraftCreateRequest struct {
 	Name, ScopeReference, IdempotencyKey string
 	Scope                                workflowstore.DraftScope
@@ -107,17 +210,27 @@ type AuthoringFinding struct {
 }
 
 type DraftValidationReport struct {
-	DraftID  string             `json:"draftId"`
-	Revision uint64             `json:"revision"`
-	Digest   string             `json:"digest,omitempty"`
-	Findings []AuthoringFinding `json:"findings"`
+	DraftID        string             `json:"draftId"`
+	Revision       uint64             `json:"revision"`
+	DocumentDigest string             `json:"documentDigest"`
+	Digest         string             `json:"digest,omitempty"`
+	Findings       []AuthoringFinding `json:"findings"`
 }
 
 type DraftPublishResult struct {
-	DraftID       string             `json:"draftId"`
-	DraftRevision uint64             `json:"draftRevision"`
-	Published     VersionSummary     `json:"published"`
-	Disposition   InstallDisposition `json:"disposition"`
+	DraftID                string             `json:"draftId"`
+	DraftRevision          uint64             `json:"draftRevision"`
+	SourceValidationDigest string             `json:"sourceValidationDigest"`
+	Published              VersionSummary     `json:"published"`
+	Disposition            InstallDisposition `json:"disposition"`
+}
+
+type DraftPreview struct {
+	DraftID        string `json:"draftId"`
+	Revision       uint64 `json:"revision"`
+	DocumentDigest string `json:"documentDigest"`
+	Digest         string `json:"digest"`
+	Route          Route  `json:"route"`
 }
 
 // Graph is a deterministic, presentation-neutral projection of a definition.
@@ -142,9 +255,15 @@ type RoutePreview struct {
 
 // Catalog coordinates scope-aware loading, version installation, and run snapshots.
 type Catalog struct {
-	source workflowstore.Source
-	store  workflowstore.Store
-	now    func() time.Time
+	source       workflowstore.Source
+	store        workflowstore.Store
+	capabilities registryport.Registry
+	now          func() time.Time
+}
+
+func (c *Catalog) WithCapabilityRegistry(registry registryport.Registry) *Catalog {
+	c.capabilities = registry
+	return c
 }
 
 func NewCatalog(source workflowstore.Source, store workflowstore.Store) (*Catalog, error) {
@@ -291,25 +410,19 @@ func (c *Catalog) Load(ctx context.Context) ([]LoadedDefinition, error) {
 
 // Install validates and installs one explicitly selected authored candidate.
 func (c *Catalog) Install(ctx context.Context, candidate workflowstore.Candidate) (InstallResult, error) {
-	definition, err := loadCandidate(candidate)
+	definition, issues, err := c.resolveCandidateSubworkflows(ctx, candidate)
 	if err != nil {
 		return InstallResult{}, err
+	}
+	if len(issues) != 0 {
+		return InstallResult{}, issues
 	}
 	return c.install(ctx, definition)
 }
 
 // ValidateCandidate reports structural and semantic findings without installing.
-func (c *Catalog) ValidateCandidate(candidate workflowstore.Candidate) ValidationReport {
-	definition, err := loadCandidate(candidate)
-	if err == nil {
-		metadata := definition.Document.Metadata
-		return ValidationReport{Metadata: &metadata, Digest: definition.Digest, Issues: ValidationErrors{}}
-	}
-	var issues ValidationErrors
-	if errors.As(err, &issues) {
-		return ValidationReport{Issues: issues}
-	}
-	return ValidationReport{Issues: ValidationErrors{{Code: ValidationSchemaInvalid, Message: err.Error()}}}
+func (c *Catalog) ValidateCandidate(ctx context.Context, candidate workflowstore.Candidate) ValidationReport {
+	return c.validateResolvedCandidate(ctx, candidate)
 }
 
 // List returns finite metadata without duplicating canonical document bytes.
@@ -339,6 +452,56 @@ func (c *Catalog) Library(ctx context.Context) (Library, error) {
 		return Library{}, err
 	}
 	return Library{Versions: versions, Drafts: drafts, Archives: archives}, nil
+}
+
+func (c *Catalog) AuthoringCatalog(ctx context.Context) (AuthoringCatalog, error) {
+	unavailableStrings := StringReferenceGroup{Status: ReferenceUnavailable, Reason: ReferenceNotConfigured}
+	unavailableCapabilities := CapabilityReferenceGroup{Status: ReferenceUnavailable, Reason: ReferenceNotConfigured}
+	workflows := WorkflowReferenceGroup{Status: ReferenceKnown, Items: []VersionSummary{}}
+	versions, versionErr := c.List(ctx, "")
+	archives, archiveErr := c.store.Archives(ctx)
+	if versionErr != nil || archiveErr != nil {
+		workflows = WorkflowReferenceGroup{Status: ReferenceUnavailable, Reason: ReferenceReadFailed}
+	} else {
+		archived := make(map[string]bool, len(archives))
+		for _, value := range archives {
+			archived[value.Name+"\x00"+value.Version] = true
+		}
+		for _, version := range versions {
+			if !archived[version.Name+"\x00"+version.Version] {
+				workflows.Items = append(workflows.Items, version)
+			}
+		}
+	}
+	skills, tools := unavailableCapabilities, unavailableCapabilities
+	if c.capabilities != nil {
+		records, err := c.capabilities.Snapshot(ctx)
+		if err != nil {
+			skills, tools = CapabilityReferenceGroup{Status: ReferenceUnavailable, Reason: ReferenceReadFailed}, CapabilityReferenceGroup{Status: ReferenceUnavailable, Reason: ReferenceReadFailed}
+		} else {
+			skills, tools = CapabilityReferenceGroup{Status: ReferenceKnown, Items: []CapabilityCatalogItem{}}, CapabilityReferenceGroup{Status: ReferenceKnown, Items: []CapabilityCatalogItem{}}
+			for _, record := range records {
+				item := CapabilityCatalogItem{Name: record.Name, Kind: record.Kind, Class: record.Class, Version: record.DeclaredVersion, Fingerprint: record.Fingerprint, Availability: record.Availability}
+				if record.Kind == registryport.KindSkill {
+					skills.Items = append(skills.Items, item)
+				} else if record.Kind == registryport.KindTool {
+					tools.Items = append(tools.Items, item)
+				}
+			}
+			sort.Slice(skills.Items, func(i, j int) bool {
+				return skills.Items[i].Name < skills.Items[j].Name || skills.Items[i].Name == skills.Items[j].Name && skills.Items[i].Fingerprint < skills.Items[j].Fingerprint
+			})
+			sort.Slice(tools.Items, func(i, j int) bool {
+				return tools.Items[i].Name < tools.Items[j].Name || tools.Items[i].Name == tools.Items[j].Name && tools.Items[i].Fingerprint < tools.Items[j].Fingerprint
+			})
+		}
+	}
+	return AuthoringCatalog{SchemaVersion: 1,
+		NodeTypes:       []NodeType{NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution},
+		ValueTypes:      []ValueType{ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject},
+		CheckpointModes: []CheckpointMode{CheckpointNone, CheckpointAcknowledge, CheckpointApprove, CheckpointApproveOnChange, CheckpointExternal},
+		PredicateOps:    []string{"const", "eq", "ne", "lt", "lte", "gt", "gte", "present", "all", "any", "not"},
+		Agents:          unavailableStrings, Policies: unavailableStrings, Schemas: unavailableStrings, Skills: skills, Tools: tools, Workflows: workflows}, nil
 }
 
 func (c *Catalog) ArchiveVersion(ctx context.Context, name, version string) (workflowstore.Archive, error) {
@@ -435,12 +598,243 @@ func (c *Catalog) ValidateDraft(ctx context.Context, id string, expectedRevision
 	if expectedRevision != 0 && draft.Revision != expectedRevision {
 		return DraftValidationReport{}, fmt.Errorf("%w: draft %s is revision %d, expected %d", workflowstore.ErrDraftConflict, id, draft.Revision, expectedRevision)
 	}
-	report := c.ValidateCandidate(workflowstore.Candidate{Scope: draftScope(draft.Scope), Reference: draft.ScopeReference, Content: draft.Document})
+	report := c.validateResolvedCandidate(ctx, workflowstore.Candidate{Scope: draftScope(draft.Scope), Reference: draft.ScopeReference, Content: draft.Document})
 	findings := make([]AuthoringFinding, len(report.Issues))
 	for index, issue := range report.Issues {
-		findings[index] = authoringFinding(issue)
+		findings[index] = authoringFinding(issue, draft.Document)
 	}
-	return DraftValidationReport{DraftID: id, Revision: draft.Revision, Digest: report.Digest, Findings: findings}, nil
+	return DraftValidationReport{DraftID: id, Revision: draft.Revision, DocumentDigest: draft.DocumentDigest, Digest: report.Digest, Findings: findings}, nil
+}
+
+func (c *Catalog) PreviewDraft(ctx context.Context, id string, expectedRevision uint64, request RouteRequest, routeContext RouteContext) (DraftPreview, ValidationErrors, error) {
+	draft, err := c.store.Draft(ctx, id)
+	if err != nil {
+		return DraftPreview{}, nil, err
+	}
+	if expectedRevision == 0 || draft.Revision != expectedRevision {
+		return DraftPreview{}, nil, fmt.Errorf("%w: draft %s is revision %d, expected %d", workflowstore.ErrDraftConflict, id, draft.Revision, expectedRevision)
+	}
+	definition, issues, err := c.resolveCandidateSubworkflows(ctx, workflowstore.Candidate{Scope: draftScope(draft.Scope), Reference: draft.ScopeReference, Content: draft.Document})
+	if err != nil {
+		return DraftPreview{}, nil, err
+	}
+	if len(issues) != 0 {
+		return DraftPreview{}, issues, nil
+	}
+	route, routeIssues := CreateRoute(definition.Document, request, routeContext)
+	if len(routeIssues) != 0 {
+		return DraftPreview{}, routeIssues, nil
+	}
+	return DraftPreview{DraftID: id, Revision: draft.Revision, DocumentDigest: draft.DocumentDigest, Digest: definition.Digest, Route: route}, nil, nil
+}
+
+func (c *Catalog) validateResolvedCandidate(ctx context.Context, candidate workflowstore.Candidate) ValidationReport {
+	definition, issues, err := c.resolveCandidateSubworkflows(ctx, candidate)
+	if err != nil {
+		var validationErrors ValidationErrors
+		if errors.As(err, &validationErrors) {
+			return ValidationReport{Issues: validationErrors}
+		}
+		return ValidationReport{Issues: ValidationErrors{{Code: ValidationSchemaInvalid, Message: err.Error(), Location: decoderErrorLocation(err)}}}
+	}
+	metadata := definition.Document.Metadata
+	return ValidationReport{Metadata: &metadata, Digest: definition.Digest, Issues: issues}
+}
+
+func decoderErrorLocation(err error) string {
+	var decodeError *DecodeError
+	if errors.As(err, &decodeError) {
+		return decodeError.Location
+	}
+	return ""
+}
+
+// resolveCandidateSubworkflows turns every exact child name/version reference into
+// an installed digest and validates the authored route and data mappings against
+// that immutable child before a draft may validate or publish successfully.
+func (c *Catalog) resolveCandidateSubworkflows(ctx context.Context, candidate workflowstore.Candidate) (LoadedDefinition, ValidationErrors, error) {
+	definition, err := loadCandidate(candidate)
+	if err != nil {
+		return LoadedDefinition{}, nil, err
+	}
+	issues := make(ValidationErrors, 0)
+	rootKey := definition.Document.Metadata.Name + "\x00" + definition.Document.Metadata.Version
+	for _, nodeID := range sortedNodeIDs(definition.Document.Spec.Nodes) {
+		node, ok := definition.Document.Spec.Nodes[nodeID].(SubworkflowNode)
+		if !ok {
+			continue
+		}
+		base := fmt.Sprintf("/spec/nodes/%s/call", nodeID)
+		child, childErr := c.Definition(ctx, node.Call.Workflow.Name, node.Call.Workflow.Version)
+		if childErr != nil {
+			if errors.Is(childErr, workflowstore.ErrNotFound) {
+				issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("sub-workflow %s %s is not installed", node.Call.Workflow.Name, node.Call.Workflow.Version), Location: base + "/workflow"})
+			} else {
+				issues = append(issues, ValidationError{Code: ValidationSchemaInvalid, Message: fmt.Sprintf("could not inspect sub-workflow %s %s: %v", node.Call.Workflow.Name, node.Call.Workflow.Version, childErr), Location: base + "/workflow"})
+			}
+			continue
+		}
+		if node.Call.Workflow.Digest != "" && node.Call.Workflow.Digest != child.Version.Digest {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing,
+				Message: fmt.Sprintf("sub-workflow digest %s does not match installed digest %s", node.Call.Workflow.Digest, child.Version.Digest), Location: base + "/workflow/digest"})
+			continue
+		}
+		node.Call.Workflow.Digest = child.Version.Digest
+		definition.Document.Spec.Nodes[nodeID] = node
+		issues = append(issues, validateSubworkflowContract(node, child, base)...)
+		childKey := child.Version.Name + "\x00" + child.Version.Version
+		if childKey == rootKey {
+			issues = append(issues, ValidationError{Code: ValidationUnboundedCycle, Message: "recursive sub-workflow call graph references the candidate itself", Location: base + "/workflow"})
+		} else {
+			issues = append(issues, c.validateInstalledCallGraph(ctx, child, map[string]bool{rootKey: true, childKey: true}, base+"/workflow")...)
+		}
+	}
+	if len(issues) != 0 {
+		sortValidationErrors(issues)
+		return definition, issues, nil
+	}
+	resolved, marshalErr := json.Marshal(definition.Document)
+	if marshalErr != nil {
+		return LoadedDefinition{}, nil, fmt.Errorf("encode resolved sub-workflows: %w", marshalErr)
+	}
+	definition, err = loadCandidate(workflowstore.Candidate{Scope: candidate.Scope, Reference: candidate.Reference, Content: resolved})
+	return definition, nil, err
+}
+
+func (c *Catalog) validateInstalledCallGraph(ctx context.Context, definition Definition, stack map[string]bool, rootLocation string) ValidationErrors {
+	issues := make(ValidationErrors, 0)
+	for _, nodeID := range sortedNodeIDs(definition.Document.Spec.Nodes) {
+		node, ok := definition.Document.Spec.Nodes[nodeID].(SubworkflowNode)
+		if !ok {
+			continue
+		}
+		location := fmt.Sprintf("%s -> %s@%s:%s", rootLocation, definition.Version.Name, definition.Version.Version, nodeID)
+		key := node.Call.Workflow.Name + "\x00" + node.Call.Workflow.Version
+		if stack[key] {
+			issues = append(issues, ValidationError{Code: ValidationUnboundedCycle, Message: fmt.Sprintf("recursive sub-workflow call graph detected through %s", location), Location: rootLocation})
+			continue
+		}
+		child, err := c.Definition(ctx, node.Call.Workflow.Name, node.Call.Workflow.Version)
+		if err != nil {
+			if errors.Is(err, workflowstore.ErrNotFound) {
+				issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("transitive sub-workflow %s %s is not installed", node.Call.Workflow.Name, node.Call.Workflow.Version), Location: rootLocation})
+			} else {
+				issues = append(issues, ValidationError{Code: ValidationSchemaInvalid, Message: fmt.Sprintf("could not inspect transitive sub-workflow through %s: %v", location, err), Location: rootLocation})
+			}
+			continue
+		}
+		if node.Call.Workflow.Digest != "" && node.Call.Workflow.Digest != child.Version.Digest {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("transitive sub-workflow digest mismatch through %s", location), Location: rootLocation})
+			continue
+		}
+		issues = append(issues, relocateSubworkflowIssues(validateSubworkflowContract(node, child, rootLocation), location)...)
+		next := make(map[string]bool, len(stack)+1)
+		for item := range stack {
+			next[item] = true
+		}
+		next[key] = true
+		issues = append(issues, c.validateInstalledCallGraph(ctx, child, next, rootLocation)...)
+	}
+	return issues
+}
+
+func validateSubworkflowContract(node SubworkflowNode, child Definition, base string) ValidationErrors {
+	issues := make(ValidationErrors, 0)
+	if entry, exists := child.Document.Spec.Nodes[node.Call.Entry]; !exists || !entry.Fields().Entry {
+		issues = append(issues, ValidationError{Code: ValidationDefaultRouteInvalid, Message: "sub-workflow entry is absent or not entry-capable", Location: base + "/entry"})
+	}
+	for index, terminalID := range node.Call.Terminals {
+		if terminal, exists := child.Document.Spec.Nodes[terminalID]; !exists || !terminal.Fields().Terminal {
+			issues = append(issues, ValidationError{Code: ValidationDefaultRouteInvalid, Message: "sub-workflow terminal is absent or not terminal-capable", Location: fmt.Sprintf("%s/terminals/%d", base, index)})
+		}
+	}
+	route, routeIssues := CreateRoute(child.Document, RouteRequest{From: node.Call.Entry, Until: node.Call.Terminals}, RouteContext{})
+	for _, issue := range routeIssues {
+		issue.Location = base + "/entry"
+		issues = append(issues, issue)
+	}
+	routeNodes := map[Identifier]bool{}
+	for _, item := range route.Nodes {
+		routeNodes[item.ID] = true
+	}
+	for _, childInput := range sortedValueDeclarationIDs(child.Document.Spec.Inputs) {
+		if _, mapped := node.Call.Inputs[childInput]; !mapped {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("required child input %q has no parent mapping", childInput), Location: fmt.Sprintf("%s/inputs/%s", base, childInput)})
+		}
+	}
+	for _, childInput := range sortedIdentifierMapKeys(node.Call.Inputs) {
+		parentInput := node.Call.Inputs[childInput]
+		declaration, childExists := child.Document.Spec.Inputs[childInput]
+		binding, parentExists := node.Common.Inputs[parentInput]
+		if !childExists {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("sub-workflow input %q is not declared by the installed child", childInput), Location: fmt.Sprintf("%s/inputs/%s", base, childInput)})
+		} else if !parentExists {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("parent input %q is not declared by the sub-workflow node", parentInput), Location: fmt.Sprintf("%s/inputs/%s", base, childInput)})
+		} else if !typesCompatible(binding.ValueType(), declaration.Type) {
+			issues = append(issues, ValidationError{Code: ValidationBindingIncompatible, Message: fmt.Sprintf("parent input %q cannot supply child input %q", parentInput, childInput), Location: fmt.Sprintf("%s/inputs/%s", base, childInput)})
+		}
+	}
+	for _, parentOutput := range sortedStringMapKeys(node.Call.Outputs) {
+		childReference := node.Call.Outputs[parentOutput]
+		parts := strings.Split(childReference, ".")
+		parentDeclaration, parentExists := node.Common.Outputs[parentOutput]
+		if len(parts) != 4 || parts[0] != "node" || parts[2] != "output" {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("sub-workflow output %q is not a node output reference", childReference), Location: fmt.Sprintf("%s/outputs/%s", base, parentOutput)})
+			continue
+		}
+		childNodeID := Identifier(parts[1])
+		childNode, childNodeExists := child.Document.Spec.Nodes[childNodeID]
+		if !childNodeExists {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("sub-workflow output references unknown child node %q", parts[1]), Location: fmt.Sprintf("%s/outputs/%s", base, parentOutput)})
+			continue
+		}
+		if !routeNodes[childNodeID] {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("sub-workflow output references child node %q outside the selected route", parts[1]), Location: fmt.Sprintf("%s/outputs/%s", base, parentOutput)})
+		}
+		if !parentExists {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("parent output %q is not declared by the sub-workflow node", parentOutput), Location: fmt.Sprintf("%s/outputs/%s", base, parentOutput)})
+			continue
+		}
+		childDeclaration, childOutputExists := childNode.Fields().Outputs[Identifier(parts[3])]
+		if !childOutputExists {
+			issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: fmt.Sprintf("sub-workflow output references unknown child output %q", parts[3]), Location: fmt.Sprintf("%s/outputs/%s", base, parentOutput)})
+		} else if !typesCompatible(childDeclaration.Type, parentDeclaration.Type) {
+			issues = append(issues, ValidationError{Code: ValidationBindingIncompatible, Message: fmt.Sprintf("child output %q cannot populate parent output %q", childReference, parentOutput), Location: fmt.Sprintf("%s/outputs/%s", base, parentOutput)})
+		}
+	}
+	return issues
+}
+
+func relocateSubworkflowIssues(issues ValidationErrors, hop string) ValidationErrors {
+	for index := range issues {
+		issues[index].Message = fmt.Sprintf("%s through %s", issues[index].Message, hop)
+	}
+	return issues
+}
+
+func sortedValueDeclarationIDs(values map[Identifier]ValueDeclaration) []Identifier {
+	result := make([]Identifier, 0, len(values))
+	for id := range values {
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+func sortedIdentifierMapKeys(values map[Identifier]Identifier) []Identifier {
+	result := make([]Identifier, 0, len(values))
+	for id := range values {
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+func sortedStringMapKeys(values map[Identifier]string) []Identifier {
+	result := make([]Identifier, 0, len(values))
+	for id := range values {
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
 }
 
 func (c *Catalog) PublishDraft(ctx context.Context, request DraftPublishRequest) (DraftPublishResult, error) {
@@ -451,11 +845,14 @@ func (c *Catalog) PublishDraft(ctx context.Context, request DraftPublishRequest)
 	if request.ExpectedRevision == 0 || draft.Revision != request.ExpectedRevision {
 		return DraftPublishResult{}, fmt.Errorf("%w: draft %s is revision %d, expected %d", workflowstore.ErrDraftConflict, request.ID, draft.Revision, request.ExpectedRevision)
 	}
-	var document Document
-	if err := json.Unmarshal(draft.Document, &document); err != nil {
-		return DraftPublishResult{}, fmt.Errorf("decode draft: %w", err)
+	validated, issues, err := c.resolveCandidateSubworkflows(ctx, workflowstore.Candidate{Scope: draftScope(draft.Scope), Reference: draft.ScopeReference, Content: draft.Document})
+	if err != nil {
+		return DraftPublishResult{}, err
 	}
-	publishedDocument, err := rewriteWorkflowMetadata(document, draft.Name, request.Version)
+	if len(issues) != 0 {
+		return DraftPublishResult{}, issues
+	}
+	publishedDocument, err := rewriteWorkflowMetadata(validated.Document, draft.Name, request.Version)
 	if err != nil {
 		return DraftPublishResult{}, err
 	}
@@ -463,7 +860,7 @@ func (c *Catalog) PublishDraft(ctx context.Context, request DraftPublishRequest)
 	if err != nil {
 		return DraftPublishResult{}, err
 	}
-	return DraftPublishResult{DraftID: draft.ID, DraftRevision: draft.Revision, Published: result.Version, Disposition: result.Disposition}, nil
+	return DraftPublishResult{DraftID: draft.ID, DraftRevision: draft.Revision, SourceValidationDigest: validated.Digest, Published: result.Version, Disposition: result.Disposition}, nil
 }
 
 func (c *Catalog) DiscardDraft(ctx context.Context, id string, expectedRevision uint64) error {
@@ -516,14 +913,30 @@ func rewriteWorkflowMetadata(document Document, name, version string) (json.RawM
 	return value, nil
 }
 
-func authoringFinding(issue ValidationError) AuthoringFinding {
+func authoringFinding(issue ValidationError, document json.RawMessage) AuthoringFinding {
 	result := AuthoringFinding{Code: issue.Code, Severity: ValidationSeverityError, Message: issue.Message,
 		Location: issue.Location, Suggestion: "Correct the referenced workflow element and validate again."}
 	parts := strings.Split(strings.TrimPrefix(issue.Location, "/"), "/")
 	if len(parts) >= 3 && parts[0] == "spec" && parts[1] == "nodes" {
 		result.NodeID = Identifier(parts[2])
 		if len(parts) >= 5 && parts[3] == "transitions" {
-			result.EdgeID = Identifier(parts[4])
+			if transitionIndex, err := strconv.Atoi(parts[4]); err == nil {
+				var raw struct {
+					Spec struct {
+						Nodes map[string]json.RawMessage `json:"nodes"`
+					} `json:"spec"`
+				}
+				if json.Unmarshal(document, &raw) == nil {
+					var node struct {
+						Transitions []struct {
+							ID Identifier `json:"id"`
+						} `json:"transitions"`
+					}
+					if json.Unmarshal(raw.Spec.Nodes[parts[2]], &node) == nil && transitionIndex >= 0 && transitionIndex < len(node.Transitions) {
+						result.EdgeID = node.Transitions[transitionIndex].ID
+					}
+				}
+			}
 		}
 		if len(parts) >= 4 {
 			result.Field = strings.Join(parts[3:], ".")
@@ -632,6 +1045,17 @@ func numericIdentifier(value string) bool {
 		}
 	}
 	return true
+}
+
+func sortedStringSet(values map[string]bool) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		if value != "" {
+			result = append(result, value)
+		}
+	}
+	sort.Strings(result)
+	return result
 }
 
 // Graph returns a stable node/edge projection of one installed definition.

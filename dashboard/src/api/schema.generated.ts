@@ -31,6 +31,11 @@ export interface components {
     "WorkflowDraft": { "id": string; "name": string; "scope": "user" | "project"; "scopeReference": string; "baseVersion"?: string; "revision": number; "document": {  }; "layout": {  }; "documentDigest": string; "updatedAt": string; };
     "WorkflowArchive": { "name": string; "version": string; "archivedAt": string; };
     "WorkflowLibrary": { "versions": Array<components["schemas"]["WorkflowVersionSummary"]>; "drafts": Array<components["schemas"]["WorkflowDraft"]>; "archives": Array<components["schemas"]["WorkflowArchive"]>; };
+    "WorkflowAuthoringCatalog": { "schemaVersion": 1; "nodeTypes": Array<"reasoning" | "gate" | "command" | "approval" | "subworkflow" | "point_execution">; "valueTypes": Array<"null" | "boolean" | "integer" | "number" | "string" | "array" | "object">; "checkpointModes": Array<"none" | "acknowledge" | "approve" | "approve_on_change" | "external">; "predicateOps": Array<"const" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "present" | "all" | "any" | "not">; "agents": components["schemas"]["WorkflowStringReferenceGroup"]; "policies": components["schemas"]["WorkflowStringReferenceGroup"]; "schemas": components["schemas"]["WorkflowStringReferenceGroup"]; "skills": components["schemas"]["WorkflowCapabilityReferenceGroup"]; "tools": components["schemas"]["WorkflowCapabilityReferenceGroup"]; "workflows": components["schemas"]["WorkflowInstalledReferenceGroup"]; };
+    "WorkflowStringReferenceGroup": { "status": "known"; "items": Array<string>; } | { "status": "unavailable"; "reason": "not_configured" | "discovery_unsupported" | "read_failed"; };
+    "WorkflowCapabilityReference": { "name": string; "kind": "skill" | "tool"; "class": "guaranteed" | "registered" | "inherited" | "unsupported_discovery"; "version"?: string; "fingerprint": string; "availability": "available" | "unavailable" | "unhealthy"; };
+    "WorkflowCapabilityReferenceGroup": { "status": "known"; "items": Array<components["schemas"]["WorkflowCapabilityReference"]>; } | { "status": "unavailable"; "reason": "not_configured" | "discovery_unsupported" | "read_failed"; };
+    "WorkflowInstalledReferenceGroup": { "status": "known"; "items": Array<components["schemas"]["WorkflowVersionSummary"]>; } | { "status": "unavailable"; "reason": "not_configured" | "discovery_unsupported" | "read_failed"; };
     "WorkflowDraftCreateRequest": { "name": string; "scope": "user" | "project"; "scopeReference": string; "document": {  }; "layout"?: {  }; };
     "WorkflowDraftDuplicateRequest": { "name": string; "version"?: string; "newName": string; "scope": "user" | "project"; "scopeReference": string; };
     "WorkflowDraftUpdateRequest": { "id": string; "expectedRevision": number; "document"?: {  }; "layout"?: {  }; };
@@ -38,8 +43,10 @@ export interface components {
     "WorkflowDraftRenameRequest": { "id": string; "name": string; "expectedRevision": number; };
     "WorkflowDraftPublishRequest": { "id": string; "version": string; "expectedRevision": number; };
     "WorkflowAuthoringFinding": { "code": string; "severity": "error"; "message": string; "location"?: string; "nodeId"?: string; "edgeId"?: string; "field"?: string; "suggestion"?: string; };
-    "WorkflowDraftValidationReport": { "draftId": string; "revision": number; "digest"?: string; "findings": Array<components["schemas"]["WorkflowAuthoringFinding"]>; };
-    "WorkflowDraftPublishResult": { "draftId": string; "draftRevision": number; "published": components["schemas"]["WorkflowVersionSummary"]; "disposition": "created" | "already_installed"; };
+    "WorkflowDraftValidationReport": { "draftId": string; "revision": number; "documentDigest": string; "digest"?: string; "findings": Array<components["schemas"]["WorkflowAuthoringFinding"]>; };
+    "WorkflowDraftPreviewRequest": { "id": string; "expectedRevision": number; "range": { "from"?: string; "until"?: Array<string>; }; "context": { "runInputs"?: { [key: string]: unknown; }; "acceptedOutputs"?: { [key: string]: unknown; }; "requiredNodes"?: Array<string>; }; };
+    "WorkflowDraftPreview": { "draftId": string; "revision": number; "documentDigest": string; "digest": string; "route": components["schemas"]["FrozenRoute"]; };
+    "WorkflowDraftPublishResult": { "draftId": string; "draftRevision": number; "sourceValidationDigest": string; "published": components["schemas"]["WorkflowVersionSummary"]; "disposition": "created" | "already_installed"; };
     "WorkflowCandidateRequest": { "document": components["schemas"]["WorkflowDocument"]; "sourceScope": "default" | "user" | "project"; "sourceReference": string; };
     "WorkflowValidationIssue": { "code": string; "message": string; "location"?: string; "details"?: { [key: string]: Array<string>; }; };
     "WorkflowValidationReport": { "metadata"?: { "name": string; "version": string; "displayName"?: string; "description"?: string; }; "digest"?: string; "issues": Array<components["schemas"]["WorkflowValidationIssue"]>; };
@@ -200,6 +207,7 @@ export interface ApiOperations {
     "readLog": { method: "GET"; path: "/api/v1/logs/{reference}"; response: string; body: never; };
     "listWorkflows": { method: "GET"; path: "/api/v1/workflows"; response: Array<components["schemas"]["WorkflowVersionSummary"]>; body: never; };
     "getWorkflowLibrary": { method: "GET"; path: "/api/v1/workflows/library"; response: components["schemas"]["WorkflowLibrary"]; body: never; };
+    "getWorkflowAuthoringCatalog": { method: "GET"; path: "/api/v1/workflows/authoring-catalog"; response: components["schemas"]["WorkflowAuthoringCatalog"]; body: never; };
     "archiveWorkflowVersion": { method: "POST"; path: "/api/v1/workflows/archive"; response: components["schemas"]["WorkflowArchive"]; body: { "name": string; "version": string; }; };
     "getWorkflowDraft": { method: "GET"; path: "/api/v1/workflows/drafts/show"; response: components["schemas"]["WorkflowDraft"]; body: never; };
     "createWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/create"; response: components["schemas"]["WorkflowDraft"]; body: components["schemas"]["WorkflowDraftCreateRequest"]; };
@@ -207,6 +215,7 @@ export interface ApiOperations {
     "updateWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/update"; response: components["schemas"]["WorkflowDraft"]; body: components["schemas"]["WorkflowDraftUpdateRequest"]; };
     "renameWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/rename"; response: components["schemas"]["WorkflowDraft"]; body: components["schemas"]["WorkflowDraftRenameRequest"]; };
     "validateWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/validate"; response: components["schemas"]["WorkflowDraftValidationReport"]; body: components["schemas"]["WorkflowDraftRevisionRequest"]; };
+    "previewWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/preview"; response: components["schemas"]["WorkflowDraftPreview"]; body: components["schemas"]["WorkflowDraftPreviewRequest"]; };
     "publishWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/publish"; response: components["schemas"]["WorkflowDraftPublishResult"]; body: components["schemas"]["WorkflowDraftPublishRequest"]; };
     "discardWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/discard"; response: { "id": string; "discarded": true; }; body: components["schemas"]["WorkflowDraftRevisionRequest"]; };
     "validateWorkflow": { method: "POST"; path: "/api/v1/workflows/validate"; response: components["schemas"]["WorkflowValidationReport"]; body: components["schemas"]["WorkflowCandidateRequest"]; };
@@ -286,6 +295,7 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "readLog": { method: "GET", path: "/api/v1/logs/{reference}" },
   "listWorkflows": { method: "GET", path: "/api/v1/workflows" },
   "getWorkflowLibrary": { method: "GET", path: "/api/v1/workflows/library" },
+  "getWorkflowAuthoringCatalog": { method: "GET", path: "/api/v1/workflows/authoring-catalog" },
   "archiveWorkflowVersion": { method: "POST", path: "/api/v1/workflows/archive" },
   "getWorkflowDraft": { method: "GET", path: "/api/v1/workflows/drafts/show" },
   "createWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/create" },
@@ -293,6 +303,7 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "updateWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/update" },
   "renameWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/rename" },
   "validateWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/validate" },
+  "previewWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/preview" },
   "publishWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/publish" },
   "discardWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/discard" },
   "validateWorkflow": { method: "POST", path: "/api/v1/workflows/validate" },

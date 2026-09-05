@@ -2,6 +2,7 @@ package workflow_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -126,6 +127,28 @@ func TestPublishedEnumsMatchTypedContract(t *testing.T) {
 	assertStringSet(t, schemaEnum(t, schema, "$defs", "pointExecutionExecutor", "properties", "publishing", "enum"), []string{
 		string(workflow.PointPublishingAfterStory), string(workflow.PointPublishingAfterEach),
 	})
+}
+
+func TestMalformedNodeLocationsAreDeterministic(t *testing.T) {
+	t.Parallel()
+	document := []byte(`{"apiVersion":"darkstar.local/v1alpha1","kind":"Workflow","metadata":{"name":"deterministic","version":"1.0.0"},"spec":{"routeDefaults":{"entry":"a","terminals":["a"]},"nodes":{"b":{"type":"reasoning","entry":false,"terminal":true,"inputs":{},"outputs":{},"reasoning":{"agent":1},"checkpoint":{"mode":"none"},"transitions":[]},"a":{"type":"reasoning","entry":true,"terminal":true,"inputs":{},"outputs":{},"reasoning":{"agent":1},"checkpoint":{"mode":"none"},"transitions":[]}}}}`)
+	for attempt := 0; attempt < 100; attempt++ {
+		if _, err := workflow.Decode(document); err == nil || !strings.Contains(err.Error(), "spec: nodes: a: reasoning:") {
+			t.Fatalf("decode error = %v, want stable first node a", err)
+		} else {
+			var located *workflow.DecodeError
+			if !errors.As(err, &located) || located.Location != "/spec/nodes/a/reasoning/agent" {
+				t.Fatalf("decode location = %#v", located)
+			}
+		}
+	}
+
+	contradictory := []byte(`{"apiVersion":"darkstar.local/v1alpha2","kind":"Workflow","metadata":{"name":"deterministic","version":"1.0.0"},"spec":{"routeDefaults":{"entry":"a","terminals":["a"]},"nodes":{"a":{"type":"point_execution","entry":true,"terminal":true,"inputs":{"plan":{"from":"run.input.plan","type":"object","required":true}},"outputs":{},"reasoning":{"agent":"a"},"gate":{"policy":"p","condition":{"const":true}},"points":{"planInput":"plan","approval":"none","riskTags":[],"validation":"combined","publishing":"after_story_validation"},"checkpoint":{"mode":"none"},"transitions":[]}}}}`)
+	for attempt := 0; attempt < 100; attempt++ {
+		if _, err := workflow.Decode(contradictory); err == nil || !strings.Contains(err.Error(), `reasoning settings are invalid for node type "point_execution"`) {
+			t.Fatalf("decode error = %v, want stable executor ordering", err)
+		}
+	}
 }
 
 func TestWorkflowVersionBoundaryPreservesLegacyExternalApproval(t *testing.T) {

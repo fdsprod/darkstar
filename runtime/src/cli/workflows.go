@@ -57,6 +57,12 @@ type workflowDraftPublishInput struct {
 	Version          string `json:"version"`
 	ExpectedRevision uint64 `json:"expectedRevision"`
 }
+type workflowDraftPreviewInput struct {
+	ID               string                `json:"id"`
+	ExpectedRevision uint64                `json:"expectedRevision"`
+	Range            workflow.RouteRequest `json:"range"`
+	Context          workflow.RouteContext `json:"context"`
+}
 type workflowDraftDuplicateInput struct {
 	Name           string                   `json:"name"`
 	Version        string                   `json:"version,omitempty"`
@@ -80,6 +86,23 @@ func runWorkflow(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	}
 	command := "darkstar workflow " + args[0]
 	switch args[0] {
+	case "authoring-catalog":
+		if len(args) != 1 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected workflow authoring-catalog"))
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		var result workflow.AuthoringCatalog
+		if err := session.DoJSON(context.Background(), http.MethodGet, "workflows/authoring-catalog", nil, &result); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		workflowCount := 0
+		if result.Workflows.Status == workflow.ReferenceKnown {
+			workflowCount = len(result.Workflows.Items)
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("%d active installed workflow reference(s); agent profile discovery is %s.", workflowCount, result.Agents.Status), false, jsonOutput, stdout, stderr, command)
 	case "library":
 		if len(args) != 1 {
 			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected workflow library"))
@@ -207,6 +230,16 @@ func runWorkflow(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		}
 		human := fmt.Sprintf("Draft %s revision %d has %d finding(s).", id, revision, len(result.Findings))
 		return writeWorkflowResult(result, human, len(result.Findings) != 0, jsonOutput, stdout, stderr, command)
+	case "draft-preview":
+		id, revision, route, routeContext, err := parseDraftPreviewArgs(args[1:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var result workflow.DraftPreview
+		if code := doWorkflowMutation(command, "workflows/drafts/preview", "", workflowDraftPreviewInput{ID: id, ExpectedRevision: revision, Range: route, Context: routeContext}, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("Previewed draft %s revision %d with %d route node(s).", id, revision, len(result.Route.Nodes)), false, jsonOutput, stdout, stderr, command)
 	case "draft-publish":
 		if len(args) < 3 {
 			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <draft-id> <version> --revision <n>"))
@@ -378,6 +411,44 @@ func parseDraftRevisionArgs(args []string) (string, uint64, error) {
 	}
 	revision, err := workflowRevision(flags)
 	return args[0], revision, err
+}
+
+func parseDraftPreviewArgs(args []string) (string, uint64, workflow.RouteRequest, workflow.RouteContext, error) {
+	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+		return "", 0, workflow.RouteRequest{}, workflow.RouteContext{}, errors.New("expected <draft-id> --revision <n> with optional --from, --until, and --input")
+	}
+	previewArgs := []string{args[0]}
+	var revision uint64
+	seenRevision := false
+	for index := 1; index < len(args); index += 2 {
+		if index+1 >= len(args) || args[index+1] == "" {
+			return "", 0, workflow.RouteRequest{}, workflow.RouteContext{}, fmt.Errorf("%s requires a value", args[index])
+		}
+		if args[index] == "--revision" {
+			if seenRevision {
+				return "", 0, workflow.RouteRequest{}, workflow.RouteContext{}, errors.New("--revision may be specified only once")
+			}
+			seenRevision = true
+			value, err := strconv.ParseUint(args[index+1], 10, 64)
+			if err != nil || value == 0 {
+				return "", 0, workflow.RouteRequest{}, workflow.RouteContext{}, errors.New("--revision requires a positive integer")
+			}
+			revision = value
+		} else {
+			previewArgs = append(previewArgs, args[index], args[index+1])
+		}
+	}
+	if !seenRevision {
+		return "", 0, workflow.RouteRequest{}, workflow.RouteContext{}, errors.New("--revision requires a positive integer")
+	}
+	id, version, route, routeContext, err := parseWorkflowPreviewArgs(previewArgs)
+	if err != nil {
+		return "", 0, workflow.RouteRequest{}, workflow.RouteContext{}, err
+	}
+	if version != "" {
+		return "", 0, workflow.RouteRequest{}, workflow.RouteContext{}, errors.New("--version is not valid for a draft preview")
+	}
+	return id, revision, route, routeContext, nil
 }
 
 // doWorkflowMutation returns -1 on success so callers can format their typed result.

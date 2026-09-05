@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -40,4 +41,35 @@ func TestSemanticVersionOrderingUsesNumericAndPrereleasePrecedence(t *testing.T)
 
 func validCatalogWorkflow() string {
 	return `{"apiVersion":"darkstar.local/v1alpha1","kind":"Workflow","metadata":{"name":"catalog-test","version":"1.0.0"},"spec":{"inputs":{"request":{"type":"object"}},"routeDefaults":{"entry":"finish","terminals":["finish"]},"nodes":{"finish":{"type":"reasoning","entry":true,"terminal":true,"inputs":{"request":{"from":"run.input.request","type":"object","required":false,"default":null}},"outputs":{},"reasoning":{"agent":"fake"},"checkpoint":{"mode":"none"},"transitions":[]}}}}`
+}
+
+func TestAuthoringFindingsUseExplicitManualValidationLocations(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		document  string
+		location  string
+		nodeID    Identifier
+		fieldName string
+	}{
+		{name: "route default entry", document: strings.Replace(validCatalogWorkflow(), `"entry":"finish"`, `"entry":"bad-id"`, 1), location: "/spec/routeDefaults/entry"},
+		{name: "binding source", document: strings.Replace(validCatalogWorkflow(), `"from":"run.input.request"`, `"from":"invalid"`, 1), location: "/spec/nodes/finish/inputs/request/from", nodeID: "finish", fieldName: "inputs.request.from"},
+		{name: "output type", document: strings.Replace(validCatalogWorkflow(), `"outputs":{}`, `"outputs":{"result":{"type":"future"}}`, 1), location: "/spec/nodes/finish/outputs/result/type", nodeID: "finish", fieldName: "outputs.result.type"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Decode([]byte(test.document))
+			var decoded *DecodeError
+			if !errors.As(err, &decoded) {
+				t.Fatalf("Decode() error = %v, want DecodeError", err)
+			}
+			if decoded.Location != test.location {
+				t.Fatalf("location = %q, want %q", decoded.Location, test.location)
+			}
+			finding := authoringFinding(ValidationError{Code: ValidationSchemaInvalid, Message: err.Error(), Location: decoded.Location}, []byte(test.document))
+			if finding.NodeID != test.nodeID || finding.Field != test.fieldName {
+				t.Fatalf("finding target = node %q field %q, want node %q field %q", finding.NodeID, finding.Field, test.nodeID, test.fieldName)
+			}
+		})
+	}
 }

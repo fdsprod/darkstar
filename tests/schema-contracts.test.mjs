@@ -161,6 +161,275 @@ test("compatibility permits additive optional fields", () => {
   assert.deepEqual(compareContracts(contracts({ "sample-v1.schema.json": before }), contracts({ "sample-v1.schema.json": after })), []);
 });
 
+test("OpenAPI compatibility permits new required response fields but not request or shared fields", () => {
+  const before = {
+    openapi: "3.1.0",
+    paths: {
+      "/api/v1/items": {
+        post: {
+          parameters: [{ in: "header", name: "X-Shared", schema: { $ref: "#/components/schemas/Shared" } }],
+          requestBody: { $ref: "#/components/requestBodies/CreateItem" },
+          responses: {
+            "200": { $ref: "#/components/responses/ItemReport" },
+            "201": { description: "shared", content: { "application/json": { schema: { $ref: "#/components/schemas/Shared" } } } }
+          }
+        }
+      }
+    },
+    components: {
+      requestBodies: {
+        CreateItem: { content: { "application/json": { schema: { $ref: "#/components/schemas/RequestEnvelope" } } } }
+      },
+      responses: {
+        ItemReport: { description: "ok", content: { "application/json": { schema: { $ref: "#/components/schemas/ResponseEnvelope" } } } }
+      },
+      schemas: {
+        RequestEnvelope: {
+          type: "object",
+          required: ["item"],
+          properties: { item: { $ref: "#/components/schemas/RequestItem" } }
+        },
+        RequestItem: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string" }, note: { type: "string" } }
+        },
+        ResponseEnvelope: {
+          type: "object",
+          required: ["item"],
+          properties: { item: { $ref: "#/components/schemas/ResponseItem" } }
+        },
+        ResponseItem: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string" }, documentDigest: { type: "string" } }
+        },
+        Shared: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string" }, revision: { type: "integer" } }
+        },
+        Unreferenced: {
+          type: "object",
+          properties: { owner: { type: "string" } }
+        }
+      }
+    }
+  };
+  const after = structuredClone(before);
+  after.components.schemas.RequestItem.required.push("note");
+  after.components.schemas.ResponseItem.required.push("documentDigest");
+  after.components.schemas.Shared.required.push("revision");
+  after.components.schemas.Unreferenced.required = ["owner"];
+
+  const issues = compareContracts(contracts({ "openapi-v1.json": before }), contracts({ "openapi-v1.json": after }));
+  assert.ok(issues.some((issue) => issue.includes("RequestItem") && issue.includes("required property/properties added: note")));
+  assert.equal(issues.some((issue) => issue.includes("ResponseItem") && issue.includes("documentDigest")), false);
+  assert.ok(issues.some((issue) => issue.includes("Shared") && issue.includes("required property/properties added: revision")));
+  assert.ok(issues.some((issue) => issue.includes("Unreferenced") && issue.includes("required property/properties added: owner")));
+});
+
+test("OpenAPI response direction propagates through schema-fragment references and permits safe narrowing", () => {
+  const before = {
+    openapi: "3.1.0",
+    paths: {
+      "/api/v1/report": {
+        get: {
+          responses: {
+            "200": {
+              description: "ok",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/Report/properties/body" } } }
+            }
+          }
+        }
+      }
+    },
+    components: {
+      schemas: {
+        Report: {
+          type: "object",
+          properties: {
+            body: {
+              type: "object",
+              required: ["state"],
+              properties: { state: { enum: ["ready", "waiting"] }, digest: { type: "string" } }
+            }
+          }
+        }
+      }
+    }
+  };
+  const after = structuredClone(before);
+  after.components.schemas.Report.properties.body.required.push("digest");
+  after.components.schemas.Report.properties.body.properties.state.enum = ["ready"];
+
+  const issues = compareContracts(contracts({ "openapi-v1.json": before }), contracts({ "openapi-v1.json": after }));
+  assert.equal(issues.some((issue) => issue.includes("required property/properties added: digest")), false);
+  assert.equal(issues.some((issue) => issue.includes("enum value(s) removed")), false);
+  assert.deepEqual(issues, []);
+});
+
+test("OpenAPI response compatibility rejects widened outputs and required-field removal", () => {
+  const before = {
+    openapi: "3.1.0",
+    paths: {
+      "/api/v1/report": {
+        get: {
+          responses: {
+            "200": { description: "ok", content: { "application/json": { schema: { $ref: "#/components/schemas/Report" } } } }
+          }
+        }
+      }
+    },
+    components: {
+      schemas: {
+        Report: {
+          type: "object",
+          additionalProperties: false,
+          required: ["state", "kind", "value", "removable"],
+          properties: {
+            state: { type: "string", enum: ["ready", "waiting"] },
+            kind: { type: "string", const: "report" },
+            value: { type: "string" },
+            removable: { type: "string" },
+            optionalGone: { type: "string" }
+          }
+        }
+      }
+    }
+  };
+  const after = structuredClone(before);
+  after.components.schemas.Report.properties.state.enum.push("unknown");
+  delete after.components.schemas.Report.properties.kind.const;
+  after.components.schemas.Report.properties.value.type = ["string", "null"];
+  after.components.schemas.Report.required = after.components.schemas.Report.required.filter((name) => name !== "removable");
+  after.components.schemas.Report.additionalProperties = true;
+  delete after.components.schemas.Report.properties.optionalGone;
+  after.components.schemas.Report.properties.added = { type: "string" };
+
+  const issues = compareContracts(contracts({ "openapi-v1.json": before }), contracts({ "openapi-v1.json": after }));
+  assert.ok(issues.some((issue) => issue.includes("output enum value(s) added: \"unknown\"")));
+  assert.ok(issues.some((issue) => issue.includes("output const constraint was removed or changed")));
+  assert.ok(issues.some((issue) => issue.includes("output type(s) added: null")));
+  assert.ok(issues.some((issue) => issue.includes("required response property/properties removed: removable")));
+  assert.ok(issues.some((issue) => issue.includes("additional properties became more permissive for responses")));
+  assert.equal(issues.some((issue) => issue.includes("property removed: optionalGone")), false);
+  assert.equal(issues.some((issue) => issue.includes("properties/added")), false);
+});
+
+test("OpenAPI response compatibility permits narrowing, new required fields, and optional-property removal", () => {
+  const before = {
+    openapi: "3.1.0",
+    paths: {
+      "/api/v1/report": {
+        get: {
+          responses: {
+            "200": { description: "ok", content: { "application/json": { schema: { $ref: "#/components/schemas/Report" } } } }
+          }
+        }
+      }
+    },
+    components: {
+      schemas: {
+        Report: {
+          type: "object",
+          required: ["state"],
+          properties: {
+            state: { type: ["string", "null"], enum: ["ready", "waiting", null] },
+            category: { type: "string" },
+            optionalGone: { type: "string" }
+          }
+        }
+      }
+    }
+  };
+  const after = structuredClone(before);
+  after.components.schemas.Report.additionalProperties = false;
+  after.components.schemas.Report.required.push("category");
+  after.components.schemas.Report.properties.state.type = "string";
+  after.components.schemas.Report.properties.state.enum = ["ready"];
+  after.components.schemas.Report.properties.category.const = "summary";
+  after.components.schemas.Report.properties.category.minLength = 3;
+  delete after.components.schemas.Report.properties.optionalGone;
+  after.components.schemas.Report.properties.added = { type: "string" };
+
+  assert.deepEqual(compareContracts(contracts({ "openapi-v1.json": before }), contracts({ "openapi-v1.json": after })), []);
+});
+
+test("OpenAPI request and shared schemas retain consumer safety and become invariant when shared", () => {
+  const before = {
+    openapi: "3.1.0",
+    paths: {
+      "/api/v1/items": {
+        post: {
+          requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/Input" } } } },
+          responses: {
+            "200": { description: "ok", content: { "application/json": { schema: { $ref: "#/components/schemas/Shared" } } } }
+          },
+          parameters: [{ in: "query", name: "shared", schema: { $ref: "#/components/schemas/Shared" } }]
+        }
+      }
+    },
+    components: {
+      schemas: {
+        Input: {
+          type: "object",
+          additionalProperties: false,
+          required: ["state"],
+          properties: { state: { enum: ["ready", "waiting"] }, legacy: { type: "string" }, added: { type: "string" } }
+        },
+        Shared: { type: "string", enum: ["ready", "waiting"] }
+      }
+    }
+  };
+  const narrowedRequest = structuredClone(before);
+  narrowedRequest.components.schemas.Input.required.push("added");
+  narrowedRequest.components.schemas.Input.properties.state.enum = ["ready"];
+  delete narrowedRequest.components.schemas.Input.properties.legacy;
+  const requestIssues = compareContracts(contracts({ "openapi-v1.json": before }), contracts({ "openapi-v1.json": narrowedRequest }));
+  assert.ok(requestIssues.some((issue) => issue.includes("required property/properties added: added")));
+  assert.ok(requestIssues.some((issue) => issue.includes("enum value(s) removed")));
+  assert.ok(requestIssues.some((issue) => issue.includes("property removed: legacy")));
+
+  const widenedRequest = structuredClone(before);
+  widenedRequest.components.schemas.Input.properties.state.enum.push("unknown");
+  widenedRequest.components.schemas.Input.required = [];
+  assert.deepEqual(compareContracts(contracts({ "openapi-v1.json": before }), contracts({ "openapi-v1.json": widenedRequest })), []);
+
+  const narrowedShared = structuredClone(before);
+  narrowedShared.components.schemas.Shared.enum = ["ready"];
+  assert.ok(compareContracts(contracts({ "openapi-v1.json": before }), contracts({ "openapi-v1.json": narrowedShared })).some((issue) => issue.includes("enum value(s) removed")));
+
+  const widenedShared = structuredClone(before);
+  widenedShared.components.schemas.Shared.enum.push("unknown");
+  assert.ok(compareContracts(contracts({ "openapi-v1.json": before }), contracts({ "openapi-v1.json": widenedShared })).some((issue) => issue.includes("output enum value(s) added")));
+});
+
+test("OpenAPI schema direction traversal terminates cycles and preserves nested producer variance", () => {
+  const before = {
+    openapi: "3.1.0",
+    paths: {
+      "/api/v1/tree": {
+        get: {
+          responses: {
+            "200": { description: "ok", content: { "application/json": { schema: { $ref: "#/components/schemas/Branch" } } } }
+          }
+        }
+      }
+    },
+    components: {
+      schemas: {
+        Branch: { type: "object", properties: { leaf: { $ref: "#/components/schemas/Leaf" } } },
+        Leaf: { type: "object", properties: { parent: { $ref: "#/components/schemas/Branch" }, value: { type: "string" } } }
+      }
+    }
+  };
+  const after = structuredClone(before);
+  after.components.schemas.Leaf.properties.value.type = ["string", "null"];
+  const issues = compareContracts(contracts({ "openapi-v1.json": before }), contracts({ "openapi-v1.json": after }));
+  assert.ok(issues.some((issue) => issue.includes("Leaf") && issue.includes("output type(s) added: null")));
+});
+
 test("compatibility permits preserving a published schema as an explicit version alternative", () => {
   const before = { $ref: "./workflow-v1alpha1.schema.json" };
   const after = { oneOf: [before, { $ref: "./workflow-v1alpha2.schema.json" }] };

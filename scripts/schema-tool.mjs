@@ -181,68 +181,197 @@ function isPureAlternativeWrapper(node, previous) {
   return Array.isArray(alternatives) && alternatives.some((alternative) => JSON.stringify(stable(alternative)) === JSON.stringify(stable(previous)));
 }
 
-function compareSchema(oldNode, newNode, path, issues) {
+function checksConsumerCompatibility(direction) {
+  return direction === "consumer" || direction === "invariant";
+}
+
+function checksProducerCompatibility(direction) {
+  return direction === "producer" || direction === "invariant";
+}
+
+function compareSchema(oldNode, newNode, path, issues, options = {}) {
+  const direction = options.direction ?? "consumer";
   if (!oldNode || typeof oldNode !== "object" || Array.isArray(oldNode)) return;
   if (!newNode || typeof newNode !== "object" || Array.isArray(newNode)) {
     issues.push(`${path}: schema was removed`);
     return;
   }
-  if (isPureAlternativeWrapper(newNode, oldNode)) return;
+  if (direction === "consumer" && isPureAlternativeWrapper(newNode, oldNode)) return;
   const oldTypes = typeSet(oldNode.type);
   const newTypes = typeSet(newNode.type);
-  if (!oldTypes && newTypes) {
+  if (checksConsumerCompatibility(direction) && !oldTypes && newTypes) {
     issues.push(`${path}: type constraint was added`);
-  } else if (oldTypes && newTypes) {
+  } else if (checksConsumerCompatibility(direction) && oldTypes && newTypes) {
     const removed = [...oldTypes].filter((type) => !newTypes.has(type));
     if (removed.length) issues.push(`${path}: accepted type(s) removed: ${removed.join(", ")}`);
   }
-  if (newNode.const !== undefined && (oldNode.const === undefined || JSON.stringify(oldNode.const) !== JSON.stringify(newNode.const))) {
+  if (checksProducerCompatibility(direction) && oldTypes && !newTypes) {
+    issues.push(`${path}: output type constraint was removed`);
+  } else if (checksProducerCompatibility(direction) && oldTypes && newTypes) {
+    const added = [...newTypes].filter((type) => !oldTypes.has(type));
+    if (added.length) issues.push(`${path}: output type(s) added: ${added.join(", ")}`);
+  }
+  const constChanged = JSON.stringify(oldNode.const) !== JSON.stringify(newNode.const);
+  if (checksConsumerCompatibility(direction) && newNode.const !== undefined && (oldNode.const === undefined || constChanged)) {
     issues.push(`${path}: const constraint was added or changed`);
   }
-  if (!Array.isArray(oldNode.enum) && Array.isArray(newNode.enum)) {
+  if (checksProducerCompatibility(direction) && oldNode.const !== undefined && (newNode.const === undefined || constChanged)) {
+    issues.push(`${path}: output const constraint was removed or changed`);
+  }
+  if (checksConsumerCompatibility(direction) && !Array.isArray(oldNode.enum) && Array.isArray(newNode.enum)) {
     issues.push(`${path}: enum constraint was added`);
-  } else if (Array.isArray(oldNode.enum) && Array.isArray(newNode.enum)) {
+  } else if (checksConsumerCompatibility(direction) && Array.isArray(oldNode.enum) && Array.isArray(newNode.enum)) {
     const next = new Set(newNode.enum.map((entry) => JSON.stringify(entry)));
     const removed = oldNode.enum.filter((entry) => !next.has(JSON.stringify(entry)));
     if (removed.length) issues.push(`${path}: enum value(s) removed: ${removed.map(JSON.stringify).join(", ")}`);
   }
+  if (checksProducerCompatibility(direction) && Array.isArray(oldNode.enum) && !Array.isArray(newNode.enum)) {
+    issues.push(`${path}: output enum constraint was removed`);
+  } else if (checksProducerCompatibility(direction) && Array.isArray(oldNode.enum) && Array.isArray(newNode.enum)) {
+    const previous = new Set(oldNode.enum.map((entry) => JSON.stringify(entry)));
+    const added = newNode.enum.filter((entry) => !previous.has(JSON.stringify(entry)));
+    if (added.length) issues.push(`${path}: output enum value(s) added: ${added.map(JSON.stringify).join(", ")}`);
+  }
   const oldRequired = new Set(oldNode.required ?? []);
   const newRequired = new Set(newNode.required ?? []);
   const requiredAdded = [...newRequired].filter((name) => !oldRequired.has(name));
-  if (requiredAdded.length) issues.push(`${path}: required property/properties added: ${requiredAdded.join(", ")}`);
+  if (requiredAdded.length && checksConsumerCompatibility(direction)) issues.push(`${path}: required property/properties added: ${requiredAdded.join(", ")}`);
+  const requiredRemoved = [...oldRequired].filter((name) => !newRequired.has(name));
+  if (requiredRemoved.length && checksProducerCompatibility(direction)) issues.push(`${path}: required response property/properties removed: ${requiredRemoved.join(", ")}`);
   const oldProperties = oldNode.properties ?? {};
   const newProperties = newNode.properties ?? {};
   for (const [name, schema] of Object.entries(oldProperties)) {
     if (!(name in newProperties)) {
-      if (newNode.additionalProperties === false) issues.push(`${path}: property removed: ${name}`);
-    } else compareSchema(schema, newProperties[name], `${path}/properties/${name}`, issues);
+      if (checksConsumerCompatibility(direction) && newNode.additionalProperties === false) issues.push(`${path}: property removed: ${name}`);
+    } else compareSchema(schema, newProperties[name], `${path}/properties/${name}`, issues, options);
   }
-  if (oldNode.additionalProperties !== false && newNode.additionalProperties === false) issues.push(`${path}: additional properties are no longer accepted`);
+  const oldAdditional = oldNode.additionalProperties ?? true;
+  const newAdditional = newNode.additionalProperties ?? true;
+  if (checksConsumerCompatibility(direction) && oldAdditional !== false && newAdditional === false) issues.push(`${path}: additional properties are no longer accepted`);
+  if (checksConsumerCompatibility(direction) && oldAdditional === true && newAdditional && typeof newAdditional === "object") {
+    compareSchema({}, newAdditional, `${path}/additionalProperties`, issues, options);
+  }
+  if (checksProducerCompatibility(direction) && oldAdditional === false && newAdditional !== false) issues.push(`${path}: additional properties became more permissive for responses`);
+  if (checksProducerCompatibility(direction) && oldAdditional && typeof oldAdditional === "object" && newAdditional === true) {
+    issues.push(`${path}: additional properties became more permissive for responses`);
+  }
   if (oldNode.additionalProperties && typeof oldNode.additionalProperties === "object" && newNode.additionalProperties && typeof newNode.additionalProperties === "object") {
-    compareSchema(oldNode.additionalProperties, newNode.additionalProperties, `${path}/additionalProperties`, issues);
+    compareSchema(oldNode.additionalProperties, newNode.additionalProperties, `${path}/additionalProperties`, issues, options);
   }
   const oldDefs = oldNode.$defs ?? oldNode.definitions ?? {};
   const newDefs = newNode.$defs ?? newNode.definitions ?? {};
   for (const [name, schema] of Object.entries(oldDefs)) {
     if (!(name in newDefs)) issues.push(`${path}: definition removed: ${name}`);
-    else compareSchema(schema, newDefs[name], `${path}/$defs/${name}`, issues);
+    else compareSchema(schema, newDefs[name], `${path}/$defs/${name}`, issues, options);
   }
-  if (oldNode.items && newNode.items) compareSchema(oldNode.items, newNode.items, `${path}/items`, issues);
-  if ((oldNode.pattern ?? null) !== (newNode.pattern ?? null) && newNode.pattern !== undefined) issues.push(`${path}: pattern constraint was added or changed`);
-  if (oldNode.format === undefined && newNode.format !== undefined) issues.push(`${path}: format constraint was added`);
-  else scalarChanged(oldNode, newNode, "format", path, issues);
-  for (const keyword of ["$id", "$ref"]) scalarChanged(oldNode, newNode, keyword, path, issues);
-  for (const [keyword, direction] of [["minimum", "increase"], ["exclusiveMinimum", "increase"], ["minLength", "increase"], ["minItems", "increase"], ["minProperties", "increase"], ["maximum", "decrease"], ["exclusiveMaximum", "decrease"], ["maxLength", "decrease"], ["maxItems", "decrease"], ["maxProperties", "decrease"]]) {
+  const oldItems = oldNode.items ?? true;
+  const newItems = newNode.items ?? true;
+  if (checksConsumerCompatibility(direction) && oldItems === true && newItems === false) issues.push(`${path}: items are no longer accepted`);
+  if (checksConsumerCompatibility(direction) && oldItems === true && newItems && typeof newItems === "object") compareSchema({}, newItems, `${path}/items`, issues, options);
+  if (checksConsumerCompatibility(direction) && oldItems && typeof oldItems === "object" && newItems === false) issues.push(`${path}: items are no longer accepted`);
+  if (checksProducerCompatibility(direction) && oldItems === false && newItems !== false) issues.push(`${path}: items became more permissive for responses`);
+  if (checksProducerCompatibility(direction) && oldItems && typeof oldItems === "object" && newItems === true) issues.push(`${path}: items became more permissive for responses`);
+  if (oldItems && typeof oldItems === "object" && newItems && typeof newItems === "object") compareSchema(oldItems, newItems, `${path}/items`, issues, options);
+  if (checksConsumerCompatibility(direction) && (oldNode.pattern ?? null) !== (newNode.pattern ?? null) && newNode.pattern !== undefined) issues.push(`${path}: pattern constraint was added or changed`);
+  if (checksProducerCompatibility(direction) && oldNode.pattern !== undefined && oldNode.pattern !== newNode.pattern) issues.push(`${path}: output pattern constraint was removed or changed`);
+  if (checksConsumerCompatibility(direction) && oldNode.format === undefined && newNode.format !== undefined) issues.push(`${path}: format constraint was added`);
+  else if (checksConsumerCompatibility(direction)) scalarChanged(oldNode, newNode, "format", path, issues);
+  if (checksProducerCompatibility(direction) && oldNode.format !== undefined && oldNode.format !== newNode.format) issues.push(`${path}: output format constraint was removed or changed`);
+  scalarChanged(oldNode, newNode, "$id", path, issues);
+  if (checksConsumerCompatibility(direction) && newNode.$ref !== undefined && oldNode.$ref !== newNode.$ref) issues.push(`${path}: $ref constraint was added or changed`);
+  if (checksProducerCompatibility(direction) && oldNode.$ref !== undefined && oldNode.$ref !== newNode.$ref) issues.push(`${path}: output $ref constraint was removed or changed`);
+  for (const [keyword, constraintDirection] of [["minimum", "increase"], ["exclusiveMinimum", "increase"], ["minLength", "increase"], ["minItems", "increase"], ["minProperties", "increase"], ["maximum", "decrease"], ["exclusiveMaximum", "decrease"], ["maxLength", "decrease"], ["maxItems", "decrease"], ["maxProperties", "decrease"]]) {
     if (newNode[keyword] === undefined) continue;
-    if (oldNode[keyword] === undefined || (direction === "increase" && newNode[keyword] > oldNode[keyword]) || (direction === "decrease" && newNode[keyword] < oldNode[keyword])) {
+    if (checksConsumerCompatibility(direction) && (oldNode[keyword] === undefined || (constraintDirection === "increase" && newNode[keyword] > oldNode[keyword]) || (constraintDirection === "decrease" && newNode[keyword] < oldNode[keyword]))) {
       issues.push(`${path}: ${keyword} became more restrictive`);
     }
   }
+  for (const [keyword, constraintDirection] of [["minimum", "decrease"], ["exclusiveMinimum", "decrease"], ["minLength", "decrease"], ["minItems", "decrease"], ["minProperties", "decrease"], ["maximum", "increase"], ["exclusiveMaximum", "increase"], ["maxLength", "increase"], ["maxItems", "increase"], ["maxProperties", "increase"]]) {
+    if (!checksProducerCompatibility(direction) || oldNode[keyword] === undefined) continue;
+    if (newNode[keyword] === undefined || (constraintDirection === "increase" && newNode[keyword] > oldNode[keyword]) || (constraintDirection === "decrease" && newNode[keyword] < oldNode[keyword])) {
+      issues.push(`${path}: ${keyword} became less restrictive for responses`);
+    }
+  }
+  if (checksConsumerCompatibility(direction) && oldNode.uniqueItems !== true && newNode.uniqueItems === true) issues.push(`${path}: uniqueItems became more restrictive`);
+  if (checksProducerCompatibility(direction) && oldNode.uniqueItems === true && newNode.uniqueItems !== true) issues.push(`${path}: uniqueItems became less restrictive for responses`);
   for (const keyword of ["oneOf", "anyOf", "allOf", "not", "if", "then", "else"]) {
-    if (newNode[keyword] !== undefined && JSON.stringify(stable(oldNode[keyword])) !== JSON.stringify(stable(newNode[keyword]))) {
+    const changed = JSON.stringify(stable(oldNode[keyword])) !== JSON.stringify(stable(newNode[keyword]));
+    if (changed && ((checksConsumerCompatibility(direction) && newNode[keyword] !== undefined) || (checksProducerCompatibility(direction) && oldNode[keyword] !== undefined))) {
       issues.push(`${path}: ${keyword} changed; publish a new schema version for this potentially breaking change`);
     }
   }
+}
+
+function decodeJsonPointerSegment(segment) {
+  return segment.replaceAll("~1", "/").replaceAll("~0", "~");
+}
+
+function resolveLocalReference(document, reference) {
+  if (!reference.startsWith("#/")) return undefined;
+  let value = document;
+  for (const segment of reference.slice(2).split("/").map(decodeJsonPointerSegment)) {
+    if (!value || typeof value !== "object" || !(segment in value)) return undefined;
+    value = value[segment];
+  }
+  return value;
+}
+
+function collectSchemaUsage(document) {
+  const usage = new Map();
+
+  function visit(value, direction, seenReferences) {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry, direction, seenReferences);
+      return;
+    }
+
+    const reference = value.$ref;
+    if (typeof reference === "string") {
+      const match = reference.match(/^#\/components\/schemas\/([^/]+)(?:\/|$)/);
+      if (match) {
+        const name = decodeJsonPointerSegment(match[1]);
+        if (!usage.has(name)) usage.set(name, new Set());
+        usage.get(name).add(direction);
+      }
+      const referenceKey = `${direction}:${reference}`;
+      if (!seenReferences.has(referenceKey)) {
+        const target = resolveLocalReference(document, reference);
+        if (target !== undefined) {
+          const nextSeen = new Set(seenReferences);
+          nextSeen.add(referenceKey);
+          visit(target, direction, nextSeen);
+        }
+      }
+    }
+
+    for (const [key, entry] of Object.entries(value)) {
+      if (key !== "$ref") visit(entry, direction, seenReferences);
+    }
+  }
+
+  for (const pathItem of Object.values(document.paths ?? {})) {
+    for (const parameter of pathItem.parameters ?? []) visit(parameter, "consumer", new Set());
+    for (const method of httpMethods) {
+      const operation = pathItem[method];
+      if (!operation) continue;
+      for (const parameter of operation.parameters ?? []) visit(parameter, "consumer", new Set());
+      visit(operation.requestBody, "consumer", new Set());
+      visit(operation.responses, "producer", new Set());
+    }
+  }
+  return usage;
+}
+
+function mergeSchemaUsage(...usages) {
+  const merged = new Map();
+  for (const usage of usages) {
+    for (const [name, directions] of usage) {
+      if (!merged.has(name)) merged.set(name, new Set());
+      for (const direction of directions) merged.get(name).add(direction);
+    }
+  }
+  return merged;
 }
 
 function parameterKey(parameter) {
@@ -276,7 +405,19 @@ function compareOpenApi(oldDocument, newDocument, name, issues) {
       }
     }
   }
-  compareSchema({ $defs: oldDocument.components?.schemas ?? {} }, { $defs: newDocument.components?.schemas ?? {} }, `${name}#/components/schemas`, issues);
+  const schemaUsage = mergeSchemaUsage(collectSchemaUsage(oldDocument), collectSchemaUsage(newDocument));
+  const oldSchemas = oldDocument.components?.schemas ?? {};
+  const newSchemas = newDocument.components?.schemas ?? {};
+  for (const [schemaName, oldSchema] of Object.entries(oldSchemas)) {
+    const path = `${name}#/components/schemas/${schemaName}`;
+    if (!(schemaName in newSchemas)) {
+      issues.push(`${path}: definition removed: ${schemaName}`);
+      continue;
+    }
+    const directions = schemaUsage.get(schemaName) ?? new Set();
+    const direction = directions.size === 1 ? [...directions][0] : "invariant";
+    compareSchema(oldSchema, newSchemas[schemaName], path, issues, { direction });
+  }
 }
 
 export function compareContracts(oldContracts, newContracts) {

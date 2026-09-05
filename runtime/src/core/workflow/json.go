@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -18,6 +19,8 @@ var (
 	outputSourcePattern     = regexp.MustCompile(`^node\.[a-z][a-z0-9_]{0,63}\.output\.[a-z][a-z0-9_]{0,63}$`)
 	operandReferencePattern = regexp.MustCompile(`^(output\.[a-z][a-z0-9_]{0,63}|input\.[a-z][a-z0-9_]{0,63}|run\.input\.[a-z][a-z0-9_]{0,63})(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*$`)
 	digestPattern           = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	decodeFieldPattern      = regexp.MustCompile(`Go struct field [^.:\s]+\.([A-Za-z][A-Za-z0-9_]*)`)
+	unknownFieldPattern     = regexp.MustCompile(`unknown field "([^"]+)"`)
 )
 
 // Decode strictly decodes one supported workflow document. It rejects unknown
@@ -25,9 +28,90 @@ var (
 func Decode(data []byte) (Document, error) {
 	var document Document
 	if err := json.Unmarshal(data, &document); err != nil {
-		return Document{}, fmt.Errorf("decode workflow: %w", err)
+		location := decodeLocationFromMessage(err.Error())
+		var located *decodePathError
+		if errors.As(err, &located) {
+			location = "/" + strings.Join(located.segments, "/")
+		}
+		return Document{}, &DecodeError{Location: location, Message: err.Error(), cause: err}
 	}
 	return document, nil
+}
+
+type decodePathError struct {
+	segments []string
+	cause    error
+}
+
+func (e *decodePathError) Error() string { return e.cause.Error() }
+func (e *decodePathError) Unwrap() error { return e.cause }
+
+func atDecodePath(segment string, err error) error {
+	var located *decodePathError
+	if errors.As(err, &located) {
+		segments := append([]string{escapeJSONPointerSegment(segment)}, located.segments...)
+		return &decodePathError{segments: segments, cause: err}
+	}
+	return &decodePathError{segments: []string{escapeJSONPointerSegment(segment)}, cause: err}
+}
+
+func prependDecodePath(segment string, err error) error {
+	var located *decodePathError
+	if !errors.As(err, &located) {
+		return err
+	}
+	return atDecodePath(segment, err)
+}
+
+func escapeJSONPointerSegment(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(value, "~", "~0"), "/", "~1")
+}
+
+// DecodeError keeps schema failure evidence field-addressable without asking
+// API consumers to parse a concatenated implementation error string.
+type DecodeError struct {
+	Location string
+	Message  string
+	cause    error
+}
+
+func (e *DecodeError) Error() string { return "decode workflow: " + e.Message }
+func (e *DecodeError) Unwrap() error { return e.cause }
+
+func decodeLocationFromMessage(message string) string {
+	parts := strings.Split(message, ":")
+	known := map[string]bool{"spec": true, "metadata": true, "routeDefaults": true, "nodes": true, "profiles": true, "inputs": true, "outputs": true, "transitions": true, "validators": true, "readiness": true, "recommendedEvidence": true, "policyGates": true, "invariants": true, "remedies": true, "retry": true, "checkpoint": true, "join": true, "reasoning": true, "gate": true, "command": true, "approval": true, "call": true, "points": true, "workflow": true, "when": true, "maxTraversals": true, "enabledByDefault": true, "entry": true, "terminals": true, "type": true, "schema": true, "from": true, "to": true, "id": true}
+	collection := map[string]bool{"nodes": true, "profiles": true, "inputs": true, "outputs": true, "transitions": true, "validators": true, "recommendedEvidence": true, "policyGates": true, "remedies": true, "terminals": true}
+	path := make([]string, 0, len(parts))
+	expectMember := false
+	for _, part := range parts {
+		token := strings.TrimSpace(part)
+		if token == "" {
+			continue
+		}
+		if expectMember {
+			if strings.Contains(token, " ") {
+				break
+			}
+			path = append(path, token)
+			expectMember = false
+			continue
+		}
+		if !known[token] {
+			break
+		}
+		path = append(path, token)
+		expectMember = collection[token]
+	}
+	if match := decodeFieldPattern.FindStringSubmatch(message); len(match) == 2 && (len(path) == 0 || path[len(path)-1] != match[1]) {
+		path = append(path, match[1])
+	} else if match := unknownFieldPattern.FindStringSubmatch(message); len(match) == 2 && (len(path) == 0 || path[len(path)-1] != match[1]) {
+		path = append(path, match[1])
+	}
+	if len(path) == 0 {
+		return ""
+	}
+	return "/" + strings.Join(path, "/")
 }
 
 // Encode validates the structural typed contract and returns indented JSON.
@@ -69,11 +153,11 @@ func (document *Document) UnmarshalJSON(data []byte) error {
 
 	metadata, err := decodeMetadata(wire.Metadata)
 	if err != nil {
-		return fmt.Errorf("metadata: %w", err)
+		return fmt.Errorf("metadata: %w", prependDecodePath("metadata", err))
 	}
 	spec, err := decodeSpec(wire.Spec, wire.APIVersion)
 	if err != nil {
-		return fmt.Errorf("spec: %w", err)
+		return fmt.Errorf("spec: %w", prependDecodePath("spec", err))
 	}
 	result := Document{APIVersion: wire.APIVersion, Kind: wire.Kind, Metadata: metadata, Spec: spec}
 	if err := validateDocument(result); err != nil {
@@ -128,7 +212,7 @@ func decodeSpec(data []byte, apiVersion string) (Spec, error) {
 	if len(wire.Inputs) != 0 {
 		decoded, err := decodeValueDeclarations(wire.Inputs)
 		if err != nil {
-			return Spec{}, fmt.Errorf("inputs: %w", err)
+			return Spec{}, fmt.Errorf("inputs: %w", prependDecodePath("inputs", err))
 		}
 		inputs = decoded
 	}
@@ -137,22 +221,22 @@ func decodeSpec(data []byte, apiVersion string) (Spec, error) {
 		return Spec{}, fmt.Errorf("routeDefaults: %w", err)
 	}
 	if err := validateIdentifier(defaults.Entry); err != nil {
-		return Spec{}, fmt.Errorf("routeDefaults.entry: %w", err)
+		return Spec{}, fmt.Errorf("routeDefaults.entry: %w", atDecodePath("routeDefaults", atDecodePath("entry", err)))
 	}
 	if len(defaults.Terminals) == 0 {
-		return Spec{}, errors.New("routeDefaults.terminals must contain at least one node")
+		return Spec{}, atDecodePath("routeDefaults", atDecodePath("terminals", errors.New("routeDefaults.terminals must contain at least one node")))
 	}
 	if err := validateIdentifierList(defaults.Terminals, true); err != nil {
-		return Spec{}, fmt.Errorf("routeDefaults.terminals: %w", err)
+		return Spec{}, fmt.Errorf("routeDefaults.terminals: %w", atDecodePath("routeDefaults", atDecodePath("terminals", err)))
 	}
 
 	nodes, err := decodeNodes(wire.Nodes, apiVersion)
 	if err != nil {
-		return Spec{}, fmt.Errorf("nodes: %w", err)
+		return Spec{}, fmt.Errorf("nodes: %w", prependDecodePath("nodes", err))
 	}
 	profiles, err := decodeProfiles(wire.Profiles)
 	if err != nil {
-		return Spec{}, fmt.Errorf("profiles: %w", err)
+		return Spec{}, fmt.Errorf("profiles: %w", prependDecodePath("profiles", err))
 	}
 	return Spec{Inputs: inputs, RouteDefaults: defaults, Profiles: profiles, Nodes: nodes}, nil
 }
@@ -220,14 +304,14 @@ func decodeValueDeclarations(data []byte) (map[Identifier]ValueDeclaration, erro
 			Description string          `json:"description"`
 		}
 		if err := strictDecode(value, &wire); err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
+			return nil, fmt.Errorf("%s: %w", name, prependDecodePath(name, err))
 		}
 		if err := validateValueType(wire.Type); err != nil {
-			return nil, fmt.Errorf("%s.type: %w", name, err)
+			return nil, fmt.Errorf("%s.type: %w", name, atDecodePath(name, atDecodePath("type", err)))
 		}
 		schema, err := decodeOptionalNonEmptyString(wire.Schema)
 		if err != nil {
-			return nil, fmt.Errorf("%s.schema: %w", name, err)
+			return nil, fmt.Errorf("%s.schema: %w", name, atDecodePath(name, atDecodePath("schema", err)))
 		}
 		result[id] = ValueDeclaration{Type: wire.Type, Schema: schema, Description: wire.Description}
 	}
@@ -255,14 +339,14 @@ func decodeOutputDeclarations(data []byte) (map[Identifier]OutputDeclaration, er
 			Required    *bool           `json:"required"`
 		}
 		if err := strictDecode(value, &wire); err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
+			return nil, fmt.Errorf("%s: %w", name, prependDecodePath(name, err))
 		}
 		if err := validateValueType(wire.Type); err != nil {
-			return nil, fmt.Errorf("%s.type: %w", name, err)
+			return nil, fmt.Errorf("%s.type: %w", name, atDecodePath(name, atDecodePath("type", err)))
 		}
 		schema, err := decodeOptionalNonEmptyString(wire.Schema)
 		if err != nil {
-			return nil, fmt.Errorf("%s.schema: %w", name, err)
+			return nil, fmt.Errorf("%s.schema: %w", name, atDecodePath(name, atDecodePath("schema", err)))
 		}
 		result[id] = OutputDeclaration{Type: wire.Type, Schema: schema, Description: wire.Description, Required: wire.Required}
 	}
@@ -281,14 +365,20 @@ func decodeNodes(data []byte, apiVersion string) (map[Identifier]Node, error) {
 		return nil, errors.New("at least one node is required")
 	}
 	result := make(map[Identifier]Node, len(raw))
-	for name, value := range raw {
+	names := make([]string, 0, len(raw))
+	for name := range raw {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		value := raw[name]
 		id := Identifier(name)
 		if err := validateIdentifier(id); err != nil {
 			return nil, err
 		}
 		node, err := decodeNode(value, apiVersion)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
+			return nil, fmt.Errorf("%s: %w", name, prependDecodePath(name, err))
 		}
 		result[id] = node
 	}
@@ -338,11 +428,11 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 
 	inputs, err := decodeBindings(wire.Inputs)
 	if err != nil {
-		return nil, fmt.Errorf("inputs: %w", err)
+		return nil, fmt.Errorf("inputs: %w", prependDecodePath("inputs", err))
 	}
 	outputs, err := decodeOutputDeclarations(wire.Outputs)
 	if err != nil {
-		return nil, fmt.Errorf("outputs: %w", err)
+		return nil, fmt.Errorf("outputs: %w", prependDecodePath("outputs", err))
 	}
 	readiness, err := decodeReadiness(wire.Readiness)
 	if err != nil {
@@ -385,16 +475,24 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 		Permissions: wire.Permissions, Transitions: transitions,
 	}
 
-	executors := map[NodeType]json.RawMessage{
-		NodeReasoning: wire.Reasoning, NodeGate: wire.Gate, NodeCommand: wire.Command,
-		NodeApproval: wire.Approval, NodeSubworkflow: wire.Call, NodePointExecution: wire.Points,
-	}
-	for kind, raw := range executors {
+	executors := []struct {
+		kind NodeType
+		raw  json.RawMessage
+	}{{NodeReasoning, wire.Reasoning}, {NodeGate, wire.Gate}, {NodeCommand, wire.Command}, {NodeApproval, wire.Approval}, {NodeSubworkflow, wire.Call}, {NodePointExecution, wire.Points}}
+	for _, executor := range executors {
+		kind, raw := executor.kind, executor.raw
 		if kind != wire.Type && len(raw) != 0 {
 			return nil, fmt.Errorf("%s settings are invalid for node type %q", kind, wire.Type)
 		}
 	}
-	if len(executors[wire.Type]) == 0 {
+	configured := false
+	for _, executor := range executors {
+		if executor.kind == wire.Type && len(executor.raw) != 0 {
+			configured = true
+			break
+		}
+	}
+	if !configured {
 		return nil, fmt.Errorf("%s settings are required", wire.Type)
 	}
 
@@ -684,7 +782,7 @@ func decodeBindings(data []byte) (map[Identifier]Binding, error) {
 		}
 		binding, err := decodeBinding(value)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
+			return nil, fmt.Errorf("%s: %w", name, prependDecodePath(name, err))
 		}
 		result[id] = binding
 	}
@@ -705,18 +803,18 @@ func decodeBinding(data []byte) (Binding, error) {
 		return nil, err
 	}
 	if !bindingSourcePattern.MatchString(wire.From) {
-		return nil, fmt.Errorf("invalid source %q", wire.From)
+		return nil, atDecodePath("from", fmt.Errorf("invalid source %q", wire.From))
 	}
 	if err := validateValueType(wire.Type); err != nil {
-		return nil, err
+		return nil, atDecodePath("type", err)
 	}
 	if wire.Pointer != "" && !validJSONPointer(wire.Pointer) {
-		return nil, fmt.Errorf("invalid JSON pointer %q", wire.Pointer)
+		return nil, atDecodePath("pointer", fmt.Errorf("invalid JSON pointer %q", wire.Pointer))
 	}
 	required := wire.Required == nil || *wire.Required
 	if required {
 		if len(wire.Default) != 0 {
-			return nil, errors.New("default requires required=false")
+			return nil, atDecodePath("default", errors.New("default requires required=false"))
 		}
 		return RequiredBinding{From: wire.From, Pointer: wire.Pointer, Type: wire.Type, Description: wire.Description}, nil
 	}

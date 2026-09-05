@@ -158,6 +158,7 @@ Workflow commands:
   workflow graph <name> [--version <version>] [--json]
   workflow preview <name> [--version <version>] [--from <node>] [--until <node>]... [--input <file>] [--json]
   workflow library [--json]
+  workflow authoring-catalog [--json]
   workflow duplicate <name> <new-name> --version <version> --scope <user|project> --scope-reference <reference> --idempotency-key <key> [--json]
   workflow archive <name> <version> [--json]
   workflow draft-create <file> --scope <user|project> --scope-reference <reference> --idempotency-key <key> [--json]
@@ -165,6 +166,7 @@ Workflow commands:
   workflow draft-update <draft-id> <file> --revision <n> [--json]
   workflow draft-rename <draft-id> <name> --revision <n> [--json]
   workflow draft-validate <draft-id> --revision <n> [--json]
+  workflow draft-preview <draft-id> --revision <n> [--from <node>] [--until <node>]... [--input <file>] [--json]
   workflow draft-publish <draft-id> <version> --revision <n> [--json]
   workflow draft-discard <draft-id> --revision <n> [--json]
 
@@ -347,6 +349,7 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
+	workflowCatalog.WithCapabilityRegistry(database)
 	if _, err := workflowCatalog.InstallConfigured(ctx); err != nil {
 		_ = database.Close()
 		service.database = nil
