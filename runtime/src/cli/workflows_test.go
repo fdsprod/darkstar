@@ -11,6 +11,7 @@ import (
 
 	"darkstar/src/core/workflow"
 	platformport "darkstar/src/ports/platform"
+	"darkstar/src/ports/workflowstore"
 )
 
 func TestWorkflowCLIInstallListGraphAndPreviewJSON(t *testing.T) {
@@ -40,12 +41,48 @@ func TestWorkflowCLIInstallListGraphAndPreviewJSON(t *testing.T) {
 		t.Fatalf("install = %#v", installed)
 	}
 
+	var draft workflowstore.Draft
+	runCLIJSON(t, []string{"workflow", "draft-create", definitionPath, "--scope", "project", "--scope-reference", "project-test", "--idempotency-key", "cli-draft-create", "--json"}, &struct {
+		SchemaVersion int                  `json:"schemaVersion"`
+		Result        *workflowstore.Draft `json:"result"`
+	}{Result: &draft})
+	if draft.Revision != 1 || draft.Name != "cli-workflow" {
+		t.Fatalf("draft = %#v", draft)
+	}
+
+	var draftValidation workflow.DraftValidationReport
+	runCLIJSON(t, []string{"workflow", "draft-validate", draft.ID, "--revision", "1", "--json"}, &struct {
+		SchemaVersion int                             `json:"schemaVersion"`
+		Result        *workflow.DraftValidationReport `json:"result"`
+	}{Result: &draftValidation})
+	if len(draftValidation.Findings) != 0 {
+		t.Fatalf("draft validation = %#v", draftValidation)
+	}
+
+	var published workflow.DraftPublishResult
+	runCLIJSON(t, []string{"workflow", "draft-publish", draft.ID, "1.1.0", "--revision", "1", "--json"}, &struct {
+		SchemaVersion int                          `json:"schemaVersion"`
+		Result        *workflow.DraftPublishResult `json:"result"`
+	}{Result: &published})
+	if published.Published.Version != "1.1.0" {
+		t.Fatalf("published = %#v", published)
+	}
+
+	var archived workflowstore.Archive
+	runCLIJSON(t, []string{"workflow", "archive", "cli-workflow", "1.1.0", "--json"}, &struct {
+		SchemaVersion int                    `json:"schemaVersion"`
+		Result        *workflowstore.Archive `json:"result"`
+	}{Result: &archived})
+	if archived.Version != "1.1.0" {
+		t.Fatalf("archived = %#v", archived)
+	}
+
 	var listed []workflow.VersionSummary
 	runCLIJSON(t, []string{"workflow", "list", "--json"}, &struct {
 		SchemaVersion int                        `json:"schemaVersion"`
 		Result        *[]workflow.VersionSummary `json:"result"`
 	}{Result: &listed})
-	if len(listed) != 1 || listed[0].Name != "cli-workflow" {
+	if len(listed) != 2 || listed[0].Name != "cli-workflow" || listed[1].Version != "1.1.0" {
 		t.Fatalf("list = %#v", listed)
 	}
 	var shown workflow.Definition
@@ -53,7 +90,7 @@ func TestWorkflowCLIInstallListGraphAndPreviewJSON(t *testing.T) {
 		SchemaVersion int                  `json:"schemaVersion"`
 		Result        *workflow.Definition `json:"result"`
 	}{Result: &shown})
-	if shown.Version.Name != "cli-workflow" || shown.Document.Metadata.Version != "1.0.0" {
+	if shown.Version.Name != "cli-workflow" || shown.Document.Metadata.Version != "1.1.0" {
 		t.Fatalf("show = %#v", shown)
 	}
 

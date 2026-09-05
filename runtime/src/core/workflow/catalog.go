@@ -64,6 +64,62 @@ type VersionSummary struct {
 	InstalledAt time.Time           `json:"installedAt"`
 }
 
+// Library is the complete authoring projection. Installed versions are
+// immutable evidence; drafts are the only editable records.
+type Library struct {
+	Versions []VersionSummary        `json:"versions"`
+	Drafts   []workflowstore.Draft   `json:"drafts"`
+	Archives []workflowstore.Archive `json:"archives"`
+}
+
+type DraftCreateRequest struct {
+	Name, ScopeReference, IdempotencyKey string
+	Scope                                workflowstore.DraftScope
+	Document, Layout                     json.RawMessage
+}
+
+type DraftUpdateRequest struct {
+	ID               string
+	ExpectedRevision uint64
+	Document, Layout json.RawMessage
+}
+
+type DraftPublishRequest struct {
+	ID, Version      string
+	ExpectedRevision uint64
+}
+
+type ValidationSeverity string
+
+const ValidationSeverityError ValidationSeverity = "error"
+
+// AuthoringFinding maps a schema location back to editor concepts while
+// retaining the canonical JSON pointer as the source of truth.
+type AuthoringFinding struct {
+	Code       ValidationCode     `json:"code"`
+	Severity   ValidationSeverity `json:"severity"`
+	Message    string             `json:"message"`
+	Location   string             `json:"location,omitempty"`
+	NodeID     Identifier         `json:"nodeId,omitempty"`
+	EdgeID     Identifier         `json:"edgeId,omitempty"`
+	Field      string             `json:"field,omitempty"`
+	Suggestion string             `json:"suggestion,omitempty"`
+}
+
+type DraftValidationReport struct {
+	DraftID  string             `json:"draftId"`
+	Revision uint64             `json:"revision"`
+	Digest   string             `json:"digest,omitempty"`
+	Findings []AuthoringFinding `json:"findings"`
+}
+
+type DraftPublishResult struct {
+	DraftID       string             `json:"draftId"`
+	DraftRevision uint64             `json:"draftRevision"`
+	Published     VersionSummary     `json:"published"`
+	Disposition   InstallDisposition `json:"disposition"`
+}
+
 // Graph is a deterministic, presentation-neutral projection of a definition.
 type Graph struct {
 	Workflow WorkflowIdentity  `json:"workflow"`
@@ -267,6 +323,213 @@ func (c *Catalog) List(ctx context.Context, name string) ([]VersionSummary, erro
 		result[index] = versionSummary(version)
 	}
 	return result, nil
+}
+
+func (c *Catalog) Library(ctx context.Context) (Library, error) {
+	versions, err := c.List(ctx, "")
+	if err != nil {
+		return Library{}, err
+	}
+	drafts, err := c.store.Drafts(ctx)
+	if err != nil {
+		return Library{}, err
+	}
+	archives, err := c.store.Archives(ctx)
+	if err != nil {
+		return Library{}, err
+	}
+	return Library{Versions: versions, Drafts: drafts, Archives: archives}, nil
+}
+
+func (c *Catalog) ArchiveVersion(ctx context.Context, name, version string) (workflowstore.Archive, error) {
+	value, _, err := c.store.ArchiveVersion(ctx, name, version, c.now().UTC().Round(0))
+	return value, err
+}
+
+func (c *Catalog) CreateDraft(ctx context.Context, request DraftCreateRequest) (workflowstore.Draft, error) {
+	if err := validateDraftIdentity(request.Name, request.Scope, request.ScopeReference, request.IdempotencyKey); err != nil {
+		return workflowstore.Draft{}, err
+	}
+	if len(request.Document) == 0 {
+		return workflowstore.Draft{}, errors.New("workflow draft document is required")
+	}
+	if len(request.Layout) == 0 {
+		request.Layout = json.RawMessage(`{}`)
+	}
+	id := draftID(request.IdempotencyKey)
+	value, _, err := c.store.CreateDraft(ctx, workflowstore.CreateDraftRequest{ID: id, Name: request.Name,
+		Scope: request.Scope, ScopeReference: request.ScopeReference, IdempotencyKey: request.IdempotencyKey,
+		Document: request.Document, Layout: request.Layout, CreatedAt: c.now().UTC().Round(0)})
+	return value, err
+}
+
+func (c *Catalog) DuplicateDraft(ctx context.Context, name, version, newName string, scope workflowstore.DraftScope, scopeReference, idempotencyKey string) (workflowstore.Draft, error) {
+	if err := validateDraftIdentity(newName, scope, scopeReference, idempotencyKey); err != nil {
+		return workflowstore.Draft{}, err
+	}
+	definition, err := c.Definition(ctx, name, version)
+	if err != nil {
+		return workflowstore.Draft{}, err
+	}
+	document, err := rewriteWorkflowMetadata(definition.Document, newName, definition.Version.Version)
+	if err != nil {
+		return workflowstore.Draft{}, err
+	}
+	value, _, err := c.store.CreateDraft(ctx, workflowstore.CreateDraftRequest{ID: draftID(idempotencyKey), Name: newName,
+		Scope: scope, ScopeReference: scopeReference, BaseVersion: definition.Version.Version, IdempotencyKey: idempotencyKey,
+		Document: document, Layout: json.RawMessage(`{}`), CreatedAt: c.now().UTC().Round(0)})
+	return value, err
+}
+
+func (c *Catalog) Draft(ctx context.Context, id string) (workflowstore.Draft, error) {
+	return c.store.Draft(ctx, id)
+}
+
+func (c *Catalog) UpdateDraft(ctx context.Context, request DraftUpdateRequest) (workflowstore.Draft, error) {
+	current, err := c.store.Draft(ctx, request.ID)
+	if err != nil {
+		return workflowstore.Draft{}, err
+	}
+	if request.ExpectedRevision == 0 {
+		return workflowstore.Draft{}, errors.New("positive expected draft revision is required")
+	}
+	if len(request.Document) == 0 {
+		request.Document = current.Document
+	}
+	if len(request.Layout) == 0 {
+		request.Layout = current.Layout
+	}
+	name := draftDocumentName(request.Document)
+	if name == "" {
+		name = current.Name
+	}
+	return c.store.UpdateDraft(ctx, workflowstore.UpdateDraftRequest{ID: request.ID, ExpectedRevision: request.ExpectedRevision,
+		Name: name, Document: request.Document, Layout: request.Layout, UpdatedAt: c.now().UTC().Round(0)})
+}
+
+func (c *Catalog) RenameDraft(ctx context.Context, id, name string, expectedRevision uint64) (workflowstore.Draft, error) {
+	if strings.TrimSpace(name) == "" {
+		return workflowstore.Draft{}, errors.New("workflow name is required")
+	}
+	current, err := c.store.Draft(ctx, id)
+	if err != nil {
+		return workflowstore.Draft{}, err
+	}
+	var document Document
+	if err := json.Unmarshal(current.Document, &document); err != nil {
+		return workflowstore.Draft{}, fmt.Errorf("rename requires a decodable workflow document: %w", err)
+	}
+	rewritten, err := rewriteWorkflowMetadata(document, name, document.Metadata.Version)
+	if err != nil {
+		return workflowstore.Draft{}, err
+	}
+	return c.store.UpdateDraft(ctx, workflowstore.UpdateDraftRequest{ID: id, ExpectedRevision: expectedRevision,
+		Name: name, Document: rewritten, Layout: current.Layout, UpdatedAt: c.now().UTC().Round(0)})
+}
+
+func (c *Catalog) ValidateDraft(ctx context.Context, id string, expectedRevision uint64) (DraftValidationReport, error) {
+	draft, err := c.store.Draft(ctx, id)
+	if err != nil {
+		return DraftValidationReport{}, err
+	}
+	if expectedRevision != 0 && draft.Revision != expectedRevision {
+		return DraftValidationReport{}, fmt.Errorf("%w: draft %s is revision %d, expected %d", workflowstore.ErrDraftConflict, id, draft.Revision, expectedRevision)
+	}
+	report := c.ValidateCandidate(workflowstore.Candidate{Scope: draftScope(draft.Scope), Reference: draft.ScopeReference, Content: draft.Document})
+	findings := make([]AuthoringFinding, len(report.Issues))
+	for index, issue := range report.Issues {
+		findings[index] = authoringFinding(issue)
+	}
+	return DraftValidationReport{DraftID: id, Revision: draft.Revision, Digest: report.Digest, Findings: findings}, nil
+}
+
+func (c *Catalog) PublishDraft(ctx context.Context, request DraftPublishRequest) (DraftPublishResult, error) {
+	draft, err := c.store.Draft(ctx, request.ID)
+	if err != nil {
+		return DraftPublishResult{}, err
+	}
+	if request.ExpectedRevision == 0 || draft.Revision != request.ExpectedRevision {
+		return DraftPublishResult{}, fmt.Errorf("%w: draft %s is revision %d, expected %d", workflowstore.ErrDraftConflict, request.ID, draft.Revision, request.ExpectedRevision)
+	}
+	var document Document
+	if err := json.Unmarshal(draft.Document, &document); err != nil {
+		return DraftPublishResult{}, fmt.Errorf("decode draft: %w", err)
+	}
+	publishedDocument, err := rewriteWorkflowMetadata(document, draft.Name, request.Version)
+	if err != nil {
+		return DraftPublishResult{}, err
+	}
+	result, err := c.Install(ctx, workflowstore.Candidate{Scope: draftScope(draft.Scope), Reference: draft.ScopeReference, Content: publishedDocument})
+	if err != nil {
+		return DraftPublishResult{}, err
+	}
+	return DraftPublishResult{DraftID: draft.ID, DraftRevision: draft.Revision, Published: result.Version, Disposition: result.Disposition}, nil
+}
+
+func (c *Catalog) DiscardDraft(ctx context.Context, id string, expectedRevision uint64) error {
+	return c.store.DiscardDraft(ctx, id, expectedRevision)
+}
+
+func validateDraftIdentity(name string, scope workflowstore.DraftScope, reference, key string) error {
+	if strings.TrimSpace(name) == "" || strings.TrimSpace(reference) == "" {
+		return errors.New("workflow name and scope reference are required")
+	}
+	if scope != workflowstore.DraftScopeUser && scope != workflowstore.DraftScopeProject {
+		return fmt.Errorf("invalid workflow draft scope %q", scope)
+	}
+	if key != strings.TrimSpace(key) || len(key) < 8 || len(key) > 128 {
+		return errors.New("idempotency key must be 8-128 trimmed bytes")
+	}
+	return nil
+}
+
+func draftID(key string) string {
+	digest := sha256.Sum256([]byte("workflow-draft\x00" + key))
+	return "draft_" + hex.EncodeToString(digest[:13])
+}
+
+func draftScope(scope workflowstore.DraftScope) workflowstore.Scope {
+	if scope == workflowstore.DraftScopeProject {
+		return workflowstore.ScopeProject
+	}
+	return workflowstore.ScopeUser
+}
+
+func draftDocumentName(content json.RawMessage) string {
+	var value struct {
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal(content, &value) != nil {
+		return ""
+	}
+	return value.Metadata.Name
+}
+
+func rewriteWorkflowMetadata(document Document, name, version string) (json.RawMessage, error) {
+	document.Metadata.Name, document.Metadata.Version = name, version
+	value, err := json.Marshal(document)
+	if err != nil {
+		return nil, fmt.Errorf("rewrite workflow metadata: %w", err)
+	}
+	return value, nil
+}
+
+func authoringFinding(issue ValidationError) AuthoringFinding {
+	result := AuthoringFinding{Code: issue.Code, Severity: ValidationSeverityError, Message: issue.Message,
+		Location: issue.Location, Suggestion: "Correct the referenced workflow element and validate again."}
+	parts := strings.Split(strings.TrimPrefix(issue.Location, "/"), "/")
+	if len(parts) >= 3 && parts[0] == "spec" && parts[1] == "nodes" {
+		result.NodeID = Identifier(parts[2])
+		if len(parts) >= 5 && parts[3] == "transitions" {
+			result.EdgeID = Identifier(parts[4])
+		}
+		if len(parts) >= 4 {
+			result.Field = strings.Join(parts[3:], ".")
+		}
+	}
+	return result
 }
 
 func versionSummary(version workflowstore.InstalledVersion) VersionSummary {

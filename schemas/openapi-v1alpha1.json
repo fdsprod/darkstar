@@ -97,6 +97,40 @@
     "/api/v1/workflows": {
       "get": {"operationId":"listWorkflows","parameters":[{"$ref":"#/components/parameters/OptionalWorkflowName"}],"responses":{"200":{"description":"Installed immutable workflow versions","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowVersionSummary"}}}}},"default":{"$ref":"#/components/responses/Error"}}}
     },
+    "/api/v1/workflows/library": {
+      "get": {"operationId":"getWorkflowLibrary","responses":{"200":{"description":"Installed versions and mutable drafts","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowLibrary"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/workflows/archive": {
+      "post": {
+        "operationId":"archiveWorkflowVersion",
+        "requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"required":["name","version"],"properties":{"name":{"type":"string","minLength":1},"version":{"type":"string","minLength":1}}}}}},
+        "responses":{"200":{"description":"Immutable version hidden from the active workflow library without deleting evidence","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowArchive"}}}},"default":{"$ref":"#/components/responses/Error"}}
+      }
+    },
+    "/api/v1/workflows/drafts/show": {
+      "get": {"operationId":"getWorkflowDraft","parameters":[{"$ref":"#/components/parameters/WorkflowDraftId"}],"responses":{"200":{"description":"Exact mutable workflow draft","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraft"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/workflows/drafts/create": {
+      "post": {"operationId":"createWorkflowDraft","parameters":[{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraftCreateRequest"}}}},"responses":{"201":{"description":"Mutable workflow draft created idempotently","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraft"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/workflows/drafts/duplicate": {
+      "post": {"operationId":"duplicateWorkflowDraft","parameters":[{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraftDuplicateRequest"}}}},"responses":{"201":{"description":"Installed workflow duplicated as an editable draft","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraft"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/workflows/drafts/update": {
+      "post": {"operationId":"updateWorkflowDraft","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraftUpdateRequest"}}}},"responses":{"200":{"description":"Draft updated by compare-and-swap","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraft"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/workflows/drafts/rename": {
+      "post": {"operationId":"renameWorkflowDraft","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraftRenameRequest"}}}},"responses":{"200":{"description":"Draft identity and document references renamed atomically","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraft"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/workflows/drafts/validate": {
+      "post": {"operationId":"validateWorkflowDraft","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraftRevisionRequest"}}}},"responses":{"200":{"description":"Element-addressable validation findings for an exact draft revision","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraftValidationReport"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/workflows/drafts/publish": {
+      "post": {"operationId":"publishWorkflowDraft","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraftPublishRequest"}}}},"responses":{"201":{"description":"New immutable workflow version published from an exact draft revision","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraftPublishResult"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/workflows/drafts/discard": {
+      "post": {"operationId":"discardWorkflowDraft","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowDraftRevisionRequest"}}}},"responses":{"200":{"description":"Exact draft revision discarded","content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"required":["id","discarded"],"properties":{"id":{"type":"string"},"discarded":{"const":true}}}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
     "/api/v1/workflows/validate": {
       "post": {"operationId":"validateWorkflow","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowCandidateRequest"}}}},"responses":{"200":{"description":"Complete ordered workflow validation report","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowValidationReport"}}}},"default":{"$ref":"#/components/responses/Error"}}}
     },
@@ -199,6 +233,7 @@
       "WorkflowName":{"name":"name","in":"query","required":true,"schema":{"type":"string","pattern":"^[a-z][a-z0-9._/-]{0,127}$"}},
       "OptionalWorkflowName":{"name":"name","in":"query","required":false,"schema":{"type":"string","pattern":"^[a-z][a-z0-9._/-]{0,127}$"}},
       "OptionalWorkflowVersion":{"name":"version","in":"query","required":false,"schema":{"type":"string"}},
+      "WorkflowDraftId":{"name":"id","in":"query","required":true,"schema":{"type":"string","pattern":"^draft_"}},
       "IdempotencyKey":{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":128}},
       "IfMatch":{"name":"If-Match","in":"header","required":true,"schema":{"type":"string"}}
     },
@@ -221,6 +256,18 @@
       "WorkItemView":{"type":"object","additionalProperties":false,"required":["schemaVersion","work","runs","stories","points"],"properties":{"schemaVersion":{"const":1},"work":{"$ref":"#/components/schemas/WorkItem"},"runs":{"type":"array","items":{"$ref":"#/components/schemas/Run"}},"stories":{"type":"array","items":{"$ref":"#/components/schemas/StoryProjection"}},"points":{"type":"array","items":{"$ref":"#/components/schemas/PointProjection"}}}},
       "WorkflowDocument":{"oneOf":[{"$ref":"./workflow-v1alpha1.schema.json"},{"$ref":"./workflow-v1alpha2.schema.json"}]},
       "WorkflowVersionSummary":{"type":"object","additionalProperties":false,"required":["name","version","digest","sourceScope","sourceReference","installedAt"],"properties":{"name":{"type":"string"},"version":{"type":"string"},"digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"sourceScope":{"enum":["default","user","project"]},"sourceReference":{"type":"string"},"installedAt":{"type":"string","format":"date-time"}}},
+      "WorkflowDraft":{"type":"object","additionalProperties":false,"required":["id","name","scope","scopeReference","revision","document","layout","documentDigest","updatedAt"],"properties":{"id":{"type":"string","pattern":"^draft_"},"name":{"type":"string","minLength":1},"scope":{"enum":["user","project"]},"scopeReference":{"type":"string","minLength":1},"baseVersion":{"type":"string"},"revision":{"type":"integer","minimum":1},"document":{"type":"object","additionalProperties":true},"layout":{"type":"object","additionalProperties":true},"documentDigest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"updatedAt":{"type":"string","format":"date-time"}}},
+      "WorkflowArchive":{"type":"object","additionalProperties":false,"required":["name","version","archivedAt"],"properties":{"name":{"type":"string"},"version":{"type":"string"},"archivedAt":{"type":"string","format":"date-time"}}},
+      "WorkflowLibrary":{"type":"object","additionalProperties":false,"required":["versions","drafts","archives"],"properties":{"versions":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowVersionSummary"}},"drafts":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowDraft"}},"archives":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowArchive"}}}},
+      "WorkflowDraftCreateRequest":{"type":"object","additionalProperties":false,"required":["name","scope","scopeReference","document"],"properties":{"name":{"type":"string","minLength":1},"scope":{"enum":["user","project"]},"scopeReference":{"type":"string","minLength":1},"document":{"type":"object","additionalProperties":true},"layout":{"type":"object","additionalProperties":true}}},
+      "WorkflowDraftDuplicateRequest":{"type":"object","additionalProperties":false,"required":["name","newName","scope","scopeReference"],"properties":{"name":{"type":"string","minLength":1},"version":{"type":"string"},"newName":{"type":"string","minLength":1},"scope":{"enum":["user","project"]},"scopeReference":{"type":"string","minLength":1}}},
+      "WorkflowDraftUpdateRequest":{"type":"object","additionalProperties":false,"required":["id","expectedRevision"],"properties":{"id":{"type":"string","pattern":"^draft_"},"expectedRevision":{"type":"integer","minimum":1},"document":{"type":"object","additionalProperties":true},"layout":{"type":"object","additionalProperties":true}}},
+      "WorkflowDraftRevisionRequest":{"type":"object","additionalProperties":false,"required":["id","expectedRevision"],"properties":{"id":{"type":"string","pattern":"^draft_"},"expectedRevision":{"type":"integer","minimum":1}}},
+      "WorkflowDraftRenameRequest":{"type":"object","additionalProperties":false,"required":["id","name","expectedRevision"],"properties":{"id":{"type":"string","pattern":"^draft_"},"name":{"type":"string","minLength":1},"expectedRevision":{"type":"integer","minimum":1}}},
+      "WorkflowDraftPublishRequest":{"type":"object","additionalProperties":false,"required":["id","version","expectedRevision"],"properties":{"id":{"type":"string","pattern":"^draft_"},"version":{"type":"string","minLength":1},"expectedRevision":{"type":"integer","minimum":1}}},
+      "WorkflowAuthoringFinding":{"type":"object","additionalProperties":false,"required":["code","severity","message"],"properties":{"code":{"type":"string"},"severity":{"const":"error"},"message":{"type":"string"},"location":{"type":"string"},"nodeId":{"type":"string"},"edgeId":{"type":"string"},"field":{"type":"string"},"suggestion":{"type":"string"}}},
+      "WorkflowDraftValidationReport":{"type":"object","additionalProperties":false,"required":["draftId","revision","findings"],"properties":{"draftId":{"type":"string","pattern":"^draft_"},"revision":{"type":"integer","minimum":1},"digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"findings":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowAuthoringFinding"}}}},
+      "WorkflowDraftPublishResult":{"type":"object","additionalProperties":false,"required":["draftId","draftRevision","published","disposition"],"properties":{"draftId":{"type":"string","pattern":"^draft_"},"draftRevision":{"type":"integer","minimum":1},"published":{"$ref":"#/components/schemas/WorkflowVersionSummary"},"disposition":{"enum":["created","already_installed"]}}},
       "WorkflowCandidateRequest":{"type":"object","additionalProperties":false,"required":["document","sourceScope","sourceReference"],"properties":{"document":{"$ref":"#/components/schemas/WorkflowDocument"},"sourceScope":{"enum":["default","user","project"]},"sourceReference":{"type":"string","minLength":1}}},
       "WorkflowValidationIssue":{"type":"object","additionalProperties":false,"required":["code","message"],"properties":{"code":{"type":"string"},"message":{"type":"string"},"location":{"type":"string"},"details":{"type":"object","additionalProperties":{"type":"array","items":{"type":"string"}}}}},
       "WorkflowValidationReport":{"type":"object","additionalProperties":false,"required":["issues"],"properties":{"metadata":{"type":"object","additionalProperties":false,"required":["name","version"],"properties":{"name":{"type":"string"},"version":{"type":"string"},"displayName":{"type":"string"},"description":{"type":"string"}}},"digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"issues":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowValidationIssue"}}}},

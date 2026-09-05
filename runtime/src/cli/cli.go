@@ -60,7 +60,7 @@ Commands:
   project    Register, list, and inspect projects
   run        Start, inspect, control, watch, and export runs
   work       Create, import, list, and inspect work
-  workflow   List, show, validate, install, graph, and preview workflows
+  workflow   Author, validate, publish, list, show, graph, and preview workflows
   version    Show version information
 
 API commands:
@@ -135,6 +135,16 @@ Workflow commands:
   workflow install <file> [--json]
   workflow graph <name> [--version <version>] [--json]
   workflow preview <name> [--version <version>] [--from <node>] [--until <node>]... [--input <file>] [--json]
+  workflow library [--json]
+  workflow duplicate <name> <new-name> --version <version> --scope <user|project> --scope-reference <reference> --idempotency-key <key> [--json]
+  workflow archive <name> <version> [--json]
+  workflow draft-create <file> --scope <user|project> --scope-reference <reference> --idempotency-key <key> [--json]
+  workflow draft-show <draft-id> [--json]
+  workflow draft-update <draft-id> <file> --revision <n> [--json]
+  workflow draft-rename <draft-id> <name> --revision <n> [--json]
+  workflow draft-validate <draft-id> --revision <n> [--json]
+  workflow draft-publish <draft-id> <version> --revision <n> [--json]
+  workflow draft-discard <draft-id> --revision <n> [--json]
 
 Daemon commands:
   daemon run [--json]      Run in the foreground

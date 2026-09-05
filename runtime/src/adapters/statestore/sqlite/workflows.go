@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports/workflowstore"
@@ -22,6 +23,9 @@ var _ workflowstore.Store = (*Database)(nil)
 
 const installedVersionSelect = `SELECT workflow_name, workflow_version, workflow_digest, document_json,
 	source_scope, source_reference, installed_at FROM workflow_versions`
+
+const workflowDraftSelect = `SELECT draft_id, workflow_name, scope, scope_reference, base_version,
+	revision, document_json, layout_json, document_digest, updated_at FROM workflow_drafts`
 
 // Install creates one immutable workflow name/version. Repeating the same
 // canonical digest is idempotent; different bytes return ErrVersionConflict.
@@ -90,6 +94,197 @@ func (d *Database) InstalledVersions(ctx context.Context, name string) ([]workfl
 		return nil, fmt.Errorf("iterate installed workflows: %w", err)
 	}
 	return values, nil
+}
+
+// CreateDraft creates one mutable authoring aggregate. The idempotency key and
+// draft ID both fail closed when reused with different input.
+func (d *Database) CreateDraft(ctx context.Context, request workflowstore.CreateDraftRequest) (workflowstore.Draft, bool, error) {
+	if err := validateCreateDraftRequest(request); err != nil {
+		return workflowstore.Draft{}, false, err
+	}
+	digest := sha256.Sum256(request.Document)
+	result, err := d.sql.ExecContext(ctx, `INSERT OR IGNORE INTO workflow_drafts(
+		draft_id, workflow_name, scope, scope_reference, base_version, revision,
+		document_json, layout_json, document_digest, idempotency_key, updated_at)
+		VALUES (?, ?, ?, ?, NULLIF(?, ''), 1, ?, ?, ?, ?, ?)`, request.ID, request.Name,
+		request.Scope, request.ScopeReference, request.BaseVersion, string(request.Document), string(request.Layout),
+		hex.EncodeToString(digest[:]), request.IdempotencyKey, formatTime(request.CreatedAt))
+	if err != nil {
+		return workflowstore.Draft{}, false, fmt.Errorf("create workflow draft: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return workflowstore.Draft{}, false, fmt.Errorf("inspect workflow draft creation: %w", err)
+	}
+	var draft workflowstore.Draft
+	if rows == 1 {
+		draft, err = d.Draft(ctx, request.ID)
+	} else {
+		draft, err = scanWorkflowDraft(d.sql.QueryRowContext(ctx, workflowDraftSelect+` WHERE draft_id = ? OR idempotency_key = ?`, request.ID, request.IdempotencyKey))
+	}
+	if err != nil {
+		return workflowstore.Draft{}, false, fmt.Errorf("read workflow draft: %w", err)
+	}
+	if draft.ID != request.ID || draft.Name != request.Name || draft.Scope != request.Scope ||
+		draft.ScopeReference != request.ScopeReference || draft.BaseVersion != request.BaseVersion ||
+		!bytes.Equal(draft.Document, request.Document) || !bytes.Equal(draft.Layout, request.Layout) {
+		return workflowstore.Draft{}, false, fmt.Errorf("%w: draft identity or idempotency key was reused", workflowstore.ErrDraftConflict)
+	}
+	return draft, rows == 1, nil
+}
+
+func (d *Database) Draft(ctx context.Context, id string) (workflowstore.Draft, error) {
+	value, err := scanWorkflowDraft(d.sql.QueryRowContext(ctx, workflowDraftSelect+` WHERE draft_id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return workflowstore.Draft{}, fmt.Errorf("%w: draft %s", workflowstore.ErrNotFound, id)
+	}
+	if err != nil {
+		return workflowstore.Draft{}, fmt.Errorf("read workflow draft: %w", err)
+	}
+	return value, nil
+}
+
+func (d *Database) Drafts(ctx context.Context) ([]workflowstore.Draft, error) {
+	rows, err := d.sql.QueryContext(ctx, workflowDraftSelect+` ORDER BY workflow_name, draft_id`)
+	if err != nil {
+		return nil, fmt.Errorf("list workflow drafts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	values := make([]workflowstore.Draft, 0)
+	for rows.Next() {
+		value, err := scanWorkflowDraft(rows)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+func (d *Database) UpdateDraft(ctx context.Context, request workflowstore.UpdateDraftRequest) (workflowstore.Draft, error) {
+	if request.ID == "" || request.ExpectedRevision == 0 || request.Name == "" || request.UpdatedAt.IsZero() ||
+		!jsonObject(request.Document) || !jsonObject(request.Layout) {
+		return workflowstore.Draft{}, errors.New("complete workflow draft update and positive expected revision are required")
+	}
+	digest := sha256.Sum256(request.Document)
+	result, err := d.sql.ExecContext(ctx, `UPDATE workflow_drafts SET workflow_name = ?, revision = revision + 1,
+		document_json = ?, layout_json = ?, document_digest = ?, updated_at = ?
+		WHERE draft_id = ? AND revision = ?`, request.Name, string(request.Document), string(request.Layout),
+		hex.EncodeToString(digest[:]), formatTime(request.UpdatedAt), request.ID, request.ExpectedRevision)
+	if err != nil {
+		return workflowstore.Draft{}, fmt.Errorf("update workflow draft: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return workflowstore.Draft{}, fmt.Errorf("inspect workflow draft update: %w", err)
+	}
+	if rows == 0 {
+		if _, err := d.Draft(ctx, request.ID); errors.Is(err, workflowstore.ErrNotFound) {
+			return workflowstore.Draft{}, err
+		}
+		return workflowstore.Draft{}, fmt.Errorf("%w: draft %s expected revision %d", workflowstore.ErrDraftConflict, request.ID, request.ExpectedRevision)
+	}
+	return d.Draft(ctx, request.ID)
+}
+
+func (d *Database) DiscardDraft(ctx context.Context, id string, expectedRevision uint64) error {
+	if id == "" || expectedRevision == 0 {
+		return errors.New("draft ID and positive expected revision are required")
+	}
+	result, err := d.sql.ExecContext(ctx, `DELETE FROM workflow_drafts WHERE draft_id = ? AND revision = ?`, id, expectedRevision)
+	if err != nil {
+		return fmt.Errorf("discard workflow draft: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect workflow draft discard: %w", err)
+	}
+	if rows == 0 {
+		if _, err := d.Draft(ctx, id); errors.Is(err, workflowstore.ErrNotFound) {
+			return err
+		}
+		return fmt.Errorf("%w: draft %s expected revision %d", workflowstore.ErrDraftConflict, id, expectedRevision)
+	}
+	return nil
+}
+
+func (d *Database) ArchiveVersion(ctx context.Context, name, version string, archivedAt time.Time) (workflowstore.Archive, bool, error) {
+	if name == "" || version == "" || archivedAt.IsZero() {
+		return workflowstore.Archive{}, false, errors.New("workflow archive identity and time are required")
+	}
+	if _, err := d.InstalledVersion(ctx, name, version); err != nil {
+		return workflowstore.Archive{}, false, err
+	}
+	result, err := d.sql.ExecContext(ctx, `INSERT OR IGNORE INTO workflow_archives(workflow_name, workflow_version, archived_at) VALUES (?, ?, ?)`, name, version, formatTime(archivedAt))
+	if err != nil {
+		return workflowstore.Archive{}, false, fmt.Errorf("archive workflow version: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return workflowstore.Archive{}, false, err
+	}
+	var stored string
+	if err := d.sql.QueryRowContext(ctx, `SELECT archived_at FROM workflow_archives WHERE workflow_name = ? AND workflow_version = ?`, name, version).Scan(&stored); err != nil {
+		return workflowstore.Archive{}, false, err
+	}
+	parsed, err := parseTime(stored)
+	if err != nil {
+		return workflowstore.Archive{}, false, err
+	}
+	return workflowstore.Archive{Name: name, Version: version, ArchivedAt: parsed}, rows == 1, nil
+}
+
+func (d *Database) Archives(ctx context.Context) ([]workflowstore.Archive, error) {
+	rows, err := d.sql.QueryContext(ctx, `SELECT workflow_name, workflow_version, archived_at FROM workflow_archives ORDER BY workflow_name, workflow_version`)
+	if err != nil {
+		return nil, fmt.Errorf("list workflow archives: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	values := make([]workflowstore.Archive, 0)
+	for rows.Next() {
+		var value workflowstore.Archive
+		var stored string
+		if err := rows.Scan(&value.Name, &value.Version, &stored); err != nil {
+			return nil, err
+		}
+		value.ArchivedAt, err = parseTime(stored)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+func scanWorkflowDraft(row rowScanner) (workflowstore.Draft, error) {
+	var value workflowstore.Draft
+	var base sql.NullString
+	var document, layout, updatedAt string
+	if err := row.Scan(&value.ID, &value.Name, &value.Scope, &value.ScopeReference, &base,
+		&value.Revision, &document, &layout, &value.DocumentDigest, &updatedAt); err != nil {
+		return workflowstore.Draft{}, err
+	}
+	value.BaseVersion = base.String
+	value.Document, value.Layout = json.RawMessage(document), json.RawMessage(layout)
+	parsed, err := parseTime(updatedAt)
+	if err != nil {
+		return workflowstore.Draft{}, fmt.Errorf("workflow draft %s updated_at: %w", value.ID, err)
+	}
+	value.UpdatedAt = parsed
+	return value, nil
+}
+
+func validateCreateDraftRequest(request workflowstore.CreateDraftRequest) error {
+	if request.ID == "" || request.Name == "" || request.ScopeReference == "" || request.IdempotencyKey == "" || request.CreatedAt.IsZero() {
+		return errors.New("workflow draft identity, scope reference, idempotency key, and creation time are required")
+	}
+	if request.Scope != workflowstore.DraftScopeUser && request.Scope != workflowstore.DraftScopeProject {
+		return fmt.Errorf("invalid workflow draft scope %q", request.Scope)
+	}
+	if !jsonObject(request.Document) || !jsonObject(request.Layout) {
+		return errors.New("workflow draft document and layout must be JSON objects")
+	}
+	return nil
 }
 
 // CreateRunSnapshot freezes the selected workflow and configuration once for an

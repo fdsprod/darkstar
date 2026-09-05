@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	workflowfilesystem "darkstar/src/adapters/workflowstore/filesystem"
@@ -33,12 +34,206 @@ type workflowPreviewInput struct {
 	Context workflow.RouteContext `json:"context"`
 }
 
+type workflowDraftCreateInput struct {
+	Name           string                   `json:"name"`
+	Scope          workflowstore.DraftScope `json:"scope"`
+	ScopeReference string                   `json:"scopeReference"`
+	Document       json.RawMessage          `json:"document"`
+	Layout         json.RawMessage          `json:"layout,omitempty"`
+}
+
+type workflowDraftUpdateInput struct {
+	ID               string          `json:"id"`
+	ExpectedRevision uint64          `json:"expectedRevision"`
+	Document         json.RawMessage `json:"document,omitempty"`
+	Layout           json.RawMessage `json:"layout,omitempty"`
+}
+type workflowDraftRevisionInput struct {
+	ID               string `json:"id"`
+	ExpectedRevision uint64 `json:"expectedRevision"`
+}
+type workflowDraftPublishInput struct {
+	ID               string `json:"id"`
+	Version          string `json:"version"`
+	ExpectedRevision uint64 `json:"expectedRevision"`
+}
+type workflowDraftDuplicateInput struct {
+	Name           string                   `json:"name"`
+	Version        string                   `json:"version,omitempty"`
+	NewName        string                   `json:"newName"`
+	Scope          workflowstore.DraftScope `json:"scope"`
+	ScopeReference string                   `json:"scopeReference"`
+}
+type workflowDraftRenameInput struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	ExpectedRevision uint64 `json:"expectedRevision"`
+}
+type workflowArchiveInput struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
 func runWorkflow(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		return workflowArgumentError(stdout, stderr, jsonOutput, "darkstar workflow", errors.New("a workflow command is required"))
 	}
 	command := "darkstar workflow " + args[0]
 	switch args[0] {
+	case "library":
+		if len(args) != 1 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected workflow library"))
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		var result workflow.Library
+		if err := session.DoJSON(context.Background(), http.MethodGet, "workflows/library", nil, &result); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		human := fmt.Sprintf("%d installed version(s), %d draft(s).", len(result.Versions), len(result.Drafts))
+		return writeWorkflowResult(result, human, false, jsonOutput, stdout, stderr, command)
+	case "duplicate":
+		if len(args) < 3 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <name> <new-name> --version <version> --scope <user|project> --scope-reference <reference> --idempotency-key <key>"))
+		}
+		flags, err := workflowFlags(args[3:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		input := workflowDraftDuplicateInput{Name: args[1], NewName: args[2], Version: flags["--version"], Scope: workflowstore.DraftScope(flags["--scope"]), ScopeReference: flags["--scope-reference"]}
+		var result workflowstore.Draft
+		if code := doWorkflowMutation(command, "workflows/drafts/duplicate", flags["--idempotency-key"], input, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("Duplicated %s as draft %s.", args[1], result.ID), false, jsonOutput, stdout, stderr, command)
+	case "archive":
+		if len(args) != 3 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <name> <version>"))
+		}
+		var result workflowstore.Archive
+		if code := doWorkflowMutation(command, "workflows/archive", "", workflowArchiveInput{Name: args[1], Version: args[2]}, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("Archived %s %s.", result.Name, result.Version), false, jsonOutput, stdout, stderr, command)
+	case "draft-create":
+		if len(args) < 2 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <file> --scope <user|project> --scope-reference <reference> --idempotency-key <key>"))
+		}
+		candidate, err := readWorkflowCandidate(args[1])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		flags, err := workflowFlags(args[2:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var metadata struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		}
+		if err := json.Unmarshal(candidate.Document, &metadata); err != nil || metadata.Metadata.Name == "" {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("workflow document metadata.name is required"))
+		}
+		scope := workflowstore.DraftScope(flags["--scope"])
+		input := workflowDraftCreateInput{Name: metadata.Metadata.Name, Scope: scope, ScopeReference: flags["--scope-reference"], Document: candidate.Document}
+		var result workflowstore.Draft
+		if code := doWorkflowMutation(command, "workflows/drafts/create", flags["--idempotency-key"], input, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("Created draft %s at revision %d.", result.ID, result.Revision), false, jsonOutput, stdout, stderr, command)
+	case "draft-show":
+		if len(args) != 2 || args[1] == "" {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <draft-id>"))
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		var result workflowstore.Draft
+		if err := session.DoJSON(context.Background(), http.MethodGet, "workflows/drafts/show?id="+url.QueryEscape(args[1]), nil, &result); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("%s %s revision %d", result.ID, result.Name, result.Revision), false, jsonOutput, stdout, stderr, command)
+	case "draft-update":
+		if len(args) < 3 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <draft-id> <file> --revision <n>"))
+		}
+		candidate, err := readWorkflowCandidate(args[2])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		flags, err := workflowFlags(args[3:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		revision, err := workflowRevision(flags)
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		input := workflowDraftUpdateInput{ID: args[1], ExpectedRevision: revision, Document: candidate.Document}
+		var result workflowstore.Draft
+		if code := doWorkflowMutation(command, "workflows/drafts/update", "", input, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("Saved draft %s at revision %d.", result.ID, result.Revision), false, jsonOutput, stdout, stderr, command)
+	case "draft-rename":
+		if len(args) < 3 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <draft-id> <name> --revision <n>"))
+		}
+		flags, err := workflowFlags(args[3:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		revision, err := workflowRevision(flags)
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var result workflowstore.Draft
+		if code := doWorkflowMutation(command, "workflows/drafts/rename", "", workflowDraftRenameInput{ID: args[1], Name: args[2], ExpectedRevision: revision}, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("Renamed draft %s to %s at revision %d.", result.ID, result.Name, result.Revision), false, jsonOutput, stdout, stderr, command)
+	case "draft-validate":
+		id, revision, err := parseDraftRevisionArgs(args[1:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var result workflow.DraftValidationReport
+		if code := doWorkflowMutation(command, "workflows/drafts/validate", "", workflowDraftRevisionInput{ID: id, ExpectedRevision: revision}, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		human := fmt.Sprintf("Draft %s revision %d has %d finding(s).", id, revision, len(result.Findings))
+		return writeWorkflowResult(result, human, len(result.Findings) != 0, jsonOutput, stdout, stderr, command)
+	case "draft-publish":
+		if len(args) < 3 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <draft-id> <version> --revision <n>"))
+		}
+		flags, err := workflowFlags(args[3:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		revision, err := workflowRevision(flags)
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var result workflow.DraftPublishResult
+		if code := doWorkflowMutation(command, "workflows/drafts/publish", "", workflowDraftPublishInput{ID: args[1], Version: args[2], ExpectedRevision: revision}, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("Published %s %s (%s).", result.Published.Name, result.Published.Version, result.Published.Digest), false, jsonOutput, stdout, stderr, command)
+	case "draft-discard":
+		id, revision, err := parseDraftRevisionArgs(args[1:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var result any
+		if code := doWorkflowMutation(command, "workflows/drafts/discard", "", workflowDraftRevisionInput{ID: id, ExpectedRevision: revision}, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(map[string]any{"id": id, "discarded": true}, "Discarded draft "+id+".", false, jsonOutput, stdout, stderr, command)
 	case "validate", "install":
 		if len(args) != 2 {
 			return workflowArgumentError(stdout, stderr, jsonOutput, command, fmt.Errorf("expected workflow %s <file>", args[0]))
@@ -146,6 +341,61 @@ func runWorkflow(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	default:
 		return workflowArgumentError(stdout, stderr, jsonOutput, "darkstar workflow", fmt.Errorf("unknown workflow command %q", args[0]))
 	}
+}
+
+func workflowFlags(args []string) (map[string]string, error) {
+	if len(args)%2 != 0 {
+		return nil, errors.New("workflow options require values")
+	}
+	result := make(map[string]string, len(args)/2)
+	for index := 0; index < len(args); index += 2 {
+		if !strings.HasPrefix(args[index], "--") || args[index+1] == "" {
+			return nil, fmt.Errorf("invalid workflow option %q", args[index])
+		}
+		if _, exists := result[args[index]]; exists {
+			return nil, fmt.Errorf("%s may be specified only once", args[index])
+		}
+		result[args[index]] = args[index+1]
+	}
+	return result, nil
+}
+
+func workflowRevision(flags map[string]string) (uint64, error) {
+	value, err := strconv.ParseUint(flags["--revision"], 10, 64)
+	if err != nil || value == 0 {
+		return 0, errors.New("--revision requires a positive integer")
+	}
+	return value, nil
+}
+
+func parseDraftRevisionArgs(args []string) (string, uint64, error) {
+	if len(args) < 1 || args[0] == "" {
+		return "", 0, errors.New("expected <draft-id> --revision <n>")
+	}
+	flags, err := workflowFlags(args[1:])
+	if err != nil {
+		return "", 0, err
+	}
+	revision, err := workflowRevision(flags)
+	return args[0], revision, err
+}
+
+// doWorkflowMutation returns -1 on success so callers can format their typed result.
+func doWorkflowMutation(command, endpoint, key string, input, result any, jsonOutput bool, stdout, stderr io.Writer) int {
+	session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+	if session == nil {
+		return code
+	}
+	var err error
+	if key != "" {
+		err = session.DoJSON(context.Background(), http.MethodPost, endpoint, input, result, clientHeader("Idempotency-Key", key))
+	} else {
+		err = session.DoJSON(context.Background(), http.MethodPost, endpoint, input, result)
+	}
+	if err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	return -1
 }
 
 func readWorkflowCandidate(path string) (workflowCandidateInput, error) {

@@ -263,11 +263,21 @@ func (s *Server) SetApprovals(approvals ApprovalService) error {
 // WorkflowService is the daemon-owned workflow command/query boundary.
 type WorkflowService interface {
 	List(context.Context, string) ([]workflow.VersionSummary, error)
+	Library(context.Context) (workflow.Library, error)
 	Definition(context.Context, string, string) (workflow.Definition, error)
 	ValidateCandidate(workflowstore.Candidate) workflow.ValidationReport
 	Install(context.Context, workflowstore.Candidate) (workflow.InstallResult, error)
 	Graph(context.Context, string, string) (workflow.Graph, error)
 	Preview(context.Context, string, string, workflow.RouteRequest, workflow.RouteContext) (workflow.RoutePreview, workflow.ValidationErrors, error)
+	CreateDraft(context.Context, workflow.DraftCreateRequest) (workflowstore.Draft, error)
+	DuplicateDraft(context.Context, string, string, string, workflowstore.DraftScope, string, string) (workflowstore.Draft, error)
+	Draft(context.Context, string) (workflowstore.Draft, error)
+	UpdateDraft(context.Context, workflow.DraftUpdateRequest) (workflowstore.Draft, error)
+	RenameDraft(context.Context, string, string, uint64) (workflowstore.Draft, error)
+	ValidateDraft(context.Context, string, uint64) (workflow.DraftValidationReport, error)
+	PublishDraft(context.Context, workflow.DraftPublishRequest) (workflow.DraftPublishResult, error)
+	DiscardDraft(context.Context, string, uint64) error
+	ArchiveVersion(context.Context, string, string) (workflowstore.Archive, error)
 }
 
 // SetWorkflows installs workflow operations before the endpoint is published.
