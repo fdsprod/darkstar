@@ -129,23 +129,33 @@ func runArtifact(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		}
 		return runArtifactReferenceCommand(ctx, session, args[0], reference, jsonOutput, stdout, stderr, command)
 	case "diff":
-		if len(args) != 6 || args[2] != "--from" || args[4] != "--to" || !strings.HasPrefix(args[1], "artifact_") {
-			return artifactArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected artifact diff <artifact-id> --from <version> --to <version>"))
-		}
-		from, err := positiveVersion(args[3])
-		if err != nil {
-			return artifactArgumentError(stdout, stderr, jsonOutput, command, err)
-		}
-		to, err := positiveVersion(args[5])
+		input, err := parseArtifactDiff(args[1:])
 		if err != nil {
 			return artifactArgumentError(stdout, stderr, jsonOutput, command, err)
 		}
 		var result artifactops.VersionDiff
-		endpoint := fmt.Sprintf("artifacts/%s/diff?from=%d&to=%d", url.PathEscape(args[1]), from, to)
+		query := url.Values{"from": {strconv.FormatUint(input.From, 10)}, "to": {strconv.FormatUint(input.To, 10)}}
+		if input.FromRepresentationID != "" {
+			query.Set("fromRepresentationId", input.FromRepresentationID)
+		}
+		if input.ToRepresentationID != "" {
+			query.Set("toRepresentationId", input.ToRepresentationID)
+		}
+		if input.Cursor != "" {
+			query.Set("cursor", input.Cursor)
+		}
+		if input.Limit != 0 {
+			query.Set("limit", strconv.Itoa(input.Limit))
+		}
+		endpoint := fmt.Sprintf("artifacts/%s/diff?%s", url.PathEscape(input.ArtifactID), query.Encode())
 		if err := session.DoJSON(ctx, http.MethodGet, endpoint, nil, &result); err != nil {
 			return writeClientError(stdout, stderr, jsonOutput, command, err)
 		}
-		return writeArtifactResult(result, fmt.Sprintf("Compared %s versions %d..%d: %s.", result.ArtifactID, result.From, result.To, strings.Join(result.Changed, ", ")), false, jsonOutput, stdout, stderr, command)
+		human := fmt.Sprintf("Compared %s versions %d..%d: text diff %s", result.ArtifactID, result.From, result.To, result.TextDiff.Status)
+		if result.TextDiff.Reason != "" {
+			human += " (" + result.TextDiff.Reason + ")"
+		}
+		return writeArtifactResult(result, human+".", false, jsonOutput, stdout, stderr, command)
 	case "impact":
 		if len(args) != 4 && len(args) != 6 {
 			return artifactArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected artifact impact <artifact-id>@<version> --target <kind>:<id> [--run <run-id>]"))
@@ -185,6 +195,60 @@ func runArtifact(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	default:
 		return artifactArgumentError(stdout, stderr, jsonOutput, "darkstar artifact", fmt.Errorf("unknown artifact command %q", args[0]))
 	}
+}
+
+func parseArtifactDiff(args []string) (artifactops.DiffInput, error) {
+	var input artifactops.DiffInput
+	if len(args) < 1 || !strings.HasPrefix(args[0], "artifact_") {
+		return input, errors.New("expected artifact diff <artifact-id> --from <version> --to <version>")
+	}
+	input.ArtifactID = args[0]
+	seen := map[string]bool{}
+	for index := 1; index < len(args); index += 2 {
+		if index+1 >= len(args) || seen[args[index]] {
+			return input, errors.New("diff options must be unique name/value pairs")
+		}
+		seen[args[index]] = true
+		value := args[index+1]
+		if value == "" {
+			return input, fmt.Errorf("%s requires a value", args[index])
+		}
+		switch args[index] {
+		case "--from":
+			parsed, err := positiveVersion(value)
+			if err != nil {
+				return input, err
+			}
+			input.From = parsed
+		case "--to":
+			parsed, err := positiveVersion(value)
+			if err != nil {
+				return input, err
+			}
+			input.To = parsed
+		case "--from-representation":
+			input.FromRepresentationID = value
+		case "--to-representation":
+			input.ToRepresentationID = value
+		case "--cursor":
+			input.Cursor = value
+		case "--limit":
+			parsed, err := strconv.Atoi(value)
+			if err != nil || parsed < 1 || parsed > 200 {
+				return input, errors.New("--limit must be between 1 and 200")
+			}
+			input.Limit = parsed
+		default:
+			return input, fmt.Errorf("unknown diff option %q", args[index])
+		}
+	}
+	if input.From == 0 || input.To == 0 {
+		return input, errors.New("--from and --to are required")
+	}
+	if (input.FromRepresentationID != "" && !strings.HasPrefix(input.FromRepresentationID, "representation_")) || (input.ToRepresentationID != "" && !strings.HasPrefix(input.ToRepresentationID, "representation_")) {
+		return input, errors.New("representation IDs must start with representation_")
+	}
+	return input, nil
 }
 
 func runArtifactReferenceCommand(ctx context.Context, session *clientapi.Session, verb string, reference artifactregistry.VersionRef, jsonOutput bool, stdout, stderr io.Writer, command string) int {

@@ -12,12 +12,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"darkstar/src/core/artifactderive"
+	"darkstar/src/core/artifactdiff"
 	"darkstar/src/core/artifactingest"
 	"darkstar/src/core/identity"
 	"darkstar/src/core/lateevidence"
@@ -25,6 +28,7 @@ import (
 	"darkstar/src/ports/artifactlineage"
 	"darkstar/src/ports/artifactregistry"
 	"darkstar/src/ports/artifactstore"
+	"darkstar/src/ports/contentprocessor"
 	"darkstar/src/ports/impactassessment"
 	"darkstar/src/ports/representationregistry"
 	"darkstar/src/ports/statestore"
@@ -33,6 +37,8 @@ import (
 const PolicyVersion = "artifact-context/v1alpha1"
 
 var ErrContentWithheld = errors.New("artifact content is withheld")
+var ErrDiffStorage = errors.New("artifact diff storage verification failed")
+var errDiffUnsupported = errors.New("artifact representation is not supported for text diff")
 
 type IngestInput struct {
 	ArtifactID  string                       `json:"artifactId,omitempty"`
@@ -70,6 +76,130 @@ type VersionDiff struct {
 	FromDigest      string              `json:"fromDigest"`
 	ToDigest        string              `json:"toDigest"`
 	Representations map[string][]string `json:"representations"`
+	TextDiff        TextDiff            `json:"textDiff"`
+}
+
+type DiffInput struct {
+	ArtifactID           string
+	From                 uint64
+	To                   uint64
+	FromRepresentationID string
+	ToRepresentationID   string
+	Cursor               string
+	Limit                int
+}
+
+type DiffRepresentation struct {
+	Artifact         artifactregistry.VersionRef         `json:"artifact"`
+	RepresentationID string                              `json:"representationId"`
+	Digest           string                              `json:"digest"`
+	Kind             contentprocessor.RepresentationKind `json:"representationKind"`
+	MediaType        string                              `json:"mediaType"`
+	Disclosure       representationregistry.Disclosure   `json:"disclosure"`
+}
+
+type TextDiff struct {
+	Status       string               `json:"status"`
+	Reason       string               `json:"reason,omitempty"`
+	From         *DiffRepresentation  `json:"from,omitempty"`
+	To           *DiffRepresentation  `json:"to,omitempty"`
+	Policy       *artifactdiff.Policy `json:"policy,omitempty"`
+	PolicyDigest string               `json:"policyDigest,omitempty"`
+	ResultDigest string               `json:"resultDigest,omitempty"`
+	Hunks        []artifactdiff.Hunk  `json:"hunks,omitempty"`
+	NextCursor   string               `json:"nextCursor,omitempty"`
+	TotalEntries int                  `json:"totalEntries,omitempty"`
+}
+
+func (value TextDiff) MarshalJSON() ([]byte, error) {
+	switch value.Status {
+	case "unavailable":
+		if value.Reason != "unsupported" && value.Reason != "withheld" && value.Reason != "too_large" {
+			return nil, errors.New("invalid unavailable text diff reason")
+		}
+		if value.From != nil || value.To != nil || value.Policy != nil || value.PolicyDigest != "" || value.ResultDigest != "" || value.Hunks != nil || value.NextCursor != "" || value.TotalEntries != 0 {
+			return nil, errors.New("unavailable text diff cannot carry available fields")
+		}
+		return json.Marshal(struct {
+			Status string `json:"status"`
+			Reason string `json:"reason"`
+		}{value.Status, value.Reason})
+	case "available":
+		if value.Reason != "" || value.From == nil || value.To == nil || value.Policy == nil || len(value.PolicyDigest) != 64 || len(value.ResultDigest) != 64 || value.Hunks == nil || value.TotalEntries < 0 {
+			return nil, errors.New("available text diff is incomplete")
+		}
+	default:
+		return nil, errors.New("invalid text diff status")
+	}
+	return json.Marshal(struct {
+		Status       string               `json:"status"`
+		From         *DiffRepresentation  `json:"from"`
+		To           *DiffRepresentation  `json:"to"`
+		Policy       *artifactdiff.Policy `json:"policy"`
+		PolicyDigest string               `json:"policyDigest"`
+		ResultDigest string               `json:"resultDigest"`
+		Hunks        []artifactdiff.Hunk  `json:"hunks"`
+		NextCursor   string               `json:"nextCursor,omitempty"`
+		TotalEntries int                  `json:"totalEntries"`
+	}{value.Status, value.From, value.To, value.Policy, value.PolicyDigest, value.ResultDigest, value.Hunks, value.NextCursor, value.TotalEntries})
+}
+
+func (value *TextDiff) UnmarshalJSON(content []byte) error {
+	var tag struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(content, &tag); err != nil {
+		return err
+	}
+	switch tag.Status {
+	case "unavailable":
+		var decoded struct {
+			Status string `json:"status"`
+			Reason string `json:"reason"`
+		}
+		if err := decodeStrictJSON(content, &decoded); err != nil {
+			return err
+		}
+		if decoded.Reason != "unsupported" && decoded.Reason != "withheld" && decoded.Reason != "too_large" {
+			return errors.New("invalid unavailable text diff reason")
+		}
+		*value = TextDiff{Status: decoded.Status, Reason: decoded.Reason}
+		return nil
+	case "available":
+		var decoded struct {
+			Status       string               `json:"status"`
+			From         *DiffRepresentation  `json:"from"`
+			To           *DiffRepresentation  `json:"to"`
+			Policy       *artifactdiff.Policy `json:"policy"`
+			PolicyDigest string               `json:"policyDigest"`
+			ResultDigest string               `json:"resultDigest"`
+			Hunks        []artifactdiff.Hunk  `json:"hunks"`
+			NextCursor   string               `json:"nextCursor,omitempty"`
+			TotalEntries int                  `json:"totalEntries"`
+		}
+		if err := decodeStrictJSON(content, &decoded); err != nil {
+			return err
+		}
+		if decoded.From == nil || decoded.To == nil || decoded.Policy == nil || len(decoded.PolicyDigest) != 64 || len(decoded.ResultDigest) != 64 || decoded.Hunks == nil || decoded.TotalEntries < 0 {
+			return errors.New("available text diff is incomplete")
+		}
+		*value = TextDiff{Status: decoded.Status, From: decoded.From, To: decoded.To, Policy: decoded.Policy, PolicyDigest: decoded.PolicyDigest, ResultDigest: decoded.ResultDigest, Hunks: decoded.Hunks, NextCursor: decoded.NextCursor, TotalEntries: decoded.TotalEntries}
+		return nil
+	default:
+		return errors.New("invalid text diff status")
+	}
+}
+
+func decodeStrictJSON(content []byte, destination any) error {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return errors.New("expected one JSON value")
+	}
+	return nil
 }
 
 type LintIssue struct {
@@ -354,12 +484,12 @@ func (service *Service) recordAuditEvent(ctx context.Context, kind, operationID,
 	return err
 }
 
-func (service *Service) Diff(ctx context.Context, artifactID string, from, to uint64) (VersionDiff, error) {
-	left, err := service.Show(ctx, artifactID, from)
+func (service *Service) Diff(ctx context.Context, input DiffInput) (VersionDiff, error) {
+	left, err := service.Show(ctx, input.ArtifactID, input.From)
 	if err != nil {
 		return VersionDiff{}, err
 	}
-	right, err := service.Show(ctx, artifactID, to)
+	right, err := service.Show(ctx, input.ArtifactID, input.To)
 	if err != nil {
 		return VersionDiff{}, err
 	}
@@ -379,11 +509,167 @@ func (service *Service) Diff(ctx context.Context, artifactID string, from, to ui
 	if !slices.Equal(left.Artifact.Tags, right.Artifact.Tags) {
 		changed = append(changed, "tags")
 	}
-	return VersionDiff{
-		ArtifactID: artifactID, From: left.Artifact.Version, To: right.Artifact.Version, Changed: changed,
+	result := VersionDiff{
+		ArtifactID: input.ArtifactID, From: left.Artifact.Version, To: right.Artifact.Version, Changed: changed,
 		FromDigest: left.Artifact.BlobDigest, ToDigest: right.Artifact.BlobDigest,
 		Representations: map[string][]string{"from": representationKinds(left.Representations), "to": representationKinds(right.Representations)},
-	}, nil
+		TextDiff:        TextDiff{Status: "unavailable", Reason: "unsupported"},
+	}
+	leftRepresentation, reason := selectDiffRepresentation(left, input.FromRepresentationID)
+	if reason != "" {
+		result.TextDiff.Reason = reason
+		return service.finishDiff(ctx, input, result)
+	}
+	rightRepresentation, reason := selectDiffRepresentation(right, input.ToRepresentationID)
+	if reason != "" {
+		result.TextDiff.Reason = reason
+		return service.finishDiff(ctx, input, result)
+	}
+	if leftRepresentation.Disclosure != rightRepresentation.Disclosure {
+		result.TextDiff.Reason = "withheld"
+		return service.finishDiff(ctx, input, result)
+	}
+	leftContent, err := service.readDiffContent(ctx, leftRepresentation)
+	if err != nil {
+		if reason := classifyDiffError(err); reason != "" {
+			result.TextDiff.Reason = reason
+			return service.finishDiff(ctx, input, result)
+		}
+		return VersionDiff{}, fmt.Errorf("read from diff representation: %w", err)
+	}
+	rightContent, err := service.readDiffContent(ctx, rightRepresentation)
+	if err != nil {
+		if reason := classifyDiffError(err); reason != "" {
+			result.TextDiff.Reason = reason
+			return service.finishDiff(ctx, input, result)
+		}
+		return VersionDiff{}, fmt.Errorf("read to diff representation: %w", err)
+	}
+	binding := fmt.Sprintf("%s@%d:%s:%s|%s@%d:%s:%s|%s", input.ArtifactID, input.From, leftRepresentation.RepresentationID, leftRepresentation.Digest, input.ArtifactID, input.To, rightRepresentation.RepresentationID, rightRepresentation.Digest, artifactdiff.AlgorithmVersion)
+	page, policy, policyDigest, resultDigest, err := artifactdiff.Generate(leftContent, rightContent, binding, input.Cursor, input.Limit)
+	if err != nil {
+		if errors.Is(err, artifactdiff.ErrBudgetExceeded) {
+			result.TextDiff.Reason = "too_large"
+			return service.finishDiff(ctx, input, result)
+		}
+		return VersionDiff{}, err
+	}
+	result.TextDiff = TextDiff{Status: "available", From: diffRepresentation(leftRepresentation), To: diffRepresentation(rightRepresentation), Policy: &policy, PolicyDigest: policyDigest, ResultDigest: resultDigest, Hunks: page.Hunks, NextCursor: page.NextCursor, TotalEntries: page.Total}
+	return service.finishDiff(ctx, input, result)
+}
+
+type artifactDiffEventData struct {
+	ArtifactID               string `json:"artifactId"`
+	From                     uint64 `json:"from"`
+	To                       uint64 `json:"to"`
+	FromRepresentationID     string `json:"fromRepresentationId,omitempty"`
+	ToRepresentationID       string `json:"toRepresentationId,omitempty"`
+	FromRepresentationDigest string `json:"fromRepresentationDigest,omitempty"`
+	ToRepresentationDigest   string `json:"toRepresentationDigest,omitempty"`
+	Status                   string `json:"status"`
+	Reason                   string `json:"reason,omitempty"`
+	PolicyDigest             string `json:"policyDigest,omitempty"`
+	ResultDigest             string `json:"resultDigest,omitempty"`
+	TotalEntries             int    `json:"totalEntries,omitempty"`
+	HasMore                  bool   `json:"hasMore"`
+}
+
+func (service *Service) finishDiff(ctx context.Context, input DiffInput, result VersionDiff) (VersionDiff, error) {
+	data := artifactDiffEventData{ArtifactID: input.ArtifactID, From: input.From, To: input.To, FromRepresentationID: input.FromRepresentationID, ToRepresentationID: input.ToRepresentationID, Status: result.TextDiff.Status, Reason: result.TextDiff.Reason, PolicyDigest: result.TextDiff.PolicyDigest, ResultDigest: result.TextDiff.ResultDigest, TotalEntries: result.TextDiff.TotalEntries, HasMore: result.TextDiff.NextCursor != ""}
+	if result.TextDiff.From != nil {
+		data.FromRepresentationID, data.FromRepresentationDigest = result.TextDiff.From.RepresentationID, result.TextDiff.From.Digest
+	}
+	if result.TextDiff.To != nil {
+		data.ToRepresentationID, data.ToRepresentationDigest = result.TextDiff.To.RepresentationID, result.TextDiff.To.Digest
+	}
+	cursorDigest := sha256.Sum256([]byte(input.Cursor))
+	seed := fmt.Sprintf("diff\x00%s\x00%d\x00%d\x00%s\x00%s\x00%x\x00%d", input.ArtifactID, input.From, input.To, input.FromRepresentationID, input.ToRepresentationID, cursorDigest, input.Limit)
+	commandID := identity.Deterministic("command_", seed)
+	if err := service.recordAuditEvent(ctx, "artifact.diff_observed", identity.Deterministic("operation_", "audit\x00"+seed), commandID, input.ArtifactID, data); err != nil {
+		return VersionDiff{}, fmt.Errorf("record artifact.diff_observed audit event: %w", err)
+	}
+	return result, nil
+}
+
+func selectDiffRepresentation(view ArtifactView, selected string) (representationregistry.Representation, string) {
+	if view.Artifact.Status != artifactregistry.StatusStored || view.Artifact.Sensitivity == artifactregistry.SensitivityUnknown {
+		return representationregistry.Representation{}, "withheld"
+	}
+	candidates := make([]representationregistry.Representation, 0)
+	for _, value := range view.Representations {
+		if selected != "" && value.RepresentationID != selected {
+			continue
+		}
+		if value.Artifact != (artifactregistry.VersionRef{ArtifactID: view.Artifact.ArtifactID, Version: view.Artifact.Version}) {
+			continue
+		}
+		base, parameters, err := mime.ParseMediaType(value.MediaType)
+		if err != nil || (base != "text/plain" && base != "text/markdown") || (parameters["charset"] != "" && !strings.EqualFold(parameters["charset"], "utf-8")) {
+			continue
+		}
+		if value.Kind != contentprocessor.RepresentationText && value.Kind != contentprocessor.RepresentationPreview {
+			continue
+		}
+		switch value.Disclosure {
+		case representationregistry.DisclosureWithheld:
+			return representationregistry.Representation{}, "withheld"
+		case representationregistry.DisclosureRaw:
+			if view.Artifact.Sensitivity == artifactregistry.SensitivitySensitive || view.Artifact.Sensitivity == artifactregistry.SensitivitySecret {
+				return representationregistry.Representation{}, "withheld"
+			}
+		case representationregistry.DisclosureRedacted:
+		default:
+			return representationregistry.Representation{}, "withheld"
+		}
+		candidates = append(candidates, value)
+	}
+	if len(candidates) != 1 {
+		return representationregistry.Representation{}, "unsupported"
+	}
+	value := candidates[0]
+	if value.Disclosure == representationregistry.DisclosureWithheld || (value.Disclosure == representationregistry.DisclosureRaw && (view.Artifact.Sensitivity == artifactregistry.SensitivitySensitive || view.Artifact.Sensitivity == artifactregistry.SensitivitySecret)) {
+		return representationregistry.Representation{}, "withheld"
+	}
+	if value.Truncated || value.Size < 0 || value.Size > artifactdiff.MaxInputBytes {
+		return representationregistry.Representation{}, "too_large"
+	}
+	return value, ""
+}
+
+func (service *Service) readDiffContent(ctx context.Context, representation representationregistry.Representation) ([]byte, error) {
+	reader, err := service.store.Open(ctx, artifactstore.OpenRequest{Locator: representation.Locator, ExpectedDigest: representation.Digest})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDiffStorage, err)
+	}
+	defer func() { _ = reader.Close() }()
+	content, err := io.ReadAll(io.LimitReader(reader, artifactdiff.MaxInputBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > artifactdiff.MaxInputBytes {
+		return nil, artifactdiff.ErrBudgetExceeded
+	}
+	if int64(len(content)) != representation.Size {
+		return nil, fmt.Errorf("%w: representation size mismatch", ErrDiffStorage)
+	}
+	if !utf8.Valid(content) {
+		return nil, errDiffUnsupported
+	}
+	return content, nil
+}
+
+func classifyDiffError(err error) string {
+	if errors.Is(err, artifactdiff.ErrBudgetExceeded) {
+		return "too_large"
+	}
+	if errors.Is(err, errDiffUnsupported) {
+		return "unsupported"
+	}
+	return ""
+}
+
+func diffRepresentation(value representationregistry.Representation) *DiffRepresentation {
+	return &DiffRepresentation{Artifact: value.Artifact, RepresentationID: value.RepresentationID, Digest: value.Digest, Kind: value.Kind, MediaType: value.MediaType, Disclosure: value.Disclosure}
 }
 
 func (service *Service) Lint(ctx context.Context, reference artifactregistry.VersionRef) (LintResult, error) {

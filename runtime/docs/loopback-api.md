@@ -222,7 +222,7 @@ accept or return JSON:
 | `GET /api/v1/artifacts` | List latest versions, optionally filtering by exact `targetKind` and `targetId`. |
 | `GET /api/v1/artifacts/{artifactId}?version=N` | Show an exact version; omit `version` only to request latest. |
 | `POST /api/v1/artifacts/{artifactId}/revisions` | Add a new immutable version from the exact version named by `If-Match`. |
-| `GET /api/v1/artifacts/{artifactId}/diff?from=N&to=M` | Compare content, media type, sensitivity, roles, tags, and representation kinds. |
+| `GET /api/v1/artifacts/{artifactId}/diff?from=N&to=M` | Compare metadata and return a deterministic bounded text diff (with optional exact representation IDs, cursor, and limit) or a closed unavailable reason. |
 | `POST /api/v1/artifacts/{artifactId}/extract?version=N` | Derive safe representations with the configured processor set. |
 | `GET /api/v1/artifacts/{artifactId}/lint?version=N` | Report storage, freshness, representation, and diagnostic findings. |
 | `GET /api/v1/artifacts/{artifactId}/representations?version=N` | Inspect all representations for an exact artifact version. |

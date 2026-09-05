@@ -82,6 +82,29 @@ func TestArtifactListRoutePassesExactTargetFilter(t *testing.T) {
 	}
 }
 
+func TestArtifactDiffRoutePassesExactSelectionAndReturnsUnavailableAsOK(t *testing.T) {
+	service := &stubArtifactService{diffValue: artifactops.VersionDiff{ArtifactID: "artifact_one", From: 2, To: 4, Changed: []string{}, FromDigest: strings.Repeat("a", 64), ToDigest: strings.Repeat("b", 64), Representations: map[string][]string{"from": {}, "to": {}}, TextDiff: artifactops.TextDiff{Status: "unavailable", Reason: "withheld"}}}
+	server, endpoint := startArtifactTestServer(t, service)
+	defer closeTestServer(t, server)
+	response := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one/diff?from=2&to=4&fromRepresentationId=representation_a&toRepresentationId=representation_b&limit=17&cursor=abc", endpoint.AuthorizationHeader())
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	var result artifactops.VersionDiff
+	decodeJSON(t, response, &result)
+	if result.TextDiff.Status != "unavailable" || result.TextDiff.Reason != "withheld" || service.diffInput.From != 2 || service.diffInput.To != 4 || service.diffInput.FromRepresentationID != "representation_a" || service.diffInput.ToRepresentationID != "representation_b" || service.diffInput.Limit != 17 || service.diffInput.Cursor != "abc" {
+		t.Fatalf("result/input = %#v / %#v", result, service.diffInput)
+	}
+	invalid := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one/diff?from=2&to=4&unknown=true", endpoint.AuthorizationHeader())
+	defer func() { _ = invalid.Body.Close() }()
+	assertAPIError(t, invalid, http.StatusBadRequest, "VALIDATION_FAILED")
+	service.diffErr = artifactops.ErrDiffStorage
+	failed := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one/diff?from=2&to=4", endpoint.AuthorizationHeader())
+	defer func() { _ = failed.Body.Close() }()
+	assertAPIError(t, failed, http.StatusInternalServerError, "ARTIFACT_DIFF_STORAGE_FAILED")
+}
+
 func TestArtifactWireResponsePreservesExactNestedRepresentationAndProvenance(t *testing.T) {
 	when := time.Date(2026, 9, 4, 20, 0, 0, 0, time.UTC)
 	artifact := artifactregistry.ArtifactVersion{
@@ -237,6 +260,9 @@ type stubArtifactService struct {
 	representationMeta  artifactops.Content
 	representationErr   error
 	showValue           artifactops.ArtifactView
+	diffInput           artifactops.DiffInput
+	diffValue           artifactops.VersionDiff
+	diffErr             error
 }
 
 func (service *stubArtifactService) Ingest(_ context.Context, input artifactops.IngestInput, key string) (artifactingest.Result, error) {
@@ -276,7 +302,14 @@ func (*stubArtifactService) Extract(context.Context, artifactregistry.VersionRef
 	return artifactderive.Result{}, errors.New("not implemented")
 }
 
-func (*stubArtifactService) Diff(context.Context, string, uint64, uint64) (artifactops.VersionDiff, error) {
+func (service *stubArtifactService) Diff(_ context.Context, input artifactops.DiffInput) (artifactops.VersionDiff, error) {
+	service.diffInput = input
+	if service.diffErr != nil {
+		return artifactops.VersionDiff{}, service.diffErr
+	}
+	if service.diffValue.ArtifactID != "" {
+		return service.diffValue, nil
+	}
 	return artifactops.VersionDiff{}, errors.New("not implemented")
 }
 

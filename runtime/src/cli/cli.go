@@ -145,7 +145,7 @@ Artifact commands:
   artifact detach <binding-id> [--json]
   artifact list [--target <kind>:<id>] [--json]
   artifact show <artifact-id>@<version> [--json]
-  artifact diff <artifact-id> --from <version> --to <version> [--json]
+  artifact diff <artifact-id> --from <version> --to <version> [--from-representation <id>] [--to-representation <id>] [--cursor <cursor>] [--limit <1..200>] [--json]
   artifact extract|lint|representations <artifact-id>@<version> [--json]
   artifact revise <artifact-id>@<base-version> (--file <path> | --paste <text> | --stdin) [--media-type <type>] [--json]
   artifact impact <artifact-id>@<version> --target <kind>:<id> [--run <run-id>] [--json]

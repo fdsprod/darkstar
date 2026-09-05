@@ -120,7 +120,7 @@ func TestArtifactOperationsCoverIngestBindingInspectionRevisionAndImpact(t *test
 	}, "stale-revision"); !errors.Is(err, artifactregistry.ErrVersionConflict) {
 		t.Fatalf("stale revision error = %v, want version conflict", err)
 	}
-	diff, err := service.Diff(ctx, reference.ArtifactID, 1, 2)
+	diff, err := service.Diff(ctx, artifactops.DiffInput{ArtifactID: reference.ArtifactID, From: 1, To: 2})
 	if err != nil || !reflect.DeepEqual(diff.Changed, []string{"content"}) {
 		t.Fatalf("Diff() = %#v, %v", diff, err)
 	}
@@ -132,6 +132,85 @@ func TestArtifactOperationsCoverIngestBindingInspectionRevisionAndImpact(t *test
 	}
 	if _, err := database.LatestBinding(ctx, bound.BindingID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTextDiffBindsExactRepresentationsAndFailsClosed(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	service, database := newIntegrationService(t, ctx)
+	first, err := service.Ingest(ctx, artifactops.IngestInput{SourceKind: artifactregistry.SourcePaste, SourceName: "note.md", MediaType: "text/markdown", Content: []byte("# Note\nold\nshared\n")}, "diff-first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromRef := artifactregistry.VersionRef{ArtifactID: first.Artifact.ArtifactID, Version: first.Artifact.Version}
+	fromExtracted, err := service.Extract(ctx, fromRef, "diff-extract-first")
+	if err != nil || len(fromExtracted.Representations) != 1 {
+		t.Fatalf("first extraction = %#v, %v", fromExtracted, err)
+	}
+	second, err := service.Revise(ctx, fromRef.ArtifactID, fromRef.Version, artifactops.IngestInput{SourceKind: artifactregistry.SourcePaste, SourceName: "note.md", MediaType: "text/markdown", Content: []byte("# Note\nnew\nshared\n")}, "diff-second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	toRef := artifactregistry.VersionRef{ArtifactID: second.Artifact.ArtifactID, Version: second.Artifact.Version}
+	toExtracted, err := service.Extract(ctx, toRef, "diff-extract-second")
+	if err != nil || len(toExtracted.Representations) != 1 {
+		t.Fatalf("second extraction = %#v, %v", toExtracted, err)
+	}
+	input := artifactops.DiffInput{ArtifactID: fromRef.ArtifactID, From: fromRef.Version, To: toRef.Version, FromRepresentationID: fromExtracted.Representations[0].RepresentationID, ToRepresentationID: toExtracted.Representations[0].RepresentationID, Limit: 2}
+	available, err := service.Diff(ctx, input)
+	if err != nil || available.TextDiff.Status != "available" || len(available.TextDiff.PolicyDigest) != 64 || len(available.TextDiff.ResultDigest) != 64 || available.TextDiff.From.Artifact != fromRef || available.TextDiff.To.Artifact != toRef {
+		t.Fatalf("available diff = %#v, %v", available, err)
+	}
+	if available.TextDiff.NextCursor == "" {
+		t.Fatal("bounded first page omitted cursor")
+	}
+	repeated, err := service.Diff(ctx, input)
+	if err != nil || !reflect.DeepEqual(repeated, available) {
+		t.Fatalf("repeated exact diff = %#v, %v", repeated, err)
+	}
+	input.Cursor = available.TextDiff.NextCursor
+	next, err := service.Diff(ctx, input)
+	if err != nil || next.TextDiff.ResultDigest != available.TextDiff.ResultDigest {
+		t.Fatalf("next page = %#v, %v", next, err)
+	}
+
+	stale := input
+	stale.Cursor = ""
+	stale.ToRepresentationID = fromExtracted.Representations[0].RepresentationID
+	if result, err := service.Diff(ctx, stale); err != nil || result.TextDiff.Reason != "unsupported" {
+		t.Fatalf("stale representation = %#v, %v", result, err)
+	}
+
+	toRepresentation, err := database.Representation(ctx, toExtracted.Representations[0].RepresentationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withheld, _, err := database.RegisterRepresentation(ctx, representationregistry.RegisterRequest{RepresentationID: "representation_diff_withheld", IdempotencyKey: "diff-withheld", Artifact: toRef, Kind: toRepresentation.Kind, Processor: toRepresentation.Processor, MediaType: toRepresentation.MediaType, Locator: toRepresentation.Locator, Digest: toRepresentation.Digest, Size: toRepresentation.Size, TokenEstimate: toRepresentation.TokenEstimate, Disclosure: representationregistry.DisclosureWithheld, Diagnostics: []string{}, Metadata: map[string]string{}, CreatedAt: testTime()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale.ToRepresentationID = withheld.RepresentationID
+	if result, err := service.Diff(ctx, stale); err != nil || result.TextDiff.Reason != "withheld" {
+		t.Fatalf("withheld representation = %#v, %v", result, err)
+	}
+	events, err := database.EventsAfter(ctx, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundTelemetry := false
+	for _, event := range events {
+		if event.Kind != "artifact.diff_observed" {
+			continue
+		}
+		foundTelemetry = true
+		encoded := string(event.Data)
+		if strings.Contains(encoded, "old") || strings.Contains(encoded, "new") || strings.Contains(encoded, "shared") || strings.Contains(encoded, "locator") {
+			t.Fatalf("diff telemetry leaked content: %s", encoded)
+		}
+	}
+	if !foundTelemetry {
+		t.Fatal("diff telemetry was not recorded")
 	}
 }
 

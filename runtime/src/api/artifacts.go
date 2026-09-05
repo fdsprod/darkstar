@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"darkstar/src/core/artifactderive"
+	"darkstar/src/core/artifactdiff"
 	"darkstar/src/core/artifactingest"
 	"darkstar/src/core/artifactops"
 	"darkstar/src/core/lateevidence"
@@ -33,7 +34,7 @@ type ArtifactService interface {
 	Show(context.Context, string, uint64) (artifactops.ArtifactView, error)
 	Representations(context.Context, artifactregistry.VersionRef) ([]representationregistry.Representation, error)
 	Extract(context.Context, artifactregistry.VersionRef, string) (artifactderive.Result, error)
-	Diff(context.Context, string, uint64, uint64) (artifactops.VersionDiff, error)
+	Diff(context.Context, artifactops.DiffInput) (artifactops.VersionDiff, error)
 	Lint(context.Context, artifactregistry.VersionRef) (artifactops.LintResult, error)
 	Impact(context.Context, lateevidence.Request) (impactassessment.Assessment, error)
 	OriginalContent(context.Context, artifactregistry.VersionRef) (artifactops.Content, error)
@@ -160,7 +161,38 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 			writeArtifactError(response, requestID, err)
 			return
 		}
-		value, err := service.Diff(request.Context(), artifactID, from, to)
+		query := request.URL.Query()
+		allowed := map[string]bool{"from": true, "to": true, "fromRepresentationId": true, "toRepresentationId": true, "cursor": true, "limit": true}
+		for key, values := range query {
+			if !allowed[key] || len(values) != 1 {
+				writeArtifactError(response, requestID, errors.New("diff query parameters are invalid"))
+				return
+			}
+			if key != "from" && key != "to" && values[0] == "" {
+				writeArtifactError(response, requestID, errors.New("diff optional query parameters cannot be empty"))
+				return
+			}
+		}
+		limit := 0
+		if value := query.Get("limit"); value != "" {
+			parsed, parseErr := strconv.Atoi(value)
+			if parseErr != nil || parsed < 1 || parsed > artifactdiff.MaxPageSize {
+				writeArtifactError(response, requestID, errors.New("limit must be between 1 and 200"))
+				return
+			}
+			limit = parsed
+		}
+		for _, name := range []string{"fromRepresentationId", "toRepresentationId"} {
+			if value := query.Get(name); value != "" && !strings.HasPrefix(value, "representation_") {
+				writeArtifactError(response, requestID, errors.New(name+" must be a representation ID"))
+				return
+			}
+		}
+		if len(query.Get("cursor")) > 256 {
+			writeArtifactError(response, requestID, errors.New("cursor is too long"))
+			return
+		}
+		value, err := service.Diff(request.Context(), artifactops.DiffInput{ArtifactID: artifactID, From: from, To: to, FromRepresentationID: query.Get("fromRepresentationId"), ToRepresentationID: query.Get("toRepresentationId"), Cursor: query.Get("cursor"), Limit: limit})
 		if err != nil {
 			writeArtifactError(response, requestID, err)
 			return
@@ -444,6 +476,8 @@ func writeArtifactError(response http.ResponseWriter, requestID string, err erro
 		status, code, message = http.StatusNotFound, "NOT_FOUND", "The requested artifact resource was not found."
 	} else if errors.Is(err, artifactops.ErrContentWithheld) {
 		status, code, message = http.StatusForbidden, "ARTIFACT_CONTENT_WITHHELD", "Artifact content is withheld by inspection or disclosure policy."
+	} else if errors.Is(err, artifactops.ErrDiffStorage) {
+		status, code, message = http.StatusInternalServerError, "ARTIFACT_DIFF_STORAGE_FAILED", "Artifact representation storage verification failed."
 	} else if errors.Is(err, artifactregistry.ErrVersionConflict) || errors.Is(err, artifactbinding.ErrConflict) || errors.Is(err, artifactbinding.ErrStateConflict) || errors.Is(err, lateevidence.ErrEvidenceNotBound) {
 		status, code = http.StatusConflict, "ARTIFACT_CONFLICT"
 	}

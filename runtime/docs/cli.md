@@ -167,7 +167,7 @@ darkstar artifact attach <artifact-id>@<version> --to <kind>:<id>
 darkstar artifact detach <binding-id>
 darkstar artifact list [--target <kind>:<id>]
 darkstar artifact show <artifact-id>@<version>
-darkstar artifact diff <artifact-id> --from <version> --to <version>
+darkstar artifact diff <artifact-id> --from <version> --to <version> [--from-representation <id>] [--to-representation <id>] [--cursor <cursor>] [--limit <1..200>]
 darkstar artifact extract <artifact-id>@<version>
 darkstar artifact lint <artifact-id>@<version>
 darkstar artifact representations <artifact-id>@<version>
@@ -180,6 +180,10 @@ inferred from its extension unless overridden. Sensitivity is one of `unknown`,
 `work`, `run`, `node`, `checkpoint`, `decision`, `story`, or
 `implementation_point`. Mutations generate a fresh idempotency key, while all
 version-sensitive reads require an exact `<artifact-id>@<version>` reference.
+Diffs are bound to exact immutable text representations and return stable,
+paginated line entries, or `unavailable` with reason `unsupported`, `withheld`,
+or `too_large`. They fail closed for binary, quarantined, unknown-sensitivity,
+raw-sensitive, withheld, truncated, invalid UTF-8, and over-budget content.
 Revision writes use the same exact reference as an optimistic concurrency base.
 
 Human `artifact lint` exits with class 7 when findings exist. In machine mode,
