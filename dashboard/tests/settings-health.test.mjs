@@ -3,11 +3,18 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  CONFIGURATION_GROUPS,
   SETTINGS_TABS,
+  configurationScope,
   decodeDoctorReport,
   decodeEffectiveConfiguration,
+  draftForSetting,
+  groupConfigurationSettings,
+  mutationFromDraft,
   normalizeProjectRegistration,
+  parseConfigurationScope,
   parseSettingsTab,
+  settingMatchesSearch,
   sortProjects,
 } from "../src/pages/settingsModel.ts";
 
@@ -216,21 +223,88 @@ test("settings tabs accept only the closed route vocabulary", () => {
   for (const invalid of [undefined, null, "", "providers", "Health", "debug"]) assert.equal(parseSettingsTab(invalid), "health");
 });
 
-test("settings route uses independent API-backed resources and exposes only project registration as a mutation", async () => {
+test("settings route uses public catalog/state/preview/apply/restore/secret operations for configuration", async () => {
   const [page, router, client] = await Promise.all([
     readFile(new URL("../src/pages/SettingsPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/app/router.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/api/client.ts", import.meta.url), "utf8"),
   ]);
   assert.match(router, /case "settings": return <SettingsPage \/>/);
-  for (const method of ["getHealth", "getDoctorReport", "getEffectiveConfiguration", "listProjects"]) assert.match(page, new RegExp(`apiClient\\.${method}`));
+  for (const method of ["getHealth", "getDoctorReport", "listProjects", "getConfigurationCatalog", "getConfigurationState", "previewConfigurationMutation", "applyConfigurationMutation", "restoreConfiguration", "writeConfigurationSecret"]) assert.match(page, new RegExp(`apiClient\\.${method}`));
   assert.match(page, /Promise\.allSettled/);
   assert.match(page, /apiClient\.registerProject/);
+  assert.doesNotMatch(page, /apiClient\.getEffectiveConfiguration/);
   assert.doesNotMatch(page, /apiClient\.(?:stopDaemon|restartDaemon|enableProvider|disableProvider|setConfiguration)/);
-  assert.match(page, /Recommended action/);
+  assert.match(page, /Doctor guidance/);
   assert.doesNotMatch(page, /onClick=\{check\.action/);
-  assert.match(client, /getDoctorReport\(projectRoot\?: string/);
+  assert.match(client, /getConfigurationState\(projectId\?: string/);
+  assert.match(client, /applyConfigurationMutation\(body: Schemas\["ConfigurationMutationRequest"\], idempotencyKey: string/);
   assert.match(client, /registerProject\(body: Schemas\["ProjectRegistration"\], idempotencyKey: string/);
+});
+
+test("catalog descriptors drive closed groups, search, scope, and typed mutation bodies", () => {
+  const descriptor = {
+    key: "provider.codex.actionAvailability", title: "Codex action availability", description: "Controls actions.",
+    type: "enum", default: { type: "enum", value: "enabled" }, constraints: { required: true, allowedValues: ["enabled", "disabled"] },
+    sensitivity: "public", allowedScopes: ["user", "project"], restart: "daemon", actions: ["preview", "apply", "restore"],
+  };
+  const revision = "a".repeat(64);
+  const state = { schemaVersion: 1, scope: { type: "user" }, revision, configured: [], effective: [{ key: descriptor.key, value: descriptor.default, source: { scope: "default", reference: "shipped" } }] };
+  assert.deepEqual(CONFIGURATION_GROUPS, ["General", "Project", "Workflow defaults", "Providers", "Permissions", "Delivery", "Storage", "Advanced"]);
+  assert.deepEqual(groupConfigurationSettings([descriptor]).get("Providers").map((entry) => entry.key), [descriptor.key]);
+  assert.equal(settingMatchesSearch(descriptor, "ACTION"), true);
+  assert.deepEqual(draftForSetting(descriptor, state), { operation: "set", type: "enum", value: "enabled" });
+  assert.deepEqual(mutationFromDraft(configurationScope("project", "project_01K3Z1C2AAAAAAAAAAAAAAAAAA"), descriptor, { operation: "set", type: "enum", value: "disabled" }, revision), { scope: { type: "project", projectId: "project_01K3Z1C2AAAAAAAAAAAAAAAAAA" }, key: descriptor.key, change: { operation: "set", value: { type: "enum", value: "disabled" } }, expectedRevision: revision });
+  assert.throws(() => mutationFromDraft(configurationScope("user"), descriptor, { operation: "set", type: "enum", value: "future" }, revision), /catalog option/);
+  assert.deepEqual(parseConfigurationScope("project", "arbitrary-root"), { type: "user" });
+});
+
+test("settings source preserves stale drafts, protects navigation, and keeps secret material out of React state", async () => {
+  const page = await readFile(new URL("../src/pages/SettingsPage.tsx", import.meta.url), "utf8");
+  assert.match(page, /state: "stale", key: descriptor\.key, draft: editor\.draft/);
+  assert.match(page, /state\.revision !== preview\.before\.revision/);
+  assert.match(page, /mutationFromDraft\(scope, descriptor, editor\.draft, preview\.before\.revision\)/);
+  assert.match(page, /cause\.status === 400 \|\| cause\.status === 422/);
+  assert.match(page, /window\.addEventListener\("beforeunload"/);
+  assert.match(page, /Discard the unsaved configuration draft/);
+  assert.match(page, /ref=\{secretInput\}/);
+  assert.match(page, /type="password" autoComplete="new-password"/);
+  assert.doesNotMatch(page, /setValue\(/);
+  assert.doesNotMatch(page, /ref=\{secretInput\}[^>]*value=/);
+  assert.match(page, /secretInput\.current\.value = ""/);
+});
+
+test("typed controls and responsive CSS cover the complete catalog vocabulary", async () => {
+  const [page, styles] = await Promise.all([
+    readFile(new URL("../src/pages/SettingsPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /draft\.type === "boolean"/);
+  assert.match(page, /draft\.type === "enum"/);
+  assert.match(page, /draft\.type === "integer" \? "number" : "text"/);
+  assert.match(page, /step=\{draft\.type === "integer" \? 1 : undefined\}/);
+  assert.match(page, /Winning source/);
+  assert.match(page, /Before \/ after preview/);
+  assert.match(page, /aria-busy=\{busy\}/);
+  assert.match(styles, /@media \(max-width: 480px\)/);
+  assert.match(styles, /\.configuration-preview > div \{ grid-template-columns: 1fr/);
+  assert.match(styles, /\.configuration-setting-list \{ grid-template-columns: 1fr/);
+  assert.match(styles, /overflow-wrap: anywhere/);
+});
+
+test("integer, boolean, text, and unset drafts serialize without discriminator drift", () => {
+  const revision = "b".repeat(64);
+  const base = { title: "Example", description: "Example setting", default: { type: "string", value: "" }, constraints: { required: false }, sensitivity: "public", allowedScopes: ["user"], restart: "none", actions: ["preview", "apply", "restore"] };
+  const cases = [
+    [{ ...base, key: "general.text", type: "string" }, { operation: "set", type: "string", value: "text" }, { type: "string", value: "text" }],
+    [{ ...base, key: "general.count", type: "integer", constraints: { required: true, minimum: 1, maximum: 3 }, default: { type: "integer", value: 1 } }, { operation: "set", type: "integer", value: "2" }, { type: "integer", value: 2 }],
+    [{ ...base, key: "general.enabled", type: "boolean", default: { type: "boolean", value: false } }, { operation: "set", type: "boolean", value: true }, { type: "boolean", value: true }],
+    [{ ...base, key: "general.path", type: "path", default: { type: "path", value: "" } }, { operation: "set", type: "path", value: "C:\\tools\\codex.exe" }, { type: "path", value: "C:\\tools\\codex.exe" }],
+    [{ ...base, key: "general.secretRef", type: "secret_reference", default: { type: "secret_reference", value: "key" } }, { operation: "set", type: "secret_reference", value: "new-key" }, { type: "secret_reference", value: "new-key" }],
+  ];
+  for (const [descriptor, draft, expected] of cases) assert.deepEqual(mutationFromDraft(configurationScope("user"), descriptor, draft, revision).change, { operation: "set", value: expected });
+  assert.deepEqual(mutationFromDraft(configurationScope("user"), cases[0][0], { operation: "unset" }, revision).change, { operation: "unset" });
+  assert.throws(() => mutationFromDraft(configurationScope("user"), cases[1][0], { operation: "set", type: "integer", value: "4" }, revision), /at most 3/);
 });
 
 test("generated settings contracts keep doctor and configuration projections closed", async () => {

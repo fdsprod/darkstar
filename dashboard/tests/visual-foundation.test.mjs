@@ -49,7 +49,9 @@ test("meaningful dashboard selections are encoded in shareable URLs", async () =
   assert.match(agents, /next\.set\("attemptId", agent\.attemptId\)/);
   assert.match(agents, /next\.set\("permissionId", value\.id\)/);
   assert.match(artifact, /next\.set\("revision", String\(version\)\)/);
-  assert.match(settings, /nextParams\.set\("tab", next\)/);
+  assert.match(settings, /next\.set\("tab", nextTab\)/);
+  assert.match(settings, /next\.set\("setting", key\)/);
+  assert.match(settings, /next\.set\("projectId", nextScope\.projectId\)/);
 });
 
 test("shared interaction patterns distinguish actions, async states, and empty states", async () => {

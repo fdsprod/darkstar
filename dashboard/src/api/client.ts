@@ -82,6 +82,12 @@ export class DarkstarApiClient {
   getApiRoot(signal?: AbortSignal) { return this.operation("getApiRoot", { signal }); }
   getDoctorReport(projectRoot?: string, signal?: AbortSignal) { return this.operation("getDoctorReport", { query: { projectRoot }, signal }); }
   getEffectiveConfiguration(projectRoot?: string, signal?: AbortSignal) { return this.operation("getEffectiveConfiguration", { query: { projectRoot }, signal }); }
+  getConfigurationCatalog(signal?: AbortSignal) { return this.operation("getConfigurationCatalog", { signal }); }
+  getConfigurationState(projectId?: string, signal?: AbortSignal) { return this.operation("getConfigurationState", { query: { projectId }, signal }); }
+  previewConfigurationMutation(body: Schemas["ConfigurationMutationRequest"], signal?: AbortSignal) { return this.operation("previewConfigurationMutation", { body, signal }); }
+  applyConfigurationMutation(body: Schemas["ConfigurationMutationRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("applyConfigurationMutation", { body, idempotencyKey, signal }); }
+  restoreConfiguration(body: Schemas["ConfigurationRestoreRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("restoreConfiguration", { body, idempotencyKey, signal }); }
+  writeConfigurationSecret(body: Schemas["ConfigurationSecretWriteRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("writeConfigurationSecret", { body, idempotencyKey, signal }); }
   listProjects(signal?: AbortSignal) { return this.operation("listProjects", { signal }); }
   registerProject(body: Schemas["ProjectRegistration"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("registerProject", { body, idempotencyKey, signal }); }
   getProject(projectId: string, signal?: AbortSignal) { return this.operation("getProject", { path: { projectId }, signal }); }

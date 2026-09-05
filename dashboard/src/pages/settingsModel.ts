@@ -1,3 +1,57 @@
+import type { components } from "../api/schema.generated";
+
+type ConfigurationSchemas = components["schemas"];
+
+export type ConfigurationCatalog = ConfigurationSchemas["ConfigurationCatalog"];
+export type ConfigurationDescriptor = ConfigurationCatalog["settings"][number];
+export type ConfigurationState = ConfigurationSchemas["ConfigurationState"];
+export type ConfigurationScope = ConfigurationState["scope"];
+export type ConfigurationTypedValue = ConfigurationState["configured"][number]["value"];
+export type ConfigurationMutationRequest = ConfigurationSchemas["ConfigurationMutationRequest"];
+export type ConfigurationPreview = ConfigurationSchemas["ConfigurationPreview"];
+
+export type Loadable<T> =
+  | { state: "loading" }
+  | { state: "ready"; value: T }
+  | { state: "unsupported"; message: string }
+  | { state: "failed"; message: string };
+
+export type ConfigurationEditorState =
+  | { state: "closed" }
+  | { state: "editing"; key: string; draft: ConfigurationDraft }
+  | { state: "previewing"; key: string; draft: ConfigurationDraft }
+  | { state: "previewed"; key: string; draft: ConfigurationDraft; preview: ConfigurationPreview }
+  | { state: "applying"; key: string; draft: ConfigurationDraft; preview: ConfigurationPreview }
+  | { state: "stale"; key: string; draft: ConfigurationDraft; message: string }
+  | { state: "failed"; key: string; draft: ConfigurationDraft; message: string };
+
+export type ConfigurationNotice =
+  | { state: "none" }
+  | { state: "applied"; message: string; restart: "none" | "daemon"; replayed: boolean }
+  | { state: "restored"; message: string; restart: "none" | "daemon"; replayed: boolean }
+  | { state: "secret-written"; message: string; restart: "none" | "daemon"; replayed: boolean }
+  | { state: "failed"; message: string };
+
+export type ConfigurationDraft =
+  | { operation: "unset" }
+  | { operation: "set"; type: "boolean"; value: boolean }
+  | { operation: "set"; type: "integer"; value: string }
+  | { operation: "set"; type: "string" | "enum" | "path" | "secret_reference"; value: string };
+
+export const CONFIGURATION_GROUPS = [
+  "General",
+  "Project",
+  "Workflow defaults",
+  "Providers",
+  "Permissions",
+  "Delivery",
+  "Storage",
+  "Advanced",
+] as const;
+export type ConfigurationGroup = (typeof CONFIGURATION_GROUPS)[number];
+
+const PROJECT_ID_PATTERN = /^project_[0-9A-HJKMNP-TV-Z]{26}$/;
+
 export const HEALTH_SUBSYSTEMS = [
   "database",
   "daemon",
@@ -217,6 +271,120 @@ export function normalizeProjectRegistration(value: ProjectRegistration | string
 
 export function parseSettingsTab(value: string | null | undefined): SettingsTab {
   return SETTINGS_TABS.includes(value as SettingsTab) ? value as SettingsTab : "health";
+}
+
+export function configurationScope(kind: "user", projectId?: string): ConfigurationScope;
+export function configurationScope(kind: "project", projectId: string): ConfigurationScope;
+export function configurationScope(kind: "user" | "project", projectId?: string): ConfigurationScope {
+  if (kind === "user") return { type: "user" };
+  if (!projectId || !PROJECT_ID_PATTERN.test(projectId)) throw new Error("Project scope requires a registered project identity.");
+  return { type: "project", projectId };
+}
+
+export function parseConfigurationScope(kind: string | null | undefined, projectId: string | null | undefined): ConfigurationScope {
+  return kind === "project" && projectId && PROJECT_ID_PATTERN.test(projectId)
+    ? { type: "project", projectId }
+    : { type: "user" };
+}
+
+export function scopeProjectId(scope: ConfigurationScope): string | undefined {
+  return scope.type === "project" ? scope.projectId : undefined;
+}
+
+export function configurationScopesEqual(left: ConfigurationScope, right: ConfigurationScope): boolean {
+  return left.type === right.type && (left.type === "user" || (right.type === "project" && left.projectId === right.projectId));
+}
+
+export function settingGroup(key: string): ConfigurationGroup {
+  const root = key.split(".", 1)[0].toLocaleLowerCase("en-US");
+  if (root === "project") return "Project";
+  if (root === "workflow" || root === "workflows") return "Workflow defaults";
+  if (root === "provider" || root === "providers") return "Providers";
+  if (root === "permission" || root === "permissions" || root === "approval" || root === "approvals") return "Permissions";
+  if (root === "delivery" || root === "github" || root === "gitlab") return "Delivery";
+  if (root === "storage" || root === "artifact" || root === "artifacts" || root === "database") return "Storage";
+  if (root === "advanced" || root === "experimental" || root === "debug") return "Advanced";
+  return "General";
+}
+
+export function groupConfigurationSettings(settings: readonly ConfigurationDescriptor[]): Map<ConfigurationGroup, ConfigurationDescriptor[]> {
+  const groups = new Map<ConfigurationGroup, ConfigurationDescriptor[]>(CONFIGURATION_GROUPS.map((group) => [group, []]));
+  for (const setting of settings) groups.get(settingGroup(setting.key))!.push(setting);
+  for (const values of groups.values()) values.sort((left, right) => compareFoldedText(left.title, right.title) || compareText(left.key, right.key));
+  return groups;
+}
+
+export function settingMatchesSearch(setting: ConfigurationDescriptor, query: string): boolean {
+  const normalized = query.trim().toLocaleLowerCase("en-US");
+  if (!normalized) return true;
+  return `${setting.title}\n${setting.description}\n${setting.key}\n${settingGroup(setting.key)}`.toLocaleLowerCase("en-US").includes(normalized);
+}
+
+export function configuredValue(state: ConfigurationState, key: string): ConfigurationTypedValue | undefined {
+  return state.configured.find((entry) => entry.key === key)?.value;
+}
+
+export function effectiveSetting(state: ConfigurationState, key: string) {
+  return state.effective.find((entry) => entry.key === key);
+}
+
+export function draftForSetting(descriptor: ConfigurationDescriptor, state: ConfigurationState): ConfigurationDraft {
+  const current = configuredValue(state, descriptor.key) ?? effectiveSetting(state, descriptor.key)?.value ?? descriptor.default;
+  if (current.type !== descriptor.type) throw new Error(`Configuration state type for ${descriptor.key} does not match its catalog descriptor.`);
+  switch (current.type) {
+    case "boolean": return { operation: "set", type: "boolean", value: current.value };
+    case "integer": return { operation: "set", type: "integer", value: String(current.value) };
+    case "string":
+    case "enum":
+    case "path":
+    case "secret_reference": return { operation: "set", type: current.type, value: current.value };
+  }
+}
+
+export function mutationFromDraft(
+  scope: ConfigurationScope,
+  descriptor: ConfigurationDescriptor,
+  draft: ConfigurationDraft,
+  expectedRevision: string,
+): ConfigurationMutationRequest {
+  if (!descriptor.allowedScopes.includes(scope.type)) throw new Error(`${descriptor.title} is read-only at ${scope.type} scope.`);
+  if (!descriptor.actions.includes("preview") || !descriptor.actions.includes("apply")) throw new Error(`${descriptor.title} does not support editing.`);
+  if (draft.operation === "unset") return { scope, key: descriptor.key, change: { operation: "unset" }, expectedRevision };
+  if (draft.type !== descriptor.type) throw new Error(`${descriptor.title} requires a ${descriptor.type} value.`);
+  let value: ConfigurationTypedValue;
+  switch (draft.type) {
+    case "boolean": value = { type: "boolean", value: draft.value }; break;
+    case "integer": {
+      if (!/^-?\d+$/.test(draft.value.trim())) throw new Error(`${descriptor.title} requires a whole number.`);
+      const integer = Number(draft.value);
+      if (!Number.isSafeInteger(integer)) throw new Error(`${descriptor.title} is outside the supported integer range.`);
+      if (descriptor.constraints.minimum !== undefined && integer < descriptor.constraints.minimum) throw new Error(`${descriptor.title} must be at least ${descriptor.constraints.minimum}.`);
+      if (descriptor.constraints.maximum !== undefined && integer > descriptor.constraints.maximum) throw new Error(`${descriptor.title} must be at most ${descriptor.constraints.maximum}.`);
+      value = { type: "integer", value: integer };
+      break;
+    }
+    case "string": value = { type: "string", value: draft.value }; break;
+    case "enum":
+      if (!descriptor.constraints.allowedValues?.includes(draft.value)) throw new Error(`${descriptor.title} must use a catalog option.`);
+      value = { type: "enum", value: draft.value };
+      break;
+    case "path": value = { type: "path", value: draft.value }; break;
+    case "secret_reference": value = { type: "secret_reference", value: draft.value }; break;
+  }
+  if (descriptor.constraints.required && typeof value.value === "string" && !value.value.trim()) throw new Error(`${descriptor.title} is required.`);
+  return { scope, key: descriptor.key, change: { operation: "set", value }, expectedRevision };
+}
+
+export function typedValueText(value: ConfigurationTypedValue): string {
+  return value.type === "boolean" ? (value.value ? "Enabled" : "Disabled") : String(value.value);
+}
+
+export function settingAnchor(key: string): string {
+  return `setting-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+export function parseSettingDeepLink(value: string | null | undefined): string {
+  return value?.trim() ?? "";
 }
 
 function decodeHealthCheck(value: unknown): HealthCheck {

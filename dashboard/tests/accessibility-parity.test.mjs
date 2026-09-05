@@ -86,7 +86,7 @@ function relativeLuminance(hex) {
 }
 
 test("every dashboard write has an OpenAPI, CLI, and durable event mapping", async () => {
-  const [client, docs, openapiText, workService, runService, artifactService, runControl, readinessControl, checkpointService, inputService, permissionService] = await Promise.all([
+  const [client, docs, openapiText, workService, runService, artifactService, runControl, readinessControl, checkpointService, inputService, permissionService, configurationService] = await Promise.all([
     read("../src/api/client.ts"),
     read("../../runtime/docs/cli.md"),
     read("../../schemas/openapi-v1alpha1.json"),
@@ -98,8 +98,9 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
     read("../../runtime/src/core/artifactcheckpoint/service.go"),
     read("../../runtime/src/core/runexecution/inputs.go"),
     read("../../runtime/src/core/runexecution/permissions.go"),
+    read("../../runtime/src/core/configmutation/service.go"),
   ]);
-  const eventSources = [workService, runService, artifactService, runControl, readinessControl, checkpointService, inputService, permissionService].join("\n");
+  const eventSources = [workService, runService, artifactService, runControl, readinessControl, checkpointService, inputService, permissionService, configurationService].join("\n");
   const pageDirectory = new URL("../src/pages/", import.meta.url);
   const pageFiles = (await readdir(pageDirectory)).filter((name) => name.endsWith(".tsx"));
   const pageSource = (await Promise.all(pageFiles.map((name) => read(`../src/pages/${name}`)))).join("\n");
@@ -130,9 +131,12 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
     ["cancelAgent", "cancelAgent", "darkstar agent cancel", "run.cancelled"],
     ["decideProviderPermission", "decideProviderPermission", "darkstar agent permissions decide", "permission.decision_recorded"],
     ["retryProviderPermissionDelivery", "retryProviderPermissionDelivery", "darkstar agent permissions retry", "permission.response_delivered"],
+    ["applyConfigurationMutation", "applyConfigurationMutation", "darkstar configuration set", "configuration.change_recorded"],
+    ["restoreConfiguration", "restoreConfiguration", "darkstar configuration restore", "configuration.change_recorded"],
+    ["writeConfigurationSecret", "writeConfigurationSecret", "darkstar configuration secret-set", "configuration.change_recorded"],
   ];
   const expectedWrites = new Set(mappings.map(([method]) => method));
-  const readOnlyPostOperations = new Set(["previewWorkflowRoute", "assessArtifactImpact"]);
+  const readOnlyPostOperations = new Set(["previewWorkflowRoute", "assessArtifactImpact", "previewConfigurationMutation"]);
   const usedWrites = new Set();
   for (const method of usedMethods) {
     const escaped = method.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
