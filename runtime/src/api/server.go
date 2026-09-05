@@ -40,24 +40,25 @@ type Server struct {
 	endpointPath string
 	now          func() time.Time
 
-	mu            sync.RWMutex
-	state         serverState
-	endpoint      Endpoint
-	http          *http.Server
-	recovery      RecoveryStatus
-	doctor        DoctorReporter
-	configuration ConfigurationReporter
-	streams       *StreamServices
-	exporter      RunExporter
-	runs          RunService
-	agents        AgentService
-	inputs        InputRequestService
-	work          WorkService
-	artifacts     ArtifactService
-	approvals     ApprovalService
-	readiness     ReadinessService
-	workflows     WorkflowService
-	dashboard     fs.FS
+	mu             sync.RWMutex
+	state          serverState
+	endpoint       Endpoint
+	http           *http.Server
+	recovery       RecoveryStatus
+	doctor         DoctorReporter
+	configuration  ConfigurationReporter
+	configMutation ConfigurationMutationService
+	streams        *StreamServices
+	exporter       RunExporter
+	runs           RunService
+	agents         AgentService
+	inputs         InputRequestService
+	work           WorkService
+	artifacts      ArtifactService
+	approvals      ApprovalService
+	readiness      ReadinessService
+	workflows      WorkflowService
+	dashboard      fs.FS
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
@@ -587,8 +588,8 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		return
 	}
 
-	if path.Clean(request.URL.Path) == "/api/v1/configuration/effective" {
-		s.serveEffectiveConfiguration(response, request, requestID)
+	if path.Clean(request.URL.Path) == "/api/v1/configuration/effective" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/configuration/") {
+		s.serveConfiguration(response, request, requestID)
 		return
 	}
 

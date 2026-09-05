@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"darkstar/src/adapters/artifactstore/folder"
+	configurationfilesystem "darkstar/src/adapters/configurationstore/filesystem"
 	"darkstar/src/adapters/contentprocessor/common"
 	"darkstar/src/adapters/contentprocessor/commonimage"
 	"darkstar/src/adapters/provider/fake"
@@ -28,6 +29,7 @@ import (
 	"darkstar/src/core/artifactderive"
 	"darkstar/src/core/artifactingest"
 	"darkstar/src/core/artifactops"
+	"darkstar/src/core/configmutation"
 	"darkstar/src/core/health"
 	"darkstar/src/core/lateevidence"
 	"darkstar/src/core/recovery"
@@ -36,6 +38,7 @@ import (
 	"darkstar/src/core/workflow"
 	"darkstar/src/core/workmanagement"
 	"darkstar/src/daemon"
+	daemonconfiguration "darkstar/src/daemon/configuration"
 	"darkstar/src/doctor"
 	"darkstar/src/platform/windows"
 	platformport "darkstar/src/ports/platform"
@@ -53,6 +56,7 @@ Commands:
   artifact   Ingest, bind, inspect, derive, lint, and revise artifacts
   approval   Inspect and decide artifact review approvals
   checkpoint List and inspect artifact review checkpoints
+  configuration Inspect, preview, apply, and restore typed settings
   daemon     Run and control the per-user daemon
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
@@ -119,6 +123,15 @@ Review-session commands:
   review resume <approval-id> --attempt <attempt-id> [--idempotency-key <key>] [--json]
   review respond <approval-id> --attempt <attempt-id> --outcome <revised|failed|cancelled> [--artifact <artifact-id>] [--version <n>] [--next-approval <approval-id>] [--message <text>] [--idempotency-key <key>] [--json]
   review approve|reject <approval-id> [--comment <text>] [--idempotency-key <key>] [--json]
+
+Configuration commands:
+  configuration catalog [--json]
+  configuration state [--project <project-id>] [--json]
+  configuration preview --key <key> (--value-type <type> --value <value> | --unset) --revision <digest> [--project <project-id>] [--json]
+  configuration set --key <key> --value-type <type> --value <value> --revision <digest> [--project <project-id>] [--idempotency-key <key>] [--json]
+  configuration unset --key <key> --revision <digest> [--project <project-id>] [--idempotency-key <key>] [--json]
+  configuration restore --revision <digest> [--project <project-id>] [--idempotency-key <key>] [--json]
+  configuration secret-set <name> (--file <path> | --stdin) --revision <digest> [--idempotency-key <key>] [--json]
 
 Input commands:
   input list [--run <run-id> | --attempt <attempt-id>] [--status <pending|answer_recorded|answered>] [--json]
@@ -226,6 +239,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runArtifact(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "checkpoint":
 		return runCheckpoint(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "configuration", "config":
+		return runConfiguration(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "doctor":
 		return runDoctor(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "project":
@@ -380,6 +395,29 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return err
 	}
 	if err := service.server.SetConfiguration(reporter); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	configurationLocations, err := daemonconfiguration.ResolveFileLocations(service.paths, service.projectRoot)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	configurationFiles, err := configurationfilesystem.New(configurationLocations, service.paths.Data)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	configurationMutations, err := configmutation.New(configurationFiles, database, service.projectRoot)
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.server.SetConfigurationMutations(configurationMutations); err != nil {
 		_ = database.Close()
 		service.database = nil
 		return err

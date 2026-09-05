@@ -16,6 +16,24 @@
     "/api/v1/configuration/effective": {
       "get": {"operationId":"getEffectiveConfiguration","parameters":[{"name":"projectRoot","in":"query","required":false,"schema":{"type":"string"}}],"responses":{"200":{"description":"Redacted effective configuration with winning source attribution","content":{"application/json":{"schema":{"$ref":"#/components/schemas/EffectiveConfiguration"}}}},"default":{"$ref":"#/components/responses/Error"}}}
     },
+    "/api/v1/configuration/catalog": {
+      "get": {"operationId":"getConfigurationCatalog","responses":{"200":{"description":"Typed supported-settings catalog and action availability","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationCatalog"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/configuration/state": {
+      "get": {"operationId":"getConfigurationState","parameters":[{"name":"projectId","in":"query","required":false,"schema":{"type":"string","pattern":"^project_[0-9A-HJKMNP-TV-Z]{26}$"}}],"responses":{"200":{"description":"Scoped values, digest revision, and derived effective settings","headers":{"ETag":{"schema":{"type":"string"}}},"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationState"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/configuration/preview": {
+      "post": {"operationId":"previewConfigurationMutation","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationMutationRequest"}}}},"responses":{"200":{"description":"Validated effective before/after preview without a write","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationPreview"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/configuration/apply": {
+      "post": {"operationId":"applyConfigurationMutation","parameters":[{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationMutationRequest"}}}},"responses":{"200":{"description":"Atomically applied configuration mutation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationApplyResult"}}}},"409":{"description":"Digest revision conflict","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/configuration/restore": {
+      "post": {"operationId":"restoreConfiguration","parameters":[{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationRestoreRequest"}}}},"responses":{"200":{"description":"Restored exact previous configuration bytes or absence","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationApplyResult"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
+    "/api/v1/configuration/secrets": {
+      "post": {"operationId":"writeConfigurationSecret","parameters":[{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationSecretWriteRequest"}}}},"responses":{"200":{"description":"Secret write receipt without secret material","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConfigurationSecretReceipt"}}}},"default":{"$ref":"#/components/responses/Error"}}}
+    },
     "/api/v1/projects": {
       "get": {"operationId":"listProjects","responses":{"200":{"description":"Registered project projections","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/Project"}}}}},"default":{"$ref":"#/components/responses/Error"}}},
       "post": {"operationId":"registerProject","parameters":[{"$ref":"#/components/parameters/IdempotencyKey"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectRegistration"}}}},"responses":{"201":{"description":"Project registered","headers":{"Location":{"schema":{"type":"string"}}},"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Project"}}}},"default":{"$ref":"#/components/responses/Error"}}}
@@ -263,6 +281,14 @@
       "ApiRoot":{"type":"object","additionalProperties":false,"required":["schemaVersion","apiVersion"],"properties":{"schemaVersion":{"const":1},"apiVersion":{"const":"v1"},"recovery":{"$ref":"#/components/schemas/RecoveryStatus"}}},
       "DoctorReport":{"$ref":"./health-report-v1alpha1.schema.json"},
       "EffectiveConfiguration":{"$ref":"./effective-configuration-v1alpha1.schema.json"},
+      "ConfigurationCatalog":{"$ref":"./configuration-mutation-v1alpha1.schema.json#/$defs/catalog"},
+      "ConfigurationState":{"$ref":"./configuration-mutation-v1alpha1.schema.json#/$defs/state"},
+      "ConfigurationMutationRequest":{"$ref":"./configuration-mutation-v1alpha1.schema.json#/$defs/mutationRequest"},
+      "ConfigurationPreview":{"$ref":"./configuration-mutation-v1alpha1.schema.json#/$defs/preview"},
+      "ConfigurationApplyResult":{"$ref":"./configuration-mutation-v1alpha1.schema.json#/$defs/applyResult"},
+      "ConfigurationRestoreRequest":{"$ref":"./configuration-mutation-v1alpha1.schema.json#/$defs/restoreRequest"},
+      "ConfigurationSecretWriteRequest":{"$ref":"./configuration-mutation-v1alpha1.schema.json#/$defs/secretWriteRequest"},
+      "ConfigurationSecretReceipt":{"$ref":"./configuration-mutation-v1alpha1.schema.json#/$defs/secretReceipt"},
       "ProjectRegistration":{"type":"object","additionalProperties":false,"required":["name","source"],"properties":{"name":{"type":"string","minLength":1},"source":{"type":"string","minLength":1,"description":"Existing absolute project directory visible to the local daemon."}}},
       "Project":{"type":"object","additionalProperties":false,"required":["id","name","sourceHash","status","resourceVersion","lastGlobalPosition","createdAt","updatedAt"],"properties":{"id":{"type":"string","pattern":"^project_[0-9A-HJKMNP-TV-Z]{26}$"},"name":{"type":"string","minLength":1},"sourceHash":{"type":"string","pattern":"^[0-9a-f]{64}$"},"status":{"enum":["active","archived"]},"resourceVersion":{"type":"integer","minimum":1},"lastGlobalPosition":{"type":"integer","minimum":1},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}},
       "ProjectView":{"type":"object","additionalProperties":false,"required":["schemaVersion","project","workItems"],"properties":{"schemaVersion":{"const":1},"project":{"$ref":"#/components/schemas/Project"},"workItems":{"type":"array","items":{"$ref":"#/components/schemas/WorkItem"}}}},

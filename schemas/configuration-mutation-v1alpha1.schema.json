@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/configuration-mutation-v1alpha1.schema.json",
+  "title": "DARKSTAR typed configuration mutation contract v1alpha1",
+  "oneOf": [
+    {"$ref": "#/$defs/catalog"},
+    {"$ref": "#/$defs/state"},
+    {"$ref": "#/$defs/mutationRequest"},
+    {"$ref": "#/$defs/preview"},
+    {"$ref": "#/$defs/applyResult"},
+    {"$ref": "#/$defs/restoreRequest"},
+    {"$ref": "#/$defs/secretWriteRequest"},
+    {"$ref": "#/$defs/secretReceipt"}
+  ],
+  "$defs": {
+    "digest": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "scope": {"oneOf":[
+      {"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"const":"user"}}},
+      {"type":"object","additionalProperties":false,"required":["type","projectId"],"properties":{"type":{"const":"project"},"projectId":{"type":"string","pattern":"^project_[0-9A-HJKMNP-TV-Z]{26}$"}}}
+    ]},
+    "typedValue": {"oneOf":[
+      {"type":"object","additionalProperties":false,"required":["type","value"],"properties":{"type":{"const":"string"},"value":{"type":"string"}}},
+      {"type":"object","additionalProperties":false,"required":["type","value"],"properties":{"type":{"const":"integer"},"value":{"type":"integer"}}},
+      {"type":"object","additionalProperties":false,"required":["type","value"],"properties":{"type":{"const":"boolean"},"value":{"type":"boolean"}}},
+      {"type":"object","additionalProperties":false,"required":["type","value"],"properties":{"type":{"const":"enum"},"value":{"type":"string"}}},
+      {"type":"object","additionalProperties":false,"required":["type","value"],"properties":{"type":{"const":"path"},"value":{"type":"string"}}},
+      {"type":"object","additionalProperties":false,"required":["type","value"],"properties":{"type":{"const":"secret_reference"},"value":{"type":"string"}}}
+    ]},
+    "change": {"oneOf":[
+      {"type":"object","additionalProperties":false,"required":["operation","value"],"properties":{"operation":{"const":"set"},"value":{"$ref":"#/$defs/typedValue"}}},
+      {"type":"object","additionalProperties":false,"required":["operation"],"properties":{"operation":{"const":"unset"}}}
+    ]},
+    "constraints": {"type":"object","additionalProperties":false,"required":["required"],"properties":{"required":{"type":"boolean"},"absolute":{"type":"boolean"},"existingFile":{"type":"boolean"},"minimum":{"type":"integer"},"maximum":{"type":"integer"},"allowedValues":{"type":"array","uniqueItems":true,"items":{"type":"string"}}}},
+    "descriptor": {"type":"object","additionalProperties":false,"required":["key","title","description","type","default","constraints","sensitivity","allowedScopes","restart","actions"],"properties":{"key":{"type":"string","pattern":"^[a-z][a-zA-Z0-9]*(?:\\.[a-z][a-zA-Z0-9]*)+$"},"title":{"type":"string","minLength":1},"description":{"type":"string","minLength":1},"type":{"enum":["string","integer","boolean","enum","path","secret_reference"]},"default":{"$ref":"#/$defs/typedValue"},"constraints":{"$ref":"#/$defs/constraints"},"sensitivity":{"enum":["public","secret"]},"allowedScopes":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["user","project"]}},"restart":{"enum":["none","daemon"]},"actions":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["preview","apply","restore"]}}}},
+    "catalog": {"type":"object","additionalProperties":false,"required":["schemaVersion","settings"],"properties":{"schemaVersion":{"const":1},"settings":{"type":"array","items":{"$ref":"#/$defs/descriptor"}}}},
+    "scopedSetting": {"type":"object","additionalProperties":false,"required":["key","value"],"properties":{"key":{"type":"string"},"value":{"$ref":"#/$defs/typedValue"}}},
+    "source": {"type":"object","additionalProperties":false,"required":["scope","reference"],"properties":{"scope":{"enum":["default","user","project","run","cli"]},"reference":{"type":"string","minLength":1}}},
+    "effectiveSetting": {"type":"object","additionalProperties":false,"required":["key","value","source"],"properties":{"key":{"type":"string"},"value":{"$ref":"#/$defs/typedValue"},"source":{"$ref":"#/$defs/source"}}},
+    "state": {"type":"object","additionalProperties":false,"required":["schemaVersion","scope","revision","configured","effective"],"properties":{"schemaVersion":{"const":1},"scope":{"$ref":"#/$defs/scope"},"revision":{"$ref":"#/$defs/digest"},"secretRevision":{"$ref":"#/$defs/digest"},"configured":{"type":"array","items":{"$ref":"#/$defs/scopedSetting"}},"effective":{"type":"array","items":{"$ref":"#/$defs/effectiveSetting"}}}},
+    "mutationRequest": {"type":"object","additionalProperties":false,"required":["scope","key","change","expectedRevision"],"properties":{"scope":{"$ref":"#/$defs/scope"},"key":{"type":"string"},"change":{"$ref":"#/$defs/change"},"expectedRevision":{"$ref":"#/$defs/digest"}}},
+    "restoreRequest": {"type":"object","additionalProperties":false,"required":["scope","expectedRevision"],"properties":{"scope":{"$ref":"#/$defs/scope"},"expectedRevision":{"$ref":"#/$defs/digest"}}},
+    "issue": {"type":"object","additionalProperties":false,"required":["field","code","message"],"properties":{"field":{"type":"string"},"code":{"type":"string"},"message":{"type":"string"}}},
+    "preview": {"type":"object","additionalProperties":false,"required":["schemaVersion","valid","before","after","issues","restart"],"properties":{"schemaVersion":{"const":1},"valid":{"type":"boolean"},"before":{"$ref":"#/$defs/state"},"after":{"$ref":"#/$defs/state"},"issues":{"type":"array","items":{"$ref":"#/$defs/issue"}},"restart":{"enum":["none","daemon"]}}},
+    "applyResult": {"type":"object","additionalProperties":false,"required":["schemaVersion","state","restart","replayed"],"properties":{"schemaVersion":{"const":1},"state":{"$ref":"#/$defs/state"},"restart":{"enum":["none","daemon"]},"replayed":{"type":"boolean"}}},
+    "secretWriteRequest": {"type":"object","additionalProperties":false,"required":["name","value","expectedRevision"],"properties":{"name":{"type":"string","pattern":"^[a-z][a-z0-9-]{0,63}$"},"value":{"type":"string","minLength":1,"writeOnly":true},"expectedRevision":{"$ref":"#/$defs/digest"}}},
+    "secretReceipt": {"type":"object","additionalProperties":false,"required":["schemaVersion","name","revision","restart","replayed"],"properties":{"schemaVersion":{"const":1},"name":{"type":"string"},"revision":{"$ref":"#/$defs/digest"},"restart":{"enum":["none","daemon"]},"replayed":{"type":"boolean"}}}
+  }
+}

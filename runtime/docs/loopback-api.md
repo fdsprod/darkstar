@@ -66,9 +66,26 @@ Pointer. Each entry carries its winning `default`, `user`, `project`, `run`, or
 `cli` source plus an exact display string for safe string, number, boolean,
 `null`, or JSON values. Secret-like paths and values are represented only as
 `{"kind":"redacted","display":"[redacted]"}`. The endpoint never loads or
-lists `secrets.yaml`, and it exposes no configuration write or validation
-mutation. Omitting `projectRoot` selects the daemon's startup project; a supplied
+lists `secrets.yaml`. Omitting `projectRoot` selects the daemon's startup project; a supplied
 value must be absolute.
+
+Typed configuration authoring is a separate, dashboard-independent surface:
+
+| Method and route | Operation |
+|---|---|
+| `GET /api/v1/configuration/catalog` | List supported types, constraints, defaults, sensitivity, scopes, restart impact, and typed action availability. |
+| `GET /api/v1/configuration/state?projectId=...` | Read one scoped digest revision plus derived effective values and sources; omission selects user scope. |
+| `POST /api/v1/configuration/preview` | Validate and derive effective before/after state without writing. |
+| `POST /api/v1/configuration/apply` | Idempotently apply a typed set or unset against `expectedRevision`. |
+| `POST /api/v1/configuration/restore` | Idempotently restore the exact recoverable previous bytes or previous absence. |
+| `POST /api/v1/configuration/secrets` | Write user-only secret material and return a redacted receipt. |
+
+Mutation commands require `Idempotency-Key`; stale digests return HTTP 409 with
+`REVISION_CONFLICT`, invalid values and path boundaries return HTTP 422, unknown
+or mismatched registered projects return HTTP 404, and incomplete command
+recovery returns retryable HTTP 503. Project scope is the tagged
+`{"type":"project","projectId":"..."}` shape; user scope cannot carry a
+project ID. Raw secrets appear only in the write-only secret request body.
 
 `GET /api/v1/events` is an authenticated Server-Sent Events feed over the
 authoritative global event sequence. Each message ID is its decimal global

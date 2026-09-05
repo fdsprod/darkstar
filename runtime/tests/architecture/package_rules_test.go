@@ -22,6 +22,7 @@ func TestRequiredPortPackagesExist(t *testing.T) {
 		"artifactstore",
 		"capabilityregistry",
 		"contentprocessor",
+		"configurationstore",
 		"contextmanifest",
 		"representationregistry",
 		"delivery",

@@ -20,6 +20,24 @@ returns the versioned report unchanged. A
 degraded or unhealthy report uses exit class 7 because the diagnostic completed
 successfully with findings; transport failures retain their ordinary exit class.
 
+Typed settings have direct CLI/API parity:
+
+```text
+darkstar configuration catalog
+darkstar configuration state [--project <project-id>]
+darkstar configuration preview --key <key> (--value-type <type> --value <value> | --unset) --revision <digest> [--project <project-id>]
+darkstar configuration set --key <key> --value-type <type> --value <value> --revision <digest> [--project <project-id>] [--idempotency-key <key>]
+darkstar configuration unset --key <key> --revision <digest> [--project <project-id>] [--idempotency-key <key>]
+darkstar configuration restore --revision <digest> [--project <project-id>] [--idempotency-key <key>]
+darkstar configuration secret-set <name> (--file <path> | --stdin) --revision <digest> [--idempotency-key <key>]
+```
+
+`state` supplies the digest used by preview, set, unset, or restore. Project
+commands use a registered project identity rather than accepting a filesystem
+root. Secret values can only come from a file or standard input and are never
+printed; the result contains the secret name, new secret-file revision, and
+restart impact. Machine JSON is the same versioned contract returned by HTTP.
+
 `darkstar run start <work-id> --workflow <name> --version <version>` validates
 the work item, resolves an exact installed workflow, freezes its default route,
 and queues the run through `POST /api/v1/runs`. Omitting the workflow flags uses
