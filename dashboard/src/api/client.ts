@@ -98,6 +98,16 @@ export class DarkstarApiClient {
   decideRunReadiness(runId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["ReadinessDecisionRequest"], signal?: AbortSignal) { return this.operation("decideRunReadiness", { path: { runId }, body, resourceVersion, idempotencyKey, signal }); }
   getWorkItem(workItemId: string, signal?: AbortSignal) { return this.operation("getWorkItem", { path: { workItemId }, signal }); }
   listWorkflows(name?: string, signal?: AbortSignal) { return this.operation("listWorkflows", { query: { name }, signal }); }
+  getWorkflowLibrary(signal?: AbortSignal) { return this.operation("getWorkflowLibrary", { signal }); }
+  archiveWorkflowVersion(name: string, version: string, idempotencyKey: string, signal?: AbortSignal) { return this.operation("archiveWorkflowVersion", { body: { name, version }, idempotencyKey, signal }); }
+  getWorkflowDraft(id: string, signal?: AbortSignal) { return this.operation("getWorkflowDraft", { query: { id }, signal }); }
+  createWorkflowDraft(body: Schemas["WorkflowDraftCreateRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("createWorkflowDraft", { body, idempotencyKey, signal }); }
+  duplicateWorkflowDraft(body: Schemas["WorkflowDraftDuplicateRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("duplicateWorkflowDraft", { body, idempotencyKey, signal }); }
+  updateWorkflowDraft(body: Schemas["WorkflowDraftUpdateRequest"], signal?: AbortSignal) { return this.operation("updateWorkflowDraft", { body, signal }); }
+  renameWorkflowDraft(body: Schemas["WorkflowDraftRenameRequest"], signal?: AbortSignal) { return this.operation("renameWorkflowDraft", { body, signal }); }
+  validateWorkflowDraft(body: Schemas["WorkflowDraftRevisionRequest"], signal?: AbortSignal) { return this.operation("validateWorkflowDraft", { body, signal }); }
+  publishWorkflowDraft(body: Schemas["WorkflowDraftPublishRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("publishWorkflowDraft", { body, idempotencyKey, signal }); }
+  discardWorkflowDraft(body: Schemas["WorkflowDraftRevisionRequest"], signal?: AbortSignal) { return this.operation("discardWorkflowDraft", { body, signal }); }
   showWorkflow(name: string, version?: string, signal?: AbortSignal) { return this.operation("showWorkflow", { query: { name, version }, signal }); }
   graphWorkflow(name: string, version?: string, signal?: AbortSignal) { return this.operation("graphWorkflow", { query: { name, version }, signal }); }
   previewWorkflowRoute(name: string, version: string | undefined, body: Schemas["WorkflowPreviewRequest"], signal?: AbortSignal) { return this.operation("previewWorkflowRoute", { query: { name, version }, body, signal }); }

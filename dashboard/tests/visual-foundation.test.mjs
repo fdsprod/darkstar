@@ -42,8 +42,9 @@ test("meaningful dashboard selections are encoded in shareable URLs", async () =
     read("../src/pages/ArtifactPage.tsx"),
     read("../src/pages/SettingsPage.tsx"),
   ]);
-  assert.match(workflows, /value\.set\("workflow", key\)/);
-  assert.match(workflows, /value\.set\("tab", next\)/);
+  assert.match(workflows, /setParams\(\{ item: itemKey\(item\)/);
+  assert.match(workflows, /params\.get\("selection"\)/);
+  assert.match(workflows, /params\.get\("view"\)/);
   assert.match(checkpoints, /next\.set\("approvalId", item\.approvalId\)/);
   assert.match(checkpoints, /next\.set\("inputId", id\)/);
   assert.match(agents, /next\.set\("attemptId", agent\.attemptId\)/);

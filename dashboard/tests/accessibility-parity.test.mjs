@@ -45,12 +45,12 @@ test("every dashboard tabset has roving focus and persistent controlled panels",
   for (const [source, ids] of [
     [agents, ["agent-panel-executions", "agent-panel-permissions"]],
     [checkpoints, ["checkpoint-panel-reviews", "checkpoint-panel-inputs"]],
-    [workflows, ["workflow-panel-preview", "workflow-panel-graph", "workflow-panel-readiness", "workflow-panel-definition"]],
+    [workflows, ["workflow-editor-panel-canvas", "workflow-editor-panel-structure"]],
     [artifacts, ["evidence-source-panel-file", "evidence-source-panel-paste"]],
     [settings, ["settings-panel-health", "settings-panel-provider", "settings-panel-projects", "settings-panel-configuration"]],
   ]) {
     for (const id of ids) {
-      const dynamicControl = /aria-controls=\{`(?:settings-panel-\$\{item\.id\}|workflow-panel-\$\{id\})`\}/.test(source);
+      const dynamicControl = /aria-controls=\{`(?:settings-panel-\$\{item\.id\}|workflow-panel-\$\{id\}|workflow-editor-panel-\$\{item\})`\}/.test(source);
       const dynamicPanel = /id=\{`settings-panel-\$\{item\.id\}`\}/.test(source);
       assert.ok(source.includes(`aria-controls="${id}"`) || dynamicControl, `tab must control ${id}`);
       assert.ok(source.includes(`id="${id}"`) || dynamicPanel, `panel ${id} must remain in the DOM`);
