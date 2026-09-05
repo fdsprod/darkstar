@@ -185,6 +185,23 @@ Checkpoint and input lists are authoritative attention queues. Approval decision
 bind the current server-supplied scope, policy, and resource version. Input
 answers are not approvals; delivery retry reuses the hidden durable provider key.
 
+Iterative checkpoint review has direct API parity:
+
+```text
+darkstar review show <approval-id>
+darkstar review history <checkpoint-id>
+darkstar review feedback <approval-id> --message <text>
+darkstar review resume <approval-id> --attempt <attempt-id>
+darkstar review respond <approval-id> --attempt <attempt-id> --outcome <revised|failed|cancelled> [--artifact <artifact-id> --version <n> --next-approval <approval-id>]
+darkstar review approve|reject <approval-id> [--comment <text>]
+```
+
+Before each mutation the CLI fetches the session and submits its exact candidate
+digest, scope digest, policy digest where applicable, and resource version.
+Thus a stale terminal tab cannot approve a superseded artifact. Stable
+`--idempotency-key` values make feedback, resume, response, and final decisions
+safe to repeat after reconnects.
+
 ## Workflow commands
 
 Workflow commands use daemon-owned loading, validation, immutable installation,

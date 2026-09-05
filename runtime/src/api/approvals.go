@@ -190,7 +190,11 @@ func writeApprovalError(response http.ResponseWriter, requestID string, err erro
 	case errors.Is(err, checkpointport.ErrAlreadyResolved):
 		code = "APPROVAL_ALREADY_RESOLVED"
 	case errors.Is(err, checkpoint.ErrCandidateConflict):
-		code = "APPROVAL_SCOPE_CONFLICT"
+		code = "APPROVAL_STALE_CANDIDATE"
+	case errors.Is(err, checkpointport.ErrRevisionLimit):
+		code = "APPROVAL_REVISION_LIMIT"
+	case errors.Is(err, checkpointport.ErrInvalidReviewState):
+		code = "APPROVAL_INVALID_REVIEW_STATE"
 	}
 	writeAPIError(response, status, apiError{SchemaVersion: 1, Code: code, Message: message, RequestID: requestID})
 }

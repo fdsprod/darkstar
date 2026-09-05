@@ -9,12 +9,92 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	clientapi "darkstar/src/api/client"
 	"darkstar/src/core/runexecution"
 	checkpointport "darkstar/src/ports/artifactcheckpoint"
 )
+
+func runReview(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
+	command := "darkstar review"
+	if len(args) < 2 {
+		return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected review show|history|feedback|resume|respond|approve|reject <id>"))
+	}
+	session, code := connectRunSession(command+" "+args[0], jsonOutput, stdout, stderr)
+	if session == nil {
+		return code
+	}
+	if args[0] == "history" {
+		if len(args) != 2 || !strings.HasPrefix(args[1], "checkpoint_") {
+			return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected review history <checkpoint-id>"))
+		}
+		var history checkpointport.ReviewHistory
+		if err := session.DoJSON(context.Background(), http.MethodGet, "review-sessions?checkpointId="+url.QueryEscape(args[1]), nil, &history); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeReviewResult(history, fmt.Sprintf("%s: %d review session(s).", history.CheckpointID, len(history.Sessions)), jsonOutput, stdout, stderr, command)
+	}
+	if !strings.HasPrefix(args[1], "approval_") {
+		return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("review session ID must start with approval_"))
+	}
+	var current checkpointport.ReviewSession
+	if err := session.DoJSON(context.Background(), http.MethodGet, "review-sessions/"+url.PathEscape(args[1]), nil, &current); err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	if args[0] == "show" && len(args) == 2 {
+		return writeReviewResult(current, fmt.Sprintf("%s is %s with %d turn(s).", current.ID, current.State, len(current.Turns)), jsonOutput, stdout, stderr, command)
+	}
+	flags, err := parseReviewFilters(args[2:], map[string]string{"--message": "message", "--comment": "comment", "--attempt": "attempt", "--outcome": "outcome", "--artifact": "artifact", "--version": "version", "--next-approval": "next", "--idempotency-key": "key"})
+	if err != nil {
+		return reviewArgumentError(stdout, stderr, jsonOutput, command, err)
+	}
+	key := flags.Get("key")
+	if key == "" {
+		key = newIdempotencyKey()
+	}
+	body := map[string]any{"candidateDigest": current.CandidateDigest, "scopeDigest": current.ScopeDigest}
+	actionPath := ""
+	switch args[0] {
+	case "feedback":
+		if flags.Get("message") == "" {
+			return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("review feedback requires --message"))
+		}
+		actionPath, body["message"] = "feedback", flags.Get("message")
+	case "resume":
+		if !strings.HasPrefix(flags.Get("attempt"), "attempt_") {
+			return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("review resume requires --attempt <attempt-id>"))
+		}
+		actionPath, body["attemptId"] = "resume", flags.Get("attempt")
+	case "respond":
+		outcome := checkpointport.AgentOutcome(flags.Get("outcome"))
+		if !strings.HasPrefix(flags.Get("attempt"), "attempt_") || (outcome != checkpointport.AgentRevised && outcome != checkpointport.AgentFailed && outcome != checkpointport.AgentCancelled) {
+			return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("review respond requires --attempt and --outcome revised|failed|cancelled"))
+		}
+		actionPath, body["attemptId"], body["outcome"], body["message"] = "agent-responses", flags.Get("attempt"), outcome, flags.Get("message")
+		if outcome == checkpointport.AgentRevised {
+			version, parseErr := strconv.ParseUint(flags.Get("version"), 10, 64)
+			if parseErr != nil || version == 0 || !strings.HasPrefix(flags.Get("artifact"), "artifact_") || !strings.HasPrefix(flags.Get("next"), "approval_") {
+				return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("revised response requires --artifact, --version, and --next-approval"))
+			}
+			body["candidate"] = map[string]any{"artifactId": flags.Get("artifact"), "version": version}
+			body["nextApprovalId"] = flags.Get("next")
+		}
+	case "approve", "reject":
+		actionPath, body["action"], body["policyDigest"], body["comment"] = "decisions", args[0], current.PolicyDigest, flags.Get("comment")
+		if args[0] == "reject" && strings.TrimSpace(flags.Get("comment")) == "" {
+			return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("review reject requires --comment"))
+		}
+	default:
+		return reviewArgumentError(stdout, stderr, jsonOutput, command, fmt.Errorf("unknown review command %q", args[0]))
+	}
+	if err := session.DoJSON(context.Background(), http.MethodPost, "review-sessions/"+url.PathEscape(current.ID)+"/"+actionPath, body, &current,
+		clientapi.WithHeader("Idempotency-Key", key), clientapi.WithHeader("If-Match", fmt.Sprintf(`"%d"`, current.ResourceVersion))); err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	return writeReviewResult(current, fmt.Sprintf("Review session %s is %s.", current.ID, current.State), jsonOutput, stdout, stderr, command)
+}
 
 func runCheckpoint(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	command := "darkstar checkpoint"

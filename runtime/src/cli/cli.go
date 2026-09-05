@@ -57,6 +57,7 @@ Commands:
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
   input      List, inspect, answer, and retry provider input requests
+  review     Inspect and continue checkpoint review sessions
   project    Register, list, and inspect projects
   run        Start, inspect, control, watch, and export runs
   work       Create, import, list, and inspect work
@@ -110,6 +111,14 @@ Approval and checkpoint commands:
   checkpoint approve <approval-id> [--message <text>] [--json]
   checkpoint request-changes|reject <approval-id> --message <text> [--json]
   checkpoint answer <input-id> --file <answers.json> [--json]
+
+Review-session commands:
+  review show <approval-id> [--json]
+  review history <checkpoint-id> [--json]
+  review feedback <approval-id> --message <text> [--idempotency-key <key>] [--json]
+  review resume <approval-id> --attempt <attempt-id> [--idempotency-key <key>] [--json]
+  review respond <approval-id> --attempt <attempt-id> --outcome <revised|failed|cancelled> [--artifact <artifact-id>] [--version <n>] [--next-approval <approval-id>] [--message <text>] [--idempotency-key <key>] [--json]
+  review approve|reject <approval-id> [--comment <text>] [--idempotency-key <key>] [--json]
 
 Input commands:
   input list [--run <run-id> | --attempt <attempt-id>] [--status <pending|answer_recorded|answered>] [--json]
@@ -223,6 +232,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runProject(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "input":
 		return runInput(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "review":
+		return runReview(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "run":
 		return runRun(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "work":

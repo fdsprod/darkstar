@@ -544,6 +544,71 @@ func ReduceApproval(current *statestore.ApprovalProjection, event statestore.Eve
 
 	next := *current
 	switch event.Kind {
+	case "approval.feedback_submitted":
+		if current.Class != statestore.ApprovalWorkflowCheckpoint || current.Status != statestore.ApprovalPending {
+			return statestore.ApprovalProjection{}, true, invalidTransition("approval", current.ApprovalID, string(current.Status), event.Kind)
+		}
+		var data struct {
+			CandidateDigest string `json:"candidateDigest"`
+			ScopeDigest     string `json:"scopeDigest"`
+			Message         string `json:"message"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.ApprovalProjection{}, true, err
+		}
+		if data.CandidateDigest != current.CandidateDigest || data.ScopeDigest != current.ScopeDigest || data.Message == "" {
+			return statestore.ApprovalProjection{}, true, errors.New("approval.feedback_submitted must match the current candidate and contain feedback")
+		}
+	case "approval.revision_resumed":
+		if current.Class != statestore.ApprovalWorkflowCheckpoint || current.Status != statestore.ApprovalPending {
+			return statestore.ApprovalProjection{}, true, invalidTransition("approval", current.ApprovalID, string(current.Status), event.Kind)
+		}
+		var data struct {
+			CandidateDigest string `json:"candidateDigest"`
+			ScopeDigest     string `json:"scopeDigest"`
+			AttemptID       string `json:"attemptId"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.ApprovalProjection{}, true, err
+		}
+		if data.CandidateDigest != current.CandidateDigest || data.ScopeDigest != current.ScopeDigest || data.AttemptID == "" {
+			return statestore.ApprovalProjection{}, true, errors.New("approval.revision_resumed must match the current candidate and name an attempt")
+		}
+	case "approval.agent_responded":
+		if current.Class != statestore.ApprovalWorkflowCheckpoint || current.Status != statestore.ApprovalPending {
+			return statestore.ApprovalProjection{}, true, invalidTransition("approval", current.ApprovalID, string(current.Status), event.Kind)
+		}
+		var data struct {
+			CandidateDigest    string `json:"candidateDigest"`
+			ScopeDigest        string `json:"scopeDigest"`
+			AttemptID          string `json:"attemptId"`
+			Outcome            string `json:"outcome"`
+			ResultingCandidate *struct {
+				ArtifactID string `json:"artifactId"`
+				Version    uint64 `json:"version"`
+			} `json:"resultingCandidate"`
+			ResultingDigest string `json:"resultingDigest"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.ApprovalProjection{}, true, err
+		}
+		if data.CandidateDigest != current.CandidateDigest || data.ScopeDigest != current.ScopeDigest || data.AttemptID == "" {
+			return statestore.ApprovalProjection{}, true, errors.New("approval.agent_responded must match the current candidate and attempt")
+		}
+		switch data.Outcome {
+		case "revised":
+			if data.ResultingCandidate == nil || data.ResultingCandidate.ArtifactID != current.CandidateArtifactID ||
+				data.ResultingCandidate.Version != current.CandidateArtifactVersion+1 || data.ResultingDigest == "" {
+				return statestore.ApprovalProjection{}, true, errors.New("revised agent response requires the next exact candidate")
+			}
+			next.Status = statestore.ApprovalChangesRequested
+		case "failed", "cancelled":
+			if data.ResultingCandidate != nil || data.ResultingDigest != "" {
+				return statestore.ApprovalProjection{}, true, errors.New("failed or cancelled agent response cannot replace the candidate")
+			}
+		default:
+			return statestore.ApprovalProjection{}, true, errors.New("approval.agent_responded has invalid outcome")
+		}
 	case "approval.decided":
 		if current.Status != statestore.ApprovalPending {
 			return statestore.ApprovalProjection{}, true, invalidTransition("approval", current.ApprovalID, string(current.Status), event.Kind)

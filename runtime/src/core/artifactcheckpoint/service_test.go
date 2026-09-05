@@ -36,7 +36,6 @@ func TestRevisionLoopPreservesDraftsFeedbackAndScopedEffects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	limit := uint64(2)
 	firstRequest := openRequest("approval_first", "attempt_first", firstRef, &limit)
 	first, err := service.Open(ctx, firstRequest)
@@ -173,6 +172,117 @@ func TestRevisionRequiresRequestChangesNextVersionAndBudget(t *testing.T) {
 	requestChanges(t, ctx, service, second, "revise-two")
 	if _, err := service.Open(ctx, openRequest("approval_three", "attempt_three", thirdRef, &limit)); !errors.Is(err, checkpointport.ErrRevisionLimit) {
 		t.Fatalf("revision budget error = %v", err)
+	}
+}
+
+func TestReviewSessionPreservesTurnsRejectsStaleCandidateAndReconstructsHistory(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, artifacts, lineage := checkpointFixture()
+	secondRef := artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 2}
+	artifacts.values[secondRef] = artifactregistry.ArtifactVersion{ArtifactID: secondRef.ArtifactID, Version: 2, BlobDigest: strings.Repeat("b", 64)}
+	service, _ := checkpoint.New(store, artifacts, lineage)
+	first, err := service.Open(ctx, openRequest("approval_one", "attempt_one", artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 1}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	feedbackRequest := checkpoint.FeedbackRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: first.ResourceVersion,
+		CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, Message: "Add a restart-safe recovery section.",
+		IdempotencyKey: "feedback-one", Actor: userActor()}
+	afterFeedback, err := service.SubmitFeedback(ctx, feedbackRequest)
+	if err != nil || afterFeedback.State != checkpointport.ReviewAwaitingAgent || len(afterFeedback.Turns) != 1 {
+		t.Fatalf("feedback = %#v, %v", afterFeedback, err)
+	}
+	replayed, err := service.SubmitFeedback(ctx, feedbackRequest)
+	if err != nil || replayed.ResourceVersion != afterFeedback.ResourceVersion || len(store.events) != 2 {
+		t.Fatalf("feedback replay = %#v, %v; events=%d", replayed, err, len(store.events))
+	}
+	conflictingFeedback := feedbackRequest
+	conflictingFeedback.Message = "Different feedback under the same key."
+	if _, err := service.SubmitFeedback(ctx, conflictingFeedback); !errors.Is(err, checkpointport.ErrIdempotencyConflict) {
+		t.Fatalf("conflicting feedback replay error = %v", err)
+	}
+
+	resumed, err := service.ResumeRevision(ctx, checkpoint.ResumeRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: afterFeedback.ResourceVersion,
+		CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_revision_one", IdempotencyKey: "resume-one",
+		Actor: statestore.Actor{Type: statestore.ActorSystem, ID: "coordinator"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.ActiveIteration == nil || resumed.ActiveIteration.AttemptID != "attempt_revision_one" || resumed.ActiveIteration.RunID != "run_one" {
+		t.Fatalf("active iteration = %#v", resumed.ActiveIteration)
+	}
+	next, err := service.RecordAgentResponse(ctx, checkpoint.AgentResponseRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: resumed.ResourceVersion,
+		CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_revision_one", Outcome: checkpointport.AgentRevised,
+		Message: "Added recovery details.", Candidate: secondRef, NextApprovalID: "approval_two", IdempotencyKey: "response-one",
+		Actor: statestore.Actor{Type: statestore.ActorProvider, ID: "codex"}})
+	if err != nil || next.State != checkpointport.ReviewAwaitingHuman || next.Candidate != secondRef {
+		t.Fatalf("agent response = %#v, %v", next, err)
+	}
+	if next.ActiveIteration != nil {
+		t.Fatalf("completed iteration remained active: %#v", next.ActiveIteration)
+	}
+	if _, err := service.Decide(ctx, checkpoint.DecisionRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: resumed.ResourceVersion,
+		Action: checkpointport.ActionApprove, CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest,
+		PolicyDigest: first.PolicyDigest, IdempotencyKey: "stale-tab", Actor: userActor()}); !errors.Is(err, checkpoint.ErrCandidateConflict) {
+		t.Fatalf("stale decision error = %v", err)
+	}
+	history, err := service.ReviewHistory(ctx, "checkpoint_design")
+	if err != nil || len(history.Sessions) != 2 || history.Sessions[0].State != checkpointport.ReviewSuperseded || len(history.Sessions[0].Turns) != 2 {
+		t.Fatalf("review history = %#v, %v", history, err)
+	}
+}
+
+func TestReviewSessionAgentFailureAndCancellationReturnCandidateToHuman(t *testing.T) {
+	t.Parallel()
+	for _, outcome := range []checkpointport.AgentOutcome{checkpointport.AgentFailed, checkpointport.AgentCancelled} {
+		outcome := outcome
+		t.Run(string(outcome), func(t *testing.T) {
+			ctx := context.Background()
+			store, artifacts, lineage := checkpointFixture()
+			service, _ := checkpoint.New(store, artifacts, lineage)
+			first, _ := service.Open(ctx, openRequest("approval_one", "attempt_one", artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 1}, nil))
+			feedback, _ := service.SubmitFeedback(ctx, checkpoint.FeedbackRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: first.ResourceVersion,
+				CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, Message: "Revise.", IdempotencyKey: "feedback", Actor: userActor()})
+			resumed, _ := service.ResumeRevision(ctx, checkpoint.ResumeRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: feedback.ResourceVersion,
+				CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_retry", IdempotencyKey: "resume", Actor: userActor()})
+			result, err := service.RecordAgentResponse(ctx, checkpoint.AgentResponseRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: resumed.ResourceVersion,
+				CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_retry", Outcome: outcome, Message: "provider stopped",
+				IdempotencyKey: "response", Actor: statestore.Actor{Type: statestore.ActorProvider, ID: "codex"}})
+			if err != nil || result.State != checkpointport.ReviewAwaitingHuman || result.CandidateDigest != first.CandidateDigest || len(result.Turns) != 2 {
+				t.Fatalf("result = %#v, %v", result, err)
+			}
+		})
+	}
+}
+
+func TestReviewSessionSurfacesRevisionLimitBeforeReplacingCandidate(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, artifacts, lineage := checkpointFixture()
+	secondRef := artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 2}
+	artifacts.values[secondRef] = artifactregistry.ArtifactVersion{ArtifactID: secondRef.ArtifactID, Version: 2, BlobDigest: strings.Repeat("b", 64)}
+	service, _ := checkpoint.New(store, artifacts, lineage)
+	limit := uint64(1)
+	first, _ := service.Open(ctx, openRequest("approval_one", "attempt_one", artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 1}, &limit))
+	feedback, _ := service.SubmitFeedback(ctx, checkpoint.FeedbackRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: first.ResourceVersion, CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, Message: "one", IdempotencyKey: "f1", Actor: userActor()})
+	resumed, _ := service.ResumeRevision(ctx, checkpoint.ResumeRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: feedback.ResourceVersion, CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_two", IdempotencyKey: "r1", Actor: userActor()})
+	second, err := service.RecordAgentResponse(ctx, checkpoint.AgentResponseRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: resumed.ResourceVersion, CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_two", Outcome: checkpointport.AgentRevised, Candidate: secondRef, NextApprovalID: "approval_two", IdempotencyKey: "a1", Actor: userActor()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.RevisionLimitReached {
+		t.Fatal("second candidate did not surface the exhausted revision limit")
+	}
+	for _, action := range second.AllowedActions {
+		if action == checkpointport.ActionRequestChanges {
+			t.Fatalf("exhausted session allows request_changes: %#v", second.AllowedActions)
+		}
+	}
+	_, err = service.SubmitFeedback(ctx, checkpoint.FeedbackRequest{ApprovalID: second.ID, ExpectedResourceVersion: second.ResourceVersion, CandidateDigest: second.CandidateDigest, ScopeDigest: second.ScopeDigest, Message: "two", IdempotencyKey: "f2", Actor: userActor()})
+	if !errors.Is(err, checkpointport.ErrRevisionLimit) {
+		t.Fatalf("revision limit error = %v", err)
 	}
 }
 
@@ -315,6 +425,20 @@ func (store *memoryStore) EventByCommand(_ context.Context, aggregateID, command
 		return statestore.Event{}, statestore.ErrNotFound
 	}
 	return value, nil
+}
+
+func (store *memoryStore) EventsForAggregate(_ context.Context, aggregateID string) ([]statestore.Event, error) {
+	values := make([]statestore.Event, 0)
+	for _, event := range store.events {
+		if event.AggregateID == aggregateID {
+			values = append(values, event)
+		}
+	}
+	if len(values) == 0 {
+		return nil, statestore.ErrNotFound
+	}
+	sort.Slice(values, func(left, right int) bool { return values[left].AggregateRevision < values[right].AggregateRevision })
+	return values, nil
 }
 
 func (store *memoryStore) Node(_ context.Context, id string) (statestore.NodeProjection, error) {

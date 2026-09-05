@@ -508,6 +508,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		s.serveApprovals(response, request, requestID)
 		return
 	}
+	if path.Clean(request.URL.Path) == "/api/v1/review-sessions" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/review-sessions/") {
+		s.serveReviewSessions(response, request, requestID)
+		return
+	}
 	if path.Clean(request.URL.Path) == "/api/v1/checkpoints" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/checkpoints/") {
 		s.serveCheckpoints(response, request, requestID)
 		return

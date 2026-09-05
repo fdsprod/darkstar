@@ -89,6 +89,49 @@ func TestArtifactCheckpointProjectionRejectsPartialSubjectsAndRepeatDecisions(t 
 	}
 }
 
+func TestReviewTurnsRemainOrderedAndIdempotentAcrossProjectionRebuild(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openEventTestDatabase(t)
+	runID, approvalID := testID("run", 'R'), testID("approval", 'R')
+	request := pendingEvent(testID("event", 'R'), statestore.AggregateApproval, approvalID, 0, "approval.requested",
+		checkpointRequestJSON(runID, testID("checkpoint", 'R'), testID("visit", 'R'), testID("attempt", 'R'), testID("artifact", 'R'), 1, 1, strings.Repeat("d", 64)))
+	feedback := pendingEvent(testID("event", 'S'), statestore.AggregateApproval, approvalID, 1, "approval.feedback_submitted",
+		`{"candidateDigest":"`+strings.Repeat("c", 64)+`","scopeDigest":"`+strings.Repeat("a", 64)+`","message":"cover reconnect","attemptId":""}`)
+	feedback.CommandID = "feedback-stable-key"
+	resume := pendingEvent(testID("event", 'T'), statestore.AggregateApproval, approvalID, 2, "approval.revision_resumed",
+		`{"candidateDigest":"`+strings.Repeat("c", 64)+`","scopeDigest":"`+strings.Repeat("a", 64)+`","attemptId":"`+testID("attempt", 'S')+`"}`)
+	failure := pendingEvent(testID("event", 'V'), statestore.AggregateApproval, approvalID, 3, "approval.agent_responded",
+		`{"candidateDigest":"`+strings.Repeat("c", 64)+`","scopeDigest":"`+strings.Repeat("a", 64)+`","attemptId":"`+testID("attempt", 'S')+`","outcome":"failed","message":"provider disconnected"}`)
+	if _, err := database.Append(ctx, request, feedback, resume, failure); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Append(ctx, feedback); err != nil {
+		t.Fatalf("idempotent feedback replay: %v", err)
+	}
+	assertReviewStream := func() {
+		events, err := database.EventsForAggregate(ctx, approvalID)
+		if err != nil || len(events) != 4 {
+			t.Fatalf("review events = %#v, %v", events, err)
+		}
+		want := []string{"approval.requested", "approval.feedback_submitted", "approval.revision_resumed", "approval.agent_responded"}
+		for index := range want {
+			if events[index].Kind != want[index] || events[index].AggregateRevision != uint64(index+1) {
+				t.Fatalf("event %d = %#v", index, events[index])
+			}
+		}
+	}
+	assertReviewStream()
+	if err := database.RebuildProjections(ctx); err != nil {
+		t.Fatal(err)
+	}
+	assertReviewStream()
+	projection, err := database.Approval(ctx, approvalID)
+	if err != nil || projection.ResourceVersion != 4 || projection.Status != statestore.ApprovalPending {
+		t.Fatalf("rebuilt review projection = %#v, %v", projection, err)
+	}
+}
+
 func checkpointRequestJSON(runID, checkpointID, visitID, attemptID, artifactID string, artifactVersion, revision uint64, policy string) string {
 	return `{"runId":"` + runID + `","class":"workflow_checkpoint","checkpointId":"` + checkpointID +
 		`","visitId":"` + visitID + `","nodeId":"technical_design","attemptId":"` + attemptID +

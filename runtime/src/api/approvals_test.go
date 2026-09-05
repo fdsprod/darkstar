@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,11 +106,47 @@ func TestCheckpointQueueIsDiscoverableWithoutKnownID(t *testing.T) {
 	}
 }
 
+func TestReviewFeedbackAPIRequiresExactCandidateAndRevision(t *testing.T) {
+	server, err := NewServer(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &recordingApprovalService{session: checkpointport.ReviewSession{SchemaVersion: 1, ID: "approval_00000000000000000000000000", ResourceVersion: 8, State: checkpointport.ReviewAwaitingAgent}}
+	if err := server.SetApprovals(service); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Start(context.Background(), 1234, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestServer(t, server)
+	endpoint, _ := server.Endpoint()
+	body := `{"candidateDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","scopeDigest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","message":"cover reconnect"}`
+	request, _ := http.NewRequest(http.MethodPost, endpoint.BaseURL()+"/api/v1/review-sessions/approval_00000000000000000000000000/feedback", bytes.NewBufferString(body))
+	request.Header.Set("Authorization", endpoint.AuthorizationHeader())
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "feedback-key")
+	request.Header.Set("If-Match", `"7"`)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("ETag") != `"8"` {
+		t.Fatalf("status=%d etag=%q", response.StatusCode, response.Header.Get("ETag"))
+	}
+	if service.feedback.ExpectedResourceVersion != 7 || service.feedback.CandidateDigest != strings.Repeat("a", 64) ||
+		service.feedback.ScopeDigest != strings.Repeat("b", 64) || service.feedback.Message != "cover reconnect" || service.feedback.IdempotencyKey != "feedback-key" {
+		t.Fatalf("feedback request = %#v", service.feedback)
+	}
+}
+
 type recordingApprovalService struct {
 	request     checkpoint.DecisionRequest
 	listRequest checkpoint.ListRequest
 	queue       checkpointport.Queue
 	err         error
+	session     checkpointport.ReviewSession
+	feedback    checkpoint.FeedbackRequest
 }
 
 func (service *recordingApprovalService) Decide(_ context.Context, request checkpoint.DecisionRequest) (checkpointport.Round, error) {
@@ -134,6 +171,23 @@ func (service *recordingApprovalService) List(_ context.Context, request checkpo
 		service.queue = checkpointport.Queue{SchemaVersion: 1, Items: []checkpointport.Round{}}
 	}
 	return service.queue, service.err
+}
+
+func (service *recordingApprovalService) ReviewSession(context.Context, string) (checkpointport.ReviewSession, error) {
+	return service.session, service.err
+}
+func (service *recordingApprovalService) ReviewHistory(context.Context, string) (checkpointport.ReviewHistory, error) {
+	return checkpointport.ReviewHistory{}, service.err
+}
+func (service *recordingApprovalService) SubmitFeedback(_ context.Context, request checkpoint.FeedbackRequest) (checkpointport.ReviewSession, error) {
+	service.feedback = request
+	return service.session, service.err
+}
+func (service *recordingApprovalService) ResumeRevision(context.Context, checkpoint.ResumeRequest) (checkpointport.ReviewSession, error) {
+	return service.session, service.err
+}
+func (service *recordingApprovalService) RecordAgentResponse(context.Context, checkpoint.AgentResponseRequest) (checkpointport.ReviewSession, error) {
+	return service.session, service.err
 }
 
 func approvalRequest(t *testing.T, endpoint Endpoint, approvalID, body, key, ifMatch string) *http.Response {

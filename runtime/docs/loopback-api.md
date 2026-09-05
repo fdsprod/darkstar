@@ -140,6 +140,27 @@ reported as pending and is not confused with run `continue` or run `cancel`.
 Provider assessment submission remains inside the daemon rather than being
 published under the local user bearer token.
 
+Checkpoint iteration is exposed as a candidate-scoped review session:
+
+| Method and route | Operation |
+|---|---|
+| `GET /api/v1/review-sessions?checkpointId=...` | Read every candidate session and turn in revision order. |
+| `GET /api/v1/review-sessions/{approvalId}` | Read one exact candidate, its state, allowed actions, and ordered turns. |
+| `POST /api/v1/review-sessions/{approvalId}/feedback` | Record human feedback against the displayed candidate digest. |
+| `POST /api/v1/review-sessions/{approvalId}/resume` | Correlate an agent revision attempt without granting provider permission. |
+| `POST /api/v1/review-sessions/{approvalId}/agent-responses` | Record a revised, failed, or cancelled agent attempt. |
+| `POST /api/v1/review-sessions/{approvalId}/decisions` | Approve or reject only the exact current candidate. |
+
+Every mutation requires `Idempotency-Key`, quoted `If-Match`, `scopeDigest`, and
+`candidateDigest`. A successful revision atomically supersedes the old session
+and opens the next artifact version; failure or cancellation returns the
+unchanged candidate to human review. The closed states are `awaiting_human`,
+`awaiting_agent`, `approved`, `rejected`, and `superseded`. Turn and decision
+events use the run correlation ID, so they appear in the existing SSE stream
+and redacted run export without a second audit channel. Revision limits come
+from the frozen checkpoint policy and fail before a replacement session is
+created.
+
 `GET /api/v1/runs/{runId}/export` returns a finite `application/zip` support
 bundle. It contains `run.json`, correlated `events.jsonl`, `commands.json`, an
 `artifacts/index.json`, and every discovered log that remains locally available.

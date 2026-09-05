@@ -520,6 +520,27 @@ func (d *Database) EventByCommand(ctx context.Context, aggregateID, commandID st
 	return events[0], nil
 }
 
+// EventsForAggregate returns one complete aggregate stream in revision order.
+// Review conversations use the immutable events as their sole turn history.
+func (d *Database) EventsForAggregate(ctx context.Context, aggregateID string) ([]statestore.Event, error) {
+	rows, err := d.sql.QueryContext(ctx, eventSelect+` WHERE aggregate_id = ? ORDER BY aggregate_revision`, aggregateID)
+	if err != nil {
+		return nil, fmt.Errorf("query aggregate events: %w", err)
+	}
+	events, scanErr := scanEvents(rows)
+	closeErr := rows.Close()
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close aggregate events: %w", closeErr)
+	}
+	if len(events) == 0 {
+		return nil, &NotFoundError{Kind: "aggregate events", ID: aggregateID}
+	}
+	return events, nil
+}
+
 // RebuildProjections atomically replaces current-state projections by replaying
 // the authoritative event log from global position zero.
 func (d *Database) RebuildProjections(ctx context.Context) (err error) {

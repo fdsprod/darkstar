@@ -3,7 +3,9 @@ package artifactcheckpoint
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"darkstar/src/ports/artifactlineage"
@@ -16,7 +18,142 @@ var (
 	ErrIdempotencyConflict = errors.New("artifact checkpoint idempotency conflict")
 	ErrRevisionLimit       = errors.New("artifact checkpoint revision limit reached")
 	ErrRevisionRequired    = errors.New("artifact checkpoint does not accept a revision")
+	ErrInvalidReviewState  = errors.New("artifact checkpoint review state does not allow this action")
 )
+
+// ReviewState is the closed lifecycle of one exact checkpoint candidate.
+// It is derived from immutable events rather than persisted as a second source
+// of truth beside the approval projection.
+type ReviewState string
+
+const (
+	ReviewAwaitingHuman ReviewState = "awaiting_human"
+	ReviewAwaitingAgent ReviewState = "awaiting_agent"
+	ReviewApproved      ReviewState = "approved"
+	ReviewRejected      ReviewState = "rejected"
+	ReviewSuperseded    ReviewState = "superseded"
+)
+
+type AgentOutcome string
+
+const (
+	AgentRevised   AgentOutcome = "revised"
+	AgentFailed    AgentOutcome = "failed"
+	AgentCancelled AgentOutcome = "cancelled"
+)
+
+// Turn is an immutable tagged member of a review conversation.
+type Turn interface {
+	reviewTurn()
+}
+
+type Turns []Turn
+
+func (turns *Turns) UnmarshalJSON(encoded []byte) error {
+	var raw []json.RawMessage
+	if err := json.Unmarshal(encoded, &raw); err != nil {
+		return err
+	}
+	result := make(Turns, 0, len(raw))
+	for _, item := range raw {
+		var discriminator struct {
+			Kind string `json:"kind"`
+		}
+		if err := json.Unmarshal(item, &discriminator); err != nil {
+			return err
+		}
+		switch discriminator.Kind {
+		case "human_feedback":
+			var value HumanFeedbackTurn
+			if err := json.Unmarshal(item, &value); err != nil {
+				return err
+			}
+			result = append(result, value)
+		case "agent_response":
+			var value AgentResponseTurn
+			if err := json.Unmarshal(item, &value); err != nil {
+				return err
+			}
+			result = append(result, value)
+		default:
+			return fmt.Errorf("unknown review turn kind %q", discriminator.Kind)
+		}
+	}
+	*turns = result
+	return nil
+}
+
+type HumanFeedbackTurn struct {
+	Kind            string                      `json:"kind"`
+	Sequence        uint64                      `json:"sequence"`
+	Actor           statestore.Actor            `json:"actor"`
+	OccurredAt      time.Time                   `json:"occurredAt"`
+	RunID           string                      `json:"runId"`
+	AttemptID       string                      `json:"attemptId"`
+	Candidate       artifactregistry.VersionRef `json:"candidate"`
+	CandidateDigest string                      `json:"candidateDigest"`
+	Message         string                      `json:"message"`
+}
+
+func (HumanFeedbackTurn) reviewTurn() {}
+
+type AgentResponseTurn struct {
+	Kind               string                       `json:"kind"`
+	Sequence           uint64                       `json:"sequence"`
+	Actor              statestore.Actor             `json:"actor"`
+	OccurredAt         time.Time                    `json:"occurredAt"`
+	RunID              string                       `json:"runId"`
+	AttemptID          string                       `json:"attemptId"`
+	Outcome            AgentOutcome                 `json:"outcome"`
+	Message            string                       `json:"message,omitempty"`
+	ResultingCandidate *artifactregistry.VersionRef `json:"resultingCandidate,omitempty"`
+	ResultingDigest    string                       `json:"resultingDigest,omitempty"`
+}
+
+func (AgentResponseTurn) reviewTurn() {}
+
+// ActiveAgentIteration links review state to the authoritative attempt
+// lifecycle without duplicating its queued/running/validating phase.
+type ActiveAgentIteration struct {
+	AttemptID string           `json:"attemptId"`
+	RunID     string           `json:"runId"`
+	ResumedBy statestore.Actor `json:"resumedBy"`
+	ResumedAt time.Time        `json:"resumedAt"`
+}
+
+// ReviewSession is one immutable candidate and its ordered conversation. A
+// revised artifact creates a new session and leaves this one superseded.
+type ReviewSession struct {
+	SchemaVersion        int                            `json:"schemaVersion"`
+	ID                   string                         `json:"id"`
+	CheckpointID         string                         `json:"checkpointId"`
+	RunID                string                         `json:"runId"`
+	VisitID              string                         `json:"visitId"`
+	NodeID               string                         `json:"nodeId"`
+	Revision             uint64                         `json:"revision"`
+	Candidate            artifactregistry.VersionRef    `json:"candidate"`
+	CandidateDigest      string                         `json:"candidateDigest"`
+	ScopeDigest          string                         `json:"scopeDigest"`
+	PolicyDigest         string                         `json:"policyDigest"`
+	Mode                 Mode                           `json:"mode"`
+	MaxRevisions         *uint64                        `json:"maxRevisions,omitempty"`
+	RevisionLimitReached bool                           `json:"revisionLimitReached"`
+	State                ReviewState                    `json:"state"`
+	Decision             *Decision                      `json:"decision,omitempty"`
+	Turns                Turns                          `json:"turns"`
+	AffectedArtifacts    []artifactlineage.Invalidation `json:"affectedArtifacts"`
+	ActiveIteration      *ActiveAgentIteration          `json:"activeIteration,omitempty"`
+	AllowedActions       []Action                       `json:"allowedActions"`
+	ResourceVersion      uint64                         `json:"resourceVersion"`
+	CreatedAt            time.Time                      `json:"createdAt"`
+	UpdatedAt            time.Time                      `json:"updatedAt"`
+}
+
+type ReviewHistory struct {
+	SchemaVersion int             `json:"schemaVersion"`
+	CheckpointID  string          `json:"checkpointId"`
+	Sessions      []ReviewSession `json:"sessions"`
+}
 
 // Mode is the closed set of artifact checkpoint policies supported by the
 // iterative review loop.
@@ -108,5 +245,6 @@ type Store interface {
 	ApprovalsForCheckpoint(context.Context, string) ([]statestore.ApprovalProjection, error)
 	CheckpointApprovals(context.Context, string, statestore.ApprovalStatus) ([]statestore.ApprovalProjection, error)
 	EventByCommand(context.Context, string, string) (statestore.Event, error)
+	EventsForAggregate(context.Context, string) ([]statestore.Event, error)
 	Node(context.Context, string) (statestore.NodeProjection, error)
 }

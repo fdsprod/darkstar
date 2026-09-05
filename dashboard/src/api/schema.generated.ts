@@ -20,6 +20,18 @@ export interface components {
     "WorkItemView": { "schemaVersion": 1; "work": components["schemas"]["WorkItem"]; "runs": Array<components["schemas"]["Run"]>; "stories": Array<components["schemas"]["StoryProjection"]>; "points": Array<components["schemas"]["PointProjection"]>; };
     "WorkflowDocument": { "apiVersion": "darkstar.local/v1alpha1"; "kind": "Workflow"; "metadata": { "name": string; "version": string; "displayName"?: string; "description"?: string; }; "spec": { "inputs"?: { [key: string]: { "type": "null" | "boolean" | "integer" | "number" | "string" | "array" | "object"; "schema"?: string; "description"?: string; }; }; "routeDefaults": { "entry": string; "terminals": Array<string>; }; "nodes": { [key: string]: { "type"?: "reasoning"; "reasoning": { "agent": string; "skills"?: Array<string>; "tools"?: Array<string>; }; } | { "type"?: "gate"; "gate": { "policy": string; "condition": { "const": boolean; } | { "op": "eq" | "ne" | "lt" | "lte" | "gt" | "gte"; "args": Array<{ "ref": string; } | { "literal": unknown; }>; } | { "op": "present"; "arg": { "ref": string; }; } | { "op": "all" | "any"; "args": Array<unknown>; } | { "op": "not"; "arg": unknown; }; }; } | { "type"?: "command"; "command": { "argv": Array<string>; "cwd"?: string; "timeoutSeconds"?: number; }; } | { "type"?: "approval"; "approval": { "actor": string; "externalCondition"?: string; }; } | { "type"?: "subworkflow"; "call": { "workflow": { "name": string; "version": string; "digest"?: string; "path"?: string; }; "entry": string; "terminals": Array<string>; "inputs": { [key: string]: string; }; "outputs": { [key: string]: string; }; }; }; }; }; } | { "apiVersion": "darkstar.local/v1alpha2"; "kind": "Workflow"; "metadata": { "name": string; "version": string; "displayName"?: string; "description"?: string; }; "spec": { "inputs"?: { [key: string]: { "type": "null" | "boolean" | "integer" | "number" | "string" | "array" | "object"; "schema"?: string; "description"?: string; }; }; "routeDefaults": { "entry": string; "terminals": Array<string>; }; "profiles"?: { [key: string]: { "description": string; "entry": string; "terminals": Array<string>; "inputDefaults": {  }; }; }; "nodes": { [key: string]: { "type"?: "reasoning"; "reasoning": { "agent": string; "skills"?: Array<string>; "tools"?: Array<string>; }; } | { "type"?: "gate"; "gate": { "policy": string; "condition": { "const": boolean; } | { "op": "eq" | "ne" | "lt" | "lte" | "gt" | "gte"; "args": Array<{ "ref": string; } | { "literal": unknown; }>; } | { "op": "present"; "arg": { "ref": string; }; } | { "op": "all" | "any"; "args": Array<unknown>; } | { "op": "not"; "arg": unknown; }; }; } | { "type"?: "command"; "command": { "argv": Array<string>; "cwd"?: string; "timeoutSeconds"?: number; }; } | { "type"?: "approval"; "approval": { "actor": string; "externalCondition"?: string; "evidenceOutput"?: string; }; } | { "type"?: "subworkflow"; "call": { "workflow": { "name": string; "version": string; "digest"?: string; "path"?: string; }; "entry": string; "terminals": Array<string>; "inputs": { [key: string]: string; }; "outputs": { [key: string]: string; }; }; } | { "type"?: "point_execution"; "points": { "planInput": string; "approval": "none" | "every" | "risk" | "combined"; "riskTags": Array<string>; "validation": "each" | "combined" | "each_and_combined"; "publishing": "after_story_validation" | "after_each_point"; }; }; }; }; };
     "WorkflowVersionSummary": { "name": string; "version": string; "digest": string; "sourceScope": "default" | "user" | "project"; "sourceReference": string; "installedAt": string; };
+    "WorkflowDraft": { "id": string; "name": string; "scope": "user" | "project"; "scopeReference": string; "baseVersion"?: string; "revision": number; "document": {  }; "layout": {  }; "documentDigest": string; "updatedAt": string; };
+    "WorkflowArchive": { "name": string; "version": string; "archivedAt": string; };
+    "WorkflowLibrary": { "versions": Array<components["schemas"]["WorkflowVersionSummary"]>; "drafts": Array<components["schemas"]["WorkflowDraft"]>; "archives": Array<components["schemas"]["WorkflowArchive"]>; };
+    "WorkflowDraftCreateRequest": { "name": string; "scope": "user" | "project"; "scopeReference": string; "document": {  }; "layout"?: {  }; };
+    "WorkflowDraftDuplicateRequest": { "name": string; "version"?: string; "newName": string; "scope": "user" | "project"; "scopeReference": string; };
+    "WorkflowDraftUpdateRequest": { "id": string; "expectedRevision": number; "document"?: {  }; "layout"?: {  }; };
+    "WorkflowDraftRevisionRequest": { "id": string; "expectedRevision": number; };
+    "WorkflowDraftRenameRequest": { "id": string; "name": string; "expectedRevision": number; };
+    "WorkflowDraftPublishRequest": { "id": string; "version": string; "expectedRevision": number; };
+    "WorkflowAuthoringFinding": { "code": string; "severity": "error"; "message": string; "location"?: string; "nodeId"?: string; "edgeId"?: string; "field"?: string; "suggestion"?: string; };
+    "WorkflowDraftValidationReport": { "draftId": string; "revision": number; "digest"?: string; "findings": Array<components["schemas"]["WorkflowAuthoringFinding"]>; };
+    "WorkflowDraftPublishResult": { "draftId": string; "draftRevision": number; "published": components["schemas"]["WorkflowVersionSummary"]; "disposition": "created" | "already_installed"; };
     "WorkflowCandidateRequest": { "document": components["schemas"]["WorkflowDocument"]; "sourceScope": "default" | "user" | "project"; "sourceReference": string; };
     "WorkflowValidationIssue": { "code": string; "message": string; "location"?: string; "details"?: { [key: string]: Array<string>; }; };
     "WorkflowValidationReport": { "metadata"?: { "name": string; "version": string; "displayName"?: string; "description"?: string; }; "digest"?: string; "issues": Array<components["schemas"]["WorkflowValidationIssue"]>; };
@@ -58,6 +70,15 @@ export interface components {
     "ArtifactCheckpointQueue": { "schemaVersion": 1; "items": Array<components["schemas"]["ArtifactCheckpointRound"]>; };
     "ArtifactCheckpointHistory": { "checkpointId": string; "rounds": Array<components["schemas"]["ArtifactCheckpointRound"]>; };
     "ArtifactCheckpointDecisionRequest": { "action": "approve"; "scopeDigest": string; "policyDigest": string; "comment"?: string; } | { "action": "request_changes" | "reject"; "scopeDigest": string; "policyDigest": string; "comment": string; };
+    "CheckpointHumanFeedbackTurn": { "kind": "human_feedback"; "sequence": number; "actor": components["schemas"]["ReviewActor"]; "occurredAt": string; "runId": string; "attemptId": string; "candidate": components["schemas"]["ArtifactVersionRef"]; "candidateDigest": string; "message": string; };
+    "CheckpointAgentResponseTurn": { "kind": "agent_response"; "sequence": number; "actor": components["schemas"]["ReviewActor"]; "occurredAt": string; "runId": string; "attemptId": string; "outcome": "revised"; "message"?: string; "resultingCandidate": components["schemas"]["ArtifactVersionRef"]; "resultingDigest": string; } | { "kind": "agent_response"; "sequence": number; "actor": components["schemas"]["ReviewActor"]; "occurredAt": string; "runId": string; "attemptId": string; "outcome": "failed" | "cancelled"; "message"?: string; };
+    "CheckpointActiveAgentIteration": { "attemptId": string; "runId": string; "resumedBy": components["schemas"]["ReviewActor"]; "resumedAt": string; };
+    "CheckpointReviewSession": { "schemaVersion": 1; "id": string; "checkpointId": string; "runId": string; "visitId": string; "nodeId": string; "revision": number; "candidate": components["schemas"]["ArtifactVersionRef"]; "candidateDigest": string; "scopeDigest": string; "policyDigest": string; "mode": "approve" | "approve_on_change"; "maxRevisions"?: number; "revisionLimitReached": boolean; "state": "awaiting_human" | "awaiting_agent" | "approved" | "rejected" | "superseded"; "decision"?: components["schemas"]["ArtifactCheckpointDecision"]; "turns": Array<components["schemas"]["CheckpointHumanFeedbackTurn"] | components["schemas"]["CheckpointAgentResponseTurn"]>; "affectedArtifacts": Array<components["schemas"]["ArtifactInvalidation"]>; "activeIteration"?: components["schemas"]["CheckpointActiveAgentIteration"]; "allowedActions": Array<"approve" | "request_changes" | "reject">; "resourceVersion": number; "createdAt": string; "updatedAt": string; };
+    "CheckpointReviewHistory": { "schemaVersion": 1; "checkpointId": string; "sessions": Array<components["schemas"]["CheckpointReviewSession"]>; };
+    "CheckpointFeedbackRequest": { "candidateDigest": string; "scopeDigest": string; "message": string; };
+    "CheckpointResumeRequest": { "candidateDigest": string; "scopeDigest": string; "attemptId": string; };
+    "CheckpointAgentResponseRequest": { "candidateDigest": string; "scopeDigest": string; "attemptId": string; "outcome": "revised"; "message"?: string; "candidate": components["schemas"]["ArtifactVersionRef"]; "nextApprovalId": string; } | { "candidateDigest": string; "scopeDigest": string; "attemptId": string; "outcome": "failed" | "cancelled"; "message"?: string; };
+    "CheckpointReviewDecisionRequest": { "candidateDigest": string; "scopeDigest": string; "policyDigest": string; "action": "approve"; "comment"?: string; } | { "candidateDigest": string; "scopeDigest": string; "policyDigest": string; "action": "reject"; "comment": string; };
     "UserInputSchema": { "type": "string"; "allowedValues": Array<string>; };
     "UserInputQuestion": { "id": string; "prompt": string; "options": Array<string>; "schema": components["schemas"]["UserInputSchema"]; };
     "UserInputRequest": { "questions": Array<components["schemas"]["UserInputQuestion"]>; };
@@ -145,6 +166,12 @@ export interface ApiOperations {
     "getApproval": { method: "GET"; path: "/api/v1/approvals/{approvalId}"; response: components["schemas"]["ArtifactCheckpointRound"]; body: never; };
     "listCheckpoints": { method: "GET"; path: "/api/v1/checkpoints"; response: components["schemas"]["ArtifactCheckpointQueue"]; body: never; };
     "getCheckpointHistory": { method: "GET"; path: "/api/v1/checkpoints/{checkpointId}"; response: components["schemas"]["ArtifactCheckpointHistory"]; body: never; };
+    "getCheckpointReviewHistory": { method: "GET"; path: "/api/v1/review-sessions"; response: components["schemas"]["CheckpointReviewHistory"]; body: never; };
+    "getCheckpointReviewSession": { method: "GET"; path: "/api/v1/review-sessions/{approvalId}"; response: components["schemas"]["CheckpointReviewSession"]; body: never; };
+    "submitCheckpointFeedback": { method: "POST"; path: "/api/v1/review-sessions/{approvalId}/feedback"; response: components["schemas"]["CheckpointReviewSession"]; body: components["schemas"]["CheckpointFeedbackRequest"]; };
+    "resumeCheckpointRevision": { method: "POST"; path: "/api/v1/review-sessions/{approvalId}/resume"; response: components["schemas"]["CheckpointReviewSession"]; body: components["schemas"]["CheckpointResumeRequest"]; };
+    "recordCheckpointAgentResponse": { method: "POST"; path: "/api/v1/review-sessions/{approvalId}/agent-responses"; response: components["schemas"]["CheckpointReviewSession"]; body: components["schemas"]["CheckpointAgentResponseRequest"]; };
+    "decideCheckpointReviewSession": { method: "POST"; path: "/api/v1/review-sessions/{approvalId}/decisions"; response: components["schemas"]["CheckpointReviewSession"]; body: components["schemas"]["CheckpointReviewDecisionRequest"]; };
     "listInputRequests": { method: "GET"; path: "/api/v1/input-requests"; response: components["schemas"]["InputRequestList"]; body: never; };
     "getInputRequest": { method: "GET"; path: "/api/v1/input-requests/{inputRequestId}"; response: components["schemas"]["InputRequest"]; body: never; };
     "answerInputRequest": { method: "POST"; path: "/api/v1/input-requests/{inputRequestId}/answer"; response: components["schemas"]["InputRequest"]; body: components["schemas"]["InputRequestAnswerRequest"]; };
@@ -152,6 +179,16 @@ export interface ApiOperations {
     "streamEvents": { method: "GET"; path: "/api/v1/events"; response: string; body: never; };
     "readLog": { method: "GET"; path: "/api/v1/logs/{reference}"; response: string; body: never; };
     "listWorkflows": { method: "GET"; path: "/api/v1/workflows"; response: Array<components["schemas"]["WorkflowVersionSummary"]>; body: never; };
+    "getWorkflowLibrary": { method: "GET"; path: "/api/v1/workflows/library"; response: components["schemas"]["WorkflowLibrary"]; body: never; };
+    "archiveWorkflowVersion": { method: "POST"; path: "/api/v1/workflows/archive"; response: components["schemas"]["WorkflowArchive"]; body: { "name": string; "version": string; }; };
+    "getWorkflowDraft": { method: "GET"; path: "/api/v1/workflows/drafts/show"; response: components["schemas"]["WorkflowDraft"]; body: never; };
+    "createWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/create"; response: components["schemas"]["WorkflowDraft"]; body: components["schemas"]["WorkflowDraftCreateRequest"]; };
+    "duplicateWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/duplicate"; response: components["schemas"]["WorkflowDraft"]; body: components["schemas"]["WorkflowDraftDuplicateRequest"]; };
+    "updateWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/update"; response: components["schemas"]["WorkflowDraft"]; body: components["schemas"]["WorkflowDraftUpdateRequest"]; };
+    "renameWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/rename"; response: components["schemas"]["WorkflowDraft"]; body: components["schemas"]["WorkflowDraftRenameRequest"]; };
+    "validateWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/validate"; response: components["schemas"]["WorkflowDraftValidationReport"]; body: components["schemas"]["WorkflowDraftRevisionRequest"]; };
+    "publishWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/publish"; response: components["schemas"]["WorkflowDraftPublishResult"]; body: components["schemas"]["WorkflowDraftPublishRequest"]; };
+    "discardWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/discard"; response: { "id": string; "discarded": true; }; body: components["schemas"]["WorkflowDraftRevisionRequest"]; };
     "validateWorkflow": { method: "POST"; path: "/api/v1/workflows/validate"; response: components["schemas"]["WorkflowValidationReport"]; body: components["schemas"]["WorkflowCandidateRequest"]; };
     "installWorkflow": { method: "POST"; path: "/api/v1/workflows/install"; response: components["schemas"]["WorkflowInstallResult"]; body: components["schemas"]["WorkflowCandidateRequest"]; };
     "showWorkflow": { method: "GET"; path: "/api/v1/workflows/show"; response: components["schemas"]["WorkflowDefinition"]; body: never; };
@@ -209,6 +246,12 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "getApproval": { method: "GET", path: "/api/v1/approvals/{approvalId}" },
   "listCheckpoints": { method: "GET", path: "/api/v1/checkpoints" },
   "getCheckpointHistory": { method: "GET", path: "/api/v1/checkpoints/{checkpointId}" },
+  "getCheckpointReviewHistory": { method: "GET", path: "/api/v1/review-sessions" },
+  "getCheckpointReviewSession": { method: "GET", path: "/api/v1/review-sessions/{approvalId}" },
+  "submitCheckpointFeedback": { method: "POST", path: "/api/v1/review-sessions/{approvalId}/feedback" },
+  "resumeCheckpointRevision": { method: "POST", path: "/api/v1/review-sessions/{approvalId}/resume" },
+  "recordCheckpointAgentResponse": { method: "POST", path: "/api/v1/review-sessions/{approvalId}/agent-responses" },
+  "decideCheckpointReviewSession": { method: "POST", path: "/api/v1/review-sessions/{approvalId}/decisions" },
   "listInputRequests": { method: "GET", path: "/api/v1/input-requests" },
   "getInputRequest": { method: "GET", path: "/api/v1/input-requests/{inputRequestId}" },
   "answerInputRequest": { method: "POST", path: "/api/v1/input-requests/{inputRequestId}/answer" },
@@ -216,6 +259,16 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "streamEvents": { method: "GET", path: "/api/v1/events" },
   "readLog": { method: "GET", path: "/api/v1/logs/{reference}" },
   "listWorkflows": { method: "GET", path: "/api/v1/workflows" },
+  "getWorkflowLibrary": { method: "GET", path: "/api/v1/workflows/library" },
+  "archiveWorkflowVersion": { method: "POST", path: "/api/v1/workflows/archive" },
+  "getWorkflowDraft": { method: "GET", path: "/api/v1/workflows/drafts/show" },
+  "createWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/create" },
+  "duplicateWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/duplicate" },
+  "updateWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/update" },
+  "renameWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/rename" },
+  "validateWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/validate" },
+  "publishWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/publish" },
+  "discardWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/discard" },
   "validateWorkflow": { method: "POST", path: "/api/v1/workflows/validate" },
   "installWorkflow": { method: "POST", path: "/api/v1/workflows/install" },
   "showWorkflow": { method: "GET", path: "/api/v1/workflows/show" },
