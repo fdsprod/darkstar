@@ -45,6 +45,7 @@ func (osCommandRunner) LookPath(name string) (string, error) { return exec.LookP
 
 func (osCommandRunner) Output(ctx context.Context, name string, arguments ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, name, arguments...)
+	configureCommand(command)
 	command.Env = append(os.Environ(), "GH_PROMPT_DISABLED=1", "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
 	command.Stdin = nil
 	command.Stderr = io.Discard

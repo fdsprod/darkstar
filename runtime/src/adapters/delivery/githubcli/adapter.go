@@ -33,6 +33,7 @@ func (osCommandRunner) LookPath(name string) (string, error) { return exec.LookP
 
 func (osCommandRunner) Run(ctx context.Context, executable string, arguments []string, input []byte) ([]byte, []byte, error) {
 	command := exec.CommandContext(ctx, executable, arguments...)
+	configureCommand(command)
 	command.Env = append(os.Environ(), "GH_PROMPT_DISABLED=1", "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
 	command.Stdin = bytes.NewReader(input)
 	var stdout, stderr bytes.Buffer
