@@ -612,6 +612,8 @@ type Store interface {
 	AttemptsForPoint(context.Context, string, uint64) ([]AttemptProjection, error)
 	ActiveAttempts(context.Context) ([]AttemptProjection, error)
 	RunEvidence(context.Context, string) (RunEvidence, error)
+	RunExecutionContext(context.Context, string) (RunExecutionContext, error)
+	SaveRunExecutionContext(context.Context, RunExecutionContext, uint64) (RunExecutionContext, error)
 	BeginCommand(context.Context, BeginCommandRequest) (CommandEvidence, bool, error)
 	CompleteCommand(context.Context, CompleteCommandRequest) (CommandEvidence, error)
 	Approval(context.Context, string) (ApprovalProjection, error)

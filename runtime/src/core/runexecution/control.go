@@ -85,6 +85,70 @@ type stoppedWorker struct {
 	done    <-chan struct{}
 }
 
+// Launch moves an explicitly prepared run from Ready into the durable queue.
+// Work activation, the entry visit, and its first attempt commit atomically so
+// clients can observe Ready without creating a partial execution owner.
+func (s *Service) Launch(ctx context.Context, request ControlRequest) (statestore.RunProjection, error) {
+	if !s.schedulingAdmitted() {
+		return statestore.RunProjection{}, ErrSchedulingBlocked
+	}
+	request = normalizeControlRequest(request)
+	const action, eventKind = "launch", "run.started"
+	replayed, done, err := s.beginControl(ctx, action, eventKind, request, map[string]any{})
+	if err != nil || done {
+		return replayed, err
+	}
+	run, err := s.controlRun(ctx, request, action, statestore.RunReady)
+	if err != nil {
+		return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, err)
+	}
+	var route workflow.Route
+	if run.RouteSnapshot == "" || json.Unmarshal([]byte(run.RouteSnapshot), &route) != nil || route.Entry == "" || !routeContainsNode(route, route.Entry) {
+		err = fmt.Errorf("%w: run %s has no executable frozen route", ErrInvalidControl, run.RunID)
+		return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, err)
+	}
+	if len(route.InputRequirements) != 0 {
+		err = fmt.Errorf("%w: run %s still requires authored run inputs", ErrInvalidControl, run.RunID)
+		return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, err)
+	}
+	work, err := s.store.WorkItem(ctx, run.WorkItemID)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	entryID := string(route.Entry)
+	visitID := stableID("visit_", run.RunID+"\x00"+entryID)
+	attemptID := stableID("attempt_", run.RunID+"\x00"+entryID)
+	now := s.now().UTC().Round(0)
+	events := make([]statestore.PendingEvent, 0, 4)
+	if work.Status == statestore.WorkItemOpen {
+		events = append(events, pendingEvent("work.started", statestore.AggregateWork, work.WorkItemID, work.ResourceVersion, run.RunID, request.IdempotencyKey+":work", request.Actor.Type, request.Actor.ID, now, map[string]any{}))
+	}
+	events = append(events,
+		controlEvent(eventKind, run, request, map[string]any{}, now),
+		pendingEvent("visit.created", statestore.AggregateVisit, visitID, 0, run.RunID, request.IdempotencyKey+":visit", statestore.ActorSystem, "daemon", now, map[string]any{"runId": run.RunID, "nodeId": entryID}),
+		pendingEvent("attempt.created", statestore.AggregateAttempt, attemptID, 0, run.RunID, request.IdempotencyKey+":attempt", statestore.ActorSystem, "daemon", now, map[string]any{
+			"runId": run.RunID, "visitId": visitID, "nodeId": entryID, "scenario": ScenarioWorkflow, "provider": ProviderCodex,
+			"logReference": strings.TrimPrefix(attemptID, "attempt_") + ".log", "priority": run.Priority,
+		}),
+	)
+	committed, err := s.store.Append(ctx, events...)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	value, err := s.store.Run(ctx, run.RunID)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	attempt, err := s.store.Attempt(ctx, attemptID)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if err := s.launch(attempt); err != nil {
+		s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DISPATCH_FAILED", err)
+	}
+	return value, s.finishControl(ctx, action, request.IdempotencyKey, value, committed)
+}
+
 // Pause quiesces live provider work and moves queued/running work to waiting.
 // The attempt remains non-terminal with its durable provider cursor intact.
 func (s *Service) Pause(ctx context.Context, request ControlRequest) (statestore.RunProjection, error) {

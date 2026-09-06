@@ -128,6 +128,54 @@ func TestWorkflowAttemptBuilderUsesExactContextAndFailClosedPolicies(t *testing.
 	}
 }
 
+func TestWorkflowAttemptBuilderDigestsPreparedNodeInputs(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	workspaceDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(workspace))))
+	story := json.RawMessage(`{"title":"Create README"}`)
+	node := workflow.ReasoningNode{Common: workflow.NodeFields{Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"summary": {Type: workflow.ValueString}}}, Executor: workflow.ReasoningExecutor{Agent: "reader"}}
+	request := runexecution.AttemptRequestContext{
+		Attempt: statestore.AttemptProjection{AttemptID: "attempt-1", RunID: "run-1", NodeID: "read"},
+		Run:     statestore.RunProjection{RunID: "run-1"}, WorkItem: statestore.WorkItemProjection{WorkItemID: "work-1", Title: "Create README"},
+		Project:  statestore.ProjectProjection{ProjectID: "project-1", Name: "Factory", SourceHash: workspaceDigest, Status: statestore.ProjectActive},
+		Workflow: workflow.Definition{Version: workflow.VersionSummary{Name: "delivery", Version: "1.2.3", Digest: strings.Repeat("a", 64)}}, Node: node,
+		NodeInputs: map[workflow.Identifier]json.RawMessage{"story": story},
+	}
+	built, err := buildWorkflowAttemptRequest(request, workspace, strings.Repeat("b", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDigest := fmt.Sprintf("%x", sha256.Sum256(story))
+	if len(built.Inputs) != 1 || built.Inputs[0].Name != "story" || built.Inputs[0].Digest != wantDigest || built.Inputs[0].Text != string(story) {
+		t.Fatalf("prepared inputs = %#v", built.Inputs)
+	}
+}
+
+func TestPointExecutionOutputSchemaIsStrictAtEveryObjectBoundary(t *testing.T) {
+	t.Parallel()
+	node := workflow.PointExecutionNode{Common: workflow.NodeFields{Outputs: map[workflow.Identifier]workflow.OutputDeclaration{
+		"changeset": {Type: workflow.ValueObject},
+		"progress":  {Type: workflow.ValueObject},
+	}}}
+	raw, err := workflowOutputSchema(node, node.Common.Outputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatal(err)
+	}
+	properties := schema["properties"].(map[string]any)
+	changeset := properties["changeset"].(map[string]any)
+	progress := properties["progress"].(map[string]any)
+	if schema["additionalProperties"] != false || changeset["additionalProperties"] != false || progress["additionalProperties"] != false {
+		t.Fatalf("point output schema permits undeclared fields: %s", raw)
+	}
+	if fmt.Sprint(changeset["required"]) != "[summary files validation]" || fmt.Sprint(progress["required"]) != "[completed_points remaining_points]" {
+		t.Fatalf("point output schema omits required fields: %s", raw)
+	}
+}
+
 func providerTestPaths(root string) platformport.Paths {
 	return platformport.Paths{Config: filepath.Join(root, "config"), Data: filepath.Join(root, "data"), Cache: filepath.Join(root, "cache"), Logs: filepath.Join(root, "logs"), Runtime: filepath.Join(root, "runtime")}
 }

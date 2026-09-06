@@ -26,6 +26,7 @@ const (
 	ProviderCodex                = "codex"
 	commandScope                 = "runs.start"
 	createScope                  = "runs.create"
+	prepareScope                 = "runs.prepare"
 	DefaultWorkflowID            = "darkstar/story-execution"
 	DefaultWorkflowVersion       = "1.4.0"
 	compatibilityWorkflowID      = "darkstar/mvp-walking-skeleton"
@@ -52,6 +53,7 @@ type CreateRequest struct {
 	WorkItemID      string `json:"workItemId"`
 	WorkflowID      string `json:"workflowId"`
 	WorkflowVersion string `json:"workflowVersion"`
+	Profile         string `json:"profile,omitempty"`
 }
 
 // PageInfo describes the next stable run-list cursor.
@@ -68,6 +70,13 @@ type Page struct {
 // WorkflowPlanner resolves and derives the immutable route for a new run.
 type WorkflowPlanner interface {
 	Preview(context.Context, string, string, workflow.RouteRequest, workflow.RouteContext) (workflow.RoutePreview, workflow.ValidationErrors, error)
+}
+
+// WorkflowProfilePlanner is an optional capability for planners that can
+// resolve an authored route profile. Keeping it separate preserves the base
+// planning contract for integrations that only support explicit routes.
+type WorkflowProfilePlanner interface {
+	PreviewProfile(context.Context, string, string, workflow.Identifier, workflow.RouteContext) (workflow.RoutePreview, workflow.ValidationErrors, error)
 }
 
 // WorkflowDefinitionReader rehydrates the exact typed workflow used to build
@@ -190,13 +199,18 @@ func (f WorkflowProviderFactoryFunc) Provider(ctx context.Context, request Provi
 // AttemptRequestContext is the immutable, fully rehydrated input available to
 // application composition when it constructs a provider request.
 type AttemptRequestContext struct {
-	Attempt     statestore.AttemptProjection
-	Run         statestore.RunProjection
-	WorkItem    statestore.WorkItemProjection
-	Project     statestore.ProjectProjection
-	Workflow    workflow.Definition
-	Node        workflow.Node
-	FrozenRoute workflow.Route
+	Attempt          statestore.AttemptProjection
+	Run              statestore.RunProjection
+	WorkItem         statestore.WorkItemProjection
+	Project          statestore.ProjectProjection
+	Workflow         workflow.Definition
+	Node             workflow.Node
+	FrozenRoute      workflow.Route
+	RunInputs        map[workflow.Identifier]json.RawMessage
+	AcceptedOutputs  map[workflow.Identifier]map[workflow.Identifier]json.RawMessage
+	NodeInputs       map[workflow.Identifier]json.RawMessage
+	ExecutionContext statestore.RunExecutionContext
+	FrameSnapshot    workflow.FrameSnapshot
 }
 
 // AttemptRequestBuilder owns provider-specific prompt, workspace, permission,
@@ -334,15 +348,27 @@ func (s *Service) SetAgentWorkspace(workspace string) error {
 	return nil
 }
 
-// Create durably validates a work item and atomically freezes its route with
-// the entry visit and attempt before scheduling provider work.
+// Create preserves the original create-and-start command for API and CLI
+// compatibility. New interactive clients should Prepare and then Launch so
+// the Ready state is durable and observable.
 func (s *Service) Create(ctx context.Context, request CreateRequest, idempotencyKey string) (statestore.RunProjection, error) {
+	return s.createWorkflowRun(ctx, request, idempotencyKey, true)
+}
+
+// Prepare validates the exact workflow selection and freezes a ready run
+// without starting work or allocating an attempt.
+func (s *Service) Prepare(ctx context.Context, request CreateRequest, idempotencyKey string) (statestore.RunProjection, error) {
+	return s.createWorkflowRun(ctx, request, idempotencyKey, false)
+}
+
+func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, idempotencyKey string, start bool) (statestore.RunProjection, error) {
 	if !s.schedulingAdmitted() {
 		return statestore.RunProjection{}, ErrSchedulingBlocked
 	}
 	request.WorkItemID = strings.TrimSpace(request.WorkItemID)
 	request.WorkflowID = strings.TrimSpace(request.WorkflowID)
 	request.WorkflowVersion = strings.TrimSpace(request.WorkflowVersion)
+	request.Profile = strings.TrimSpace(request.Profile)
 	if request.WorkItemID == "" || request.WorkflowID == "" || request.WorkflowVersion == "" {
 		return statestore.RunProjection{}, fmt.Errorf("%w: workItemId, workflowId, and workflowVersion are required", ErrInvalidRequest)
 	}
@@ -369,7 +395,21 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 	if planner == nil {
 		return statestore.RunProjection{}, ErrWorkflowUnavailable
 	}
-	preview, issues, err := planner.Preview(ctx, request.WorkflowID, request.WorkflowVersion, workflow.RouteRequest{}, workflow.RouteContext{})
+	routeContext, err := derivedRouteContext(ctx, planner, request, work, project)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	var preview workflow.RoutePreview
+	var issues workflow.ValidationErrors
+	if request.Profile == "" {
+		preview, issues, err = planner.Preview(ctx, request.WorkflowID, request.WorkflowVersion, workflow.RouteRequest{}, routeContext)
+	} else {
+		profilePlanner, supported := planner.(WorkflowProfilePlanner)
+		if !supported {
+			return statestore.RunProjection{}, fmt.Errorf("%w: workflow planner does not support route profiles", ErrWorkflowUnavailable)
+		}
+		preview, issues, err = profilePlanner.PreviewProfile(ctx, request.WorkflowID, request.WorkflowVersion, workflow.Identifier(request.Profile), routeContext)
+	}
 	if err != nil {
 		return statestore.RunProjection{}, err
 	}
@@ -377,6 +417,9 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 		return statestore.RunProjection{}, issues
 	}
 	requiresInputs := len(preview.Route.InputRequirements) != 0
+	if !start && requiresInputs {
+		return statestore.RunProjection{}, inputRequirementValidationErrors(preview.Route.InputRequirements)
+	}
 	entryID := string(preview.Route.Entry)
 	if entryID == "" || !routeContainsNode(preview.Route, preview.Route.Entry) {
 		return statestore.RunProjection{}, fmt.Errorf("%w: frozen workflow route has no executable entry", ErrInvalidRequest)
@@ -388,8 +431,12 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 	requestJSON, _ := json.Marshal(request)
 	requestDigest := fmt.Sprintf("%x", sha256.Sum256(requestJSON))
 	now := s.now().UTC().Round(0)
+	scope := createScope
+	if !start {
+		scope = prepareScope
+	}
 	command, reused, err := s.store.BeginCommand(ctx, statestore.BeginCommandRequest{
-		Scope: createScope, IdempotencyKey: idempotencyKey, RequestDigest: requestDigest, CreatedAt: now,
+		Scope: scope, IdempotencyKey: idempotencyKey, RequestDigest: requestDigest, CreatedAt: now,
 	})
 	if err != nil {
 		return statestore.RunProjection{}, err
@@ -401,14 +448,14 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 		}
 		return value, nil
 	}
-	runID := stableID("run_", createScope+"\x00"+idempotencyKey)
+	runID := stableID("run_", scope+"\x00"+idempotencyKey)
 	if reused {
 		value, getErr := s.store.Run(ctx, runID)
 		if getErr != nil {
 			return statestore.RunProjection{}, ErrCommandInProgress
 		}
-		if value.Status == statestore.RunWaiting && len(preview.Route.InputRequirements) != 0 {
-			if err := s.completeCreateCommand(ctx, idempotencyKey, value, nil); err != nil {
+		if !start || (value.Status == statestore.RunWaiting && len(preview.Route.InputRequirements) != 0) {
+			if err := s.completeCreateCommand(ctx, scope, idempotencyKey, value, nil); err != nil {
 				return statestore.RunProjection{}, err
 			}
 			return value, nil
@@ -422,7 +469,7 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 		} else if launchErr := s.launch(attempt); launchErr != nil {
 			s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DISPATCH_FAILED", launchErr)
 		}
-		if err := s.completeCreateCommand(ctx, idempotencyKey, value, nil); err != nil {
+		if err := s.completeCreateCommand(ctx, scope, idempotencyKey, value, nil); err != nil {
 			return statestore.RunProjection{}, err
 		}
 		return value, nil
@@ -437,7 +484,7 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 	attemptID := stableID("attempt_", runID+"\x00"+entryID)
 	logReference := strings.TrimPrefix(attemptID, "attempt_") + ".log"
 	events := make([]statestore.PendingEvent, 0, 8)
-	if work.Status == statestore.WorkItemOpen {
+	if start && work.Status == statestore.WorkItemOpen {
 		events = append(events, pendingEvent("work.started", statestore.AggregateWork, work.WorkItemID, work.ResourceVersion, runID, "work-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}))
 	}
 	events = append(events,
@@ -447,8 +494,22 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 		pendingEvent("run.route_frozen", statestore.AggregateRun, runID, 1, runID, "route-frozen:"+runID, statestore.ActorSystem, "daemon", now, map[string]any{
 			"workflowDigest": preview.Workflow.Digest, "routeDigest": routeDigest, "routeSnapshot": json.RawMessage(routeJSON),
 		}),
-		pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}),
 	)
+	if !start {
+		committed, appendErr := s.store.Append(ctx, events...)
+		if appendErr != nil {
+			return statestore.RunProjection{}, appendErr
+		}
+		value, readErr := s.store.Run(ctx, runID)
+		if readErr != nil {
+			return statestore.RunProjection{}, readErr
+		}
+		if _, saveErr := s.saveInitialExecutionContext(ctx, value, preview.Route, routeContext.RunInputs); saveErr != nil {
+			return statestore.RunProjection{}, saveErr
+		}
+		return value, s.completeCreateCommand(ctx, scope, idempotencyKey, value, committed)
+	}
+	events = append(events, pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}))
 	if requiresInputs {
 		events = append(events, pendingEvent("run.input_required", statestore.AggregateRun, runID, 3, runID, "run-input-required:"+runID, statestore.ActorSystem, "daemon", now, map[string]any{
 			"code": "RUN_INPUT_REQUIRED", "message": inputRequirementValidationErrors(preview.Route.InputRequirements).Error(), "requirements": preview.Route.InputRequirements,
@@ -472,11 +533,20 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 	if err != nil {
 		return statestore.RunProjection{}, err
 	}
-	if err := s.completeCreateCommand(ctx, idempotencyKey, value, committed); err != nil {
-		return statestore.RunProjection{}, err
-	}
 	if requiresInputs {
+		if err := s.completeCreateCommand(ctx, scope, idempotencyKey, value, committed); err != nil {
+			return statestore.RunProjection{}, err
+		}
 		return value, nil
+	}
+	if _, err := s.saveInitialExecutionContext(ctx, value, preview.Route, routeContext.RunInputs); err != nil {
+		if failureErr := s.failQueuedRun(ctx, value, "RUN_CONTEXT_PERSIST_FAILED", err); failureErr != nil {
+			return statestore.RunProjection{}, errors.Join(err, failureErr)
+		}
+		return s.store.Run(ctx, runID)
+	}
+	if err := s.completeCreateCommand(ctx, scope, idempotencyKey, value, committed); err != nil {
+		return statestore.RunProjection{}, err
 	}
 	attempt, err := s.store.Attempt(ctx, attemptID)
 	if err != nil {
@@ -489,6 +559,77 @@ func (s *Service) Create(ctx context.Context, request CreateRequest, idempotency
 		s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DISPATCH_FAILED", err)
 	}
 	return value, nil
+}
+
+func (s *Service) saveInitialExecutionContext(ctx context.Context, run statestore.RunProjection, route workflow.Route, inputs map[workflow.Identifier]json.RawMessage) (statestore.RunExecutionContext, error) {
+	reader, ok := s.planner.(WorkflowDefinitionReader)
+	if !ok {
+		return statestore.RunExecutionContext{}, errors.New("workflow planner cannot persist execution context without an installed definition")
+	}
+	definition, err := reader.Definition(ctx, run.WorkflowID, run.WorkflowVersion)
+	if err != nil {
+		return statestore.RunExecutionContext{}, fmt.Errorf("read installed workflow for execution context: %w", err)
+	}
+	loaded := workflow.LoadedDefinition{Document: definition.Document, Digest: definition.Version.Digest}
+	frame, err := workflow.NewRootFrame(stableID("frame_", run.RunID), run.RunID, loaded, route, inputs)
+	if err != nil {
+		return statestore.RunExecutionContext{}, fmt.Errorf("create root workflow frame: %w", err)
+	}
+	frameJSON, err := json.Marshal(frame.Snapshot())
+	if err != nil {
+		return statestore.RunExecutionContext{}, fmt.Errorf("encode root workflow frame: %w", err)
+	}
+	storedInputs := make(map[string]json.RawMessage, len(inputs))
+	for id, value := range inputs {
+		storedInputs[string(id)] = append(json.RawMessage(nil), value...)
+	}
+	value, err := s.store.SaveRunExecutionContext(ctx, statestore.RunExecutionContext{
+		SchemaVersion: statestore.RunExecutionContextSchemaVersion,
+		RunID:         run.RunID, RunInputs: storedInputs,
+		AcceptedOutputs: map[string]map[string]json.RawMessage{}, FrameSnapshot: frameJSON,
+	}, 0)
+	if err != nil {
+		return statestore.RunExecutionContext{}, fmt.Errorf("persist initial run execution context: %w", err)
+	}
+	return value, nil
+}
+
+func derivedRouteContext(ctx context.Context, planner WorkflowPlanner, request CreateRequest, work statestore.WorkItemProjection, project statestore.ProjectProjection) (workflow.RouteContext, error) {
+	reader, ok := planner.(WorkflowDefinitionReader)
+	if !ok {
+		return workflow.RouteContext{}, errors.New("workflow planner cannot derive run inputs without an installed definition")
+	}
+	definition, err := reader.Definition(ctx, request.WorkflowID, request.WorkflowVersion)
+	if err != nil {
+		return workflow.RouteContext{}, fmt.Errorf("read installed workflow for run inputs: %w", err)
+	}
+	inputs := make(map[workflow.Identifier]json.RawMessage)
+	if declaration, exists := definition.Document.Spec.Inputs["repository"]; exists && declaration.Type == workflow.ValueString {
+		encoded, _ := json.Marshal(project.ProjectID)
+		inputs["repository"] = encoded
+	}
+	if declaration, exists := definition.Document.Spec.Inputs["story"]; exists && declaration.Type == workflow.ValueObject {
+		encoded, err := json.Marshal(map[string]any{
+			"id": work.WorkItemID, "projectId": work.ProjectID, "title": work.Title,
+			"priority": work.Priority, "sourceHash": work.SourceHash,
+		})
+		if err != nil {
+			return workflow.RouteContext{}, fmt.Errorf("encode derived story input: %w", err)
+		}
+		inputs["story"] = encoded
+	}
+	if request.Profile != "" {
+		profile, exists := definition.Document.Spec.Profiles[workflow.Identifier(request.Profile)]
+		if !exists {
+			return workflow.RouteContext{RunInputs: inputs}, nil
+		}
+		for id, value := range profile.InputDefaults {
+			if _, derived := inputs[id]; !derived {
+				inputs[id] = append(json.RawMessage(nil), value...)
+			}
+		}
+	}
+	return workflow.RouteContext{RunInputs: inputs}, nil
 }
 
 func inputRequirementValidationErrors(requirements []workflow.InputRequirement) workflow.ValidationErrors {
@@ -540,12 +681,12 @@ func (s *Service) List(ctx context.Context, limit int, after string) (Page, erro
 	return page, nil
 }
 
-func (s *Service) completeCreateCommand(ctx context.Context, key string, value statestore.RunProjection, events []statestore.Event) error {
+func (s *Service) completeCreateCommand(ctx context.Context, scope, key string, value statestore.RunProjection, events []statestore.Event) error {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	request := statestore.CompleteCommandRequest{Scope: createScope, IdempotencyKey: key, ResponseStatus: 201, Response: encoded, CompletedAt: s.now().UTC().Round(0)}
+	request := statestore.CompleteCommandRequest{Scope: scope, IdempotencyKey: key, ResponseStatus: 201, Response: encoded, CompletedAt: s.now().UTC().Round(0)}
 	if len(events) != 0 {
 		first, last := events[0].GlobalPosition, events[len(events)-1].GlobalPosition
 		request.FirstEventPosition, request.LastEventPosition = &first, &last
@@ -579,9 +720,6 @@ func exactWorkflowNode(ctx context.Context, planner WorkflowPlanner, name, versi
 	if !ok {
 		return workflow.Definition{}, nil, fmt.Errorf("frozen entry node %s is absent from installed workflow", nodeID)
 	}
-	if _, ok := node.(workflow.ReasoningNode); !ok {
-		return workflow.Definition{}, nil, fmt.Errorf("workflow entry node %s has unsupported executor type %s", nodeID, node.Type())
-	}
 	return definition, node, nil
 }
 
@@ -611,6 +749,13 @@ func (s *Service) ensureWorkflowEntryAttempt(ctx context.Context, run statestore
 	}
 	if _, _, err := exactWorkflowNode(ctx, planner, run.WorkflowID, run.WorkflowVersion, run.WorkflowDigest, route.Entry); err != nil {
 		return statestore.AttemptProjection{}, err
+	}
+	if _, err := s.store.RunExecutionContext(ctx, run.RunID); errors.Is(err, statestore.ErrNotFound) {
+		if _, err = s.saveInitialExecutionContext(ctx, run, route, map[workflow.Identifier]json.RawMessage{}); err != nil {
+			return statestore.AttemptProjection{}, fmt.Errorf("repair missing workflow execution context: %w", err)
+		}
+	} else if err != nil {
+		return statestore.AttemptProjection{}, fmt.Errorf("read workflow execution context during repair: %w", err)
 	}
 	entryID := string(route.Entry)
 	visitID := stableID("visit_", run.RunID+"\x00"+entryID)
@@ -941,7 +1086,33 @@ func (s *Service) workflowAttemptContext(ctx context.Context, attempt statestore
 	if err != nil {
 		return AttemptRequestContext{}, fmt.Errorf("read workflow attempt project: %w", err)
 	}
-	return AttemptRequestContext{Attempt: attempt, Run: run, WorkItem: work, Project: project, Workflow: definition, Node: node, FrozenRoute: route}, nil
+	executionContext, err := s.store.RunExecutionContext(ctx, run.RunID)
+	if err != nil {
+		return AttemptRequestContext{}, fmt.Errorf("read durable workflow execution context: %w", err)
+	}
+	var frameSnapshot workflow.FrameSnapshot
+	if err := json.Unmarshal(executionContext.FrameSnapshot, &frameSnapshot); err != nil {
+		return AttemptRequestContext{}, fmt.Errorf("decode durable workflow frame: %w", err)
+	}
+	if _, err := workflow.RestoreFrame(frameSnapshot); err != nil {
+		return AttemptRequestContext{}, fmt.Errorf("validate durable workflow frame: %w", err)
+	}
+	runInputs := make(map[workflow.Identifier]json.RawMessage, len(executionContext.RunInputs))
+	for id, value := range executionContext.RunInputs {
+		runInputs[workflow.Identifier(id)] = append(json.RawMessage(nil), value...)
+	}
+	acceptedOutputs := make(map[workflow.Identifier]map[workflow.Identifier]json.RawMessage, len(executionContext.AcceptedOutputs))
+	for nodeID, outputs := range executionContext.AcceptedOutputs {
+		acceptedOutputs[workflow.Identifier(nodeID)] = make(map[workflow.Identifier]json.RawMessage, len(outputs))
+		for outputID, value := range outputs {
+			acceptedOutputs[workflow.Identifier(nodeID)][workflow.Identifier(outputID)] = append(json.RawMessage(nil), value...)
+		}
+	}
+	nodeInputs, err := resolveNodeInputs(node, runInputs, acceptedOutputs)
+	if err != nil {
+		return AttemptRequestContext{}, fmt.Errorf("resolve durable workflow node inputs: %w", err)
+	}
+	return AttemptRequestContext{Attempt: attempt, Run: run, WorkItem: work, Project: project, Workflow: definition, Node: node, FrozenRoute: route, RunInputs: runInputs, AcceptedOutputs: acceptedOutputs, NodeInputs: nodeInputs, ExecutionContext: executionContext, FrameSnapshot: frameSnapshot}, nil
 }
 
 func validateBuiltAttemptRequest(request provider.AttemptRequest, attempt statestore.AttemptProjection) error {
@@ -993,12 +1164,22 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 	}
 	var startRequest provider.AttemptRequest
 	var adapter provider.Provider
+	var dispatchContext AttemptRequestContext
 	if attempt.Scenario == ScenarioWorkflow {
-		dispatchContext, contextErr := s.workflowAttemptContext(ctx, attempt, run)
+		var contextErr error
+		dispatchContext, contextErr = s.workflowAttemptContext(ctx, attempt, run)
 		if contextErr != nil {
 			if ctx.Err() == nil {
 				s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DEFINITION_MISMATCH", contextErr)
 			}
+			return
+		}
+		if _, builtin := dispatchContext.Node.(workflow.GateNode); builtin {
+			s.executeBuiltinWorkflowAttempt(ctx, attempt, dispatchContext)
+			return
+		}
+		if _, builtin := dispatchContext.Node.(workflow.CommandNode); builtin {
+			s.executeBuiltinWorkflowAttempt(ctx, attempt, dispatchContext)
 			return
 		}
 		s.mu.Lock()
@@ -1051,20 +1232,13 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 			return
 		}
 	}
-	if run.Status == statestore.RunQueued {
-		node, nodeErr := s.store.Node(ctx, attempt.VisitID)
-		if nodeErr != nil {
+	if attempt.Scenario == ScenarioWorkflow {
+		if err = s.startWorkflowVisit(ctx, attempt); err != nil {
 			return
 		}
-		events := []statestore.PendingEvent{pendingEvent("run.visit_ready", statestore.AggregateRun, run.RunID, run.ResourceVersion,
-			run.RunID, fmt.Sprintf("visit-ready:%s:%d", attempt.AttemptID, run.ResourceVersion), statestore.ActorSystem, "daemon", s.now(), map[string]any{"visitId": attempt.VisitID})}
-		if attempt.Scenario == ScenarioWorkflow && node.Status == statestore.NodePending {
-			events = append(events,
-				pendingEvent("visit.ready", statestore.AggregateVisit, node.VisitID, node.ResourceVersion, run.RunID, "visit-ready:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{}),
-				pendingEvent("visit.started", statestore.AggregateVisit, node.VisitID, node.ResourceVersion+1, run.RunID, "visit-start:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{}),
-			)
-		}
-		if _, err = s.store.Append(ctx, events...); err != nil {
+	} else if run.Status == statestore.RunQueued {
+		if _, err = s.store.Append(ctx, pendingEvent("run.visit_ready", statestore.AggregateRun, run.RunID, run.ResourceVersion,
+			run.RunID, fmt.Sprintf("visit-ready:%s:%d", attempt.AttemptID, run.ResourceVersion), statestore.ActorSystem, "daemon", s.now(), map[string]any{"visitId": attempt.VisitID})); err != nil {
 			return
 		}
 	}
@@ -1265,22 +1439,13 @@ func (s *Service) completeAttempt(ctx context.Context, attemptID, runID string, 
 	runData := map[string]any{"attemptId": attemptID}
 	switch value := result.(type) {
 	case provider.SucceededResult:
-		data["output"] = json.RawMessage(value.StructuredOutput)
 		if attempt.Scenario == ScenarioWorkflow {
-			dispatchContext, contextErr := s.workflowAttemptContext(ctx, attempt, run)
-			if contextErr != nil {
-				s.failAttemptWithCode(attemptID, runID, "WORKFLOW_DEFINITION_MISMATCH", contextErr)
-				return
+			if err := s.completeWorkflowSucceeded(ctx, attempt, run, node, value); err != nil {
+				s.failAttemptWithCode(attemptID, runID, workflowFailureCode(err, "WORKFLOW_ADVANCE_FAILED"), err)
 			}
-			checkpoint := dispatchContext.Node.Fields().Checkpoint
-			if checkpoint != nil && checkpoint.Mode() != workflow.CheckpointNone {
-				nodeKind, runKind = "visit.waiting_checkpoint", "run.waiting"
-			} else if !identifierIn(dispatchContext.FrozenRoute.Terminals, workflow.Identifier(attempt.NodeID)) {
-				runKind = "run.failed"
-				runData["code"] = "WORKFLOW_NEXT_NODE_DISPATCH_UNAVAILABLE"
-				runData["message"] = "entry node succeeded, but dispatch of the next workflow node is not implemented"
-			}
+			return
 		}
+		data["output"] = json.RawMessage(value.StructuredOutput)
 	case provider.FailedResult:
 		attemptKind, nodeKind, runKind, data["failure"] = "attempt.failed", "visit.failed", "run.failed", value.Failure
 		runData["code"], runData["message"] = value.Failure.Code, value.Failure.Message

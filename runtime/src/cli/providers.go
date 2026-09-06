@@ -127,68 +127,147 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 	if workspace == "." || !filepath.IsAbs(workspace) || request.Project.Status != statestore.ProjectActive || request.Project.SourceHash != workspaceDigest {
 		return providerport.AttemptRequest{}, fmt.Errorf("workflow project %q is not authorized for daemon workspace %q", request.Project.ProjectID, workspace)
 	}
-	node, ok := request.Node.(workflow.ReasoningNode)
-	if !ok {
-		return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q is %s; only reasoning nodes support Codex dispatch", request.Attempt.NodeID, request.Node.Type())
+	fields := request.Node.Fields()
+	agent, skills, tools := "", []string(nil), []string(nil)
+	access := providerport.AccessReadOnly
+	commandPolicy, filePolicy := providerport.InteractionDeny, providerport.InteractionDeny
+	instruction := "Execute this exact installed workflow reasoning node."
+	switch node := request.Node.(type) {
+	case workflow.ReasoningNode:
+		agent, skills, tools = node.Executor.Agent, append([]string(nil), node.Executor.Skills...), append([]string(nil), node.Executor.Tools...)
+		if len(fields.Permissions) != 0 {
+			return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q names permission policies that are not configured: %s", request.Attempt.NodeID, strings.Join(fields.Permissions, ", "))
+		}
+	case workflow.PointExecutionNode:
+		if !samePermissionSet(fields.Permissions, []string{"process.run", "workspace.write"}) {
+			return providerport.AttemptRequest{}, fmt.Errorf("point-execution node %q requires exactly process.run and workspace.write permissions", request.Attempt.NodeID)
+		}
+		agent, access = "implementation-point", providerport.AccessWorkspaceWrite
+		commandPolicy, filePolicy = providerport.InteractionAllow, providerport.InteractionAllow
+		instruction = "Implement the requested work item in the supplied workspace. Make only the necessary repository changes. Do not claim completion unless the requested outcome exists on disk. Return changeset with summary, files, and validation; return progress with completed_points and remaining_points."
+	default:
+		return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q is %s; it is not a Codex-backed executor", request.Attempt.NodeID, request.Node.Type())
 	}
-	if len(node.Common.Permissions) != 0 {
-		return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q names permission policies that are not configured: %s", request.Attempt.NodeID, strings.Join(node.Common.Permissions, ", "))
-	}
-	outputSchema, err := reasoningOutputSchema(node.Common.Outputs)
+	outputSchema, err := workflowOutputSchema(request.Node, fields.Outputs)
 	if err != nil {
 		return providerport.AttemptRequest{}, err
 	}
 	promptContext := struct {
-		WorkflowName    string   `json:"workflowName"`
-		WorkflowVersion string   `json:"workflowVersion"`
-		WorkflowDigest  string   `json:"workflowDigest"`
-		NodeID          string   `json:"nodeId"`
-		Agent           string   `json:"agent"`
-		Skills          []string `json:"skills"`
-		Tools           []string `json:"tools"`
-		WorkItemID      string   `json:"workItemId"`
-		WorkTitle       string   `json:"workTitle"`
-		ProjectID       string   `json:"projectId"`
-		ProjectName     string   `json:"projectName"`
+		WorkflowName    string                                                          `json:"workflowName"`
+		WorkflowVersion string                                                          `json:"workflowVersion"`
+		WorkflowDigest  string                                                          `json:"workflowDigest"`
+		NodeID          string                                                          `json:"nodeId"`
+		NodeType        string                                                          `json:"nodeType"`
+		Agent           string                                                          `json:"agent"`
+		Skills          []string                                                        `json:"skills"`
+		Tools           []string                                                        `json:"tools"`
+		WorkItemID      string                                                          `json:"workItemId"`
+		WorkTitle       string                                                          `json:"workTitle"`
+		ProjectID       string                                                          `json:"projectId"`
+		ProjectName     string                                                          `json:"projectName"`
+		RunInputs       map[workflow.Identifier]json.RawMessage                         `json:"runInputs"`
+		NodeInputs      map[workflow.Identifier]json.RawMessage                         `json:"nodeInputs"`
+		AcceptedOutputs map[workflow.Identifier]map[workflow.Identifier]json.RawMessage `json:"acceptedOutputs,omitempty"`
 	}{
 		WorkflowName: request.Workflow.Version.Name, WorkflowVersion: request.Workflow.Version.Version, WorkflowDigest: request.Workflow.Version.Digest,
-		NodeID: request.Attempt.NodeID, Agent: node.Executor.Agent, Skills: append([]string(nil), node.Executor.Skills...), Tools: append([]string(nil), node.Executor.Tools...),
+		NodeID: request.Attempt.NodeID, NodeType: string(request.Node.Type()), Agent: agent, Skills: skills, Tools: tools,
 		WorkItemID: request.WorkItem.WorkItemID, WorkTitle: request.WorkItem.Title, ProjectID: request.Project.ProjectID, ProjectName: request.Project.Name,
+		RunInputs: request.RunInputs, NodeInputs: request.NodeInputs, AcceptedOutputs: request.AcceptedOutputs,
 	}
 	encodedContext, err := json.Marshal(promptContext)
 	if err != nil {
 		return providerport.AttemptRequest{}, fmt.Errorf("encode workflow attempt context: %w", err)
 	}
+	providerInputs := make([]providerport.Input, 0, len(request.NodeInputs))
+	inputIDs := make([]string, 0, len(request.NodeInputs))
+	for id := range request.NodeInputs {
+		inputIDs = append(inputIDs, string(id))
+	}
+	sort.Strings(inputIDs)
+	for _, id := range inputIDs {
+		value := request.NodeInputs[workflow.Identifier(id)]
+		digest := sha256.Sum256(value)
+		providerInputs = append(providerInputs, providerport.Input{
+			Kind: providerport.InputText, Name: id, MediaType: "application/json",
+			Locator: "workflow-input:" + id, Digest: fmt.Sprintf("%x", digest), Text: string(value),
+		})
+	}
 	return providerport.AttemptRequest{
 		AttemptID: request.Attempt.AttemptID, RunID: request.Run.RunID, NodeID: request.Attempt.NodeID,
 		IdempotencyKey: "start:" + request.Attempt.AttemptID, Workspace: workspace,
-		Access: providerport.AccessReadOnly, Network: providerport.NetworkDenied,
-		CommandPolicy: providerport.InteractionDeny, FilePolicy: providerport.InteractionDeny, ToolPolicy: providerport.InteractionDeny,
-		Prompt: "Execute this exact installed workflow reasoning node. Skills and tools are descriptive requirements only; do not assume unresolved capabilities. Return only JSON matching the supplied output schema.\nContext: " + string(encodedContext),
-		Inputs: []providerport.Input{}, OutputSchema: outputSchema, CapabilityFingerprint: capabilityFingerprint,
+		Access: access, Network: providerport.NetworkDenied,
+		CommandPolicy: commandPolicy, FilePolicy: filePolicy, ToolPolicy: providerport.InteractionDeny,
+		Prompt: instruction + " Skills and tools are descriptive requirements only; do not assume unresolved capabilities. Return only JSON matching the supplied output schema. For implementation progress, set remaining_points to 0 only after the requested outcome is complete.\nContext: " + string(encodedContext),
+		Inputs: providerInputs, OutputSchema: outputSchema, CapabilityFingerprint: capabilityFingerprint,
 	}, nil
 }
 
-func reasoningOutputSchema(outputs map[workflow.Identifier]workflow.OutputDeclaration) (json.RawMessage, error) {
+func samePermissionSet(actual, expected []string) bool {
+	if len(actual) != len(expected) {
+		return false
+	}
+	left, right := append([]string(nil), actual...), append([]string(nil), expected...)
+	sort.Strings(left)
+	sort.Strings(right)
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]workflow.OutputDeclaration) (json.RawMessage, error) {
 	ids := make([]string, 0, len(outputs))
 	for id := range outputs {
 		ids = append(ids, string(id))
 	}
 	sort.Strings(ids)
-	properties := make(map[string]map[string]string, len(ids))
+	properties := make(map[string]any, len(ids))
 	for _, id := range ids {
 		declaration := outputs[workflow.Identifier(id)]
-		property := map[string]string{"type": string(declaration.Type)}
+		property := map[string]any{"type": string(declaration.Type)}
 		if declaration.Description != "" {
 			property["description"] = declaration.Description
 		}
+		if declaration.Type == workflow.ValueObject {
+			property["properties"] = map[string]any{}
+			property["required"] = []string{}
+			property["additionalProperties"] = false
+		}
+		if declaration.Type == workflow.ValueArray {
+			property["items"] = map[string]any{"type": "string"}
+		}
 		properties[id] = property
 	}
+	if _, point := node.(workflow.PointExecutionNode); point {
+		if _, exists := properties["changeset"]; exists {
+			properties["changeset"] = map[string]any{
+				"type": "object", "additionalProperties": false,
+				"properties": map[string]any{
+					"summary":    map[string]any{"type": "string"},
+					"files":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"validation": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+				"required": []string{"summary", "files", "validation"},
+			}
+		}
+		if _, exists := properties["progress"]; exists {
+			properties["progress"] = map[string]any{
+				"type": "object", "additionalProperties": false,
+				"properties": map[string]any{
+					"completed_points": map[string]any{"type": "integer"},
+					"remaining_points": map[string]any{"type": "integer"},
+				},
+				"required": []string{"completed_points", "remaining_points"},
+			}
+		}
+	}
 	schema := struct {
-		Type                 string                       `json:"type"`
-		Properties           map[string]map[string]string `json:"properties"`
-		Required             []string                     `json:"required"`
-		AdditionalProperties bool                         `json:"additionalProperties"`
+		Type                 string         `json:"type"`
+		Properties           map[string]any `json:"properties"`
+		Required             []string       `json:"required"`
+		AdditionalProperties bool           `json:"additionalProperties"`
 	}{Type: "object", Properties: properties, Required: ids, AdditionalProperties: false}
 	encoded, err := json.Marshal(schema)
 	if err != nil {

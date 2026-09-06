@@ -1092,6 +1092,21 @@ func (c *Catalog) Preview(ctx context.Context, name, version string, request Rou
 	return RoutePreview{Workflow: identity, Route: route}, nil, nil
 }
 
+// PreviewProfile derives the route selected by one authored profile and merges
+// its immutable input defaults with the supplied run context.
+func (c *Catalog) PreviewProfile(ctx context.Context, name, version string, profile Identifier, routeContext RouteContext) (RoutePreview, ValidationErrors, error) {
+	definition, err := c.Definition(ctx, name, version)
+	if err != nil {
+		return RoutePreview{}, nil, err
+	}
+	route, issues := CreateProfileRoute(definition.Document, profile, routeContext)
+	if len(issues) != 0 {
+		return RoutePreview{}, issues, nil
+	}
+	identity := WorkflowIdentity{Name: definition.Version.Name, Version: definition.Version.Version, Digest: definition.Version.Digest}
+	return RoutePreview{Workflow: identity, Route: route}, nil, nil
+}
+
 // InstallConfigured validates and installs every selected configured version.
 func (c *Catalog) InstallConfigured(ctx context.Context) ([]InstallResult, error) {
 	definitions, err := c.Load(ctx)

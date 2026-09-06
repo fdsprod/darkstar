@@ -170,11 +170,10 @@ func TestResumeActiveRepairsQueuedWorkflowWithoutEntryAttempt(t *testing.T) {
 	if err := service.ResumeActive(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	view := waitForControlRun(t, service, runID, func(value View) bool { return value.Run.Status == statestore.RunFailed })
-	if len(view.Attempts) != 1 || view.Attempts[0].NodeID != "design" || view.Attempts[0].Status != statestore.AttemptSucceeded || view.Nodes[0].Status != statestore.NodeSucceeded {
+	view := waitForControlRun(t, service, runID, func(value View) bool { return value.Run.Status == statestore.RunCompleted })
+	if len(view.Attempts) != 2 || view.Attempts[0].NodeID != "design" || view.Attempts[0].Status != statestore.AttemptSucceeded || view.Attempts[1].NodeID != "delivery" || view.Attempts[1].Status != statestore.AttemptSucceeded {
 		t.Fatalf("repaired workflow entry = %#v", view)
 	}
-	assertRunFailureCode(t, database, runID, "WORKFLOW_NEXT_NODE_DISPATCH_UNAVAILABLE")
 }
 
 func TestResumeActiveMovesLegacyQueuedRunToInputWait(t *testing.T) {
@@ -259,13 +258,16 @@ func (planner workflowDispatchPlanner) Definition(context.Context, string, strin
 
 func workflowDispatchPlannerFor(checkpoint workflow.Checkpoint, terminal bool) workflowDispatchPlanner {
 	digest := strings.Repeat("a", 64)
-	fields := workflow.NodeFields{Entry: true, Terminal: terminal, Checkpoint: checkpoint}
+	fields := workflow.NodeFields{Entry: true, Terminal: terminal, Checkpoint: checkpoint, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"artifact": {Type: workflow.ValueString}}}
+	if !terminal {
+		fields.Transitions = []workflow.Transition{workflow.NormalTransition{Common: workflow.TransitionFields{TransitionID: "deliver", To: "delivery"}}}
+	}
 	nodes := map[workflow.Identifier]workflow.Node{"design": workflow.ReasoningNode{Common: fields, Executor: workflow.ReasoningExecutor{Agent: "designer", Skills: []string{"design"}, Tools: []string{"repository-search"}}}}
 	route := workflow.Route{Entry: "design", Terminals: []workflow.Identifier{"delivery"}, Nodes: []workflow.RouteNode{{ID: "design"}, {ID: "delivery"}}, Transitions: []workflow.RouteTransition{{ID: "deliver", From: "design", To: "delivery"}}}
 	if terminal {
 		route.Terminals, route.Nodes, route.Transitions = []workflow.Identifier{"design"}, []workflow.RouteNode{{ID: "design"}}, nil
 	} else {
-		nodes["delivery"] = workflow.ReasoningNode{Common: workflow.NodeFields{Terminal: true, Checkpoint: workflow.NoCheckpoint{}}, Executor: workflow.ReasoningExecutor{Agent: "deliverer"}}
+		nodes["delivery"] = workflow.ReasoningNode{Common: workflow.NodeFields{Terminal: true, Checkpoint: workflow.NoCheckpoint{}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"artifact": {Type: workflow.ValueString}}}, Executor: workflow.ReasoningExecutor{Agent: "deliverer"}}
 	}
 	identity := workflow.WorkflowIdentity{Name: "test/workflow", Version: "1.0.0", Digest: digest}
 	return workflowDispatchPlanner{
