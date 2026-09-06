@@ -20,10 +20,12 @@ import (
 // RunService is the command/query boundary published by the local API.
 type RunService interface {
 	Create(context.Context, runexecution.CreateRequest, string) (statestore.RunProjection, error)
+	Prepare(context.Context, runexecution.CreateRequest, string) (statestore.RunProjection, error)
 	Start(context.Context, runexecution.StartRequest, string) (runexecution.View, error)
 	List(context.Context, int, string) (runexecution.Page, error)
 	Get(context.Context, string) (runexecution.View, error)
 	Pause(context.Context, runexecution.ControlRequest) (statestore.RunProjection, error)
+	Launch(context.Context, runexecution.ControlRequest) (statestore.RunProjection, error)
 	Resume(context.Context, runexecution.ControlRequest) (statestore.RunProjection, error)
 	Retry(context.Context, runexecution.RetryRequest) (statestore.RunProjection, error)
 	Continue(context.Context, runexecution.ContinueRequest) (statestore.RunProjection, error)
@@ -39,6 +41,10 @@ func (s *Server) serveRuns(response http.ResponseWriter, request *http.Request, 
 		return
 	}
 	clean := path.Clean(request.URL.Path)
+	if clean == "/api/v1/runs/prepare" {
+		s.serveRunPrepare(response, request, requestID, runs)
+		return
+	}
 	if clean == "/api/v1/runs" {
 		switch request.Method {
 		case http.MethodGet, http.MethodHead:
@@ -100,7 +106,7 @@ type continueRunBody struct {
 }
 
 func (s *Server) serveRunControl(response http.ResponseWriter, request *http.Request, requestID string, runs RunService, runID, action string) {
-	if !runIDPattern.MatchString(runID) || (action != "pause" && action != "resume" && action != "retry" && action != "continue" && action != "cancel") {
+	if !runIDPattern.MatchString(runID) || (action != "start" && action != "pause" && action != "resume" && action != "retry" && action != "continue" && action != "cancel") {
 		writeAPIError(response, http.StatusNotFound, apiError{SchemaVersion: 1, Code: "NOT_FOUND", Message: "The requested run control was not found.", RequestID: requestID})
 		return
 	}
@@ -133,12 +139,14 @@ func (s *Server) serveRunControl(response http.ResponseWriter, request *http.Req
 	}
 	var value statestore.RunProjection
 	switch action {
-	case "pause", "resume", "cancel":
+	case "start", "pause", "resume", "cancel":
 		if len(strings.TrimSpace(string(body))) != 0 {
 			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "This run control does not accept a request body.", RequestID: requestID})
 			return
 		}
 		switch action {
+		case "start":
+			value, err = runs.Launch(request.Context(), common)
 		case "pause":
 			value, err = runs.Pause(request.Context(), common)
 		case "resume":
@@ -169,6 +177,40 @@ func (s *Server) serveRunControl(response http.ResponseWriter, request *http.Req
 	writeJSON(response, http.StatusOK, value)
 }
 
+func (s *Server) serveRunPrepare(response http.ResponseWriter, request *http.Request, requestID string, runs RunService) {
+	if request.Method != http.MethodPost {
+		response.Header().Set("Allow", "POST")
+		writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
+		return
+	}
+	if request.URL.RawQuery != "" {
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Run preparation does not accept query parameters.", RequestID: requestID})
+		return
+	}
+	key, ok := requireIdempotencyKey(response, request, requestID)
+	if !ok {
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, 4097))
+	if err != nil || len(body) == 0 || len(body) > 4096 {
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "The run preparation request must be one valid JSON object.", RequestID: requestID})
+		return
+	}
+	var input runexecution.CreateRequest
+	if err := decodeRunVariant(body, &input); err != nil {
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Run preparation requires workItemId, workflowId, workflowVersion, and an optional profile.", RequestID: requestID})
+		return
+	}
+	value, err := runs.Prepare(request.Context(), input, key)
+	if err != nil {
+		writeRunCommandError(response, requestID, err)
+		return
+	}
+	response.Header().Set("Location", "/api/v1/runs/"+value.RunID)
+	response.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.ResourceVersion))
+	writeJSON(response, http.StatusCreated, value)
+}
+
 func (s *Server) serveRunStart(response http.ResponseWriter, request *http.Request, requestID string, runs RunService) {
 	if request.Method != http.MethodPost {
 		response.Header().Set("Allow", "POST")
@@ -197,7 +239,7 @@ func (s *Server) serveRunStart(response http.ResponseWriter, request *http.Reque
 	if _, fake := fields["scenario"]; !fake {
 		var input runexecution.CreateRequest
 		if err := decodeRunVariant(body, &input); err != nil {
-			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "The work-backed run request must contain only workItemId, workflowId, and workflowVersion.", RequestID: requestID})
+			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "The work-backed run request must contain only workItemId, workflowId, workflowVersion, and an optional profile.", RequestID: requestID})
 			return
 		}
 		value, err := runs.Create(request.Context(), input, key)

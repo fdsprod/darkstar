@@ -28,6 +28,12 @@ func TestRunAPIExposesVersionedIdempotentControls(t *testing.T) {
 	endpoint, _ := server.Endpoint()
 	runID := runs.run.RunID
 
+	launched := runControlRequest(t, endpoint, "/api/v1/runs/"+runID+"/start", "", "launch-api", `"3"`)
+	if launched.StatusCode != http.StatusOK || launched.Header.Get("ETag") != `"3"` || runs.action != "start" || runs.control.RunID != runID || runs.control.ExpectedResourceVersion != 3 || runs.control.IdempotencyKey != "launch-api" {
+		t.Fatalf("start status=%d etag=%q action=%q request=%#v", launched.StatusCode, launched.Header.Get("ETag"), runs.action, runs.control)
+	}
+	_ = launched.Body.Close()
+
 	pause := runControlRequest(t, endpoint, "/api/v1/runs/"+runID+"/pause", "", "pause-api", `"3"`)
 	if pause.StatusCode != http.StatusOK || pause.Header.Get("ETag") != `"3"` || runs.action != "pause" || runs.control.ExpectedResourceVersion != 3 {
 		t.Fatalf("pause status=%d etag=%q action=%q request=%#v", pause.StatusCode, pause.Header.Get("ETag"), runs.action, runs.control)
@@ -65,6 +71,39 @@ func TestRunAPIExposesVersionedIdempotentControls(t *testing.T) {
 	}
 }
 
+func TestRunAPIPreparesWorkBackedRunWithOptionalProfile(t *testing.T) {
+	server, err := NewServer(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs := &recordingRunService{run: apiTestRun()}
+	if err := server.SetRuns(runs); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Start(context.Background(), 1234, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestServer(t, server)
+	endpoint, _ := server.Endpoint()
+
+	prepared := workRequest(t, endpoint, http.MethodPost, "/api/v1/runs/prepare", `{"workItemId":"work_00000000000000000000000000","workflowId":"darkstar/story-execution","workflowVersion":"1.4.0","profile":"implementation"}`, "prepare-run-command")
+	if prepared.StatusCode != http.StatusCreated || prepared.Header.Get("Location") != "/api/v1/runs/"+runs.run.RunID || prepared.Header.Get("ETag") != `"3"` || runs.prepared != 1 {
+		t.Fatalf("prepare status=%d location=%q etag=%q prepared=%d", prepared.StatusCode, prepared.Header.Get("Location"), prepared.Header.Get("ETag"), runs.prepared)
+	}
+	if runs.createRequest.WorkItemID != "work_00000000000000000000000000" || runs.createRequest.WorkflowID != "darkstar/story-execution" || runs.createRequest.WorkflowVersion != "1.4.0" || runs.createRequest.Profile != "implementation" || runs.commandKey != "prepare-run-command" {
+		t.Fatalf("prepare request=%#v key=%q", runs.createRequest, runs.commandKey)
+	}
+	_ = prepared.Body.Close()
+
+	query := workRequest(t, endpoint, http.MethodPost, "/api/v1/runs/prepare?launch=true", `{"workItemId":"work_00000000000000000000000000","workflowId":"delivery","workflowVersion":"1.0.0"}`, "prepare-query-command")
+	assertAPIError(t, query, http.StatusBadRequest, "VALIDATION_FAILED")
+	_ = query.Body.Close()
+
+	unknown := workRequest(t, endpoint, http.MethodPost, "/api/v1/runs/prepare", `{"workItemId":"work_00000000000000000000000000","workflowId":"delivery","workflowVersion":"1.0.0","inputs":{}}`, "prepare-invalid-command")
+	assertAPIError(t, unknown, http.StatusBadRequest, "VALIDATION_FAILED")
+	_ = unknown.Body.Close()
+}
+
 func TestRunAPISelectsExactStartVariantAndListsRuns(t *testing.T) {
 	server, err := NewServer(t.TempDir())
 	if err != nil {
@@ -80,8 +119,8 @@ func TestRunAPISelectsExactStartVariantAndListsRuns(t *testing.T) {
 	defer closeTestServer(t, server)
 	endpoint, _ := server.Endpoint()
 
-	created := workRequest(t, endpoint, http.MethodPost, "/api/v1/runs", `{"workItemId":"work_00000000000000000000000000","workflowId":"delivery","workflowVersion":"1.0.0"}`, "create-run-command")
-	if created.StatusCode != http.StatusCreated || runs.created != 1 || created.Header.Get("ETag") != `"3"` {
+	created := workRequest(t, endpoint, http.MethodPost, "/api/v1/runs", `{"workItemId":"work_00000000000000000000000000","workflowId":"delivery","workflowVersion":"1.0.0","profile":"implementation"}`, "create-run-command")
+	if created.StatusCode != http.StatusCreated || runs.created != 1 || created.Header.Get("ETag") != `"3"` || runs.createRequest.Profile != "implementation" {
 		t.Fatalf("create status=%d created=%d etag=%q", created.StatusCode, runs.created, created.Header.Get("ETag"))
 	}
 	var createdRun statestore.RunProjection
@@ -110,16 +149,25 @@ func TestRunAPISelectsExactStartVariantAndListsRuns(t *testing.T) {
 }
 
 type recordingRunService struct {
-	run              statestore.RunProjection
-	created, started int
-	action           string
-	control          runexecution.ControlRequest
-	nodeID, until    string
-	controlErr       error
+	run                        statestore.RunProjection
+	created, prepared, started int
+	action                     string
+	control                    runexecution.ControlRequest
+	createRequest              runexecution.CreateRequest
+	commandKey                 string
+	nodeID, until              string
+	controlErr                 error
 }
 
-func (s *recordingRunService) Create(context.Context, runexecution.CreateRequest, string) (statestore.RunProjection, error) {
+func (s *recordingRunService) Create(_ context.Context, request runexecution.CreateRequest, key string) (statestore.RunProjection, error) {
 	s.created++
+	s.createRequest, s.commandKey = request, key
+	return s.run, nil
+}
+
+func (s *recordingRunService) Prepare(_ context.Context, request runexecution.CreateRequest, key string) (statestore.RunProjection, error) {
+	s.prepared++
+	s.createRequest, s.commandKey = request, key
 	return s.run, nil
 }
 
@@ -138,6 +186,11 @@ func (s *recordingRunService) Get(context.Context, string) (runexecution.View, e
 
 func (s *recordingRunService) Pause(_ context.Context, request runexecution.ControlRequest) (statestore.RunProjection, error) {
 	s.action, s.control = "pause", request
+	return s.run, s.controlErr
+}
+
+func (s *recordingRunService) Launch(_ context.Context, request runexecution.ControlRequest) (statestore.RunProjection, error) {
+	s.action, s.control = "start", request
 	return s.run, s.controlErr
 }
 

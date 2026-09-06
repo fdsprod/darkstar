@@ -22,7 +22,7 @@ type runMachineOutput struct {
 
 func parseRunStart(args []string) (runexecution.CreateRequest, string, string, error) {
 	if len(args) == 0 {
-		return runexecution.CreateRequest{}, "", "", errors.New("expected run start <work-id> [--workflow <name>] [--version <version>] [--idempotency-key <key>]")
+		return runexecution.CreateRequest{}, "", "", errors.New("expected run start <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--idempotency-key <key>]")
 	}
 	if args[0] == "--scenario" {
 		if (len(args) != 2 && len(args) != 4) || args[1] == "" || (len(args) == 4 && (args[2] != "--idempotency-key" || args[3] == "")) {
@@ -34,41 +34,96 @@ func parseRunStart(args []string) (runexecution.CreateRequest, string, string, e
 		}
 		return runexecution.CreateRequest{}, args[1], key, nil
 	}
+	request, key, err := parseWorkRun(args, "start")
+	return request, "", key, err
+}
+
+func parseRunPrepare(args []string) (runexecution.CreateRequest, string, error) {
+	return parseWorkRun(args, "prepare")
+}
+
+func parseWorkRun(args []string, action string) (runexecution.CreateRequest, string, error) {
+	if len(args) == 0 {
+		return runexecution.CreateRequest{}, "", fmt.Errorf("expected run %s <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--idempotency-key <key>]", action)
+	}
 	if !workIdentityPattern.MatchString(args[0]) {
-		return runexecution.CreateRequest{}, "", "", errors.New("run start requires a canonical work_ ULID")
+		return runexecution.CreateRequest{}, "", fmt.Errorf("run %s requires a canonical work_ ULID", action)
 	}
 	request := runexecution.CreateRequest{WorkItemID: args[0], WorkflowID: runexecution.DefaultWorkflowID, WorkflowVersion: runexecution.DefaultWorkflowVersion}
 	key := ""
-	seenWorkflow, seenVersion := false, false
+	seenWorkflow, seenVersion, seenProfile := false, false, false
 	for index := 1; index < len(args); index += 2 {
 		if index+1 >= len(args) || args[index+1] == "" {
-			return runexecution.CreateRequest{}, "", "", fmt.Errorf("%s requires a value", args[index])
+			return runexecution.CreateRequest{}, "", fmt.Errorf("%s requires a value", args[index])
 		}
 		value := args[index+1]
 		switch args[index] {
 		case "--workflow":
 			if seenWorkflow {
-				return runexecution.CreateRequest{}, "", "", errors.New("--workflow may be specified only once")
+				return runexecution.CreateRequest{}, "", errors.New("--workflow may be specified only once")
 			}
 			seenWorkflow, request.WorkflowID = true, value
 		case "--version":
 			if seenVersion {
-				return runexecution.CreateRequest{}, "", "", errors.New("--version may be specified only once")
+				return runexecution.CreateRequest{}, "", errors.New("--version may be specified only once")
 			}
 			seenVersion, request.WorkflowVersion = true, value
+		case "--profile":
+			if seenProfile || !runNodePattern.MatchString(value) {
+				return runexecution.CreateRequest{}, "", errors.New("--profile requires one workflow profile identifier")
+			}
+			seenProfile, request.Profile = true, value
 		case "--idempotency-key":
 			if key != "" {
-				return runexecution.CreateRequest{}, "", "", errors.New("--idempotency-key may be specified only once")
+				return runexecution.CreateRequest{}, "", errors.New("--idempotency-key may be specified only once")
 			}
 			key = value
 		default:
-			return runexecution.CreateRequest{}, "", "", fmt.Errorf("unknown run start option %q", args[index])
+			return runexecution.CreateRequest{}, "", fmt.Errorf("unknown run %s option %q", action, args[index])
 		}
 	}
 	if key == "" {
 		key = newIdempotencyKey()
 	}
-	return request, "", key, nil
+	return request, key, nil
+}
+
+func parseRunLaunch(args []string) (string, uint64, string, error) {
+	if len(args) == 0 || !runIdentityPattern.MatchString(args[0]) {
+		return "", 0, "", errors.New("run launch requires a canonical run_ ULID")
+	}
+	var revision uint64
+	key := ""
+	for index := 1; index < len(args); index += 2 {
+		if index+1 >= len(args) || args[index+1] == "" {
+			return "", 0, "", fmt.Errorf("%s requires a value", args[index])
+		}
+		switch args[index] {
+		case "--if-match":
+			if revision != 0 {
+				return "", 0, "", errors.New("--if-match may be specified only once")
+			}
+			value, err := strconv.ParseUint(args[index+1], 10, 64)
+			if err != nil || value == 0 {
+				return "", 0, "", errors.New("--if-match requires a positive run resource version")
+			}
+			revision = value
+		case "--idempotency-key":
+			if key != "" {
+				return "", 0, "", errors.New("--idempotency-key may be specified only once")
+			}
+			key = args[index+1]
+		default:
+			return "", 0, "", fmt.Errorf("unknown run launch option %q", args[index])
+		}
+	}
+	if revision == 0 {
+		return "", 0, "", errors.New("run launch requires --if-match <version>")
+	}
+	if key == "" {
+		key = newIdempotencyKey()
+	}
+	return args[0], revision, key, nil
 }
 
 func parseRunList(args []string) (string, error) {
@@ -185,12 +240,16 @@ func parseRunContinue(args []string) (string, string, string, error) {
 }
 
 func writeRunProjectionResult(result statestore.RunProjection, jsonOutput bool, stdout, stderr io.Writer, command string) int {
+	return writeRunProjectionActionResult(result, "Started", jsonOutput, stdout, stderr, command)
+}
+
+func writeRunProjectionActionResult(result statestore.RunProjection, action string, jsonOutput bool, stdout, stderr io.Writer, command string) int {
 	if jsonOutput {
 		if err := writeJSON(stdout, runMachineOutput{SchemaVersion: machineSchemaVersion, Result: result}); err != nil {
 			return writeCommandError(stdout, stderr, false, command, "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
 		}
 	} else {
-		_, _ = fmt.Fprintf(stdout, "Started %s for %s: %s.\n", result.RunID, result.WorkItemID, result.Status)
+		_, _ = fmt.Fprintf(stdout, "%s %s for %s: %s.\n", action, result.RunID, result.WorkItemID, result.Status)
 	}
 	return int(ExitSuccess)
 }

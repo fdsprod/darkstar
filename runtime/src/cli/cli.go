@@ -62,7 +62,7 @@ Commands:
   input      List, inspect, answer, and retry provider input requests
   review     Inspect and continue checkpoint review sessions
   project    Register, list, and inspect projects
-  run        Start, inspect, control, watch, and export runs
+  run        Prepare, start, inspect, control, watch, and export runs
   work       Create, import, list, and inspect work
   workflow   Author, validate, publish, list, show, graph, and preview workflows
   version    Show version information
@@ -82,7 +82,9 @@ Work commands:
   work show <work-id> [--json]
 
 Run commands:
-  run start <work-id> [--workflow <name>] [--version <version>] [--idempotency-key <key>] [--json]
+  run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--idempotency-key <key>] [--json]
+  run launch <run-id> --if-match <version> [--idempotency-key <key>] [--json]
+  run start <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--idempotency-key <key>] [--json]
   run start --scenario <fake-success|fake-restart> [--idempotency-key <key>] [--json]
   run list [--limit <n>] [--after <run-id>] [--json]
   run show <run-id> [--json]
@@ -969,10 +971,30 @@ type runExportOutput struct {
 
 func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "a run command is required (start, list, show, watch, pause, resume, retry, continue, cancel, export, readiness)", false, ExitInvalidInput)
+		return writeCommandError(stdout, stderr, jsonOutput, "darkstar run", "ARGUMENT_INVALID", "a run command is required (prepare, launch, start, list, show, watch, pause, resume, retry, continue, cancel, export, readiness)", false, ExitInvalidInput)
 	}
 	command := "darkstar run " + args[0]
 	switch args[0] {
+	case "prepare":
+		request, key, err := parseRunPrepare(args[1:])
+		if err != nil {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		var result statestore.RunProjection
+		if err := session.DoJSON(context.Background(), http.MethodPost, "runs/prepare", request, &result, clientapi.WithHeader("Idempotency-Key", key)); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeRunProjectionActionResult(result, "Prepared", jsonOutput, stdout, stderr, command)
+	case "launch":
+		runID, revision, key, err := parseRunLaunch(args[1:])
+		if err != nil {
+			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
+		}
+		return runControlAtVersion(command, "start", "Launched", runID, revision, key, nil, jsonOutput, stdout, stderr)
 	case "start":
 		request, scenario, key, err := parseRunStart(args[1:])
 		if err != nil {
@@ -1090,13 +1112,24 @@ func runControl(command, action, runID, key string, body any, jsonOutput bool, s
 	if err := session.DoJSON(context.Background(), http.MethodGet, "runs/"+runID, nil, &current); err != nil {
 		return writeClientError(stdout, stderr, jsonOutput, command, err)
 	}
+	return postRunControl(session, command, action, map[string]string{"pause": "Paused", "resume": "Resumed", "retry": "Retried", "continue": "Continued", "cancel": "Cancelled"}[action], runID, current.Run.ResourceVersion, key, body, jsonOutput, stdout, stderr)
+}
+
+func runControlAtVersion(command, action, label, runID string, revision uint64, key string, body any, jsonOutput bool, stdout, stderr io.Writer) int {
+	session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+	if session == nil {
+		return code
+	}
+	return postRunControl(session, command, action, label, runID, revision, key, body, jsonOutput, stdout, stderr)
+}
+
+func postRunControl(session *clientapi.Session, command, action, label, runID string, revision uint64, key string, body any, jsonOutput bool, stdout, stderr io.Writer) int {
 	var result statestore.RunProjection
 	if err := session.DoJSON(context.Background(), http.MethodPost, "runs/"+runID+"/"+action, body, &result,
-		clientapi.WithHeader("Idempotency-Key", key), clientapi.WithHeader("If-Match", fmt.Sprintf(`"%d"`, current.Run.ResourceVersion))); err != nil {
+		clientapi.WithHeader("Idempotency-Key", key), clientapi.WithHeader("If-Match", fmt.Sprintf(`"%d"`, revision))); err != nil {
 		return writeClientError(stdout, stderr, jsonOutput, command, err)
 	}
-	labels := map[string]string{"pause": "Paused", "resume": "Resumed", "retry": "Retried", "continue": "Continued", "cancel": "Cancelled"}
-	return writeRunControlResult(result, labels[action], jsonOutput, stdout, stderr, command)
+	return writeRunControlResult(result, label, jsonOutput, stdout, stderr, command)
 }
 
 func runExport(runID, outputPath string, jsonOutput bool, stdout, stderr io.Writer) int {

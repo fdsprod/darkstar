@@ -38,9 +38,24 @@ root. Secret values can only come from a file or standard input and are never
 printed; the result contains the secret name, new secret-file revision, and
 restart impact. Machine JSON is the same versioned contract returned by HTTP.
 
-`darkstar run start <work-id> --workflow <name> --version <version>` validates
-the work item, resolves an exact installed workflow, freezes its default route,
-and queues the run through `POST /api/v1/runs`. Omitting the workflow flags uses
+The durable Ready lifecycle has explicit CLI/API parity:
+
+```text
+darkstar run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile>]
+darkstar run launch <run-id> --if-match <version>
+```
+
+`darkstar run prepare` validates the work item, resolves an exact installed
+workflow and optional profile, freezes its route and immutable inputs through
+`POST /api/v1/runs/prepare`, and moves the work from Backlog to Ready without
+starting provider work. `darkstar run launch` admits that exact prepared
+revision through `POST /api/v1/runs/{runId}/start`; its required `--if-match`
+value prevents a stale terminal or automation from starting a superseded run.
+Both commands accept `--idempotency-key` for safe retries.
+
+The compatibility command `darkstar run start <work-id> --workflow <name>
+--version <version>` performs the former create-and-start request through
+`POST /api/v1/runs`. Omitting the workflow flags uses
 the shipped `darkstar/story-execution` `1.4.0` identity. A route with unresolved
 run inputs is persisted in `waiting` with a `RUN_INPUT_REQUIRED` issue and does
 not dispatch provider work. Production Codex dispatch is currently bounded to

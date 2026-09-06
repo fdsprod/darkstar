@@ -122,7 +122,7 @@ export interface components {
     "ProviderPermissionList": { "schemaVersion": 1; "items": Array<components["schemas"]["ProviderPermission"]>; };
     "ProviderPermissionDecisionRequest": { "decision": "allow_once" | "deny" | "cancel"; "scopeDigest": string; };
     "RunExportManifest": { "schemaVersion": 1; "runId": string; "exportedAt": string; "redactionPolicy": "default-v1"; "entries": Array<{ "path": string; "kind": "run_snapshot" | "events" | "command_evidence" | "artifact_index" | "log"; "mediaType": string; "sha256": string; "size": number; }>; "omissions": Array<{ "kind": "artifact" | "log" | "reference"; "reference": string; "reason": "unavailable" | "sensitive_by_default"; }>; };
-    "CreateRunRequest": { "workItemId": string; "workflowId": string; "workflowVersion": string; };
+    "CreateRunRequest": { "workItemId": string; "workflowId": string; "workflowVersion": string; "profile"?: string; };
     "StartFakeRunRequest": { "scenario": "fake-success" | "fake-restart"; };
     "RetryRunRequest": { "nodeId"?: string; };
     "ContinueRunRequest": { "until": string; };
@@ -181,7 +181,9 @@ export interface ApiOperations {
     "getWorkItem": { method: "GET"; path: "/api/v1/work-items/{workItemId}"; response: components["schemas"]["WorkItemView"]; body: never; };
     "listRuns": { method: "GET"; path: "/api/v1/runs"; response: components["schemas"]["RunPage"]; body: never; };
     "createOrStartRun": { method: "POST"; path: "/api/v1/runs"; response: components["schemas"]["Run"]; body: components["schemas"]["CreateRunRequest"] | components["schemas"]["StartFakeRunRequest"]; };
+    "prepareRun": { method: "POST"; path: "/api/v1/runs/prepare"; response: components["schemas"]["Run"]; body: components["schemas"]["CreateRunRequest"]; };
     "getRun": { method: "GET"; path: "/api/v1/runs/{runId}"; response: components["schemas"]["RunView"]; body: never; };
+    "startPreparedRun": { method: "POST"; path: "/api/v1/runs/{runId}/start"; response: components["schemas"]["Run"]; body: never; };
     "getRunReadiness": { method: "GET"; path: "/api/v1/runs/{runId}/readiness"; response: components["schemas"]["RunReadinessView"]; body: never; };
     "decideRunReadiness": { method: "POST"; path: "/api/v1/runs/{runId}/readiness/decisions"; response: components["schemas"]["RunReadinessView"]; body: components["schemas"]["ReadinessDecisionRequest"]; };
     "exportRun": { method: "GET"; path: "/api/v1/runs/{runId}/export"; response: string; body: never; };
@@ -269,7 +271,9 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "getWorkItem": { method: "GET", path: "/api/v1/work-items/{workItemId}" },
   "listRuns": { method: "GET", path: "/api/v1/runs" },
   "createOrStartRun": { method: "POST", path: "/api/v1/runs" },
+  "prepareRun": { method: "POST", path: "/api/v1/runs/prepare" },
   "getRun": { method: "GET", path: "/api/v1/runs/{runId}" },
+  "startPreparedRun": { method: "POST", path: "/api/v1/runs/{runId}/start" },
   "getRunReadiness": { method: "GET", path: "/api/v1/runs/{runId}/readiness" },
   "decideRunReadiness": { method: "POST", path: "/api/v1/runs/{runId}/readiness/decisions" },
   "exportRun": { method: "GET", path: "/api/v1/runs/{runId}/export" },
