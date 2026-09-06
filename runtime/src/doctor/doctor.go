@@ -478,6 +478,7 @@ type executableResolution struct {
 
 func resolveExecutable(runner CommandRunner, configured, name string) executableResolution {
 	target := strings.TrimSpace(configured)
+	explicit := target != ""
 	if target == "" {
 		target = name
 	}
@@ -486,6 +487,9 @@ func resolveExecutable(runner CommandRunner, configured, name string) executable
 		return executableResolution{Err: err}
 	}
 	selected = canonicalPath(selected)
+	if explicit {
+		return executableResolution{Selected: selected}
+	}
 	candidates := []string{selected}
 	if enumerator, ok := runner.(executableEnumerator); ok {
 		if discovered, discoverErr := enumerator.LookPaths(name); discoverErr == nil {
@@ -508,6 +512,20 @@ func resolveExecutable(runner CommandRunner, configured, name string) executable
 	}
 	sort.Strings(conflicts)
 	return executableResolution{Selected: selected, Conflicts: conflicts}
+}
+
+// ResolveCodexExecutable returns the sole executable that production provider
+// wiring may use. An explicit configured path is authoritative; fallback PATH
+// discovery is accepted only when it has one canonical result.
+func ResolveCodexExecutable(configured string) (string, error) {
+	resolved := resolveExecutable(osCommandRunner{}, configured, "codex")
+	if resolved.Err != nil {
+		return "", fmt.Errorf("resolve Codex executable: %w", resolved.Err)
+	}
+	if len(resolved.Conflicts) != 0 {
+		return "", fmt.Errorf("resolve Codex executable: ambiguous fallback selected %q but also found %s", resolved.Selected, strings.Join(resolved.Conflicts, ", "))
+	}
+	return resolved.Selected, nil
 }
 
 func canonicalPath(path string) string {

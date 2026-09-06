@@ -155,7 +155,8 @@ export interface components {
     "RunTimelinePageInfo": { "hasEarlier": boolean; "firstPosition"?: number; "lastPosition"?: number; };
     "RunCommandSummary": { "scope": string; "status": string; "responseStatus"?: number; "firstEventPosition"?: number; "lastEventPosition"?: number; "createdAt": string; "completedAt"?: string; };
     "RunCommandPageInfo": { "hasEarlier": boolean; };
-    "RunView": { "schemaVersion": 1; "run": components["schemas"]["Run"]; "nodes": Array<components["schemas"]["NodeVisit"]>; "attempts": Array<components["schemas"]["Attempt"]>; "timeline": Array<components["schemas"]["RunTimelineEntry"]>; "timelinePageInfo": components["schemas"]["RunTimelinePageInfo"]; "commands": Array<components["schemas"]["RunCommandSummary"]>; "commandsPageInfo": components["schemas"]["RunCommandPageInfo"]; };
+    "RunIssueSummary": { "kind": "input_required" | "failure" | "reconcile_required"; "code": string; "message": string; };
+    "RunView": { "schemaVersion": 1; "run": components["schemas"]["Run"]; "nodes": Array<components["schemas"]["NodeVisit"]>; "attempts": Array<components["schemas"]["Attempt"]>; "timeline": Array<components["schemas"]["RunTimelineEntry"]>; "timelinePageInfo": components["schemas"]["RunTimelinePageInfo"]; "commands": Array<components["schemas"]["RunCommandSummary"]>; "commandsPageInfo": components["schemas"]["RunCommandPageInfo"]; "issue"?: components["schemas"]["RunIssueSummary"]; };
     "RunPage": { "items": Array<components["schemas"]["Run"]>; "pageInfo": { "nextCursor": string | null; }; };
   };
 }

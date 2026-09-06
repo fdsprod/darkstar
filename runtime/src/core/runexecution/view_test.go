@@ -10,6 +10,19 @@ import (
 	"darkstar/src/ports/statestore"
 )
 
+func TestRunIssueIsClearedByLaterLifecycleProgress(t *testing.T) {
+	t.Parallel()
+	issueEvent := statestore.Event{AggregateType: statestore.AggregateRun, Kind: "run.admission_failed", Data: json.RawMessage(`{"code":"PROVIDER_NOT_READY","message":"authenticate"}`)}
+	issue := summarizeRunIssue([]statestore.Event{issueEvent})
+	if issue == nil || issue.Kind != RunIssueFailure || issue.Code != "PROVIDER_NOT_READY" {
+		t.Fatalf("issue = %#v", issue)
+	}
+	resumed := statestore.Event{AggregateType: statestore.AggregateRun, Kind: "run.retried", Data: json.RawMessage(`{}`)}
+	if issue := summarizeRunIssue([]statestore.Event{issueEvent, resumed}); issue != nil {
+		t.Fatalf("superseded issue = %#v", issue)
+	}
+}
+
 func TestGetReturnsNonNullAdditiveRunCollections(t *testing.T) {
 	store := runViewStore{evidence: statestore.RunEvidence{
 		Run: statestore.RunProjection{RunID: "run_01K3Z1C2AAAAAAAAAAAAAAAAAA"},

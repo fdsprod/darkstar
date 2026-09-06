@@ -334,6 +334,25 @@ func TestReportPinsCodexAndRejectsConflictingInstallations(t *testing.T) {
 	}
 }
 
+func TestConfiguredCodexExecutableIsAuthoritative(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configured := filepath.Join(root, "packaged", "codex.exe")
+	runner := fakeRunner{paths: map[string][]string{"codex": {filepath.Join(root, "path-one", "codex.exe"), filepath.Join(root, "path-two", "codex.exe")}, configured: {configured}}}
+	doctor := New(Options{CodexExecutable: configured, Runner: runner})
+	report, err := doctor.Report(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := report.Checks[4]
+	if check.Code != "CODEX_READY" || check.ProviderDetails == nil {
+		t.Fatalf("codex check = %#v", check)
+	}
+	if check.ProviderDetails.ExecutableIdentity != filepath.Clean(configured) || len(check.ProviderDetails.ConflictingExecutables) != 0 {
+		t.Fatalf("configured executable details = %#v", check.ProviderDetails)
+	}
+}
+
 func TestReportProjectsProviderCapabilitiesAndUsageWithoutAccountData(t *testing.T) {
 	t.Parallel()
 	providerAdapter, err := fake.New(fake.Scenario{

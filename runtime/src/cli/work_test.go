@@ -96,7 +96,8 @@ func TestProjectAndWorkCLICommandsUseStableMachineResults(t *testing.T) {
 	}
 	var runView runexecution.View
 	runCLIJSON(t, []string{"run", "show", started.RunID, "--json"}, &runView)
-	if runView.Run.RunID != started.RunID || len(runView.Attempts) != 0 {
+	if runView.Run.RunID != started.RunID || len(runView.Nodes) != 1 || runView.Nodes[0].NodeID != "finish" || len(runView.Attempts) != 1 ||
+		runView.Attempts[0].NodeID != "finish" || runView.Attempts[0].Scenario != runexecution.ScenarioWorkflow || runView.Attempts[0].Provider != runexecution.ProviderCodex {
 		t.Fatalf("run view = %#v", runView)
 	}
 }

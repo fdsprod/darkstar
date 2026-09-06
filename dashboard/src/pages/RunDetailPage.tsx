@@ -71,6 +71,7 @@ export function RunDetailPage() {
       {action && <AsyncPanel compact state="loading" title={`${humanize(action)} request pending`} message={<>Target run <code>{view.run.id}</code>. Other run mutations remain unavailable until this request settles.</>} />}
       {actionMessage && <AsyncPanel compact state={actionMessage.endsWith("daemon state.") ? "success" : "error"} title={actionMessage.endsWith("daemon state.") ? "Run command accepted" : "Run command failed"} message={actionMessage} />}
       {error && <AsyncPanel compact state="error" title="Run refresh failed" message={error} />}
+      {view.issue && <AsyncPanel compact state={view.issue.kind === "input_required" ? "validation" : "error"} title={humanize(view.issue.code)} message={view.issue.message} />}
 
       <section className="detail-summary" aria-label="Run summary">
         <SummaryFact label="Run identifier" value={view.run.id} mono />

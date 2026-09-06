@@ -115,7 +115,17 @@ func (s *Service) Pause(ctx context.Context, request ControlRequest) (statestore
 
 // Resume moves a waiting or dependency-blocked run back to the durable queue.
 func (s *Service) Resume(ctx context.Context, request ControlRequest) (statestore.RunProjection, error) {
+	if !s.schedulingAdmitted() {
+		return statestore.RunProjection{}, ErrSchedulingBlocked
+	}
 	request = normalizeControlRequest(request)
+	current, currentErr := s.store.Run(ctx, request.RunID)
+	if currentErr != nil {
+		return statestore.RunProjection{}, currentErr
+	}
+	if current.Status == statestore.RunWaiting && routeHasInputRequirements(current.RouteSnapshot) {
+		return statestore.RunProjection{}, fmt.Errorf("%w: run %s still requires authored run inputs", ErrInvalidControl, request.RunID)
+	}
 	const action, eventKind = "resume", "run.resumed"
 	replayed, done, err := s.beginControl(ctx, action, eventKind, request, map[string]any{})
 	if err != nil || done {
@@ -146,6 +156,9 @@ func (s *Service) Resume(ctx context.Context, request ControlRequest) (statestor
 // Retry creates a fresh attempt beneath the failed owner; prior attempt
 // evidence is immutable and remains visible in the run view.
 func (s *Service) Retry(ctx context.Context, request RetryRequest) (statestore.RunProjection, error) {
+	if !s.schedulingAdmitted() {
+		return statestore.RunProjection{}, ErrSchedulingBlocked
+	}
 	const action, eventKind = "retry", "run.retried"
 	request.ControlRequest = normalizeControlRequest(request.ControlRequest)
 	request.NodeID = strings.TrimSpace(request.NodeID)
@@ -223,6 +236,9 @@ func (s *Service) Retry(ctx context.Context, request RetryRequest) (statestore.R
 // Continue extends a completed frozen route to a new authored terminal and
 // queues only the newly included work. Existing route history is never removed.
 func (s *Service) Continue(ctx context.Context, request ContinueRequest) (statestore.RunProjection, error) {
+	if !s.schedulingAdmitted() {
+		return statestore.RunProjection{}, ErrSchedulingBlocked
+	}
 	const action, eventKind = "continue", "run.continued"
 	request.ControlRequest = normalizeControlRequest(request.ControlRequest)
 	request.UntilNodeID = strings.TrimSpace(request.UntilNodeID)
@@ -281,6 +297,14 @@ func (s *Service) Continue(ctx context.Context, request ContinueRequest) (states
 		return statestore.RunProjection{}, err
 	}
 	return value, s.finishControl(ctx, action, request.IdempotencyKey, value, committed)
+}
+
+func routeHasInputRequirements(snapshot statestore.JSONSnapshot) bool {
+	if snapshot == "" {
+		return false
+	}
+	var route workflow.Route
+	return json.Unmarshal([]byte(snapshot), &route) == nil && len(route.InputRequirements) != 0
 }
 
 // Cancel quiesces active work, asks the provider to terminate when a live

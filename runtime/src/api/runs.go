@@ -220,6 +220,10 @@ func (s *Server) serveRunStart(response http.ResponseWriter, request *http.Reque
 		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "SCENARIO_UNSUPPORTED", Message: "The requested fake-provider scenario is not supported.", RequestID: requestID})
 		return
 	}
+	if errors.Is(err, runexecution.ErrSchedulingBlocked) {
+		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "SCHEDULING_BLOCKED", Message: err.Error(), RequestID: requestID, Retryable: true})
+		return
+	}
 	if err != nil {
 		writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "RUN_START_FAILED", Message: err.Error(), RequestID: requestID, Retryable: errors.Is(err, runexecution.ErrCommandInProgress)})
 		return
@@ -276,6 +280,10 @@ func writeRunCommandError(response http.ResponseWriter, requestID string, err er
 		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "WORKFLOW_SERVICE_UNAVAILABLE", Message: err.Error(), RequestID: requestID, Retryable: true})
 		return
 	}
+	if errors.Is(err, runexecution.ErrSchedulingBlocked) {
+		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "SCHEDULING_BLOCKED", Message: err.Error(), RequestID: requestID, Retryable: true})
+		return
+	}
 	if errors.Is(err, runexecution.ErrInvalidRequest) || errors.Is(err, runexecution.ErrPageCursor) {
 		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: err.Error(), RequestID: requestID})
 		return
@@ -303,6 +311,8 @@ func writeRunControlError(response http.ResponseWriter, requestID string, err er
 		writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "RUN_CONTROL_INVALID_TRANSITION", Message: err.Error(), RequestID: requestID})
 	case errors.Is(err, runexecution.ErrCommandInProgress):
 		writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "COMMAND_IN_PROGRESS", Message: err.Error(), RequestID: requestID, Retryable: true})
+	case errors.Is(err, runexecution.ErrSchedulingBlocked):
+		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "SCHEDULING_BLOCKED", Message: err.Error(), RequestID: requestID, Retryable: true})
 	default:
 		var issues workflow.ValidationErrors
 		if errors.As(err, &issues) {

@@ -41,7 +41,11 @@ restart impact. Machine JSON is the same versioned contract returned by HTTP.
 `darkstar run start <work-id> --workflow <name> --version <version>` validates
 the work item, resolves an exact installed workflow, freezes its default route,
 and queues the run through `POST /api/v1/runs`. Omitting the workflow flags uses
-the shipped `darkstar/mvp-walking-skeleton` `1.0.0` identity.
+the shipped `darkstar/story-execution` `1.4.0` identity. A route with unresolved
+run inputs is persisted in `waiting` with a `RUN_INPUT_REQUIRED` issue and does
+not dispatch provider work. Production Codex dispatch is currently bounded to
+an input-complete reasoning entry; a successful nonterminal entry records
+`WORKFLOW_NEXT_NODE_DISPATCH_UNAVAILABLE` instead of claiming route completion.
 `darkstar run list` returns a bounded cursor page ordered by priority and
 creation time.
 

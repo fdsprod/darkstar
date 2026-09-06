@@ -61,6 +61,22 @@ func TestPauseResumePreservesAttemptCursorAndIsIdempotent(t *testing.T) {
 	assertControlEventCount(t, evidence.Events, "run.resumed", 1)
 }
 
+func TestRecoveryAdmissionBlocksSchedulingControls(t *testing.T) {
+	service, _, _ := newControlTestService(t, false)
+	if err := service.SetSchedulingAllowed(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Resume(context.Background(), ControlRequest{RunID: "run_00000000000000000000000000", IdempotencyKey: "blocked-resume"}); !errors.Is(err, ErrSchedulingBlocked) {
+		t.Fatalf("Resume() error = %v, want ErrSchedulingBlocked", err)
+	}
+	if _, err := service.Retry(context.Background(), RetryRequest{ControlRequest: ControlRequest{RunID: "run_00000000000000000000000000", IdempotencyKey: "blocked-retry"}}); !errors.Is(err, ErrSchedulingBlocked) {
+		t.Fatalf("Retry() error = %v, want ErrSchedulingBlocked", err)
+	}
+	if _, err := service.Continue(context.Background(), ContinueRequest{ControlRequest: ControlRequest{RunID: "run_00000000000000000000000000", IdempotencyKey: "blocked-continue"}, UntilNodeID: "finish"}); !errors.Is(err, ErrSchedulingBlocked) {
+		t.Fatalf("Continue() error = %v, want ErrSchedulingBlocked", err)
+	}
+}
+
 func TestCancelTerminatesProviderAndClosesChildren(t *testing.T) {
 	service, _, factory := newControlTestService(t, false)
 	view, err := service.Start(context.Background(), StartRequest{Scenario: ScenarioRestart}, "start-cancel-run")

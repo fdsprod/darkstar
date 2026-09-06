@@ -20,7 +20,6 @@ import (
 	configurationfilesystem "darkstar/src/adapters/configurationstore/filesystem"
 	"darkstar/src/adapters/contentprocessor/common"
 	"darkstar/src/adapters/contentprocessor/commonimage"
-	"darkstar/src/adapters/provider/fake"
 	"darkstar/src/adapters/statestore/sqlite"
 	workflowfilesystem "darkstar/src/adapters/workflowstore/filesystem"
 	localapi "darkstar/src/api"
@@ -379,18 +378,25 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
-	providerAdapter, err := fake.New(fake.Scenario{})
+	providerWiring, err := newDaemonProviderWiring(service.paths, service.projectRoot)
 	if err != nil {
 		_ = database.Close()
 		service.database = nil
-		return fmt.Errorf("construct default provider: %w", err)
+		return fmt.Errorf("configure daemon providers: %w", err)
+	}
+	providerAdapter, err := providerWiring.doctorProvider()
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return fmt.Errorf("construct Codex health provider: %w", err)
 	}
 	reporter := doctor.New(doctor.Options{
-		Paths:       service.paths,
-		Database:    database,
-		Process:     state.Process,
-		ProjectRoot: service.projectRoot,
-		Provider:    providerAdapter,
+		Paths:           service.paths,
+		Database:        database,
+		Process:         state.Process,
+		ProjectRoot:     service.projectRoot,
+		Provider:        providerAdapter,
+		CodexExecutable: providerWiring.configuredCodex,
 	})
 	if err := service.server.SetDoctor(reporter); err != nil {
 		_ = database.Close()
@@ -465,13 +471,27 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
-	service.executions = executions
-	if err := executions.ResumeActive(ctx); err != nil {
+	if err := executions.SetWorkflowDispatch(providerWiring, providerWiring); err != nil {
 		_ = executions.Close()
 		_ = database.Close()
 		service.database = nil
-		service.executions = nil
-		return fmt.Errorf("resume active runs: %w", err)
+		return err
+	}
+	if err := executions.SetSchedulingAllowed(report.SchedulingAllowed()); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	service.executions = executions
+	if report.SchedulingAllowed() {
+		if err := executions.ResumeActive(ctx); err != nil {
+			_ = executions.Close()
+			_ = database.Close()
+			service.database = nil
+			service.executions = nil
+			return fmt.Errorf("resume active runs: %w", err)
+		}
 	}
 	if err := service.server.SetRuns(executions); err != nil {
 		_ = executions.Close()

@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"darkstar/src/ports/statestore"
 )
 
 // ReducerVersion changes whenever replay semantics change incompatibly.
-const ReducerVersion = "8"
+const ReducerVersion = "9"
 
 // UnsupportedSchemaVersionError means replay cannot safely interpret an event.
 type UnsupportedSchemaVersionError struct {
@@ -133,6 +134,14 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 			return statestore.RunProjection{}, true, err
 		}
 		next.Status = statestore.RunWaiting
+	case "run.input_required":
+		if err := requireRunState(current, event, statestore.RunQueued); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		if err := requireIssueData(event); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		next.Status = statestore.RunWaiting
 	case "run.paused":
 		if err := requireRunState(current, event, statestore.RunQueued, statestore.RunRunning); err != nil {
 			return statestore.RunProjection{}, true, err
@@ -188,6 +197,17 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 		if err := requireRunState(current, event, statestore.RunRunning); err != nil {
 			return statestore.RunProjection{}, true, err
 		}
+		if err := validateOptionalIssueData(event); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		next.Status = statestore.RunFailed
+	case "run.admission_failed":
+		if err := requireRunState(current, event, statestore.RunQueued); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		if err := requireIssueData(event); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
 		next.Status = statestore.RunFailed
 	case "run.cancelled":
 		if current.Status.Terminal() {
@@ -197,6 +217,9 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 	case "run.reconcile_required":
 		if current.Status.Terminal() {
 			return statestore.RunProjection{}, true, invalidTransition("run", current.RunID, string(current.Status), event.Kind)
+		}
+		if err := validateOptionalIssueData(event); err != nil {
+			return statestore.RunProjection{}, true, err
 		}
 		next.Status = statestore.RunReconcileRequired
 	default:
@@ -287,6 +310,14 @@ func ReduceNode(current *statestore.NodeProjection, event statestore.Event) (sta
 		next.Status = statestore.NodeReady
 	case "visit.failed":
 		if err := requireNodeState(current, event, statestore.NodeRunning, statestore.NodeValidating); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		next.Status = statestore.NodeFailed
+	case "visit.admission_failed":
+		if err := requireNodeState(current, event, statestore.NodePending, statestore.NodeReady); err != nil {
+			return statestore.NodeProjection{}, true, err
+		}
+		if err := requireIssueData(event); err != nil {
 			return statestore.NodeProjection{}, true, err
 		}
 		next.Status = statestore.NodeFailed
@@ -434,6 +465,9 @@ func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event
 	case "attempt.reconcile_required":
 		if current.Status.Terminal() {
 			return statestore.AttemptProjection{}, true, invalidTransition("attempt", current.AttemptID, string(current.Status), event.Kind)
+		}
+		if err := validateOptionalIssueData(event); err != nil {
+			return statestore.AttemptProjection{}, true, err
 		}
 		next.Status = statestore.AttemptReconcileRequired
 	default:
@@ -665,6 +699,35 @@ func ReduceApproval(current *statestore.ApprovalProjection, event statestore.Eve
 func decodeData(event statestore.Event, destination any) error {
 	if err := json.Unmarshal(event.Data, destination); err != nil {
 		return fmt.Errorf("decode %s data: %w", event.Kind, err)
+	}
+	return nil
+}
+
+func requireIssueData(event statestore.Event) error {
+	var data struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := decodeData(event, &data); err != nil {
+		return err
+	}
+	if strings.TrimSpace(data.Code) == "" || strings.TrimSpace(data.Message) == "" {
+		return fmt.Errorf("%s requires code and message", event.Kind)
+	}
+	return nil
+}
+
+func validateOptionalIssueData(event statestore.Event) error {
+	var data struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := decodeData(event, &data); err != nil {
+		return err
+	}
+	hasCode, hasMessage := strings.TrimSpace(data.Code) != "", strings.TrimSpace(data.Message) != ""
+	if hasCode != hasMessage {
+		return fmt.Errorf("%s issue evidence must contain both code and message", event.Kind)
 	}
 	return nil
 }

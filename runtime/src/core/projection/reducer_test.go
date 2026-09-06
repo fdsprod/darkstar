@@ -18,6 +18,8 @@ func TestRunTransitionTable(t *testing.T) {
 		{statestore.RunDraft, "run.route_frozen", statestore.RunReady},
 		{statestore.RunReady, "run.started", statestore.RunQueued},
 		{statestore.RunQueued, "run.visit_ready", statestore.RunRunning},
+		{statestore.RunQueued, "run.input_required", statestore.RunWaiting},
+		{statestore.RunQueued, "run.admission_failed", statestore.RunFailed},
 		{statestore.RunRunning, "run.waiting", statestore.RunWaiting},
 		{statestore.RunQueued, "run.paused", statestore.RunWaiting},
 		{statestore.RunRunning, "run.paused", statestore.RunWaiting},
@@ -50,6 +52,12 @@ func TestRunTransitionTable(t *testing.T) {
 		_, _, err := ReduceRun(&current, transitionEvent(statestore.AggregateRun, current.RunID, "run.completed"))
 		return err
 	})
+	current := statestore.RunProjection{RunID: "run_A", Status: statestore.RunQueued, ResourceVersion: 1}
+	invalidIssue := transitionEvent(statestore.AggregateRun, current.RunID, "run.input_required")
+	invalidIssue.Data = []byte(`{}`)
+	if _, _, err := ReduceRun(&current, invalidIssue); err == nil {
+		t.Fatal("run.input_required accepted missing code and message")
+	}
 }
 
 func TestNodeTransitionTable(t *testing.T) {
@@ -60,6 +68,8 @@ func TestNodeTransitionTable(t *testing.T) {
 		to    statestore.NodeStatus
 	}{
 		{statestore.NodePending, "visit.ready", statestore.NodeReady},
+		{statestore.NodePending, "visit.admission_failed", statestore.NodeFailed},
+		{statestore.NodeReady, "visit.admission_failed", statestore.NodeFailed},
 		{statestore.NodeReady, "visit.started", statestore.NodeRunning},
 		{statestore.NodeRunning, "visit.result_received", statestore.NodeValidating},
 		{statestore.NodeValidating, "visit.succeeded", statestore.NodeSucceeded},
@@ -147,9 +157,13 @@ func TestAttemptResumeTransfersProcessOwnership(t *testing.T) {
 }
 
 func transitionEvent(kind statestore.AggregateType, id, eventKind string) statestore.Event {
+	data := []byte(`{}`)
+	if eventKind == "run.input_required" || eventKind == "run.admission_failed" || eventKind == "visit.admission_failed" {
+		data = []byte(`{"code":"TEST_ISSUE","message":"test issue"}`)
+	}
 	return statestore.Event{
 		SchemaVersion: 1, ID: "event_A", AggregateType: kind, AggregateID: id,
-		AggregateRevision: 2, Kind: eventKind, RecordedAt: time.Unix(1, 0).UTC(), Data: []byte(`{}`),
+		AggregateRevision: 2, Kind: eventKind, RecordedAt: time.Unix(1, 0).UTC(), Data: data,
 	}
 }
 
