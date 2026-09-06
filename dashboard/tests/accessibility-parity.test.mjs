@@ -115,7 +115,8 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
   const mappings = [
     ["registerProject", "registerProject", "darkstar project register", "project.created"],
     ["createWorkItem", "createWorkItem", "darkstar work create", "work.created"],
-    ["createRun", "createOrStartRun", "darkstar run start", "run.created"],
+    ["prepareRun", "prepareRun", "darkstar run prepare", "run.created"],
+    ["startRun", "startPreparedRun", "darkstar run start", "run.started"],
     ["pauseRun", "pauseRun", "darkstar run pause", "run.paused"],
     ["resumeRun", "resumeRun", "darkstar run resume", "run.resumed"],
     ["retryRun", "retryRun", "darkstar run retry", "run.retried"],

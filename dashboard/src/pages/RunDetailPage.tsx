@@ -7,7 +7,7 @@ import { AsyncPanel, SectionHeader } from "../components/InteractionPatterns";
 import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, EmptyDetail, formatDate, StatusPill, SummaryFact } from "./WorkDetailPage";
-import { attemptsForVisit, eventCategory, humanize, shortIdentifier, sortNodeVisits, statusTone, terminalBoundary } from "./runDetailModel";
+import { attemptsForVisit, eventCategory, hasValidationEvidence, humanize, shortIdentifier, sortNodeVisits, statusTone, terminalBoundary } from "./runDetailModel";
 
 type Schemas = components["schemas"];
 type RunView = Schemas["RunView"];
@@ -156,7 +156,7 @@ function RecordedCommands({ view }: { view: RunView }) {
 
 function EvidenceCoverage({ view }: { view: RunView }) {
   const categories = new Set(view.timeline.map((event) => eventCategory(event.kind)));
-  return <section className="side-panel"><p className="eyebrow">Recorded facts</p><h2>Execution evidence</h2><dl className="coverage-list"><Coverage label="Command lifecycle" present={view.commands.length > 0 || categories.has("command")} /><Coverage label="Validation/checkpoints" present={categories.has("validation")} /><Coverage label="Commits/delivery" present={categories.has("commit")} /><Coverage label="Attempt logs" present={view.attempts.some((attempt) => Boolean(attempt.logReference))} /></dl><small>“Not recorded” means no matching fact exists in this bounded query response; the dashboard does not infer one.</small></section>;
+  return <section className="side-panel"><p className="eyebrow">Recorded facts</p><h2>Execution evidence</h2><dl className="coverage-list"><Coverage label="Command lifecycle" present={view.commands.length > 0 || categories.has("command")} /><Coverage label="Validation/checkpoints" present={hasValidationEvidence(view)} /><Coverage label="Commits/delivery" present={categories.has("commit")} /><Coverage label="Attempt logs" present={view.attempts.some((attempt) => Boolean(attempt.logReference))} /></dl><small>“Not recorded” means no matching node visit or event exists in this bounded query response.</small></section>;
 }
 
 function Coverage({ label, present }: { label: string; present: boolean }) { return <div><dt>{label}</dt><dd data-present={present}>{present ? "Recorded" : "Not recorded"}</dd></div>; }

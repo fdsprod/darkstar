@@ -3,6 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { buildArtifactIngestRequest, buildArtifactTarget, decodeArtifactImpact, decodeArtifactView } from "../src/pages/artifactModel.ts";
+import { hasValidationEvidence } from "../src/pages/runDetailModel.ts";
+
+test("completed validation node visits count as execution evidence", () => {
+  assert.equal(hasValidationEvidence({ nodes: [{ nodeId: "s6_validation", status: "succeeded" }], timeline: [] }), true);
+  assert.equal(hasValidationEvidence({ nodes: [{ nodeId: "s5_implementation", status: "succeeded" }], timeline: [] }), false);
+  assert.equal(hasValidationEvidence({ nodes: [], timeline: [{ kind: "checkpoint.approved" }] }), true);
+});
 
 test("paste ingestion preserves UTF-8 bytes and canonical classification tokens", async () => {
   const request = await buildArtifactIngestRequest({ source: { kind: "paste", sourceName: " note.md ", mediaType: " Text/Markdown ", content: "Evidence 世界" }, sensitivity: "internal", roles: " log, evidence, log ", tags: "late, late" });

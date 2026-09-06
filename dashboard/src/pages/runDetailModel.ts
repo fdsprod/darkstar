@@ -31,6 +31,15 @@ export function eventCategory(kind: string): RunEventCategory {
   return "lifecycle";
 }
 
+export function hasValidationEvidence(view: Pick<Schemas["RunView"], "nodes" | "timeline">) {
+  if (view.timeline.some((event) => eventCategory(event.kind) === "validation")) return true;
+  return view.nodes.some((visit) => {
+    const node = visit.nodeId.toLowerCase();
+    return (node.includes("validation") || node.includes("checkpoint"))
+      && ["validating", "waiting_checkpoint", "succeeded", "rejected", "failed"].includes(visit.status);
+  });
+}
+
 export function terminalBoundary(route: Schemas["FrozenRoute"] | undefined) {
   return route?.terminals ?? [];
 }

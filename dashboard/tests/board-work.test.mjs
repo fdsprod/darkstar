@@ -4,9 +4,12 @@ import test from "node:test";
 
 import { operationDefinitions } from "../src/api/schema.generated.ts";
 import {
+  availableCardActions,
+  buildPrepareRunRequest,
   buildCreateWorkItemRequest,
   deriveBoardCards,
   filterBoardCards,
+  workflowProfiles,
 } from "../src/pages/boardModel.ts";
 
 const timestamp = "2026-09-03T12:00:00Z";
@@ -161,4 +164,77 @@ test("create-work validation rejects incomplete or invalid local form input befo
     () => buildCreateWorkItemRequest({ projectId: "project_alpha", title: "Something", priority: -1 }),
     /Priority must be a whole number/,
   );
+});
+
+test("run preparation is distinct from launching a ready run", () => {
+  const alpha = project("project_alpha", "Alpha");
+  const item = work("work_alpha", alpha.id, "Prepare the release", { status: "open" });
+  const backlog = deriveBoardCards({ projects: [alpha], workItems: [item], runs: [] })[0];
+  const ready = deriveBoardCards({ projects: [alpha], workItems: [item], runs: [run("run_ready", item.id, "ready", 2)] })[0];
+
+  assert.deepEqual(availableCardActions(backlog), ["prepare"]);
+  assert.deepEqual(availableCardActions(ready), ["launch", "cancel"]);
+});
+
+test("run preparation normalizes the optional profile without inventing a default", () => {
+  assert.deepEqual(buildPrepareRunRequest({
+    workItemId: "  work_alpha  ",
+    workflowId: "  darkstar/story-execution ",
+    workflowVersion: " 1.4.0 ",
+    profile: " release ",
+  }), {
+    workItemId: "work_alpha",
+    workflowId: "darkstar/story-execution",
+    workflowVersion: "1.4.0",
+    profile: "release",
+  });
+  assert.deepEqual(buildPrepareRunRequest({
+    workItemId: "work_alpha",
+    workflowId: "darkstar/story-execution",
+    workflowVersion: "1.4.0",
+    profile: "   ",
+  }), {
+    workItemId: "work_alpha",
+    workflowId: "darkstar/story-execution",
+    workflowVersion: "1.4.0",
+  });
+});
+
+test("workflow profile choices come from the exact selected definition", () => {
+  const definition = {
+    version: { name: "darkstar/story-execution", version: "1.4.0", digest: "a".repeat(64), sourceScope: "default", sourceReference: "test", installedAt: timestamp },
+    document: {
+      apiVersion: "darkstar.local/v1alpha2",
+      kind: "Workflow",
+      metadata: { name: "darkstar/story-execution", version: "1.4.0" },
+      spec: {
+        routeDefaults: { entry: "design", terminals: ["publish"] },
+        profiles: {
+          release: { description: "Full release route", entry: "design", terminals: ["publish"], inputDefaults: {} },
+          fast: { description: "Fast validation route", entry: "design", terminals: ["validate"], inputDefaults: {} },
+        },
+        nodes: {},
+      },
+    },
+  };
+  assert.deepEqual(workflowProfiles(definition), [
+    { id: "fast", description: "Fast validation route" },
+    { id: "release", description: "Full release route" },
+  ]);
+});
+
+test("board run controls use the prepare and start lifecycle API operations", async () => {
+  assert.deepEqual(operationDefinitions.prepareRun, { method: "POST", path: "/api/v1/runs/prepare" });
+  assert.deepEqual(operationDefinitions.startPreparedRun, { method: "POST", path: "/api/v1/runs/{runId}/start" });
+
+  const [client, page] = await Promise.all([
+    readFile(new URL("../src/api/client.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/BoardPage.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(client, /prepareRun\([^\n]*this\.operation\("prepareRun", \{ body, idempotencyKey, signal \}\)/);
+  assert.match(client, /startRun\([^\n]*this\.operation\("startPreparedRun", \{ path: \{ runId \}, resourceVersion, idempotencyKey, signal \}\)/);
+  assert.match(page, /apiClient\.showWorkflow\(workflowId, workflowVersion, controller\.signal\)/);
+  assert.match(page, /apiClient\.prepareRun\(body,/);
+  assert.match(page, /apiClient\.startRun\(card\.run\.id, card\.run\.resourceVersion,/);
+  assert.match(page, /"Move to Ready"/);
 });

@@ -115,6 +115,8 @@ export class DarkstarApiClient {
   previewWorkflowRoute(name: string, version: string | undefined, body: Schemas["WorkflowPreviewRequest"], signal?: AbortSignal) { return this.operation("previewWorkflowRoute", { query: { name, version }, body, signal }); }
   createWorkItem(body: Schemas["CreateWorkItemRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("createWorkItem", { body, idempotencyKey, signal }); }
   createRun(body: Schemas["CreateRunRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("createOrStartRun", { body, idempotencyKey, signal }); }
+  prepareRun(body: Schemas["CreateRunRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("prepareRun", { body, idempotencyKey, signal }); }
+  startRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("startPreparedRun", { path: { runId }, resourceVersion, idempotencyKey, signal }); }
   pauseRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("pauseRun", { path: { runId }, resourceVersion, idempotencyKey, signal }); }
   resumeRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("resumeRun", { path: { runId }, resourceVersion, idempotencyKey, signal }); }
   retryRun(runId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) { return this.operation("retryRun", { path: { runId }, body: {}, resourceVersion, idempotencyKey, signal }); }

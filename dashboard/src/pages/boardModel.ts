@@ -7,7 +7,7 @@ export const LIFECYCLE_COLUMNS = ["backlog", "ready", "running", "waiting", "blo
 
 export type BoardLifecycle = typeof LIFECYCLE_COLUMNS[number];
 export type BoardView = "all" | "attention";
-export type BoardCardAction = "start" | "pause" | "resume" | "retry" | "cancel";
+export type BoardCardAction = "prepare" | "launch" | "pause" | "resume" | "retry" | "cancel";
 
 export interface BoardCard {
   work: Schemas["WorkItem"];
@@ -27,6 +27,18 @@ export interface CreateWorkInput {
   projectId: string;
   title: string;
   priority?: number;
+}
+
+export interface PrepareRunInput {
+  workItemId: string;
+  workflowId: string;
+  workflowVersion: string;
+  profile?: string;
+}
+
+export interface WorkflowProfileOption {
+  id: string;
+  description: string;
 }
 
 /** Builds board cards only from query projections; this layer never predicts a transition. */
@@ -65,12 +77,13 @@ export function filterBoardCards(cards: readonly BoardCard[], filters: BoardFilt
 /** Mirrors the legal run-control edges exposed by the daemon and CLI. */
 export function availableCardActions(card: BoardCard): BoardCardAction[] {
   const status = card.run?.status;
-  if (!status) return card.work.status === "open" && card.project?.status === "active" ? ["start"] : [];
+  if (!status) return card.work.status === "open" && card.project?.status === "active" ? ["prepare"] : [];
   if (status === "completed" || status === "cancelled" || status === "reconcile_required") return [];
+  if (status === "ready") return ["launch", "cancel"];
   if (status === "queued" || status === "running") return ["pause", "cancel"];
   if (status === "waiting" || status === "blocked") return ["resume", "cancel"];
   if (status === "failed") return ["retry", "cancel"];
-  if (status === "pending" || status === "draft" || status === "ready") return ["cancel"];
+  if (status === "pending" || status === "draft") return ["cancel"];
   return [];
 }
 
@@ -82,6 +95,23 @@ export function buildCreateWorkItemRequest(input: CreateWorkInput): Schemas["Cre
   if (!title) throw new Error("Describe the requested outcome.");
   if (!Number.isSafeInteger(priority) || priority < 0) throw new Error("Priority must be a whole number of zero or greater.");
   return { projectId, title, priority };
+}
+
+export function buildPrepareRunRequest(input: PrepareRunInput): Schemas["CreateRunRequest"] {
+  const workItemId = input.workItemId.trim();
+  const workflowId = input.workflowId.trim();
+  const workflowVersion = input.workflowVersion.trim();
+  const profile = input.profile?.trim();
+  if (!workItemId) throw new Error("Choose a work item.");
+  if (!workflowId || !workflowVersion) throw new Error("Choose a workflow version.");
+  return { workItemId, workflowId, workflowVersion, ...(profile ? { profile } : {}) };
+}
+
+export function workflowProfiles(definition: Schemas["WorkflowDefinition"]): WorkflowProfileOption[] {
+  if (definition.document.apiVersion !== "darkstar.local/v1alpha2") return [];
+  return Object.entries(definition.document.spec.profiles ?? {})
+    .map(([id, profile]) => ({ id, description: profile.description }))
+    .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function newestRun(runs: readonly Schemas["Run"][]) {

@@ -11,12 +11,15 @@ import {
   LIFECYCLE_COLUMNS,
   availableCardActions,
   buildCreateWorkItemRequest,
+  buildPrepareRunRequest,
   deriveBoardCards,
   filterBoardCards,
+  workflowProfiles,
   type BoardCard,
   type BoardCardAction,
   type BoardLifecycle,
   type BoardView,
+  type WorkflowProfileOption,
 } from "./boardModel";
 
 type Schemas = components["schemas"];
@@ -25,16 +28,22 @@ const lifecycleLabels: Record<BoardLifecycle, string> = {
   backlog: "Backlog", ready: "Ready", running: "Running", waiting: "Waiting",
   blocked: "Blocked", review: "Review", failed: "Failed", done: "Done",
 };
-const actionLabels: Record<Exclude<BoardCardAction, "start">, string> = {
-  pause: "Pause", resume: "Resume", retry: "Retry", cancel: "Cancel",
+const actionLabels: Record<BoardCardAction, string> = {
+  prepare: "Prepare run", launch: "Start run", pause: "Pause", resume: "Resume", retry: "Retry", cancel: "Cancel",
 };
+
+type WorkflowProfileState =
+  | { kind: "idle" }
+  | { kind: "loading"; selection: string }
+  | { kind: "ready"; selection: string; profiles: WorkflowProfileOption[] }
+  | { kind: "error"; selection: string };
 
 export function BoardPage() {
   const { state, refresh } = useDashboardState();
   const { search } = useRouter();
   const createDialog = useRef<HTMLDialogElement>(null);
-  const startDialog = useRef<HTMLDialogElement>(null);
-  const [startCard, setStartCard] = useState<BoardCard>();
+  const prepareDialog = useRef<HTMLDialogElement>(null);
+  const [prepareCard, setPrepareCard] = useState<BoardCard>();
   const [workflows, setWorkflows] = useState<Schemas["WorkflowVersionSummary"][]>([]);
   const [view, setView] = useState<BoardView>("all");
   const [projectId, setProjectId] = useState("");
@@ -63,13 +72,13 @@ export function BoardPage() {
     return () => { live = false; };
   }, [state.lastSynchronizedAt]);
 
-  function beginStart(card: BoardCard) {
-    setStartCard(card);
-    window.setTimeout(() => startDialog.current?.showModal(), 0);
+  function beginPrepare(card: BoardCard) {
+    setPrepareCard(card);
+    window.setTimeout(() => prepareDialog.current?.showModal(), 0);
   }
 
   async function runCardAction(card: BoardCard, action: BoardCardAction) {
-    if (action === "start") return beginStart(card);
+    if (action === "prepare") return beginPrepare(card);
     if (!card.run) return;
     if (action === "cancel" && !window.confirm(`Cancel “${card.work.title}”? Its run history and evidence will be preserved.`)) return;
     const key = `${action}:${card.run.id}`;
@@ -77,6 +86,7 @@ export function BoardPage() {
     setActionMessage(undefined);
     try {
       const idempotencyKey = `dashboard-${action}-${crypto.randomUUID()}`;
+      if (action === "launch") await apiClient.startRun(card.run.id, card.run.resourceVersion, idempotencyKey);
       if (action === "pause") await apiClient.pauseRun(card.run.id, card.run.resourceVersion, idempotencyKey);
       if (action === "resume") await apiClient.resumeRun(card.run.id, card.run.resourceVersion, idempotencyKey);
       if (action === "retry") await apiClient.retryRun(card.run.id, card.run.resourceVersion, idempotencyKey);
@@ -123,7 +133,7 @@ export function BoardPage() {
       {!loading && cards.length === 0 && filtered && <EmptyState compact kind="filtered" title="No work matches these filters" message="The active project, workflow, search, or attention filters exclude every work item." action={<button type="button" className="button" onClick={() => { setProjectId(""); setWorkflowId(""); setQuery(""); setView("all"); }}>Clear filters</button>} />}
       {!loading && !canCreate && <p className="board-setup-note">Register an active project with <code>darkstar project add</code> before creating work.</p>}
       <CreateWorkDialog dialogRef={createDialog} projects={state.snapshot.projects} onCreated={refresh} />
-      <StartRunDialog dialogRef={startDialog} card={startCard} workflows={workflows} onRefresh={refresh} onStarted={() => setActionMessage({ kind: "success", text: "Run created. The board now reflects daemon state." })} />
+      <PrepareRunDialog dialogRef={prepareDialog} card={prepareCard} workflows={workflows} onRefresh={refresh} onPrepared={() => setActionMessage({ kind: "success", text: "Run prepared and ready to start. The board now reflects daemon state." })} />
     </div>
   );
 }
@@ -151,7 +161,7 @@ function WorkCard({ card, pendingAction, onAction }: { card: BoardCard; pendingA
     <div className="work-card__actions" aria-label={`Actions for ${card.work.title}`}><AppLink className="card-action" to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(card.work.id)}&ingest=1`}>Add evidence</AppLink>{actions.map((action) => {
       const key = `${action}:${card.run?.id ?? card.work.id}`;
       const pending = pendingAction === key;
-      return <button key={action} type="button" className={action === "cancel" ? "card-action card-action--danger" : "card-action"} disabled={Boolean(pendingAction)} onClick={() => void onAction(card, action)}>{pending ? "Working…" : action === "start" ? "Start run" : actionLabels[action]}</button>;
+      return <button key={action} type="button" className={action === "cancel" ? "card-action card-action--danger" : "card-action"} disabled={Boolean(pendingAction)} onClick={() => void onAction(card, action)}>{pending ? "Working…" : actionLabels[action]}</button>;
     })}</div>
   </article>;
 }
@@ -180,23 +190,40 @@ function CreateWorkDialog({ dialogRef, projects, onCreated }: { dialogRef: RefOb
   </form></dialog>;
 }
 
-function StartRunDialog({ dialogRef, card, workflows, onRefresh, onStarted }: { dialogRef: RefObject<HTMLDialogElement | null>; card?: BoardCard; workflows: Schemas["WorkflowVersionSummary"][]; onRefresh(): Promise<void>; onStarted(): void }) {
-  const [selection, setSelection] = useState(""); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState("");
+function PrepareRunDialog({ dialogRef, card, workflows, onRefresh, onPrepared }: { dialogRef: RefObject<HTMLDialogElement | null>; card?: BoardCard; workflows: Schemas["WorkflowVersionSummary"][]; onRefresh(): Promise<void>; onPrepared(): void }) {
+  const [selection, setSelection] = useState(""); const [profile, setProfile] = useState(""); const [profileState, setProfileState] = useState<WorkflowProfileState>({ kind: "idle" });
+  const [profileReload, setProfileReload] = useState(0);
+  const [submitting, setSubmitting] = useState(false); const [error, setError] = useState("");
   function close() { if (!submitting) { dialogRef.current?.close(); setError(""); } }
   useEffect(() => { if (!selection && workflows.length === 1) setSelection(`${workflows[0].name}\u0000${workflows[0].version}`); }, [selection, workflows]);
+  useEffect(() => {
+    setProfile("");
+    if (!selection) { setProfileState({ kind: "idle" }); return; }
+    const [workflowId, workflowVersion] = selection.split("\u0000");
+    if (!workflowId || !workflowVersion) { setProfileState({ kind: "error", selection }); return; }
+    const controller = new AbortController();
+    setProfileState({ kind: "loading", selection });
+    void apiClient.showWorkflow(workflowId, workflowVersion, controller.signal)
+      .then((definition) => { if (!controller.signal.aborted) setProfileState({ kind: "ready", selection, profiles: workflowProfiles(definition) }); })
+      .catch(() => { if (!controller.signal.aborted) setProfileState({ kind: "error", selection }); });
+    return () => controller.abort();
+  }, [profileReload, selection]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!card) return; const [workflowId, workflowVersion] = selection.split("\u0000"); if (!workflowId || !workflowVersion) return setError("Choose a workflow version.");
     setSubmitting(true); setError("");
-    try { await apiClient.createRun({ workItemId: card.work.id, workflowId, workflowVersion }, `dashboard-start-run-${crypto.randomUUID()}`); await onRefresh(); onStarted(); dialogRef.current?.close(); }
+    try { const body = buildPrepareRunRequest({ workItemId: card.work.id, workflowId, workflowVersion, profile }); await apiClient.prepareRun(body, `dashboard-prepare-run-${crypto.randomUUID()}`); await onRefresh(); onPrepared(); dialogRef.current?.close(); }
     catch (cause) { setError(safeActionError(cause)); await onRefresh().catch(() => undefined); }
     finally { setSubmitting(false); }
   }
   return <dialog ref={dialogRef} className="work-dialog work-dialog--compact" onCancel={(event) => { if (submitting) event.preventDefault(); }} onClose={() => { if (!submitting) setError(""); }}><form aria-busy={submitting} onSubmit={(event) => void submit(event)}>
-    <header className="work-dialog__header"><div><p className="eyebrow">Start run</p><h2>{card?.work.title ?? "Choose a workflow"}</h2></div><button className="icon-button" type="button" aria-label="Close start run dialog" disabled={submitting} onClick={close}><Icon name="x" /></button></header>
-    <p className="work-dialog__intro">This creates a durable run pinned to the selected installed workflow version.</p>
+    <header className="work-dialog__header"><div><p className="eyebrow">Prepare run</p><h2>{card?.work.title ?? "Choose a workflow"}</h2></div><button className="icon-button" type="button" aria-label="Close prepare run dialog" disabled={submitting} onClick={close}><Icon name="x" /></button></header>
+    <p className="work-dialog__intro">Select the installed workflow route to validate and move this work to Ready. Starting remains a separate action.</p>
     <label className="field"><span>Workflow version</span><select required autoFocus value={selection} onChange={(event) => setSelection(event.target.value)}><option value="" disabled>Choose a workflow</option>{workflows.map((workflow) => <option key={`${workflow.name}:${workflow.version}:${workflow.digest}`} value={`${workflow.name}\u0000${workflow.version}`}>{workflow.name} · {workflow.version} ({workflow.sourceScope})</option>)}</select></label>
+    {profileState.kind === "loading" && <p role="status">Loading workflow profiles…</p>}
+    {profileState.kind === "ready" && profileState.selection === selection && <label className="field"><span>Workflow profile</span><select value={profile} onChange={(event) => setProfile(event.target.value)}><option value="">Default route</option>{profileState.profiles.map((option) => <option key={option.id} value={option.id}>{option.id}{option.description ? ` — ${option.description}` : ""}</option>)}</select><small>Profiles choose an authored route and its declared input defaults.</small></label>}
+    {profileState.kind === "error" && profileState.selection === selection && <div><p className="form-error" role="alert">The selected workflow definition could not be loaded. Retry after checking daemon health.</p><button className="button" type="button" onClick={() => setProfileReload((value) => value + 1)}>Retry profile load</button></div>}
     {workflows.length === 0 && <p className="form-error" role="status">No installed workflows are available. Install one with the CLI first.</p>}{error && <p className="form-error" role="alert">{error}</p>}
-    <footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button className="button" type="button" disabled={submitting} onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || workflows.length === 0}>{submitting ? "Starting…" : "Start run"}</button></footer>
+    <footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button className="button" type="button" disabled={submitting} onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || workflows.length === 0 || profileState.kind !== "ready" || profileState.selection !== selection}>{submitting ? "Preparing…" : "Move to Ready"}</button></footer>
   </form></dialog>;
 }
 
