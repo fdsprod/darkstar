@@ -6,20 +6,17 @@ import { Icon, type IconName } from "./Icon";
 
 interface NavItem { label: string; to: string; icon: IconName; routeIds: string[] }
 
-const navigationGroups: Array<{ label: string; items: NavItem[] }> = [
-  { label: "Work", items: [{ label: "Board", to: "/board", icon: "board", routeIds: ["board", "work", "run", "readiness"] }] },
-  { label: "Operations", items: [
-    { label: "Checkpoints", to: "/checkpoints", icon: "checkpoints", routeIds: ["checkpoints", "artifact-review"] },
-    { label: "Agents", to: "/agents", icon: "agents", routeIds: ["agents"] },
-  ] },
-  { label: "Library", items: [
-    { label: "Workflows", to: "/workflows", icon: "workflow", routeIds: ["workflows"] },
-    { label: "Artifacts", to: "/artifacts", icon: "artifact", routeIds: ["artifacts", "artifact"] },
-  ] },
-  { label: "System", items: [{ label: "Settings & Health", to: "/settings", icon: "settings", routeIds: ["settings"] }] },
+const primaryNavigation: NavItem[] = [
+  { label: "Board", to: "/board", icon: "board", routeIds: ["board", "work", "run", "readiness", "artifacts", "artifact"] },
+  { label: "Checkpoints", to: "/checkpoints", icon: "checkpoints", routeIds: ["checkpoints", "artifact-review", "agents"] },
+  { label: "Workflows", to: "/workflows", icon: "workflow", routeIds: ["workflows"] },
+  { label: "Settings", to: "/settings", icon: "settings", routeIds: ["settings"] },
 ];
 
-const primaryNavigation = navigationGroups.flatMap((group) => group.items);
+const contextualNavigation: NavItem[] = [
+  { label: "Agents", to: "/agents", icon: "agents", routeIds: ["agents"] },
+  { label: "Artifacts", to: "/artifacts", icon: "artifact", routeIds: ["artifacts", "artifact"] },
+];
 
 export function AppShell() {
   const { route } = useRouter();
@@ -108,13 +105,11 @@ export function AppShell() {
         </div>
 
         <nav className="primary-nav" aria-label="Primary">
-          {navigationGroups.map((group) => <section className="nav-group" aria-labelledby={`nav-${group.label.toLowerCase()}`} key={group.label}>
-            <p className="nav-label" id={`nav-${group.label.toLowerCase()}`}>{group.label}</p>
-            {group.items.map((item) => {
-              const active = item.routeIds.includes(route.id);
-              return <AppLink key={item.to} to={item.to} className="nav-item" ariaCurrent={active ? "page" : undefined} onNavigate={() => closeNavigation(false)}><Icon name={item.icon} /><span>{item.label}</span></AppLink>;
-            })}
-          </section>)}
+          <p className="nav-label">Operator areas</p>
+          {primaryNavigation.map((item) => {
+            const active = item.routeIds.includes(route.id);
+            return <AppLink key={item.to} to={item.to} className="nav-item" ariaCurrent={active ? "page" : undefined} onNavigate={() => closeNavigation(false)}><Icon name={item.icon} /><span>{item.label}</span></AppLink>;
+          })}
         </nav>
 
         <div className="sidebar__footer">
@@ -157,10 +152,8 @@ function connectionLabel(connection: string, hydration: string) {
 function CommandPalette({ dialogRef }: { dialogRef: RefObject<HTMLDialogElement | null> }) {
   const [query, setQuery] = useState("");
   const resultRefs = useRef<Array<HTMLAnchorElement | null>>([]);
-  const links = [
-    ...primaryNavigation,
-    { label: "Settings & Health", to: "/settings", icon: "settings" as const, routeIds: ["settings"] },
-  ].filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()));
+  const links = [...primaryNavigation, ...contextualNavigation]
+    .filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()));
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDialogElement>) {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -183,7 +176,7 @@ function CommandPalette({ dialogRef }: { dialogRef: RefObject<HTMLDialogElement 
         <button type="button" className="key-button" aria-label="Close command palette" onClick={() => dialogRef.current?.close()}>Esc</button>
       </div>
       <div className="command-palette__results">
-        <p className="nav-label">Navigate</p>
+        <p className="nav-label">Areas and related tools</p>
         {links.length === 0 ? <p className="command-palette__empty">No destinations match “{query}”.</p> : links.map((item, index) => (
           <AppLink key={item.to} anchorRef={(value) => { resultRefs.current[index] = value; }} to={item.to} className="command-result" onNavigate={() => dialogRef.current?.close()}>
             <span className="command-result__icon"><Icon name={item.icon} /></span><span>{item.label}</span><Icon name="arrow-right" />

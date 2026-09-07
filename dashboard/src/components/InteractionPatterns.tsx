@@ -33,6 +33,10 @@ export function EmptyState({ kind, title, message, action, compact = false }: { 
   </section>;
 }
 
+export function DiagnosticsDetails({ children, label = "Diagnostics" }: { children: ReactNode; label?: string }) {
+  return <details className="diagnostics-details"><summary>{label}</summary><div className="diagnostics-details__body">{children}</div></details>;
+}
+
 export function ActionGuidance({ id, children }: { id?: string; children: ReactNode }) {
   return <p id={id} className="action-guidance"><span aria-hidden="true">ⓘ</span>{children}</p>;
 }

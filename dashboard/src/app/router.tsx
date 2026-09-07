@@ -33,17 +33,17 @@ export interface AppRoute {
 }
 
 const routePatterns = [
-  { id: "board", path: "/board", title: "Board", section: "Work" },
-  { id: "readiness", path: "/work/:workId/run/:runId/readiness", title: "Readiness", section: "Run" },
-  { id: "run", path: "/work/:workId/run/:runId", title: "Run", section: "Work" },
-  { id: "work", path: "/work/:workId", title: "Work item", section: "Work" },
-  { id: "artifact-review", path: "/checkpoints/:approvalId/review", title: "Artifact review", section: "Run" },
-  { id: "checkpoints", path: "/checkpoints", title: "Checkpoints", section: "Operations" },
-  { id: "agents", path: "/agents", title: "Agents", section: "Operations" },
-  { id: "workflows", path: "/workflows", title: "Workflows", section: "Library" },
-  { id: "settings", path: "/settings", title: "Settings & Health", section: "System" },
-  { id: "artifacts", path: "/artifacts", title: "Artifacts", section: "Library" },
-  { id: "artifact", path: "/artifacts/:artifactId", title: "Artifact", section: "Artifacts" },
+  { id: "board", path: "/board", title: "Board", section: "Board" },
+  { id: "readiness", path: "/work/:workId/run/:runId/readiness", title: "Readiness", section: "Board" },
+  { id: "run", path: "/work/:workId/run/:runId", title: "Run", section: "Board" },
+  { id: "work", path: "/work/:workId", title: "Work item", section: "Board" },
+  { id: "artifact-review", path: "/checkpoints/:approvalId/review", title: "Artifact review", section: "Checkpoints" },
+  { id: "checkpoints", path: "/checkpoints", title: "Checkpoints", section: "Checkpoints" },
+  { id: "agents", path: "/agents", title: "Agents", section: "Checkpoints" },
+  { id: "workflows", path: "/workflows", title: "Workflows", section: "Workflows" },
+  { id: "settings", path: "/settings", title: "Settings", section: "Settings" },
+  { id: "artifacts", path: "/artifacts", title: "Artifacts", section: "Board" },
+  { id: "artifact", path: "/artifacts/:artifactId", title: "Artifact", section: "Board" },
 ] as const;
 
 interface RouterValue {

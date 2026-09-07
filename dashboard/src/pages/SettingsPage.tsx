@@ -23,7 +23,7 @@ type Project = Schemas["Project"];
 type Health = Schemas["Health"];
 
 const tabs: Array<{ id: SettingsTab; label: string }> = [
-  { id: "health", label: "System health" }, { id: "provider", label: "Provider" },
+  { id: "health", label: "Diagnostics" }, { id: "provider", label: "Provider" },
   { id: "projects", label: "Projects" }, { id: "configuration", label: "Configuration" },
 ];
 const subsystemLabels: Record<HealthCheck["subsystem"], string> = {
@@ -136,7 +136,7 @@ export function SettingsPage() {
   }
 
   return <div className="page settings-page">
-    <PageHeader className="settings-header" eyebrow="Local control plane" title="Settings & Health" description="Edit supported user and registered-project settings through the public configuration API, and inspect diagnostic guidance separately." breadcrumbs={[{ label: "Settings & Health" }]} actions={<button type="button" className="button button--primary" disabled={refreshing} onClick={() => { setNotice({ state: "none" }); setRefreshVersion((value) => value + 1); }}>{refreshing ? "Refreshing…" : "Refresh authoritative state"}</button>} />
+    <PageHeader className="settings-header" eyebrow="Local control plane" title="Settings" description="Manage supported configuration and open health diagnostics when they are needed." breadcrumbs={[{ label: "Settings" }]} actions={<button type="button" className="button button--primary" disabled={refreshing} onClick={() => { setNotice({ state: "none" }); setRefreshVersion((value) => value + 1); }}>{refreshing ? "Refreshing…" : "Refresh"}</button>} />
     <Notice notice={notice} />
     <SettingsSummary health={health} doctor={doctor} connection={dashboard.connection} />
     <div className="checkpoint-tabs settings-tabs" role="tablist" aria-label="Settings workspace">{tabs.map((item, index) => <button key={item.id} ref={(value) => { tabRefs.current[index] = value; }} id={`settings-tab-${item.id}`} type="button" role="tab" tabIndex={tab === item.id ? 0 : -1} aria-controls={`settings-panel-${item.id}`} aria-selected={tab === item.id} onKeyDown={(event) => onTabKeyDown(event, index)} onClick={() => setTab(item.id)}>{item.label}</button>)}</div>

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
-import { AsyncPanel, SectionHeader } from "../components/InteractionPatterns";
+import { AsyncPanel, DiagnosticsDetails, SectionHeader } from "../components/InteractionPatterns";
 import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, EmptyDetail, formatDate, StatusPill, SummaryFact } from "./WorkDetailPage";
@@ -67,24 +67,25 @@ export function RunDetailPage() {
 
   return (
     <div className="page detail-page run-detail-page">
-      <PageHeader className="detail-header run-detail-header" eyebrow={`Run · ${shortIdentifier(view.run.id)}`} title={work.title} description={<>{view.run.workflowId} · v{view.run.workflowVersion}. Node visits, attempts, and evidence are read from durable projections.</>} breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(work.id), to: `/work/${encodeURIComponent(work.id)}` }, { label: shortIdentifier(view.run.id) }]} status={<StatusPill status={view.run.status} />} actions={<><AppLink className="navigation-action" to={`/artifacts?targetKind=run&targetId=${encodeURIComponent(view.run.id)}&ingest=1`}>Add evidence</AppLink><AppLink className="navigation-action" to={`/checkpoints?runId=${encodeURIComponent(view.run.id)}`}>Checkpoints</AppLink><AppLink className="navigation-action" to={`/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(view.run.id)}/readiness`}>Readiness</AppLink>{controls.map((control) => <button className="button" type="button" key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : humanize(control)}</button>)}</>} />
-      {action && <AsyncPanel compact state="loading" title={`${humanize(action)} request pending`} message={<>Target run <code>{view.run.id}</code>. Other run mutations remain unavailable until this request settles.</>} />}
+      <PageHeader className="detail-header run-detail-header" eyebrow="Execution run" title={work.title} description={<>{view.run.workflowId} · v{view.run.workflowVersion}. Node visits, attempts, and evidence are read from durable projections.</>} breadcrumbs={[{ label: "Board", to: "/board" }, { label: work.title, to: `/work/${encodeURIComponent(work.id)}` }, { label: "Run" }]} status={<StatusPill status={view.run.status} />} actions={<><AppLink className="navigation-action" to={`/artifacts?targetKind=run&targetId=${encodeURIComponent(view.run.id)}&ingest=1`}>Add evidence</AppLink><AppLink className="navigation-action" to={`/checkpoints?runId=${encodeURIComponent(view.run.id)}`}>Checkpoints</AppLink><AppLink className="navigation-action" to={`/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(view.run.id)}/readiness`}>Readiness</AppLink>{controls.map((control) => <button className="button" type="button" key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : humanize(control)}</button>)}</>} />
+      {action && <AsyncPanel compact state="loading" title={`${humanize(action)} request pending`} message="Other run mutations remain unavailable until this request settles." />}
       {actionMessage && <AsyncPanel compact state={actionMessage.endsWith("daemon state.") ? "success" : "error"} title={actionMessage.endsWith("daemon state.") ? "Run command accepted" : "Run command failed"} message={actionMessage} />}
       {error && <AsyncPanel compact state="error" title="Run refresh failed" message={error} />}
       {view.issue && <AsyncPanel compact state={view.issue.kind === "input_required" ? "validation" : "error"} title={humanize(view.issue.code)} message={view.issue.message} />}
 
       <section className="detail-summary" aria-label="Run summary">
-        <SummaryFact label="Run identifier" value={view.run.id} mono />
-        <SummaryFact label="Resource version" value={String(view.run.resourceVersion)} />
+        <SummaryFact label="Workflow" value={`${view.run.workflowId} v${view.run.workflowVersion}`} />
+        <SummaryFact label="Status" value={humanize(view.run.status)} />
         <SummaryFact label="Created" value={formatDate(view.run.createdAt)} />
         <SummaryFact label="Last updated" value={formatDate(view.run.updatedAt)} />
       </section>
+      <DiagnosticsDetails label="Run diagnostics"><dl><div><dt>Run identifier</dt><dd>{view.run.id}</dd></div><div><dt>Resource version</dt><dd>{view.run.resourceVersion}</dd></div>{view.run.routeDigest && <div><dt>Route digest</dt><dd>{view.run.routeDigest}</dd></div>}</dl></DiagnosticsDetails>
 
       <div className="run-detail-grid">
         <section className="run-detail-primary">
           <RoutePanel run={view.run} visits={visits} />
           <NodeTimeline runId={view.run.id} visits={visits} attempts={view.attempts} unlinkedAttempts={unlinkedAttempts} />
-          <EventTimeline view={view} />
+          <DiagnosticsDetails label="Event diagnostics"><EventTimeline view={view} /></DiagnosticsDetails>
         </section>
         <aside className="run-detail-aside" aria-label="Run evidence">
           <BoundaryPanel route={routeSnapshot} />
@@ -107,7 +108,7 @@ function RoutePanel({ run, visits }: { run: Schemas["Run"]; visits: Schemas["Nod
     return values;
   }, [visits]);
   return <section className="detail-section route-panel">
-    <SectionHeader eyebrow="Frozen execution plan" title="Selected route" meta={run.routeDigest ? <span className="digest" title={run.routeDigest}>{shortIdentifier(run.routeDigest)}</span> : undefined} />
+    <SectionHeader eyebrow="Frozen execution plan" title="Selected route" />
     <div className="requested-route"><span>Requested route</span><strong>Workflow default requested · {run.workflowId} v{run.workflowVersion}</strong><p>The current API accepts the installed workflow default; no custom route request is persisted. The selected route below is the authoritative frozen snapshot.</p></div>
     {!route ? <EmptyDetail title="Route not frozen" message="This run has not selected a durable route snapshot yet." /> : <>
       <div className="route-facts"><SummaryFact label="Entry" value={route.entry} mono /><SummaryFact label="Terminal boundary" value={route.terminals.join(", ") || "None recorded"} mono /><SummaryFact label="Included nodes" value={String(route.nodes.length)} /><SummaryFact label="Excluded nodes" value={String(route.excludedNodes.length)} /></div>
@@ -126,7 +127,7 @@ function NodeTimeline({ runId, visits, attempts, unlinkedAttempts }: { runId: st
     <SectionHeader eyebrow="Durable execution" title="Node visits and attempts" meta={<span className="section-count">{visits.length}</span>} />
     {visits.length === 0 ? <EmptyDetail title="No node visits recorded" message="The run has not activated a node visit." /> : <ol className="node-timeline">{visits.map((visit) => {
       const visitAttempts = attemptsForVisit(attempts, visit.id);
-      return <li key={visit.id} className="node-visit"><span className={`timeline-marker timeline-marker--${statusTone(visit.status)}`} aria-hidden="true" /><div className="node-visit__body"><header><div><strong>{visit.nodeId}</strong><span>{shortIdentifier(visit.id)} · revision {visit.resourceVersion}</span></div><div className="node-visit__actions"><AppLink to={`/artifacts?targetKind=node&targetId=${encodeURIComponent(`${runId}/${visit.nodeId}`)}&ingest=1`}>Add evidence</AppLink><StatusPill status={visit.status} /></div></header><p className="node-visit__time">Activated {formatDate(visit.createdAt)} · updated {formatDate(visit.updatedAt)}</p>{visitAttempts.length === 0 ? <p className="attempt-empty">No attempt recorded for this visit.</p> : <div className="attempt-list">{visitAttempts.map((attempt, index) => <AttemptRow key={attempt.id} attempt={attempt} ordinal={index + 1} />)}</div>}</div></li>;
+      return <li key={visit.id} className="node-visit"><span className={`timeline-marker timeline-marker--${statusTone(visit.status)}`} aria-hidden="true" /><div className="node-visit__body"><header><div><strong>{visit.nodeId}</strong></div><div className="node-visit__actions"><AppLink to={`/artifacts?targetKind=node&targetId=${encodeURIComponent(`${runId}/${visit.nodeId}`)}&ingest=1`}>Add evidence</AppLink><StatusPill status={visit.status} /></div></header><p className="node-visit__time">Activated {formatDate(visit.createdAt)} · updated {formatDate(visit.updatedAt)}</p><DiagnosticsDetails label="Visit diagnostics"><dl><div><dt>Visit identifier</dt><dd>{visit.id}</dd></div><div><dt>Resource version</dt><dd>{visit.resourceVersion}</dd></div></dl></DiagnosticsDetails>{visitAttempts.length === 0 ? <p className="attempt-empty">No attempt recorded for this visit.</p> : <div className="attempt-list">{visitAttempts.map((attempt, index) => <AttemptRow key={attempt.id} attempt={attempt} ordinal={index + 1} />)}</div>}</div></li>;
     })}</ol>}
     {unlinkedAttempts.length > 0 && <div className="unlinked-attempts"><h3>Point or legacy attempts</h3><p>These attempts do not name a durable node visit, so they are kept separate rather than guessed into the timeline.</p>{unlinkedAttempts.map((attempt, index) => <AttemptRow key={attempt.id} attempt={attempt} ordinal={index + 1} />)}</div>}
   </section>;
@@ -134,7 +135,7 @@ function NodeTimeline({ runId, visits, attempts, unlinkedAttempts }: { runId: st
 
 function AttemptRow({ attempt, ordinal }: { attempt: Schemas["Attempt"]; ordinal: number }) {
   const target = attempt.pointId ? `${attempt.pointId} · point revision ${attempt.pointRevision}` : attempt.nodeId ?? "Unscoped attempt";
-  return <article className="attempt-row"><div className="attempt-row__ordinal">{ordinal}</div><div className="attempt-row__copy"><strong>{attempt.provider} · {target}</strong><span>{shortIdentifier(attempt.id)} · sequence {attempt.lastSequence}</span>{attempt.providerThreadId && <span>Provider thread {shortIdentifier(attempt.providerThreadId)}</span>}{attempt.logReference && <code>Log {attempt.logReference}</code>}{attempt.pointId && <AppLink className="attempt-evidence-link" to={`/artifacts?targetKind=implementation_point&targetId=${encodeURIComponent(attempt.pointId)}&ingest=1`}>Add point evidence</AppLink>}</div><StatusPill status={attempt.status} /></article>;
+  return <article className="attempt-row"><div className="attempt-row__ordinal">{ordinal}</div><div className="attempt-row__copy"><strong>{attempt.provider} · {target}</strong>{attempt.pointId && <AppLink className="attempt-evidence-link" to={`/artifacts?targetKind=implementation_point&targetId=${encodeURIComponent(attempt.pointId)}&ingest=1`}>Add point evidence</AppLink>}<DiagnosticsDetails label="Attempt diagnostics"><dl><div><dt>Attempt identifier</dt><dd>{attempt.id}</dd></div><div><dt>Last sequence</dt><dd>{attempt.lastSequence}</dd></div>{attempt.providerThreadId && <div><dt>Provider thread</dt><dd>{attempt.providerThreadId}</dd></div>}{attempt.logReference && <div><dt>Log reference</dt><dd>{attempt.logReference}</dd></div>}</dl></DiagnosticsDetails></div><StatusPill status={attempt.status} /></article>;
 }
 
 function EventTimeline({ view }: { view: RunView }) {

@@ -3,11 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
-import { AsyncPanel, EmptyState } from "../components/InteractionPatterns";
+import { AsyncPanel, DiagnosticsDetails, EmptyState } from "../components/InteractionPatterns";
 import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, formatDate, StatusPill, SummaryFact } from "./WorkDetailPage";
-import { humanize, shortIdentifier } from "./runDetailModel";
+import { humanize } from "./runDetailModel";
 
 type Schemas = components["schemas"];
 type AttentionItem = Schemas["AttentionCheckpoint"];
@@ -88,7 +88,7 @@ export function CheckpointsPage() {
     {!page && error ? <DetailFailure title="Checkpoints unavailable" message={error} /> : !page ? <DetailLoading label="Loading Checkpoints" /> : <section className="checkpoint-workspace" aria-label="Unified Checkpoints queue">
       <div className="checkpoint-layout">
         <aside className="checkpoint-list" aria-label="Unresolved operator attention">
-          {page.items.length ? <ol>{page.items.map((item) => { const presentation = attentionPresentation(item); return <li key={`${item.kind}:${item.id}`}><button type="button" aria-current={selected?.id === item.id ? "true" : undefined} onClick={() => choose(item)}><span className="timeline-marker timeline-marker--waiting" aria-hidden="true" /><span><strong>{presentation.label}</strong><code>{shortIdentifier(item.id)}</code><small>{item.context.workTitle} · priority {item.urgency}</small></span><StatusPill status="pending" /></button></li>; })}</ol> : <EmptyState kind="filtered" title="No unresolved attention" message="No authoritative source matches these filters." compact />}
+          {page.items.length ? <ol>{page.items.map((item) => { const presentation = attentionPresentation(item); return <li key={`${item.kind}:${item.id}`}><button type="button" aria-current={selected?.id === item.id ? "true" : undefined} onClick={() => choose(item)}><span className="timeline-marker timeline-marker--waiting" aria-hidden="true" /><span><strong>{presentation.label}</strong><small>{item.context.workTitle} · priority {item.urgency}</small></span><StatusPill status="pending" /></button></li>; })}</ol> : <EmptyState kind="filtered" title="No unresolved attention" message="No authoritative source matches these filters." compact />}
           {page.nextCursor && <button className="button checkpoint-next" type="button" onClick={nextPage}>Next page</button>}
         </aside>
         <section className="checkpoint-detail">{selected ? <AttentionDetail item={selected} refresh={() => load()} /> : <EmptyState kind="empty" title="Choose a checkpoint" message="Select an unresolved item to inspect its exact subject and legal actions." compact />}</section>
@@ -100,9 +100,9 @@ export function CheckpointsPage() {
 function AttentionDetail({ item, refresh }: { item: AttentionItem; refresh(): Promise<void> }) {
   const presentation = attentionPresentation(item);
   return <>
-    <header className="checkpoint-detail-header"><div><p className="eyebrow">{presentation.label} · {shortIdentifier(item.id)}</p><h2>{item.summary}</h2><p>{presentation.description}</p></div><StatusPill status="pending" /></header>
-    <section className="detail-summary"><SummaryFact label="Project" value={item.context.projectName} /><SummaryFact label="Work" value={item.context.workTitle} /><SummaryFact label="Run" value={shortIdentifier(item.context.runId)} mono /><SummaryFact label="Created" value={formatDate(item.createdAt)} /></section>
-    <section className="detail-section"><div className="section-heading"><div><p className="eyebrow">Class-specific subject</p><h2>Authority boundary</h2></div></div><dl>{subjectFacts(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={value}>{value}</dd></div>)}</dl></section>
+    <header className="checkpoint-detail-header"><div><p className="eyebrow">{presentation.label}</p><h2>{item.summary}</h2><p>{presentation.description}</p></div><StatusPill status="pending" /></header>
+    <section className="detail-summary"><SummaryFact label="Project" value={item.context.projectName} /><SummaryFact label="Work" value={item.context.workTitle} /><SummaryFact label="Priority" value={String(item.urgency)} /><SummaryFact label="Created" value={formatDate(item.createdAt)} /></section>
+    <DiagnosticsDetails label="Authority diagnostics"><dl>{[["Checkpoint", item.id], ["Run", item.context.runId], ["Resource version", String(item.resourceVersion)], ...subjectFacts(item)].map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={value}>{value}</dd></div>)}</dl></DiagnosticsDetails>
     <section className="detail-section checkpoint-actions"><div className="section-heading"><div><p className="eyebrow">Server-derived legal actions</p><h2>Available now</h2></div></div><AttentionActions item={item} refresh={refresh} />{item.kind === "workflow_checkpoint" && <div className="candidate-actions"><AppLink className="navigation-action" to={`/checkpoints/${encodeURIComponent(item.id)}/review?view=current`}>Open review workspace</AppLink><AppLink className="navigation-action" to={`/artifacts?targetKind=checkpoint&targetId=${encodeURIComponent(item.subject.checkpointId)}&ingest=1`}>Add evidence</AppLink></div>}</section>
   </>;
 }
@@ -149,7 +149,7 @@ function AttentionActions({ item, refresh }: { item: AttentionItem; refresh(): P
     } finally { setBusy(false); }
   }
   const commandUnavailable = item.kind === "workflow_control" || item.kind === "external_delivery";
-  return <><div>{item.allowedActions.map((action) => <button className="readiness-action" type="button" disabled={busy || commandUnavailable} key={action} onClick={() => void perform(action)}><strong>{humanize(action)}</strong><span>Valid only for this {humanize(item.kind)} source at resource version {item.resourceVersion}.</span></button>)}</div>{error && <p className="form-error" role="alert">{error}</p>}</>;
+  return <><div>{item.allowedActions.map((action) => <button className="readiness-action" type="button" disabled={busy || commandUnavailable} key={action} onClick={() => void perform(action)}><strong>{humanize(action)}</strong><span>Valid only for this {humanize(item.kind)} source.</span></button>)}</div>{error && <p className="form-error" role="alert">{error}</p>}</>;
 }
 
 function attentionPresentation(item: AttentionItem): { label: string; description: string } {

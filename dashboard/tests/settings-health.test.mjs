@@ -220,7 +220,7 @@ test("project registration normalization and sorting are deterministic and non-m
 test("settings tabs accept only the closed route vocabulary", () => {
   assert.deepEqual(SETTINGS_TABS, ["health", "provider", "projects", "configuration"]);
   for (const tab of SETTINGS_TABS) assert.equal(parseSettingsTab(tab), tab);
-  for (const invalid of [undefined, null, "", "providers", "Health", "debug"]) assert.equal(parseSettingsTab(invalid), "health");
+  for (const invalid of [undefined, null, "", "providers", "Health", "debug"]) assert.equal(parseSettingsTab(invalid), "configuration");
 });
 
 test("settings route uses public catalog/state/preview/apply/restore/secret operations for configuration", async () => {

@@ -13,25 +13,51 @@ test("dashboard typography uses a readable semantic scale", async () => {
   assert.ok(pixelSizes.every((size) => size >= 12), `found unreadable font size: ${Math.min(...pixelSizes)}px`);
   assert.match(styles, /--font-body:\s*\.875rem/);
   assert.match(styles, /--font-caption:\s*\.75rem/);
-  assert.match(styles, /--control-height:\s*2\.5rem/);
+  assert.match(styles, /--control-height:\s*2\.25rem/);
   assert.match(styles, /overflow-x:\s*hidden/);
   assert.match(styles, /code, pre \{[^}]*--font-mono[^}]*overflow-wrap: anywhere/s);
 });
 
-test("dashboard navigation exposes stable groups and one shared page heading", async () => {
+test("dashboard navigation exposes four operator areas and one shared page heading", async () => {
   const [shell, router, pageStructure, workDetail] = await Promise.all([
     read("../src/components/AppShell.tsx"),
     read("../src/app/router.tsx"),
     read("../src/components/PageStructure.tsx"),
     read("../src/pages/WorkDetailPage.tsx"),
   ]);
-  for (const group of ["Work", "Operations", "Library", "System"]) assert.match(shell, new RegExp(`label: "${group}"`));
+  const primaryBlock = /const primaryNavigation:[\s\S]*?\n\];/.exec(shell)?.[0] ?? "";
+  assert.equal(primaryBlock.match(/label: "/g)?.length, 4);
+  for (const area of ["Board", "Checkpoints", "Workflows", "Settings"]) assert.match(primaryBlock, new RegExp(`label: "${area}"`));
+  assert.doesNotMatch(primaryBlock, /label: "(?:Agents|Artifacts)"/);
+  assert.match(shell, /const contextualNavigation:[\s\S]*label: "Agents"[\s\S]*label: "Artifacts"/);
   assert.doesNotMatch(shell, /\/board\?create=1/);
   assert.match(shell, /switching unavailable/);
   assert.equal(pageStructure.match(/<h1>/g)?.length, 1);
   assert.match(pageStructure, /aria-label="Breadcrumb"/);
   assert.doesNotMatch(workDetail, /<h1>/);
-  for (const section of ["Work", "Operations", "Library", "System"]) assert.match(router, new RegExp(`section: "${section}"`));
+  for (const section of ["Board", "Checkpoints", "Workflows", "Settings"]) assert.match(router, new RegExp(`section: "${section}"`));
+});
+
+test("compact shell preserves responsive overflow and route focus behavior", async () => {
+  const [shell, styles] = await Promise.all([read("../src/components/AppShell.tsx"), read("../src/styles.css")]);
+  assert.match(shell, /mainRef\.current\?\.focus\(\)/);
+  assert.match(shell, /aria-controls="application-navigation"/);
+  assert.match(styles, /--sidebar-width:\s*224px/);
+  assert.match(styles, /\.main-content \{[^}]*overflow-x:\s*clip/s);
+  assert.match(styles, /\.sidebar \{[^}]*max-width:\s*calc\(100vw - 32px\)/s);
+  assert.match(styles, /@media \(max-width: 820px\)/);
+  assert.match(styles, /@media \(max-width: 520px\)/);
+});
+
+test("each primary area has one shared heading and an action or explicit read-only state", async () => {
+  const sources = await Promise.all([
+    read("../src/pages/BoardPage.tsx"), read("../src/pages/CheckpointsPage.tsx"),
+    read("../src/pages/WorkflowsPage.tsx"), read("../src/pages/SettingsPage.tsx"),
+  ]);
+  for (const source of sources) {
+    assert.equal(source.match(/<PageHeader\b/g)?.length, 1);
+    assert.match(source, /<PageHeader[^\n]*(?:actions=|readOnly=)/);
+  }
 });
 
 test("meaningful dashboard selections are encoded in shareable URLs", async () => {
@@ -64,7 +90,7 @@ test("shared interaction patterns distinguish actions, async states, and empty s
   ]);
   const pages = (await Promise.all(pageNames.filter((name) => name.endsWith(".tsx")).map((name) => read(`../src/pages/${name}`)))).join("\n");
 
-  for (const component of ["ActionBar", "SectionHeader", "StatusBadge", "AsyncPanel", "EmptyState", "ActionGuidance"]) {
+  for (const component of ["ActionBar", "SectionHeader", "StatusBadge", "AsyncPanel", "EmptyState", "DiagnosticsDetails", "ActionGuidance"]) {
     assert.match(patterns, new RegExp(`export function ${component}`));
   }
   for (const state of ["loading", "success", "error", "stale", "cancelled", "validation"]) assert.match(patterns, new RegExp(`"${state}"`));

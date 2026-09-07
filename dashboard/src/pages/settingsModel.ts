@@ -270,7 +270,7 @@ export function normalizeProjectRegistration(value: ProjectRegistration | string
 }
 
 export function parseSettingsTab(value: string | null | undefined): SettingsTab {
-  return SETTINGS_TABS.includes(value as SettingsTab) ? value as SettingsTab : "health";
+  return SETTINGS_TABS.includes(value as SettingsTab) ? value as SettingsTab : "configuration";
 }
 
 export function configurationScope(kind: "user", projectId?: string): ConfigurationScope;
