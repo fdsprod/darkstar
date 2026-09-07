@@ -92,5 +92,7 @@ test("unified attention schema is a closed five-member discriminated union", asy
   ]);
   assert.match(generated, /"AttentionCheckpoint": components\["schemas"\]\["WorkflowCheckpointAttention"\] \| components\["schemas"\]\["InputRequiredAttention"\] \| components\["schemas"\]\["ProviderPermissionAttention"\] \| components\["schemas"\]\["WorkflowControlAttention"\] \| components\["schemas"\]\["ExternalDeliveryAttention"\]/);
   assert.match(generated, /"listAttention": \{ method: "GET"; path: "\/api\/v1\/attention"/);
-  assert.match(client, /listAttention\([^\n]*this\.operation\("listAttention"/);
+  assert.match(generated, /"AttentionCheckpointV2"[^\n]*PreparationInputRequiredAttention/);
+  assert.match(generated, /"getAttentionV2": \{ method: "GET"; path: "\/api\/v1\/attention\/v2"/);
+  assert.match(client, /listAttention\([^\n]*this\.operation\("getAttentionV2"/);
 });

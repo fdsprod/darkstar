@@ -20,6 +20,8 @@ import (
 	configurationfilesystem "darkstar/src/adapters/configurationstore/filesystem"
 	"darkstar/src/adapters/contentprocessor/common"
 	"darkstar/src/adapters/contentprocessor/commonimage"
+	routeartifacts "darkstar/src/adapters/routeadvisor/artifacts"
+	routeadvice "darkstar/src/adapters/routeadvisor/reasoning"
 	"darkstar/src/adapters/statestore/sqlite"
 	workflowfilesystem "darkstar/src/adapters/workflowstore/filesystem"
 	localapi "darkstar/src/api"
@@ -32,6 +34,7 @@ import (
 	"darkstar/src/core/configmutation"
 	"darkstar/src/core/health"
 	"darkstar/src/core/lateevidence"
+	"darkstar/src/core/preparation"
 	"darkstar/src/core/recovery"
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/runexport"
@@ -43,6 +46,7 @@ import (
 	"darkstar/src/doctor"
 	"darkstar/src/platform/windows"
 	platformport "darkstar/src/ports/platform"
+	providerport "darkstar/src/ports/provider"
 	"darkstar/src/ports/statestore"
 )
 
@@ -86,9 +90,9 @@ Work commands:
   work transition apply <work-id> --to <state> --if-match <version> [--workflow <name> --version <version>] [--profile <profile>] [--confirm] [--idempotency-key <key>] [--json]
 
 Run commands:
-  run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--idempotency-key <key>] [--json]
-  run launch <run-id> --if-match <version> [--idempotency-key <key>] [--json]
-  run start <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--idempotency-key <key>] [--json]
+  run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--idempotency-key <key>] [--json]
+  run launch <run-id> --if-match <version> [--confirm-assessment <digest>] [--idempotency-key <key>] [--json]
+  run start <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--idempotency-key <key>] [--json]
   run start --scenario <fake-success|fake-restart> [--idempotency-key <key>] [--json]
   run list [--limit <n>] [--after <run-id>] [--json]
   run show <run-id> [--json]
@@ -483,6 +487,25 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
+	if err := executions.SetRouteAdvisor(routeadvice.Advisor{Provider: func() (providerport.Provider, error) {
+		if providerWiring.selectionErr != nil {
+			return nil, fmt.Errorf("codex provider is unavailable: %w", providerWiring.selectionErr)
+		}
+		return providerWiring.codexProvider()
+	}, Workspace: service.projectRoot}); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := executions.SetPreparationPolicyResolver(func(_ context.Context, _ statestore.ProjectProjection) (preparation.Policy, error) {
+		return configuredPreparationPolicy(service.paths, service.projectRoot)
+	}); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
 	if err := executions.SetSchedulingAllowed(report.SchedulingAllowed()); err != nil {
 		_ = executions.Close()
 		_ = database.Close()
@@ -501,6 +524,24 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		_ = database.Close()
 		service.database = nil
 		return err
+	}
+	closeArtifactSetup := func(cause error) error {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		service.executions = nil
+		return cause
+	}
+	artifactRoot, err := folder.ResolveRoot("", service.projectRoot)
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	artifactStore, err := folder.New(artifactRoot)
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	if err := executions.SetRouteEvidenceResolver(routeartifacts.Resolver{Artifacts: database, Representations: database, Store: artifactStore}); err != nil {
+		return closeArtifactSetup(err)
 	}
 	service.executions = executions
 	if report.SchedulingAllowed() {
@@ -539,21 +580,6 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		service.executions = nil
 		return err
-	}
-	closeArtifactSetup := func(cause error) error {
-		_ = executions.Close()
-		_ = database.Close()
-		service.database = nil
-		service.executions = nil
-		return cause
-	}
-	artifactRoot, err := folder.ResolveRoot("", service.projectRoot)
-	if err != nil {
-		return closeArtifactSetup(err)
-	}
-	artifactStore, err := folder.New(artifactRoot)
-	if err != nil {
-		return closeArtifactSetup(err)
 	}
 	derivation, err := artifactderive.New(artifactStore, database, database, common.New(), commonimage.New())
 	if err != nil {
@@ -1014,11 +1040,17 @@ func runRun(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		}
 		return writeRunProjectionActionResult(result, "Prepared", jsonOutput, stdout, stderr, command)
 	case "launch":
-		runID, revision, key, err := parseRunLaunch(args[1:])
+		runID, revision, key, digest, err := parseRunLaunch(args[1:])
 		if err != nil {
 			return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
 		}
-		return runControlAtVersion(command, "start", "Launched", runID, revision, key, nil, jsonOutput, stdout, stderr)
+		var body any
+		if digest != "" {
+			body = struct {
+				AssessmentDigest string `json:"assessmentDigest"`
+			}{digest}
+		}
+		return runControlAtVersion(command, "start", "Launched", runID, revision, key, body, jsonOutput, stdout, stderr)
 	case "start":
 		request, scenario, key, err := parseRunStart(args[1:])
 		if err != nil {

@@ -197,7 +197,7 @@ func (s *Server) serveAttentionCheckpoints(response http.ResponseWriter, request
 		}
 		kinds = append(kinds, attention.Kind(raw))
 	}
-	page, err := service.List(request.Context(), attention.ListRequest{Kinds: kinds, ProjectID: query.Get("projectId"), WorkItemID: query.Get("workItemId"), RunID: query.Get("runId"), Limit: limit, Cursor: query.Get("cursor")})
+	page, err := service.List(request.Context(), attention.ListRequest{IncludePreparation: strings.HasSuffix(request.URL.Path, "/v2"), Kinds: kinds, ProjectID: query.Get("projectId"), WorkItemID: query.Get("workItemId"), RunID: query.Get("runId"), Limit: limit, Cursor: query.Get("cursor")})
 	if err != nil {
 		if errors.Is(err, attention.ErrInvalidRequest) || errors.Is(err, attention.ErrInvalidCursor) {
 			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: err.Error(), RequestID: requestID})
@@ -205,6 +205,9 @@ func (s *Server) serveAttentionCheckpoints(response http.ResponseWriter, request
 		}
 		writeAPIError(response, http.StatusInternalServerError, apiError{SchemaVersion: 1, Code: "CHECKPOINT_QUERY_FAILED", Message: "The Checkpoints projection could not be read.", RequestID: requestID, Retryable: true})
 		return
+	}
+	if strings.HasSuffix(request.URL.Path, "/v2") {
+		page.SchemaVersion = 2
 	}
 	writeJSON(response, http.StatusOK, page)
 }

@@ -71,6 +71,40 @@ func TestAttentionCheckpointAPIRejectsUnknownFiltersAndKinds(t *testing.T) {
 	}
 }
 
+func TestAttentionV2OptsIntoPreparationWithoutChangingLegacy(t *testing.T) {
+	server, err := NewServer(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &recordingAttentionService{page: attention.Page{SchemaVersion: 1, Items: attention.Checkpoints{}}}
+	if err := server.SetAttention(service); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Start(context.Background(), 1234, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestServer(t, server)
+	endpoint, _ := server.Endpoint()
+	for _, version := range []int{1, 2} {
+		path := "/api/v1/attention"
+		if version == 2 {
+			path += "/v2"
+		}
+		request, _ := http.NewRequest(http.MethodGet, endpoint.BaseURL()+path, nil)
+		request.Header.Set("Authorization", endpoint.AuthorizationHeader())
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var page attention.Page
+		err = json.NewDecoder(response.Body).Decode(&page)
+		_ = response.Body.Close()
+		if err != nil || response.StatusCode != http.StatusOK || page.SchemaVersion != version || service.request.IncludePreparation != (version == 2) {
+			t.Fatalf("version %d: page=%#v request=%#v error=%v", version, page, service.request, err)
+		}
+	}
+}
+
 func TestAttentionServiceDoesNotChangeLegacyCheckpointCollection(t *testing.T) {
 	server, err := NewServer(t.TempDir())
 	if err != nil {

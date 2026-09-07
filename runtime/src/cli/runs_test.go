@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,21 +64,31 @@ func TestRunPrepareAndLaunchUseDurableReadyAPI(t *testing.T) {
 	if runs.launched != 1 || runs.control.RunID != run.RunID || runs.control.ExpectedResourceVersion != 7 || runs.control.IdempotencyKey != "cli-launch-run" {
 		t.Fatalf("launch calls=%d request=%#v", runs.launched, runs.control)
 	}
+	runCLIJSON(t, []string{"run", "prepare", run.WorkItemID, "--answers-json", `{"goal":"Implement the reviewed design"}`, "--inputs-json", `{"request":{"approved":true}}`, "--json"}, &prepared)
+	if runs.create.Preparation == nil || runs.create.Preparation.Answers["goal"] != "Implement the reviewed design" || string(runs.create.Preparation.RunInputs["request"]) != `{"approved":true}` || runs.create.WorkflowID != "" {
+		t.Fatalf("preparation inputs lost: %#v", runs.create)
+	}
+	digest := strings.Repeat("a", 64)
+	runCLIJSON(t, []string{"run", "launch", run.RunID, "--if-match", "7", "--confirm-assessment", digest, "--json"}, &launched)
+	if runs.control.ConfirmationDigest != digest {
+		t.Fatalf("confirmation lost: %#v", runs.control)
+	}
+
 }
 
 func TestParseRunPrepareAndLaunchRejectAmbiguousArguments(t *testing.T) {
 	workID := "work_00000000000000000000000000"
 	request, key, err := parseRunPrepare([]string{workID, "--profile", "implementation", "--idempotency-key", "prepare-key"})
-	if err != nil || request.Profile != "implementation" || request.WorkflowID != runexecution.DefaultWorkflowID || key != "prepare-key" {
+	if err != nil || request.Profile != "implementation" || request.WorkflowID != "" || key != "prepare-key" {
 		t.Fatalf("prepare parse = %#v key=%q err=%v", request, key, err)
 	}
 	if _, _, err := parseRunPrepare([]string{"--scenario", "fake-success"}); err == nil {
 		t.Fatal("prepare accepted fake scenario")
 	}
-	if _, _, _, err := parseRunLaunch([]string{"run_00000000000000000000000000"}); err == nil {
+	if _, _, _, _, err := parseRunLaunch([]string{"run_00000000000000000000000000"}); err == nil {
 		t.Fatal("launch accepted missing --if-match")
 	}
-	if _, _, _, err := parseRunLaunch([]string{"run_00000000000000000000000000", "--if-match", "0"}); err == nil {
+	if _, _, _, _, err := parseRunLaunch([]string{"run_00000000000000000000000000", "--if-match", "0"}); err == nil {
 		t.Fatal("launch accepted zero revision")
 	}
 }
@@ -125,4 +137,30 @@ func (s *cliRecordingRunService) Continue(context.Context, runexecution.Continue
 }
 func (s *cliRecordingRunService) Cancel(context.Context, runexecution.ControlRequest) (statestore.RunProjection, error) {
 	return s.run, errors.New("not used")
+}
+
+func TestPreparationArgumentsRejectMalformedObjectsAndConfirmation(t *testing.T) {
+	for _, args := range [][]string{
+		{"--answers-json", "null"}, {"--answers-json", "[]"}, {"--answers-json", `{"x":1}`},
+		{"--answers-json", "{}", "--answers-json", "{}"}, {"--inputs-json", "null"},
+		{"--inputs-json", `{"bad-name":true}`}, {"--inputs-json", "{}", "--inputs-json", "{}"},
+	} {
+		if _, _, err := parseRunPrepare(append([]string{"work_00000000000000000000000000"}, args...)); err == nil {
+			t.Errorf("accepted %v", args)
+		}
+	}
+	for _, digest := range []string{"short", strings.Repeat("A", 64)} {
+		if _, _, _, _, err := parseRunLaunch([]string{"run_00000000000000000000000000", "--if-match", "1", "--confirm-assessment", digest}); err == nil {
+			t.Errorf("accepted digest %s", digest)
+		}
+	}
+}
+
+func TestPreparedRunTextShowsActionableAssessment(t *testing.T) {
+	run := statestore.RunProjection{RunID: "run_00000000000000000000000000", Status: statestore.RunWaiting, RouteSnapshot: statestore.JSONSnapshot(`{"assessment":{"digest":"abc","rationale":"More detail is required.","questions":[{"id":"outcome","prompt":"What should be delivered?"}],"confirmationReasons":["Review scope."]}}`)}
+	var stdout, stderr bytes.Buffer
+	code := writeRunProjectionActionResult(run, "Prepared", false, &stdout, &stderr, "darkstar run prepare")
+	if code != 0 || !strings.Contains(stdout.String(), "Input outcome: What should be delivered?") || !strings.Contains(stdout.String(), "Digest: abc") || !strings.Contains(stdout.String(), "Confirmation: Review scope.") {
+		t.Fatalf("code=%d output=%s error=%s", code, stdout.String(), stderr.String())
+	}
 }

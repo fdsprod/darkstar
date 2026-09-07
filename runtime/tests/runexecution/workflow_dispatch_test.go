@@ -75,6 +75,9 @@ func TestCreatePersistsInputRequiredWaitWithoutDispatch(t *testing.T) {
 	_, workID := seedWorkflowWork(t, database)
 	planner := workflowDispatchPlannerFor(workflow.NoCheckpoint{}, true)
 	planner.preview.Route.InputRequirements = []workflow.InputRequirement{{Code: workflow.ValidationRunInputRequired, Node: "design", Input: "story", Source: "run.input.story"}}
+	node := planner.definition.Document.Spec.Nodes["design"].(workflow.ReasoningNode)
+	node.Common.Inputs["story"] = workflow.RequiredBinding{From: "run.input.story", Type: workflow.ValueObject}
+	planner.definition.Document.Spec.Nodes["design"] = node
 	if err := service.SetWorkflowPlanner(planner); err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +339,7 @@ func (planner workflowDispatchPlanner) Definition(context.Context, string, strin
 
 func workflowDispatchPlannerFor(checkpoint workflow.Checkpoint, terminal bool) workflowDispatchPlanner {
 	digest := strings.Repeat("a", 64)
-	fields := workflow.NodeFields{Entry: true, Terminal: terminal, Checkpoint: checkpoint, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"artifact": {Type: workflow.ValueString}}}
+	fields := workflow.NodeFields{Entry: true, Terminal: terminal, Inputs: map[workflow.Identifier]workflow.Binding{}, Checkpoint: checkpoint, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"artifact": {Type: workflow.ValueString}}}
 	if !terminal {
 		fields.Transitions = []workflow.Transition{workflow.NormalTransition{Common: workflow.TransitionFields{TransitionID: "deliver", To: "delivery"}}}
 	}
@@ -345,7 +348,7 @@ func workflowDispatchPlannerFor(checkpoint workflow.Checkpoint, terminal bool) w
 	if terminal {
 		route.Terminals, route.Nodes, route.Transitions = []workflow.Identifier{"design"}, []workflow.RouteNode{{ID: "design"}}, nil
 	} else {
-		nodes["delivery"] = workflow.ReasoningNode{Common: workflow.NodeFields{Terminal: true, Checkpoint: workflow.NoCheckpoint{}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"artifact": {Type: workflow.ValueString}}}, Executor: workflow.ReasoningExecutor{Agent: "deliverer"}}
+		nodes["delivery"] = workflow.ReasoningNode{Common: workflow.NodeFields{Terminal: true, Inputs: map[workflow.Identifier]workflow.Binding{}, Checkpoint: workflow.NoCheckpoint{}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"artifact": {Type: workflow.ValueString}}}, Executor: workflow.ReasoningExecutor{Agent: "deliverer"}}
 	}
 	identity := workflow.WorkflowIdentity{Name: "test/workflow", Version: "1.0.0", Digest: digest}
 	return workflowDispatchPlanner{

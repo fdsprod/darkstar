@@ -18,6 +18,7 @@ import (
 	"darkstar/src/ports"
 	manifestport "darkstar/src/ports/contextmanifest"
 	"darkstar/src/ports/provider"
+	"darkstar/src/ports/routeadvisor"
 	"darkstar/src/ports/statestore"
 )
 
@@ -413,6 +414,15 @@ func newControlTestService(t *testing.T, fail bool) (*Service, *sqlite.Database,
 	factory := &controlTestFactory{fail: fail}
 	service, err := New(context.Background(), database, factory, controlTestLogs{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetRouteAdvisor(routeadvisor.AdvisorFunc(func(_ context.Context, request routeadvisor.Request) (routeadvisor.Advice, error) {
+		advice := routeadvisor.Advice{Confidence: "high", Candidates: []routeadvisor.CandidateAdvice{}, EvidenceUsed: []string{}}
+		for _, candidate := range request.Candidates {
+			advice.Candidates = append(advice.Candidates, routeadvisor.CandidateAdvice{Entry: candidate.Entry, Terminals: candidate.Terminals, Disposition: "suitable", Rationale: "The test work outcome is covered by this candidate.", Questions: []routeadvisor.Question{}, Assumptions: []string{}})
+		}
+		return advice, nil
+	})); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

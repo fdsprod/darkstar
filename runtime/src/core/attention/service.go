@@ -216,7 +216,10 @@ func (items *Checkpoints) UnmarshalJSON(encoded []byte) error {
 	result := make(Checkpoints, 0, len(raw))
 	for _, candidate := range raw {
 		var discriminator struct {
-			Kind Kind `json:"kind"`
+			Kind    Kind `json:"kind"`
+			Subject struct {
+				Source string `json:"source"`
+			} `json:"subject"`
 		}
 		if err := json.Unmarshal(candidate, &discriminator); err != nil {
 			return err
@@ -232,7 +235,14 @@ func (items *Checkpoints) UnmarshalJSON(encoded []byte) error {
 		case KindExternalDelivery:
 			item = new(ExternalDelivery)
 		case KindInputRequired:
-			item = new(InputRequired)
+			switch discriminator.Subject.Source {
+			case "":
+				item = new(InputRequired)
+			case "route_preparation":
+				item = new(PreparationInputRequired)
+			default:
+				return fmt.Errorf("unknown input-required source %q", discriminator.Subject.Source)
+			}
 		default:
 			return fmt.Errorf("unknown attention checkpoint kind %q", discriminator.Kind)
 		}
@@ -252,12 +262,13 @@ type Page struct {
 }
 
 type ListRequest struct {
-	Kinds      []Kind
-	ProjectID  string
-	WorkItemID string
-	RunID      string
-	Limit      int
-	Cursor     string
+	IncludePreparation bool
+	Kinds              []Kind
+	ProjectID          string
+	WorkItemID         string
+	RunID              string
+	Limit              int
+	Cursor             string
 }
 
 // Source is exactly the durable state needed to rebuild the attention queue.
@@ -347,6 +358,13 @@ func (service *Service) List(ctx context.Context, request ListRequest) (Page, er
 		}
 	}
 	if selected[KindInputRequired] {
+		if request.IncludePreparation {
+			preparationItems, preparationErr := service.preparationInputs(ctx, request)
+			if preparationErr != nil {
+				return Page{}, preparationErr
+			}
+			items = append(items, preparationItems...)
+		}
 		for _, status := range []statestore.InputRequestStatus{statestore.InputRequestPending, statestore.InputRequestAnswerRecorded} {
 			inputs, readErr := service.source.InputRequests(ctx, status)
 			if readErr != nil {
@@ -501,6 +519,9 @@ func normalizeRequest(request ListRequest) (ListRequest, map[Kind]bool, string, 
 	}
 	sort.Strings(kinds)
 	fingerprint := strings.Join([]string{strings.Join(kinds, ","), request.ProjectID, request.WorkItemID, request.RunID}, "|")
+	if request.IncludePreparation {
+		fingerprint += "|preparation-v2"
+	}
 	return request, selected, fingerprint, nil
 }
 

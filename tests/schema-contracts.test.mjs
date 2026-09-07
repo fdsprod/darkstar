@@ -492,3 +492,47 @@ test("compatibility rejects removing a versioned contract or API operation", () 
   const afterApi = { ...beforeApi, paths: {} };
   assert.ok(compareContracts(contracts({ "openapi-v1.json": beforeApi }), contracts({ "openapi-v1.json": afterApi })).some((issue) => issue.includes("API path removed")));
 });
+
+
+test("automatic preparation publishes immutable assessment and exact digest confirmation", () => {
+  const api = JSON.parse(readFileSync(resolve(root, "schemas", "openapi-v1alpha1.json"), "utf8"));
+  const schemas = api.components.schemas;
+  assert.deepEqual(schemas.CreateRunRequest.required, ["workItemId"]);
+  assert.equal(schemas.CreateRunRequest.properties.preparation.$ref, "#/components/schemas/RunPreparationInput");
+  assert.equal(schemas.FrozenRoute.properties.assessment.$ref, "#/components/schemas/RoutePreparationAssessment");
+  assert.equal(schemas.RunView.required.includes("assessment"), false);
+  assert.deepEqual(schemas.LaunchPreparedRunRequest.required, ["assessmentDigest"]);
+  assert.equal(schemas.LaunchPreparedRunRequest.additionalProperties, false);
+  assert.equal(api.paths["/api/v1/runs/{runId}/start"].post.requestBody.required, false);
+  assert.deepEqual(schemas.PreparationAdvice.properties.confidence.enum, ["high", "medium", "low"]);
+});
+
+
+test("preparation attention uses a versioned response while preserving provider attention", () => {
+  const api = JSON.parse(readFileSync(resolve(root, "schemas", "openapi-v1alpha1.json"), "utf8"));
+  const schemas = api.components.schemas;
+  assert.equal(api.paths["/api/v1/attention"].get.operationId, "listAttention");
+  assert.equal(api.paths["/api/v1/attention/v2"].get.operationId, "getAttentionV2");
+  assert.equal(schemas.AttentionPage.properties.schemaVersion.const, 1);
+  assert.equal(schemas.AttentionPageV2.properties.schemaVersion.const, 2);
+  assert.equal(schemas.AttentionCheckpoint.oneOf.length, 5);
+  assert.equal(schemas.AttentionCheckpointV2.oneOf.length, 6);
+  assert.equal(schemas.PreparationInputRequiredAttention.properties.subject.properties.source.const, "route_preparation");
+  assert.deepEqual(schemas.PreparationInputRequiredAttention.properties.subject.required, ["source", "assessmentDigest", "questions"]);
+  assert.equal(schemas.InputRequiredAttention.properties.subject.properties.source, undefined);
+});
+
+
+test("route assessment alternatives identify both entry and terminal boundaries", () => {
+  const api = JSON.parse(readFileSync(resolve(root, "schemas", "openapi-v1alpha1.json"), "utf8"));
+  const schemas = api.components.schemas;
+  assert.ok(schemas.PreparationAlternative.required.includes("entry"));
+  assert.ok(schemas.PreparationAlternative.required.includes("terminals"));
+  assert.equal(schemas.PreparationAlternative.properties.terminals.uniqueItems, true);
+  assert.equal(schemas.PreparationAlternative.properties.terminals.minItems, 1);
+  // Advice must identify an exact boundary; omitted terminals are invalid.
+  assert.equal(schemas.PreparationCandidateAdvice.required.includes("terminals"), true);
+  const missingTerminals = { entry: "design", disposition: "suitable", rationale: "Design requested", questions: [], assumptions: [] };
+  assert.deepEqual(schemas.PreparationCandidateAdvice.required.filter((key) => !(key in missingTerminals)), ["terminals"]);
+  assert.equal(schemas.PreparationCandidateAdvice.properties.terminals.uniqueItems, true);
+});

@@ -555,7 +555,7 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		s.serveApprovals(response, request, requestID)
 		return
 	}
-	if path.Clean(request.URL.Path) == "/api/v1/attention" {
+	if path.Clean(request.URL.Path) == "/api/v1/attention" || path.Clean(request.URL.Path) == "/api/v1/attention/v2" {
 		s.mu.RLock()
 		service := s.attention
 		s.mu.RUnlock()

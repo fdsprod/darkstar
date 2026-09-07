@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,17 @@ func TestRunAPIExposesVersionedIdempotentControls(t *testing.T) {
 	}
 	_ = launched.Body.Close()
 
+	digest := strings.Repeat("b", 64)
+	confirmed := runControlRequest(t, endpoint, "/api/v1/runs/"+runID+"/start", `{"assessmentDigest":"`+digest+`"}`, "confirmed-launch", `"3"`)
+	if confirmed.StatusCode != http.StatusOK || runs.control.ConfirmationDigest != digest {
+		t.Fatalf("confirmation status=%d request=%#v", confirmed.StatusCode, runs.control)
+	}
+	_ = confirmed.Body.Close()
+	for _, body := range []string{`{}`, `null`, `{"assessmentDigest":"bad"}`, `{"assessmentDigest":"` + digest + `","confirmed":true}`} {
+		invalid := runControlRequest(t, endpoint, "/api/v1/runs/"+runID+"/start", body, "invalid-launch", `"3"`)
+		assertAPIError(t, invalid, http.StatusBadRequest, "VALIDATION_FAILED")
+		_ = invalid.Body.Close()
+	}
 	pause := runControlRequest(t, endpoint, "/api/v1/runs/"+runID+"/pause", "", "pause-api", `"3"`)
 	if pause.StatusCode != http.StatusOK || pause.Header.Get("ETag") != `"3"` || runs.action != "pause" || runs.control.ExpectedResourceVersion != 3 {
 		t.Fatalf("pause status=%d etag=%q action=%q request=%#v", pause.StatusCode, pause.Header.Get("ETag"), runs.action, runs.control)
@@ -95,6 +107,11 @@ func TestRunAPIPreparesWorkBackedRunWithOptionalProfile(t *testing.T) {
 	}
 	_ = prepared.Body.Close()
 
+	supplied := workRequest(t, endpoint, http.MethodPost, "/api/v1/runs/prepare", `{"workItemId":"work_00000000000000000000000000","preparation":{"answers":{"goal":"deliver code"},"runInputs":{"request":true}}}`, "supply-preparation")
+	if supplied.StatusCode != http.StatusCreated || runs.createRequest.Preparation == nil || runs.createRequest.Preparation.Answers["goal"] != "deliver code" || string(runs.createRequest.Preparation.RunInputs["request"]) != "true" {
+		t.Fatalf("supplied status=%d request=%#v", supplied.StatusCode, runs.createRequest)
+	}
+	_ = supplied.Body.Close()
 	query := workRequest(t, endpoint, http.MethodPost, "/api/v1/runs/prepare?launch=true", `{"workItemId":"work_00000000000000000000000000","workflowId":"delivery","workflowVersion":"1.0.0"}`, "prepare-query-command")
 	assertAPIError(t, query, http.StatusBadRequest, "VALIDATION_FAILED")
 	_ = query.Body.Close()

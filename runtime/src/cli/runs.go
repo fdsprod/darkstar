@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"darkstar/src/core/preparation"
 	"darkstar/src/core/runexecution"
 	"darkstar/src/ports/statestore"
 )
@@ -49,7 +51,7 @@ func parseWorkRun(args []string, action string) (runexecution.CreateRequest, str
 	if !workIdentityPattern.MatchString(args[0]) {
 		return runexecution.CreateRequest{}, "", fmt.Errorf("run %s requires a canonical work_ ULID", action)
 	}
-	request := runexecution.CreateRequest{WorkItemID: args[0], WorkflowID: runexecution.DefaultWorkflowID, WorkflowVersion: runexecution.DefaultWorkflowVersion}
+	request := runexecution.CreateRequest{WorkItemID: args[0]}
 	key := ""
 	seenWorkflow, seenVersion, seenProfile := false, false, false
 	for index := 1; index < len(args); index += 2 {
@@ -73,6 +75,24 @@ func parseWorkRun(args []string, action string) (runexecution.CreateRequest, str
 				return runexecution.CreateRequest{}, "", errors.New("--profile requires one workflow profile identifier")
 			}
 			seenProfile, request.Profile = true, value
+		case "--answers-json", "--inputs-json":
+			if request.Preparation == nil {
+				request.Preparation = &runexecution.PreparationInput{}
+			}
+			if args[index] == "--answers-json" {
+				if request.Preparation.Answers != nil || json.Unmarshal([]byte(value), &request.Preparation.Answers) != nil || request.Preparation.Answers == nil {
+					return runexecution.CreateRequest{}, "", errors.New("--answers-json requires one JSON object of question IDs to string answers")
+				}
+			} else {
+				if request.Preparation.RunInputs != nil || json.Unmarshal([]byte(value), &request.Preparation.RunInputs) != nil || request.Preparation.RunInputs == nil {
+					return runexecution.CreateRequest{}, "", errors.New("--inputs-json requires one JSON object of workflow input names to values")
+				}
+				for name := range request.Preparation.RunInputs {
+					if !runNodePattern.MatchString(string(name)) {
+						return runexecution.CreateRequest{}, "", errors.New("--inputs-json keys must be workflow input identifiers")
+					}
+				}
+			}
 		case "--idempotency-key":
 			if key != "" {
 				return runexecution.CreateRequest{}, "", errors.New("--idempotency-key may be specified only once")
@@ -88,42 +108,47 @@ func parseWorkRun(args []string, action string) (runexecution.CreateRequest, str
 	return request, key, nil
 }
 
-func parseRunLaunch(args []string) (string, uint64, string, error) {
+func parseRunLaunch(args []string) (string, uint64, string, string, error) {
 	if len(args) == 0 || !runIdentityPattern.MatchString(args[0]) {
-		return "", 0, "", errors.New("run launch requires a canonical run_ ULID")
+		return "", 0, "", "", errors.New("run launch requires a canonical run_ ULID")
 	}
 	var revision uint64
-	key := ""
+	key, digest := "", ""
 	for index := 1; index < len(args); index += 2 {
 		if index+1 >= len(args) || args[index+1] == "" {
-			return "", 0, "", fmt.Errorf("%s requires a value", args[index])
+			return "", 0, "", "", fmt.Errorf("%s requires a value", args[index])
 		}
 		switch args[index] {
 		case "--if-match":
 			if revision != 0 {
-				return "", 0, "", errors.New("--if-match may be specified only once")
+				return "", 0, "", "", errors.New("--if-match may be specified only once")
 			}
 			value, err := strconv.ParseUint(args[index+1], 10, 64)
 			if err != nil || value == 0 {
-				return "", 0, "", errors.New("--if-match requires a positive run resource version")
+				return "", 0, "", "", errors.New("--if-match requires a positive run resource version")
 			}
 			revision = value
+		case "--confirm-assessment":
+			if digest != "" || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(args[index+1]) {
+				return "", 0, "", "", errors.New("--confirm-assessment requires one 64-character lowercase SHA-256 digest")
+			}
+			digest = args[index+1]
 		case "--idempotency-key":
 			if key != "" {
-				return "", 0, "", errors.New("--idempotency-key may be specified only once")
+				return "", 0, "", "", errors.New("--idempotency-key may be specified only once")
 			}
 			key = args[index+1]
 		default:
-			return "", 0, "", fmt.Errorf("unknown run launch option %q", args[index])
+			return "", 0, "", "", fmt.Errorf("unknown run launch option %q", args[index])
 		}
 	}
 	if revision == 0 {
-		return "", 0, "", errors.New("run launch requires --if-match <version>")
+		return "", 0, "", "", errors.New("run launch requires --if-match <version>")
 	}
 	if key == "" {
 		key = newIdempotencyKey()
 	}
-	return args[0], revision, key, nil
+	return args[0], revision, key, digest, nil
 }
 
 func parseRunList(args []string) (string, error) {
@@ -250,6 +275,20 @@ func writeRunProjectionActionResult(result statestore.RunProjection, action stri
 		}
 	} else {
 		_, _ = fmt.Fprintf(stdout, "%s %s for %s: %s.\n", action, result.RunID, result.WorkItemID, result.Status)
+		var route struct {
+			Assessment *preparation.Assessment `json:"assessment"`
+		}
+		if json.Unmarshal([]byte(result.RouteSnapshot), &route) == nil && route.Assessment != nil {
+			assessment := route.Assessment
+			_, _ = fmt.Fprintf(stdout, "Route assessment: %s\n%s\nDigest: %s\n", assessment.Readiness(), assessment.Rationale, assessment.Digest)
+			for _, question := range assessment.Questions {
+				_, _ = fmt.Fprintf(stdout, "Input %s: %s\n", question.ID, question.Prompt)
+			}
+			for _, reason := range assessment.ConfirmationReasons {
+				_, _ = fmt.Fprintf(stdout, "Confirmation: %s\n", reason)
+			}
+		}
+
 	}
 	return int(ExitSuccess)
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -139,14 +140,24 @@ func (s *Server) serveRunControl(response http.ResponseWriter, request *http.Req
 	}
 	var value statestore.RunProjection
 	switch action {
-	case "start", "pause", "resume", "cancel":
+	case "start":
+		var input struct {
+			AssessmentDigest string `json:"assessmentDigest"`
+		}
+		if len(strings.TrimSpace(string(body))) != 0 {
+			if decodeRunVariant(body, &input) != nil || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(input.AssessmentDigest) {
+				writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Launch accepts only a 64-character lowercase hexadecimal assessmentDigest.", RequestID: requestID})
+				return
+			}
+			common.ConfirmationDigest = input.AssessmentDigest
+		}
+		value, err = runs.Launch(request.Context(), common)
+	case "pause", "resume", "cancel":
 		if len(strings.TrimSpace(string(body))) != 0 {
 			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "This run control does not accept a request body.", RequestID: requestID})
 			return
 		}
 		switch action {
-		case "start":
-			value, err = runs.Launch(request.Context(), common)
 		case "pause":
 			value, err = runs.Pause(request.Context(), common)
 		case "resume":
@@ -191,14 +202,14 @@ func (s *Server) serveRunPrepare(response http.ResponseWriter, request *http.Req
 	if !ok {
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(request.Body, 4097))
-	if err != nil || len(body) == 0 || len(body) > 4096 {
+	body, err := io.ReadAll(io.LimitReader(request.Body, 65537))
+	if err != nil || len(body) == 0 || len(body) > 65536 {
 		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "The run preparation request must be one valid JSON object.", RequestID: requestID})
 		return
 	}
 	var input runexecution.CreateRequest
 	if err := decodeRunVariant(body, &input); err != nil {
-		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Run preparation requires workItemId, workflowId, workflowVersion, and an optional profile.", RequestID: requestID})
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Run preparation requires workItemId, workflowId, workflowVersion, and optional profile and preparation inputs.", RequestID: requestID})
 		return
 	}
 	value, err := runs.Prepare(request.Context(), input, key)
@@ -226,8 +237,8 @@ func (s *Server) serveRunStart(response http.ResponseWriter, request *http.Reque
 		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Idempotency-Key must be between 8 and 128 bytes without surrounding whitespace.", RequestID: requestID})
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(request.Body, 4097))
-	if err != nil || len(body) == 0 || len(body) > 4096 {
+	body, err := io.ReadAll(io.LimitReader(request.Body, 65537))
+	if err != nil || len(body) == 0 || len(body) > 65536 {
 		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "The run start request must be one valid JSON object.", RequestID: requestID})
 		return
 	}
@@ -239,7 +250,7 @@ func (s *Server) serveRunStart(response http.ResponseWriter, request *http.Reque
 	if _, fake := fields["scenario"]; !fake {
 		var input runexecution.CreateRequest
 		if err := decodeRunVariant(body, &input); err != nil {
-			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "The work-backed run request must contain only workItemId, workflowId, workflowVersion, and an optional profile.", RequestID: requestID})
+			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "The work-backed run request must contain only workItemId, workflowId, workflowVersion, and optional profile and preparation inputs.", RequestID: requestID})
 			return
 		}
 		value, err := runs.Create(request.Context(), input, key)

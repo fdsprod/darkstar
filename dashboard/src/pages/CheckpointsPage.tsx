@@ -10,7 +10,7 @@ import { DetailFailure, DetailLoading, formatDate, StatusPill, SummaryFact } fro
 import { humanize } from "./runDetailModel";
 
 type Schemas = components["schemas"];
-type AttentionItem = Schemas["AttentionCheckpoint"];
+type AttentionItem = Schemas["AttentionCheckpointV2"];
 type AttentionKind = Schemas["AttentionKind"];
 
 const attentionKinds: readonly AttentionKind[] = ["workflow_checkpoint", "input_required", "provider_permission", "workflow_control", "external_delivery"];
@@ -24,7 +24,7 @@ export function CheckpointsPage() {
   const cursor = params.get("cursor")?.trim() ?? "";
   const deepItem = params.get("itemId")?.trim() ?? "";
   const [draftRun, setDraftRun] = useState(runId);
-  const [page, setPage] = useState<Schemas["AttentionPage"]>();
+  const [page, setPage] = useState<Schemas["AttentionPageV2"]>();
   const [selectedId, setSelectedId] = useState(deepItem);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -122,6 +122,7 @@ function AttentionActions({ item, refresh }: { item: AttentionItem; refresh(): P
           break;
         }
         case "input_required": {
+          if (isPreparationAttention(item)) throw new Error("Use the route preparation answer form.");
           if (!item.allowedActions.includes(action as never)) throw new Error("Action is no longer available.");
           if (action === "retry_delivery") await apiClient.retryInputDelivery(item.id, item.resourceVersion);
           else {
@@ -149,13 +150,51 @@ function AttentionActions({ item, refresh }: { item: AttentionItem; refresh(): P
     } finally { setBusy(false); }
   }
   const commandUnavailable = item.kind === "workflow_control" || item.kind === "external_delivery";
+  if (isPreparationAttention(item)) return <PreparationQuestions key={`${item.id}:${item.subject.assessmentDigest}`} item={item} refresh={refresh} />;
   return <><div>{item.allowedActions.map((action) => <button className="readiness-action" type="button" disabled={busy || commandUnavailable} key={action} onClick={() => void perform(action)}><strong>{humanize(action)}</strong><span>Valid only for this {humanize(item.kind)} source.</span></button>)}</div>{error && <p className="form-error" role="alert">{error}</p>}</>;
+}
+
+function isPreparationAttention(item: AttentionItem): item is Schemas["PreparationInputRequiredAttention"] {
+  return item.kind === "input_required" && "source" in item.subject && item.subject.source === "route_preparation";
+}
+
+function PreparationQuestions({ item, refresh }: { item: Schemas["PreparationInputRequiredAttention"]; refresh(): Promise<void> }) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [inputText, setInputText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const { navigate } = useRouter();
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError("");
+    try {
+      const current = await apiClient.getRun(item.context.runId);
+      if (current.run.resourceVersion !== item.resourceVersion || current.assessment?.digest !== item.subject.assessmentDigest) throw new Error("These route questions have changed. Refresh Checkpoints before submitting; your answers are kept here.");
+      let runInputs: Record<string, unknown> | undefined;
+      if (inputText.trim()) {
+        const parsed: unknown = JSON.parse(inputText);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Workflow inputs must be a JSON object of input names and values.");
+        runInputs = parsed as Record<string, unknown>;
+      }
+      const prepared = await apiClient.prepareRun({ workItemId: item.context.workItemId, preparation: { answers, ...(runInputs ? { runInputs } : {}) } }, `dashboard-route-answers-${crypto.randomUUID()}`);
+      await refresh();
+      navigate(`/work/${encodeURIComponent(item.context.workItemId)}/run/${encodeURIComponent(prepared.id)}`);
+    } catch (cause) {
+      setError(cause instanceof SyntaxError ? "Workflow inputs must be valid JSON. Your answers have been kept." : cause instanceof Error ? cause.message : "The route could not be assessed. Your answers have been kept.");
+    } finally { setBusy(false); }
+  }
+  return <form className="inspector-form" onSubmit={(event) => void submit(event)} aria-label="Route preparation questions">
+    {item.subject.questions.map((question) => <label key={question.id}>{question.prompt}<textarea required value={answers[question.id] ?? ""} onChange={(event) => setAnswers((previous) => ({ ...previous, [question.id]: event.target.value }))} disabled={busy} /></label>)}
+    <details><summary>Additional workflow inputs</summary><label>Input names and values (JSON)<textarea value={inputText} onChange={(event) => setInputText(event.target.value)} disabled={busy} placeholder={'{"input_name": "value"}'} /></label></details>
+    <button className="button" type="submit" disabled={busy}>{busy ? "Assessing route…" : "Assess with these answers"}</button>
+    <AppLink className="navigation-action" to={`/work/${encodeURIComponent(item.context.workItemId)}`}>Open work context</AppLink>
+    {error && <p className="form-error" role="alert">{error}</p>}
+  </form>;
 }
 
 function attentionPresentation(item: AttentionItem): { label: string; description: string } {
   switch (item.kind) {
     case "workflow_checkpoint": return { label: "Workflow checkpoint", description: "Review one immutable workflow candidate." };
-    case "input_required": return { label: "Input required", description: "Answer a provider question without granting authority." };
+    case "input_required": return isPreparationAttention(item) ? { label: "Route input required", description: "Supply the missing details to assess a safe route. Assessment does not start execution." } : { label: "Input required", description: "Answer a provider question without granting authority." };
     case "provider_permission": return { label: "Provider permission", description: "Authorize only the recorded provider interaction scope." };
     case "workflow_control": return { label: "Workflow control", description: "Decide one exact proposed workflow control operation." };
     case "external_delivery": return { label: "External delivery", description: "Authorize one exact external delivery operation." };
@@ -166,7 +205,7 @@ function attentionPresentation(item: AttentionItem): { label: string; descriptio
 function subjectFacts(item: AttentionItem): Array<[string, string]> {
   switch (item.kind) {
     case "workflow_checkpoint": return [["Checkpoint", item.subject.checkpointId], ["Node", item.subject.nodeId], ["Attempt", item.subject.attemptId], ["Candidate", `${item.subject.candidateArtifactId} · v${item.subject.candidateVersion}`], ["Scope digest", item.subject.scopeDigest], ["Policy digest", item.subject.policyDigest]];
-    case "input_required": return [["Node", item.subject.nodeId], ["Attempt", item.subject.attemptId], ["Provider request", item.subject.providerRequestId], ["Delivery state", item.subject.status], ["Scope digest", item.subject.scopeDigest]];
+    case "input_required": return isPreparationAttention(item) ? [["Assessment digest", item.subject.assessmentDigest]] : [["Node", item.subject.nodeId], ["Attempt", item.subject.attemptId], ["Provider request", item.subject.providerRequestId], ["Delivery state", item.subject.status], ["Scope digest", item.subject.scopeDigest]];
     case "provider_permission": return [["Attempt", item.subject.attemptId], ["Node", item.subject.nodeId], ["Interaction", humanize(item.subject.interactionKind)], ["Provider request", item.subject.providerRequestId], ["Delivery state", item.subject.status], ["Scope digest", item.subject.scopeDigest], ["Policy digest", item.subject.policyDigest]];
     case "workflow_control": return [["Node", item.subject.nodeId ?? "Run scope"], ["Scope digest", item.subject.scopeDigest], ["Policy digest", item.subject.policyDigest]];
     case "external_delivery": return [["Attempt", item.subject.attemptId ?? "Run scope"], ["Scope digest", item.subject.scopeDigest], ["Policy digest", item.subject.policyDigest]];

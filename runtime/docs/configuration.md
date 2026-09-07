@@ -55,3 +55,27 @@ state, preview, apply, audit, event, log, and export shapes contain only a secre
 reference or secret name. They never contain the secret value or secrets-file
 path. Configuration changes emit sanitized accepted or rejected operation events;
 successful commands also retain replayable idempotency evidence.
+
+## Automatic route assessment policy
+
+The daemon reads `routing.assessment` from the effective user and project files
+for each new preparation, then freezes that policy with the route assessment.
+For example, `.darkstar/config.yaml` can contain:
+
+```yaml
+routing:
+  assessment:
+    version: team-review-v1
+    requiredNodes: [review]
+    consequentialNodes: [delivery]
+    allowedAssumptions: []
+```
+
+All fields are optional. The default version is `smallest-safe-v1` and each list
+is empty. Required nodes remain mandatory even with human confirmation;
+consequential nodes require confirmation, as do assumptions outside the allowed
+list. The runtime also derives consequential nodes from authored effects.
+Unknown fields, nulls, invalid types, duplicate entries, and invalid node IDs
+fail preparation. A named node must exist in the pinned workflow. Configuration
+changes affect fresh preparation only; they do not change an existing assessment.
+These keys are configured in files and are not Settings mutation keys.

@@ -47,15 +47,15 @@ darkstar run launch <run-id> --if-match <version>
 
 `darkstar run prepare` validates the work item, resolves an exact installed
 workflow and optional profile, freezes its route and immutable inputs through
-`POST /api/v1/runs/prepare`, and moves the work from Backlog to Ready without
-starting provider work. `darkstar run launch` admits that exact prepared
+`POST /api/v1/runs/prepare`, and records readiness or targeted input requirements without
+starting execution of the selected route. `darkstar run launch` admits that exact prepared
 revision through `POST /api/v1/runs/{runId}/start`; its required `--if-match`
 value prevents a stale terminal or automation from starting a superseded run.
 Both commands accept `--idempotency-key` for safe retries.
 
 The compatibility command `darkstar run start <work-id> --workflow <name>
 --version <version>` performs the former create-and-start request through
-`POST /api/v1/runs`. Omitting the workflow flags uses
+`POST /api/v1/runs`. Omitting the workflow flags preserves saved routing overrides, otherwise uses
 the shipped `darkstar/story-execution` `1.4.0` identity. A route with unresolved
 run inputs is persisted in `waiting` with a `RUN_INPUT_REQUIRED` issue and does
 not dispatch provider work. Production Codex dispatch is currently bounded to
@@ -340,3 +340,32 @@ autostart for version incompatibility or malformed successful responses because 
 restart cannot safely repair those contracts. Individual business requests are
 not automatically replayed, which prevents an ambiguous transport failure from
 duplicating a mutation.
+
+### Automatic route assessment
+
+Omitted workflow options preserve the work item's saved routing intent. Automatic
+preparation records the smallest validated route, its rationale, targeted questions,
+and any confirmation reasons in the immutable route assessment. `run prepare`
+prints these questions and the assessment digest; `--json` includes the full
+assessment in `result.routeSnapshot.assessment`. `run show --json` also exposes it
+as `assessment`.
+
+Supply answers and workflow inputs with a fresh preparation command and idempotency
+key, for example `--answers-json '{"outcome":"Implement the approved design"}'`
+and `--inputs-json '{"request":{"approved":true}}'`. Both options accept JSON
+objects and are also available to `run start`. Preparation may remain waiting
+when required information is absent.
+
+When human confirmation is required, review the exact assessment and launch with
+`run launch <run-id> --if-match <version> --confirm-assessment <digest>`.
+The digest binds confirmation to that immutable assessment; it cannot override
+failed deterministic validation. The API equivalents are `preparation.answers`
+and `preparation.runInputs` on creation/preparation, and an optional
+`{"assessmentDigest":"<digest>"}` body on `POST /api/v1/runs/{runId}/start`.
+
+Automatic assessment compares complete entry-to-terminal candidates. A candidate
+is identified by its entry plus its canonical terminal set, so the same entry
+can offer distinct design-only and delivery outcomes. The assessment records
+terminal sets in the alternatives considered and preserves explicit terminal
+constraints. Semantic advice must establish that the selected boundary satisfies
+the requested outcome before deterministic validation admits the route.

@@ -57,6 +57,7 @@ type RouteContext struct {
 // partitions so an excluded node cannot accidentally become executable through
 // a contradictory flag combination.
 type Route struct {
+	Assessment        json.RawMessage    `json:"assessment,omitempty"`
 	Entry             Identifier         `json:"entry"`
 	Terminals         []Identifier       `json:"terminals"`
 	Nodes             []RouteNode        `json:"nodes"`

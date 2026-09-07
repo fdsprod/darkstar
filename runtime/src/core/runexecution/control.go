@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"darkstar/src/core/preparation"
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports/provider"
+	"darkstar/src/ports/routeadvisor"
 	"darkstar/src/ports/statestore"
 )
 
@@ -21,9 +23,11 @@ var (
 	ErrControlConflict = errors.New("run resource version conflict")
 )
 
-// ControlRequest is the complete input for pause, resume, and cancel. Those
-// operations intentionally have no action-specific nullable fields.
+// ControlRequest preserves the established control-service interface.
+// ConfirmationDigest is a launch-only compatibility extension; the public
+// pause/resume/cancel bodies cannot carry it and it grants no other authority.
 type ControlRequest struct {
+	ConfirmationDigest      string
 	RunID                   string
 	ExpectedResourceVersion uint64
 	IdempotencyKey          string
@@ -94,7 +98,7 @@ func (s *Service) Launch(ctx context.Context, request ControlRequest) (statestor
 	}
 	request = normalizeControlRequest(request)
 	const action, eventKind = "launch", "run.started"
-	replayed, done, err := s.beginControl(ctx, action, eventKind, request, map[string]any{})
+	replayed, done, err := s.beginControl(ctx, action, eventKind, request, map[string]any{"assessmentDigest": request.ConfirmationDigest})
 	if err != nil || done {
 		return replayed, err
 	}
@@ -111,9 +115,68 @@ func (s *Service) Launch(ctx context.Context, request ControlRequest) (statestor
 		err = fmt.Errorf("%w: run %s still requires authored run inputs", ErrInvalidControl, run.RunID)
 		return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, err)
 	}
+	assessment, assessmentErr := readPreparation(route)
+	if assessmentErr != nil {
+		return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, assessmentErr)
+	}
+	if assessment != nil {
+		if assessment.Readiness() == "input_required" {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, fmt.Errorf("%w: %s", ErrInvalidControl, preparationQuestions(assessment)))
+		}
+		if assessment.Readiness() == "confirmation_required" && (request.ConfirmationDigest != assessment.Digest || request.Actor.Type != statestore.ActorUser) {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, fmt.Errorf("%w: explicitly confirm assessment %s before launch", ErrInvalidControl, assessment.Digest))
+		}
+		if request.ConfirmationDigest != "" && request.ConfirmationDigest != assessment.Digest {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, fmt.Errorf("%w: assessment digest mismatch", ErrInvalidControl))
+		}
+	}
 	work, err := s.store.WorkItem(ctx, run.WorkItemID)
 	if err != nil {
 		return statestore.RunProjection{}, err
+	}
+	if assessment != nil {
+		project, projectErr := s.store.Project(ctx, work.ProjectID)
+		if projectErr != nil {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, projectErr)
+		}
+		if project.Status != statestore.ProjectActive || project.ResourceVersion != assessment.Input.Project.ResourceVersion || work.ResourceVersion != assessment.Input.Work.ResourceVersion || work.Status.Terminal() {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, fmt.Errorf("%w: work or project changed since assessment; prepare again", ErrInvalidControl))
+		}
+		reader, ok := s.planner.(WorkflowDefinitionReader)
+		if !ok {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, ErrWorkflowUnavailable)
+		}
+		definition, definitionErr := reader.Definition(ctx, run.WorkflowID, run.WorkflowVersion)
+		if definitionErr != nil {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, definitionErr)
+		}
+		if definition.Version.Digest != assessment.Input.WorkflowDigest {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, fmt.Errorf("%w: installed workflow digest changed", ErrInvalidControl))
+		}
+		policy, policyErr := s.resolvePreparationPolicy(ctx, project, definition.Document)
+		if policyErr != nil {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, policyErr)
+		}
+		if preparation.Digest(policy) != preparation.Digest(assessment.Input.Policy) {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, fmt.Errorf("%w: routing policy changed since assessment; prepare again", ErrInvalidControl))
+		}
+		s.mu.Lock()
+		resolver := s.evidenceResolver
+		s.mu.Unlock()
+		if resolver != nil {
+			for _, frozen := range assessment.Input.Evidence {
+				current, resolveErr := resolver.Resolve(ctx, frozen.Reference)
+				if resolveErr != nil && !errors.Is(resolveErr, routeadvisor.ErrEvidenceUnavailable) {
+					return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, resolveErr)
+				}
+				if errors.Is(resolveErr, routeadvisor.ErrEvidenceUnavailable) {
+					current = routeadvisor.Evidence{Reference: frozen.Reference}
+				}
+				if preparation.Digest(current) != preparation.Digest(frozen) {
+					return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, fmt.Errorf("%w: assessed evidence availability changed; prepare again", ErrInvalidControl))
+				}
+			}
+		}
 	}
 	entryID := string(route.Entry)
 	visitID := stableID("visit_", run.RunID+"\x00"+entryID)
@@ -124,7 +187,7 @@ func (s *Service) Launch(ctx context.Context, request ControlRequest) (statestor
 		events = append(events, pendingEvent("work.started", statestore.AggregateWork, work.WorkItemID, work.ResourceVersion, run.RunID, request.IdempotencyKey+":work", request.Actor.Type, request.Actor.ID, now, map[string]any{}))
 	}
 	events = append(events,
-		controlEvent(eventKind, run, request, map[string]any{}, now),
+		controlEvent(eventKind, run, request, map[string]any{"assessmentDigest": request.ConfirmationDigest}, now),
 		pendingEvent("visit.created", statestore.AggregateVisit, visitID, 0, run.RunID, request.IdempotencyKey+":visit", statestore.ActorSystem, "daemon", now, map[string]any{"runId": run.RunID, "nodeId": entryID}),
 		pendingEvent("attempt.created", statestore.AggregateAttempt, attemptID, 0, run.RunID, request.IdempotencyKey+":attempt", statestore.ActorSystem, "daemon", now, map[string]any{
 			"runId": run.RunID, "visitId": visitID, "nodeId": entryID, "scenario": ScenarioWorkflow, "provider": ProviderCodex,
@@ -372,7 +435,11 @@ func routeHasInputRequirements(snapshot statestore.JSONSnapshot) bool {
 		return false
 	}
 	var route workflow.Route
-	return json.Unmarshal([]byte(snapshot), &route) == nil && len(route.InputRequirements) != 0
+	if json.Unmarshal([]byte(snapshot), &route) != nil {
+		return true
+	}
+	assessment, err := readPreparation(route)
+	return err != nil || len(route.InputRequirements) > 0 || (assessment != nil && assessment.Readiness() == "input_required")
 }
 
 // Cancel quiesces active work, asks the provider to terminate when a live

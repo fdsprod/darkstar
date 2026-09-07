@@ -114,6 +114,7 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
     ["registerProject", "registerProject", "darkstar project register", "project.created"],
     ["createWorkItem", "createWorkItem", "darkstar work create", "work.created"],
     ["applyWorkItemTransition", "applyWorkItemTransition", "darkstar work transition apply", "run.created"],
+    ["prepareRun", "prepareRun", "darkstar run prepare", "run.created"],
     ["pauseRun", "pauseRun", "darkstar run pause", "run.paused"],
     ["resumeRun", "resumeRun", "darkstar run resume", "run.resumed"],
     ["retryRun", "retryRun", "darkstar run retry", "run.retried"],

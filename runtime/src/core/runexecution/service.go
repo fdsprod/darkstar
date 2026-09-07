@@ -12,9 +12,11 @@ import (
 	"sync"
 	"time"
 
+	"darkstar/src/core/preparation"
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports"
 	"darkstar/src/ports/provider"
+	"darkstar/src/ports/routeadvisor"
 	"darkstar/src/ports/statestore"
 )
 
@@ -50,10 +52,16 @@ type StartRequest struct {
 
 // CreateRequest starts one work-backed run from an exact installed workflow.
 type CreateRequest struct {
-	WorkItemID      string `json:"workItemId"`
-	WorkflowID      string `json:"workflowId"`
-	WorkflowVersion string `json:"workflowVersion"`
-	Profile         string `json:"profile,omitempty"`
+	WorkItemID      string            `json:"workItemId"`
+	WorkflowID      string            `json:"workflowId"`
+	WorkflowVersion string            `json:"workflowVersion"`
+	Profile         string            `json:"profile,omitempty"`
+	Preparation     *PreparationInput `json:"preparation,omitempty"`
+}
+
+type PreparationInput struct {
+	Answers   map[string]string                       `json:"answers,omitempty"`
+	RunInputs map[workflow.Identifier]json.RawMessage `json:"runInputs,omitempty"`
 }
 
 // PageInfo describes the next stable run-list cursor.
@@ -90,6 +98,7 @@ type WorkflowDefinitionReader interface {
 // projections. Keeping visits in the query response lets every client render
 // the durable execution timeline without reconstructing state from events.
 type View struct {
+	Assessment       *preparation.Assessment        `json:"assessment,omitempty"`
 	SchemaVersion    int                            `json:"schemaVersion"`
 	Run              statestore.RunProjection       `json:"run"`
 	Nodes            []statestore.NodeProjection    `json:"nodes"`
@@ -247,20 +256,23 @@ type LogSink interface {
 
 // Service owns provider workers for one daemon lifetime.
 type Service struct {
-	store             statestore.Store
-	factory           ProviderFactory
-	logs              LogSink
-	planner           WorkflowPlanner
-	workflowFactory   WorkflowProviderFactory
-	requestBuilder    AttemptRequestBuilder
-	workspace         string
-	schedulingAllowed bool
-	now               func() time.Time
-	ctx               context.Context
-	cancel            context.CancelFunc
-	mu                sync.Mutex
-	workers           map[string]*worker
-	wait              sync.WaitGroup
+	advisor                   routeadvisor.Advisor
+	evidenceResolver          routeadvisor.EvidenceResolver
+	preparationPolicyResolver func(context.Context, statestore.ProjectProjection) (preparation.Policy, error)
+	store                     statestore.Store
+	factory                   ProviderFactory
+	logs                      LogSink
+	planner                   WorkflowPlanner
+	workflowFactory           WorkflowProviderFactory
+	requestBuilder            AttemptRequestBuilder
+	workspace                 string
+	schedulingAllowed         bool
+	now                       func() time.Time
+	ctx                       context.Context
+	cancel                    context.CancelFunc
+	mu                        sync.Mutex
+	workers                   map[string]*worker
+	wait                      sync.WaitGroup
 }
 
 // worker is the complete process-local ownership record for one provider
@@ -361,7 +373,7 @@ func (s *Service) Prepare(ctx context.Context, request CreateRequest, idempotenc
 	return s.createWorkflowRun(ctx, request, idempotencyKey, false)
 }
 
-func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, idempotencyKey string, start bool) (statestore.RunProjection, error) {
+func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, idempotencyKey string, start bool) (result statestore.RunProjection, failure error) {
 	if !s.schedulingAdmitted() {
 		return statestore.RunProjection{}, ErrSchedulingBlocked
 	}
@@ -375,12 +387,77 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	if strings.TrimSpace(idempotencyKey) != idempotencyKey || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
 		return statestore.RunProjection{}, fmt.Errorf("%w: idempotency key must be between 8 and 128 bytes without surrounding whitespace", ErrInvalidRequest)
 	}
+	// Claim the original request before reading mutable work or invoking advice.
+	// Replays return the already frozen decision, even if the environment changed.
+	scope := createScope
+	if !start {
+		scope = prepareScope
+	}
+	requestDigest := preparation.Digest(request)
+	now := s.now().UTC().Round(0)
+	command, reused, err := s.store.BeginCommand(ctx, statestore.BeginCommandRequest{Scope: scope, IdempotencyKey: idempotencyKey, RequestDigest: requestDigest, CreatedAt: now})
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if reused {
+		if command.Status == "completed" {
+			var rejected struct {
+				PreparationError string `json:"preparationError"`
+			}
+			_ = json.Unmarshal(command.Response, &rejected)
+			if rejected.PreparationError != "" {
+				return statestore.RunProjection{}, fmt.Errorf("%w: %s (retry preparation with a new idempotency key)", ErrInvalidRequest, rejected.PreparationError)
+			}
+			var value statestore.RunProjection
+			if err := json.Unmarshal(command.Response, &value); err != nil {
+				return value, err
+			}
+			return value, nil
+		}
+		value, readErr := s.store.Run(ctx, stableID("run_", scope+"\x00"+idempotencyKey))
+		if readErr != nil {
+			return statestore.RunProjection{}, ErrCommandInProgress
+		}
+		return value, s.completeCreateCommand(ctx, scope, idempotencyKey, value, nil)
+	}
+	defer func() {
+		if failure != nil {
+			body, _ := json.Marshal(map[string]string{"preparationError": failure.Error()})
+			_, completeErr := s.store.CompleteCommand(context.WithoutCancel(ctx), statestore.CompleteCommandRequest{Scope: scope, IdempotencyKey: idempotencyKey, ResponseStatus: 422, Response: body, CompletedAt: s.now().UTC().Round(0)})
+			if completeErr != nil {
+				failure = errors.Join(failure, completeErr)
+			}
+		}
+	}()
 	work, err := s.store.WorkItem(ctx, request.WorkItemID)
 	if err != nil {
 		return statestore.RunProjection{}, err
 	}
 	if work.Status.Terminal() {
 		return statestore.RunProjection{}, fmt.Errorf("%w: work item %s is %s", ErrInvalidRequest, work.WorkItemID, work.Status)
+	}
+	previousRuns, err := s.store.RunsForWorkItem(ctx, work.WorkItemID)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	preparationRuns := []statestore.RunProjection{}
+	for _, previous := range previousRuns {
+		if previous.Status.Terminal() || previous.Status == statestore.RunFailed {
+			continue
+		}
+		var previousRoute workflow.Route
+		if json.Unmarshal([]byte(previous.RouteSnapshot), &previousRoute) != nil {
+			return statestore.RunProjection{}, fmt.Errorf("%w: existing run %s must be resolved first", ErrInvalidRequest, previous.RunID)
+		}
+		prior, priorErr := readPreparation(previousRoute)
+		attempts, attemptErr := s.store.AttemptsForRun(ctx, previous.RunID)
+		if attemptErr != nil {
+			return statestore.RunProjection{}, attemptErr
+		}
+		if priorErr != nil || prior == nil || len(attempts) > 0 || (previous.Status != statestore.RunReady && (previous.Status != statestore.RunWaiting || prior.Readiness() != "input_required")) {
+			return statestore.RunProjection{}, fmt.Errorf("%w: existing run %s must be resolved before preparing another route", ErrInvalidRequest, previous.RunID)
+		}
+		preparationRuns = append(preparationRuns, previous)
 	}
 	if work.RoutingIntent.Mode == "" {
 		work.RoutingIntent.Mode = statestore.WorkRoutingAutomatic
@@ -436,9 +513,20 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	if len(issues) != 0 {
 		return statestore.RunProjection{}, issues
 	}
+	preview, err = s.assessPreparation(ctx, request, work, project, routeContext, preview)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	assessment, err := readPreparation(preview.Route)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
 	requiresInputs := len(preview.Route.InputRequirements) != 0
-	if !start && requiresInputs {
-		return statestore.RunProjection{}, inputRequirementValidationErrors(preview.Route.InputRequirements)
+	if assessment != nil {
+		requiresInputs = assessment.Readiness() == "input_required"
+		if assessment.Readiness() == "confirmation_required" {
+			start = false
+		}
 	}
 	entryID := string(preview.Route.Entry)
 	if entryID == "" || !routeContainsNode(preview.Route, preview.Route.Entry) {
@@ -448,52 +536,7 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 		return statestore.RunProjection{}, err
 	}
 	request.WorkflowID, request.WorkflowVersion = preview.Workflow.Name, preview.Workflow.Version
-	requestJSON, _ := json.Marshal(request)
-	requestDigest := fmt.Sprintf("%x", sha256.Sum256(requestJSON))
-	now := s.now().UTC().Round(0)
-	scope := createScope
-	if !start {
-		scope = prepareScope
-	}
-	command, reused, err := s.store.BeginCommand(ctx, statestore.BeginCommandRequest{
-		Scope: scope, IdempotencyKey: idempotencyKey, RequestDigest: requestDigest, CreatedAt: now,
-	})
-	if err != nil {
-		return statestore.RunProjection{}, err
-	}
-	if reused && command.Status == "completed" {
-		var value statestore.RunProjection
-		if err := json.Unmarshal(command.Response, &value); err != nil {
-			return statestore.RunProjection{}, fmt.Errorf("decode replayed run creation: %w", err)
-		}
-		return value, nil
-	}
 	runID := stableID("run_", scope+"\x00"+idempotencyKey)
-	if reused {
-		value, getErr := s.store.Run(ctx, runID)
-		if getErr != nil {
-			return statestore.RunProjection{}, ErrCommandInProgress
-		}
-		if !start || (value.Status == statestore.RunWaiting && len(preview.Route.InputRequirements) != 0) {
-			if err := s.completeCreateCommand(ctx, scope, idempotencyKey, value, nil); err != nil {
-				return statestore.RunProjection{}, err
-			}
-			return value, nil
-		}
-		attempt, repairErr := s.ensureWorkflowEntryAttempt(ctx, value)
-		if repairErr != nil {
-			if failErr := s.failQueuedRun(ctx, value, workflowFailureCode(repairErr, "WORKFLOW_DISPATCH_REPAIR_FAILED"), repairErr); failErr != nil {
-				return statestore.RunProjection{}, errors.Join(repairErr, failErr)
-			}
-			value, _ = s.store.Run(ctx, runID)
-		} else if launchErr := s.launch(attempt); launchErr != nil {
-			s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DISPATCH_FAILED", launchErr)
-		}
-		if err := s.completeCreateCommand(ctx, scope, idempotencyKey, value, nil); err != nil {
-			return statestore.RunProjection{}, err
-		}
-		return value, nil
-	}
 
 	routeJSON, err := json.Marshal(preview.Route)
 	if err != nil {
@@ -504,6 +547,9 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	attemptID := stableID("attempt_", runID+"\x00"+entryID)
 	logReference := strings.TrimPrefix(attemptID, "attempt_") + ".log"
 	events := make([]statestore.PendingEvent, 0, 8)
+	for _, previous := range preparationRuns {
+		events = append(events, pendingEvent("run.cancelled", statestore.AggregateRun, previous.RunID, previous.ResourceVersion, runID, "preparation-superseded:"+runID+":"+previous.RunID, statestore.ActorUser, "local-user", now, map[string]any{"reason": "superseded_preparation", "replacementRunId": runID}))
+	}
 	if start && work.Status == statestore.WorkItemOpen {
 		events = append(events, pendingEvent("work.started", statestore.AggregateWork, work.WorkItemID, work.ResourceVersion, runID, "work-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}))
 	}
@@ -515,7 +561,7 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 			"workflowDigest": preview.Workflow.Digest, "routeDigest": routeDigest, "routeSnapshot": json.RawMessage(routeJSON),
 		}),
 	)
-	if !start {
+	if !start && !requiresInputs {
 		committed, appendErr := s.store.Append(ctx, events...)
 		if appendErr != nil {
 			return statestore.RunProjection{}, appendErr
@@ -531,8 +577,12 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	}
 	events = append(events, pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}))
 	if requiresInputs {
+		message := inputRequirementValidationErrors(preview.Route.InputRequirements).Error()
+		if assessment != nil {
+			message = preparationQuestions(assessment)
+		}
 		events = append(events, pendingEvent("run.input_required", statestore.AggregateRun, runID, 3, runID, "run-input-required:"+runID, statestore.ActorSystem, "daemon", now, map[string]any{
-			"code": "RUN_INPUT_REQUIRED", "message": inputRequirementValidationErrors(preview.Route.InputRequirements).Error(), "requirements": preview.Route.InputRequirements,
+			"code": "RUN_INPUT_REQUIRED", "message": message, "requirements": preview.Route.InputRequirements,
 		}))
 	} else {
 		events = append(events,
@@ -657,11 +707,27 @@ func derivedRouteContext(ctx context.Context, planner WorkflowPlanner, request C
 		encoded, err := json.Marshal(map[string]any{
 			"id": work.WorkItemID, "projectId": work.ProjectID, "title": work.Title,
 			"priority": work.Priority, "sourceHash": work.SourceHash,
+			"details": work.Details, "evidence": work.Evidence,
 		})
 		if err != nil {
 			return workflow.RouteContext{}, fmt.Errorf("encode derived story input: %w", err)
 		}
 		inputs["story"] = encoded
+	}
+	if request.Preparation != nil {
+		for id, value := range request.Preparation.RunInputs {
+			if _, derived := inputs[id]; derived {
+				return workflow.RouteContext{}, fmt.Errorf("%w: run input %s is derived from work and cannot be replaced", ErrInvalidRequest, id)
+			}
+			declaration, exists := definition.Document.Spec.Inputs[id]
+			if !exists {
+				return workflow.RouteContext{}, fmt.Errorf("%w: unknown run input %s", ErrInvalidRequest, id)
+			}
+			if !preparationInputType(value, declaration.Type) {
+				return workflow.RouteContext{}, fmt.Errorf("%w: run input %s must be %s", ErrInvalidRequest, id, declaration.Type)
+			}
+			inputs[id] = append(json.RawMessage(nil), value...)
+		}
 	}
 	if request.Profile != "" {
 		profile, exists := definition.Document.Spec.Profiles[workflow.Identifier(request.Profile)]
@@ -941,7 +1007,20 @@ func (s *Service) Get(ctx context.Context, runID string) (View, error) {
 	}
 	timeline, timelinePageInfo := summarizeTimeline(evidence.Events)
 	commands, commandsPageInfo := summarizeCommands(evidence.Commands)
+	var frozen workflow.Route
+	var assessment *preparation.Assessment
+	if evidence.Run.RouteSnapshot != "" {
+		if err := json.Unmarshal([]byte(evidence.Run.RouteSnapshot), &frozen); err != nil {
+			return View{}, err
+		}
+		var err error
+		assessment, err = readPreparation(frozen)
+		if err != nil {
+			return View{}, err
+		}
+	}
 	return View{
+		Assessment:       assessment,
 		SchemaVersion:    1,
 		Run:              evidence.Run,
 		Nodes:            nodes,
