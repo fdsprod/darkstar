@@ -10,6 +10,20 @@ export type BoardView = "all" | "attention";
 export type BoardCardAction = "prepare" | "launch" | "pause" | "resume" | "retry" | "cancel";
 export type WorkTransitionSource = "drag" | "keyboard" | "menu";
 
+export const DISABLED_REASON_LABELS: Record<Schemas["WorkTransitionTargetDecision"]["disabledReasons"][number], string> = {
+  current_state: "Already in this state",
+  unsupported_target: "No lifecycle command supports this move",
+  preparation_required: "Choose a workflow before moving to Ready",
+  project_archived: "The project is archived",
+  terminal_work: "This work item is finished",
+  active_run: "An active run already owns this work",
+  unresolved_checkpoint: "A checkpoint needs a decision",
+  readiness_required: "Run readiness needs attention",
+  policy_blocked: "A policy decision blocks this move",
+  concurrency_conflict: "Concurrent active runs must be reconciled",
+  run_not_ready: "The current run cannot start yet",
+};
+
 export interface BoardCard {
   work: Schemas["WorkItem"];
   project?: Schemas["Project"];
@@ -67,6 +81,15 @@ export function deriveBoardCards(snapshot: DashboardSnapshot): BoardCard[] {
     });
 }
 
+/** Reconciles fallback collection grouping with the lifecycle service's fuller projection. */
+export function applyTransitionPlans(cards: readonly BoardCard[], plans: Readonly<Record<string, Schemas["WorkTransitionPlan"]>>): BoardCard[] {
+  return cards.map((card) => {
+    const plan = plans[card.work.id];
+    const projectionPosition = Math.max(card.work.lastGlobalPosition, card.run?.lastGlobalPosition ?? 0);
+    return plan && plan.resourceVersion >= projectionPosition ? { ...card, lifecycle: plan.state } : card;
+  });
+}
+
 export function filterBoardCards(cards: readonly BoardCard[], filters: BoardFilters): BoardCard[] {
   const query = filters.query?.trim().toLocaleLowerCase();
   return cards.filter((card) => {
@@ -96,6 +119,19 @@ export function availableCardActions(card: BoardCard, plan?: Schemas["WorkTransi
 
 export function transitionDecision(plan: Schemas["WorkTransitionPlan"], target: Schemas["WorkLifecycleState"]) {
   return plan.targets.find((decision) => decision.target === target);
+}
+
+export function legalTransitionTargets(plan?: Schemas["WorkTransitionPlan"]): BoardLifecycle[] {
+  if (!plan) return [];
+  return plan.targets.filter((decision) => decision.availability === "enabled").map((decision) => decision.target);
+}
+
+export function disabledTransitionReason(plan: Schemas["WorkTransitionPlan"] | undefined, target: BoardLifecycle): string {
+  if (!plan) return "Checking current lifecycle rules";
+  const decision = transitionDecision(plan, target);
+  if (!decision) return "The server did not return this lifecycle target";
+  if (decision.availability === "enabled") return "Available";
+  return decision.disabledReasons.map((reason) => DISABLED_REASON_LABELS[reason]).join("; ") || "Unavailable in the current state";
 }
 
 export function transitionTargetForAction(action: BoardCardAction): Schemas["WorkLifecycleState"] {

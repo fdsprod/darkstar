@@ -52,6 +52,30 @@ and never enter React state. Legacy `configuration` and `provider` tab links are
 mapped to their current sections, while setting deep links select the section
 owned by the catalog key.
 
+## Board lifecycle contract
+
+Board is the default operational surface. Its eight columns begin with the
+newest work and run projections, then use the lifecycle plan's state when that
+fuller projection arrives. Each card separately loads the exhaustive transition
+plan from the daemon. A cached plan is ignored when its composite resource
+version is older than the card's newest work or run projection. Drag
+destinations and the Move or Start menu
+use only targets marked `enabled`; disabled menu rows keep the daemon reason
+visible in text. All input methods submit the same transition body with the
+plan's composite resource version and a fresh idempotency key.
+
+Cards do not move optimistically. They remain in their projected column while a
+command is pending and move only after the authoritative collections refresh.
+A rejection refreshes the collections, and a version conflict also replaces the
+card's transition plan from the error response. SSE events are ordered,
+deduplicated invalidation signals: reconnect replay can refresh the board and
+recent activity, but never creates a local lifecycle state.
+
+The quick panel combines the durable requested outcome, current lifecycle plan,
+newest run, and recent event buffer. It links to work, run, readiness, and
+evidence pages for full context rather than duplicating those workflows on the
+board.
+
 Run `npm run api:generate --workspace @darkstar/dashboard` after updating the
 OpenAPI document. Build and check commands run `api:check`, which fails when the
 committed generated surface is stale.

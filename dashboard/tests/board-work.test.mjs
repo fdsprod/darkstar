@@ -5,11 +5,14 @@ import test from "node:test";
 import { operationDefinitions } from "../src/api/schema.generated.ts";
 import {
   availableCardActions,
+  applyTransitionPlans,
   buildWorkTransitionRequest,
   buildPrepareRunRequest,
   buildCreateWorkItemRequest,
   deriveBoardCards,
+  disabledTransitionReason,
   filterBoardCards,
+  legalTransitionTargets,
   workflowProfiles,
 } from "../src/pages/boardModel.ts";
 
@@ -102,6 +105,26 @@ test("board columns derive from the newest authoritative work and run projection
   );
   assert.equal(cards.find((card) => card.work.id === active.id)?.run?.id, "run_current");
   assert.equal(cards.find((card) => card.work.id === active.id)?.project, alpha);
+});
+
+test("the lifecycle plan supplies states such as review that collection projections cannot see", () => {
+  const alpha = project("project_alpha", "Alpha");
+  const item = work("work_review", alpha.id, "Approve release");
+  const fallback = deriveBoardCards({ projects: [alpha], workItems: [item], runs: [run("run_review", item.id, "waiting", 3)] });
+  const reviewPlan = { ...transitionPlan(item.id, "review", ["running", "done"]), state: "review", resourceVersion: 4 };
+
+  assert.equal(fallback[0].lifecycle, "waiting");
+  assert.equal(applyTransitionPlans(fallback, { [item.id]: reviewPlan })[0].lifecycle, "review");
+  assert.equal(fallback[0].lifecycle, "waiting", "reconciliation must not mutate the collection projection");
+});
+
+test("a stale lifecycle plan cannot move a concurrently refreshed card backward", () => {
+  const alpha = project("project_alpha", "Alpha");
+  const item = work("work_concurrent", alpha.id, "Concurrent update", { lastGlobalPosition: 9 });
+  const current = deriveBoardCards({ projects: [alpha], workItems: [item], runs: [run("run_current", item.id, "running", 12)] });
+  const stale = { ...transitionPlan(item.id, "ready", ["running"]), state: "ready", resourceVersion: 10 };
+
+  assert.equal(applyTransitionPlans(current, { [item.id]: stale })[0].lifecycle, "running");
 });
 
 test("board filters combine project and case-insensitive search against projection fields", () => {
@@ -203,6 +226,14 @@ test("drag keyboard and menu movement share one typed transition command", () =>
   assert.deepEqual(buildWorkTransitionRequest("menu", "ready"), { target: "ready" });
 });
 
+test("board movement exposes only server-enabled targets and preserves precise disabled reasons", () => {
+  const plan = transitionPlan("work_alpha", "ready", ["running", "done"]);
+  assert.deepEqual(legalTransitionTargets(plan), ["running", "done"]);
+  assert.equal(disabledTransitionReason(plan, "ready"), "Choose a workflow before moving to Ready");
+  assert.equal(disabledTransitionReason(plan, "blocked"), "No lifecycle command supports this move");
+  assert.equal(disabledTransitionReason(undefined, "running"), "Checking current lifecycle rules");
+});
+
 test("create-work emits the closed automatic or override routing intent", () => {
   assert.deepEqual(buildCreateWorkItemRequest({ projectId: "project_alpha", title: "Automatic" }), {
     projectId: "project_alpha", title: "Automatic", routingIntent: { mode: "automatic" },
@@ -275,8 +306,17 @@ test("board movement uses only the work lifecycle plan and apply operations", as
   assert.match(client, /planWorkItemTransition\([^\n]*this\.operation\("planWorkItemTransition"/);
   assert.match(client, /applyWorkItemTransition\([^\n]*this\.operation\("applyWorkItemTransition"/);
   assert.doesNotMatch(page, /PrepareRunDialog/);
-  assert.match(page, /buildWorkTransitionRequest\("menu", target\)/);
+  assert.match(page, /buildWorkTransitionRequest\(source, target\)/);
   assert.match(page, /apiClient\.applyWorkItemTransition\(card\.work\.id, plan\.resourceVersion,/);
   assert.doesNotMatch(page, /apiClient\.(?:prepareRun|startRun|pauseRun|resumeRun|retryRun|cancelRun)\(/);
   assert.match(page, /Advanced routing/);
+  assert.match(page, /draggable=/);
+  assert.match(page, /data-drop-available=/);
+  assert.match(page, /<details className="move-menu">/);
+  assert.doesNotMatch(page, /role="(?:menu|menuitem|dialog)"/);
+  assert.match(page, /<aside className="work-quick-panel" aria-labelledby=/);
+  assert.match(page, /draggedCard=\{boardCards\.find/);
+  assert.doesNotMatch(page, /let draggedCardReference/);
+  assert.match(page, /result\.after/);
+  assert.match(page, /error\.workTransitionPlan/);
 });
