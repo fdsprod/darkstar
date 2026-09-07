@@ -204,11 +204,21 @@ source fingerprints.
 | `POST /api/v1/work-items` | Create authored work from a title and priority. |
 | `POST /api/v1/work-items/import` | Import an external source reference with an optional local title. |
 | `GET /api/v1/work-items/{workItemId}` | Show work with its run, story, and implementation-point projections in deterministic hierarchy order. |
+| `GET /api/v1/work-items/{workItemId}/transition-plan?target=...` | Return all eight lifecycle targets with authoritative availability, disabled reasons, confirmation, and a composite resource version covering every durable work/run authority input. Ready planning accepts an exact workflow preparation. |
+| `POST /api/v1/work-items/{workItemId}/transitions` | Apply the requested target using `If-Match` and `Idempotency-Key`; stale versions return the refreshed plan. |
 
 The create and import request shapes are distinct so a request cannot be both
 authored and externally sourced. Project and work lifecycle status remains the
 single durable state; list and show responses do not store a second derived
 active or terminal flag.
+
+The transition plan derives lifecycle state from the current work item, newest
+non-terminal run, checkpoint visits, readiness assessment, input and permission
+state. Apply delegates to the existing prepare/start/pause/resume/retry/cancel
+runtime command using the same idempotency key. Consequently its run events are
+the event-stream evidence and both the `work.transition` command and delegated
+command are included by the existing run-audit correlation query; no dashboard
+specific status event or parallel state is introduced.
 
 ## Artifact operations
 

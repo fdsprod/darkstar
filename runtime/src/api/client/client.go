@@ -61,14 +61,15 @@ type ErrorDetail struct {
 
 // APIError is the stable error envelope returned by the local API.
 type APIError struct {
-	HTTPStatus      int           `json:"-"`
-	SchemaVersion   int           `json:"schemaVersion"`
-	Code            string        `json:"code"`
-	Message         string        `json:"message"`
-	RequestID       string        `json:"requestId"`
-	Retryable       bool          `json:"retryable"`
-	ResourceVersion *int64        `json:"resourceVersion,omitempty"`
-	Details         []ErrorDetail `json:"details,omitempty"`
+	HTTPStatus         int             `json:"-"`
+	SchemaVersion      int             `json:"schemaVersion"`
+	Code               string          `json:"code"`
+	Message            string          `json:"message"`
+	RequestID          string          `json:"requestId"`
+	Retryable          bool            `json:"retryable"`
+	ResourceVersion    *int64          `json:"resourceVersion,omitempty"`
+	Details            []ErrorDetail   `json:"details,omitempty"`
+	WorkTransitionPlan json.RawMessage `json:"workTransitionPlan,omitempty"`
 }
 
 // RequestOption adds non-secret request metadata required by a command.

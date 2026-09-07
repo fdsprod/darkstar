@@ -35,12 +35,14 @@ export interface ArtifactContent {
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly workTransitionPlan?: Schemas["WorkTransitionPlan"];
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, workTransitionPlan?: Schemas["WorkTransitionPlan"]) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
     this.code = code;
+    this.workTransitionPlan = workTransitionPlan;
   }
 }
 
@@ -97,6 +99,8 @@ export class DarkstarApiClient {
   getRunReadiness(runId: string, signal?: AbortSignal) { return this.operation("getRunReadiness", { path: { runId }, signal }); }
   decideRunReadiness(runId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["ReadinessDecisionRequest"], signal?: AbortSignal) { return this.operation("decideRunReadiness", { path: { runId }, body, resourceVersion, idempotencyKey, signal }); }
   getWorkItem(workItemId: string, signal?: AbortSignal) { return this.operation("getWorkItem", { path: { workItemId }, signal }); }
+  planWorkItemTransition(workItemId: string, target: Schemas["WorkLifecycleState"], preparation?: Schemas["WorkTransitionPreparation"], signal?: AbortSignal) { return this.operation("planWorkItemTransition", { path: { workItemId }, query: { target, workflowId: preparation?.workflowId, workflowVersion: preparation?.workflowVersion, profile: preparation?.profile }, signal }); }
+  applyWorkItemTransition(workItemId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["WorkTransitionApplyRequest"], signal?: AbortSignal) { return this.operation("applyWorkItemTransition", { path: { workItemId }, body, resourceVersion, idempotencyKey, signal }); }
   listWorkflows(name?: string, signal?: AbortSignal) { return this.operation("listWorkflows", { query: { name }, signal }); }
   getWorkflowLibrary(signal?: AbortSignal) { return this.operation("getWorkflowLibrary", { signal }); }
   getWorkflowAuthoringCatalog(signal?: AbortSignal) { return this.operation("getWorkflowAuthoringCatalog", { signal }); }
@@ -191,11 +195,11 @@ function requiredIntegerHeader(response: Response, name: string) {
 }
 
 async function toApiError(response: Response) {
-  let body: { code?: string; message?: string } | undefined;
+  let body: { code?: string; message?: string; workTransitionPlan?: Schemas["WorkTransitionPlan"] } | undefined;
   if (response.headers.get("content-type")?.includes("application/json")) {
     try { body = await response.json() as typeof body; } catch { body = undefined; }
   }
-  return new ApiRequestError(response.status, body?.code ?? "request_failed", body?.message ?? `API request failed with status ${response.status}`);
+  return new ApiRequestError(response.status, body?.code ?? "request_failed", body?.message ?? `API request failed with status ${response.status}`, body?.workTransitionPlan);
 }
 
 export const apiClient = new DarkstarApiClient();

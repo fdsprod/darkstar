@@ -17,11 +17,12 @@ type machineErrorOutput struct {
 }
 
 type machineError struct {
-	Code      string                  `json:"code"`
-	Message   string                  `json:"message"`
-	RequestID string                  `json:"requestId,omitempty"`
-	Retryable bool                    `json:"retryable"`
-	Details   []clientapi.ErrorDetail `json:"details,omitempty"`
+	Code               string                  `json:"code"`
+	Message            string                  `json:"message"`
+	RequestID          string                  `json:"requestId,omitempty"`
+	Retryable          bool                    `json:"retryable"`
+	Details            []clientapi.ErrorDetail `json:"details,omitempty"`
+	WorkTransitionPlan json.RawMessage         `json:"workTransitionPlan,omitempty"`
 }
 
 func writeJSON(writer io.Writer, value any) error {
@@ -52,6 +53,7 @@ func writeClientError(stdout, stderr io.Writer, jsonOutput bool, command string,
 	message := err.Error()
 	var requestID string
 	var details []clientapi.ErrorDetail
+	var transitionPlan json.RawMessage
 
 	var problem *clientapi.APIError
 	var failure *clientapi.Failure
@@ -61,6 +63,7 @@ func writeClientError(stdout, stderr io.Writer, jsonOutput bool, command string,
 		requestID = problem.RequestID
 		retryable = problem.Retryable
 		details = problem.Details
+		transitionPlan = problem.WorkTransitionPlan
 	} else if errors.As(err, &failure) {
 		switch failure.Kind {
 		case clientapi.FailureDiscovery, clientapi.FailureUnavailable:
@@ -77,11 +80,12 @@ func writeClientError(stdout, stderr io.Writer, jsonOutput bool, command string,
 		if encodeErr := writeJSON(stdout, machineErrorOutput{
 			SchemaVersion: machineSchemaVersion,
 			Error: machineError{
-				Code:      code,
-				Message:   message,
-				RequestID: requestID,
-				Retryable: retryable,
-				Details:   details,
+				Code:               code,
+				Message:            message,
+				RequestID:          requestID,
+				Retryable:          retryable,
+				Details:            details,
+				WorkTransitionPlan: transitionPlan,
 			},
 		}); encodeErr != nil {
 			_, _ = fmt.Fprintf(stderr, "%s: encode error output: %v\n", command, encodeErr)

@@ -3,7 +3,7 @@
 
 export interface components {
   schemas: {
-    "ApiError": { "schemaVersion": 1; "code": string; "message": string; "requestId": string; "retryable": boolean; "resourceVersion"?: number; "details"?: Array<{ "field": string; "code": string; "message"?: string; }>; };
+    "ApiError": { "schemaVersion": 1; "code": string; "message": string; "requestId": string; "retryable": boolean; "resourceVersion"?: number; "details"?: Array<{ "field": string; "code": string; "message"?: string; }>; "workTransitionPlan"?: {  }; };
     "RecoveryStatus": { "reconciled": number; "reconcileRequired": number; };
     "Health": { "schemaVersion": 1; "status": "ok"; "apiVersions": Array<"v1">; "recovery"?: components["schemas"]["RecoveryStatus"]; };
     "ApiRoot": { "schemaVersion": 1; "apiVersion": "v1"; "recovery"?: components["schemas"]["RecoveryStatus"]; };
@@ -23,6 +23,12 @@ export interface components {
     "CreateWorkItemRequest": { "projectId": string; "title": string; "priority"?: number; };
     "ImportWorkItemRequest": { "projectId": string; "sourceReference": string; "title"?: string; "priority"?: number; };
     "WorkItem": { "id": string; "projectId": string; "title": string; "sourceHash": string; "priority": number; "status": "open" | "active" | "completed" | "cancelled"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
+    "WorkLifecycleState": "backlog" | "ready" | "running" | "waiting" | "blocked" | "review" | "failed" | "done";
+    "WorkTransitionPreparation": { "workflowId": string; "workflowVersion": string; "profile"?: string; };
+    "WorkTransitionTargetDecision": { "target": components["schemas"]["WorkLifecycleState"]; "availability": "enabled" | "disabled"; "disabledReasons": Array<"current_state" | "unsupported_target" | "preparation_required" | "project_archived" | "terminal_work" | "active_run" | "unresolved_checkpoint" | "readiness_required" | "policy_blocked" | "concurrency_conflict" | "run_not_ready">; "confirmation": "none" | "required"; };
+    "WorkTransitionPlan": { "schemaVersion": 1; "workItemId": string; "state": components["schemas"]["WorkLifecycleState"]; "runId"?: string; "resourceVersion": number; "targets": Array<components["schemas"]["WorkTransitionTargetDecision"]>; };
+    "WorkTransitionApplyRequest": { "target": "ready"; "preparation": components["schemas"]["WorkTransitionPreparation"]; } | { "target": "done"; "confirmation": "confirmed"; } | { "target": "backlog" | "running" | "waiting" | "blocked" | "review" | "failed"; };
+    "WorkTransitionResult": { "schemaVersion": 1; "target": components["schemas"]["WorkLifecycleState"]; "effect": "run_prepared" | "run_started" | "run_paused" | "run_resumed" | "run_retried" | "cancelled"; "before": components["schemas"]["WorkTransitionPlan"]; "after": components["schemas"]["WorkTransitionPlan"]; "run"?: components["schemas"]["Run"]; };
     "StoryProjection": { "id": string; "workItemId": string; "title": string; "sourceHash": string; "priority": number; "position": number; "status": "planned" | "ready" | "running" | "completed" | "cancelled" | "retired"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
     "PointProjection": { "id": string; "storyId": string; "revision": number; "title": string; "sourceHash": string; "priority": number; "position": number; "dependencies": Array<string>; "status": "planned" | "ready" | "running" | "validating" | "awaiting_approval" | "accepted" | "committed" | "published" | "failed" | "rejected" | "superseded" | "reconcile_required"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
     "WorkItemView": { "schemaVersion": 1; "work": components["schemas"]["WorkItem"]; "runs": Array<components["schemas"]["Run"]>; "stories": Array<components["schemas"]["StoryProjection"]>; "points": Array<components["schemas"]["PointProjection"]>; };
@@ -179,6 +185,8 @@ export interface ApiOperations {
     "createWorkItem": { method: "POST"; path: "/api/v1/work-items"; response: components["schemas"]["WorkItem"]; body: components["schemas"]["CreateWorkItemRequest"]; };
     "importWorkItem": { method: "POST"; path: "/api/v1/work-items/import"; response: components["schemas"]["WorkItem"]; body: components["schemas"]["ImportWorkItemRequest"]; };
     "getWorkItem": { method: "GET"; path: "/api/v1/work-items/{workItemId}"; response: components["schemas"]["WorkItemView"]; body: never; };
+    "planWorkItemTransition": { method: "GET"; path: "/api/v1/work-items/{workItemId}/transition-plan"; response: components["schemas"]["WorkTransitionPlan"]; body: never; };
+    "applyWorkItemTransition": { method: "POST"; path: "/api/v1/work-items/{workItemId}/transitions"; response: components["schemas"]["WorkTransitionResult"]; body: components["schemas"]["WorkTransitionApplyRequest"]; };
     "listRuns": { method: "GET"; path: "/api/v1/runs"; response: components["schemas"]["RunPage"]; body: never; };
     "createOrStartRun": { method: "POST"; path: "/api/v1/runs"; response: components["schemas"]["Run"]; body: components["schemas"]["CreateRunRequest"] | components["schemas"]["StartFakeRunRequest"]; };
     "prepareRun": { method: "POST"; path: "/api/v1/runs/prepare"; response: components["schemas"]["Run"]; body: components["schemas"]["CreateRunRequest"]; };
@@ -269,6 +277,8 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "createWorkItem": { method: "POST", path: "/api/v1/work-items" },
   "importWorkItem": { method: "POST", path: "/api/v1/work-items/import" },
   "getWorkItem": { method: "GET", path: "/api/v1/work-items/{workItemId}" },
+  "planWorkItemTransition": { method: "GET", path: "/api/v1/work-items/{workItemId}/transition-plan" },
+  "applyWorkItemTransition": { method: "POST", path: "/api/v1/work-items/{workItemId}/transitions" },
   "listRuns": { method: "GET", path: "/api/v1/runs" },
   "createOrStartRun": { method: "POST", path: "/api/v1/runs" },
   "prepareRun": { method: "POST", path: "/api/v1/runs/prepare" },

@@ -5,7 +5,7 @@
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/api-error-v1alpha1.schema.json",
       "name": "api-error-v1alpha1",
-      "sha256": "864a51c98f8e46a8f5f6fe73306e1f3f2e1311a666799b1a0ee4ed1b34d8f108",
+      "sha256": "32a3d22b0a1d198f504693e4721dd740ac19183173f5d223e9aa32425602c9f5",
       "version": "v1alpha1"
     },
     {
@@ -85,7 +85,7 @@
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "d4a05a38b8cbe5781c452f401b5e3c364c41251b462c613a606dea5ec80143e0",
+      "sha256": "327c0b900a9f152e90f9c49e8fa7bae852527ede4e740e0c18aac6750bddaa3d",
       "version": "v1alpha1"
     },
     {

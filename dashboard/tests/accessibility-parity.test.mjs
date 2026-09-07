@@ -115,12 +115,10 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
   const mappings = [
     ["registerProject", "registerProject", "darkstar project register", "project.created"],
     ["createWorkItem", "createWorkItem", "darkstar work create", "work.created"],
-    ["prepareRun", "prepareRun", "darkstar run prepare", "run.created"],
-    ["startRun", "startPreparedRun", "darkstar run start", "run.started"],
+    ["applyWorkItemTransition", "applyWorkItemTransition", "darkstar work transition apply", "run.created"],
     ["pauseRun", "pauseRun", "darkstar run pause", "run.paused"],
     ["resumeRun", "resumeRun", "darkstar run resume", "run.resumed"],
     ["retryRun", "retryRun", "darkstar run retry", "run.retried"],
-    ["cancelRun", "cancelRun", "darkstar run cancel", "run.cancelled"],
     ["decideRunReadiness", "decideRunReadiness", "darkstar run readiness decide", "readiness.decision_recorded"],
     ["decideApproval", "decideApproval", "darkstar approval decide", "approval.decided"],
     ["submitCheckpointFeedback", "submitCheckpointFeedback", "darkstar review feedback", "approval.feedback_submitted"],

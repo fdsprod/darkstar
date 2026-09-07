@@ -12,6 +12,7 @@
     "requestId": {"type":"string","minLength":1,"maxLength":128},
     "retryable": {"type":"boolean"},
     "resourceVersion": {"type":"integer","minimum":0},
-    "details": {"type":"array","maxItems":100,"items":{"type":"object","additionalProperties":false,"required":["field","code"],"properties":{"field":{"type":"string"},"code":{"type":"string"},"message":{"type":"string"}}}}
+    "details": {"type":"array","maxItems":100,"items":{"type":"object","additionalProperties":false,"required":["field","code"],"properties":{"field":{"type":"string"},"code":{"type":"string"},"message":{"type":"string"}}}},
+    "workTransitionPlan": {"type":"object","description":"Present on WORK_TRANSITION_VERSION_CONFLICT and shaped as the current WorkTransitionPlan."}
   }
 }

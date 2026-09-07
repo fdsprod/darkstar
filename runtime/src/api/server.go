@@ -19,6 +19,7 @@ import (
 	"darkstar/src/core/health"
 	"darkstar/src/core/readinesscontrol"
 	"darkstar/src/core/workflow"
+	"darkstar/src/core/worklifecycle"
 	"darkstar/src/dashboardassets"
 	"darkstar/src/ports/workflowstore"
 )
@@ -54,6 +55,7 @@ type Server struct {
 	agents         AgentService
 	inputs         InputRequestService
 	work           WorkService
+	workLifecycle  WorkLifecycleService
 	artifacts      ArtifactService
 	approvals      ApprovalService
 	readiness      ReadinessService
@@ -62,6 +64,13 @@ type Server struct {
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
+}
+
+// WorkLifecycleService is the sole public planning and apply authority for
+// movement between work-board lifecycle states.
+type WorkLifecycleService interface {
+	Plan(context.Context, string, worklifecycle.PlanRequest) (worklifecycle.Plan, error)
+	Apply(context.Context, string, worklifecycle.ApplyRequest) (worklifecycle.Result, error)
 }
 
 // ReadinessService exposes only operator-safe readiness queries and decisions.
@@ -230,6 +239,20 @@ func (s *Server) SetWork(work WorkService) error {
 		return errors.New("API work service is required")
 	}
 	s.work = work
+	return nil
+}
+
+// SetWorkLifecycle installs server-authoritative work movement before Start.
+func (s *Server) SetWorkLifecycle(service WorkLifecycleService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API work lifecycle service can only be set before start")
+	}
+	if service == nil {
+		return errors.New("API work lifecycle service is required")
+	}
+	s.workLifecycle = service
 	return nil
 }
 
@@ -662,13 +685,14 @@ type apiRootResponse struct {
 }
 
 type apiError struct {
-	SchemaVersion   int           `json:"schemaVersion"`
-	Code            string        `json:"code"`
-	Message         string        `json:"message"`
-	RequestID       string        `json:"requestId"`
-	Retryable       bool          `json:"retryable"`
-	ResourceVersion *int64        `json:"resourceVersion,omitempty"`
-	Details         []errorDetail `json:"details,omitempty"`
+	SchemaVersion      int                 `json:"schemaVersion"`
+	Code               string              `json:"code"`
+	Message            string              `json:"message"`
+	RequestID          string              `json:"requestId"`
+	Retryable          bool                `json:"retryable"`
+	ResourceVersion    *int64              `json:"resourceVersion,omitempty"`
+	Details            []errorDetail       `json:"details,omitempty"`
+	WorkTransitionPlan *worklifecycle.Plan `json:"workTransitionPlan,omitempty"`
 }
 
 type errorDetail struct {

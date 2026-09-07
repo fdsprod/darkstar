@@ -35,6 +35,7 @@ import (
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/runexport"
 	"darkstar/src/core/workflow"
+	"darkstar/src/core/worklifecycle"
 	"darkstar/src/core/workmanagement"
 	"darkstar/src/daemon"
 	daemonconfiguration "darkstar/src/daemon/configuration"
@@ -80,6 +81,8 @@ Work commands:
   work import <source-ref> [--project <project-id>] [--title <title>] [--priority <n>] [--idempotency-key <key>] [--json]
   work list [--project <project-id>] [--json]
   work show <work-id> [--json]
+  work transition plan <work-id> --to <state> [--workflow <name> --version <version>] [--profile <profile>] [--json]
+  work transition apply <work-id> --to <state> --if-match <version> [--workflow <name> --version <version>] [--profile <profile>] [--confirm] [--idempotency-key <key>] [--json]
 
 Run commands:
   run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--idempotency-key <key>] [--json]
@@ -480,6 +483,19 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return err
 	}
 	if err := executions.SetSchedulingAllowed(report.SchedulingAllowed()); err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	lifecycle, err := worklifecycle.New(database, executions)
+	if err != nil {
+		_ = executions.Close()
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.server.SetWorkLifecycle(lifecycle); err != nil {
 		_ = executions.Close()
 		_ = database.Close()
 		service.database = nil

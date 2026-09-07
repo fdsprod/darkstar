@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"darkstar/src/core/runexecution"
+	"darkstar/src/core/worklifecycle"
 	"darkstar/src/core/workmanagement"
 	platformport "darkstar/src/ports/platform"
 	"darkstar/src/ports/statestore"
@@ -99,5 +100,36 @@ func TestProjectAndWorkCLICommandsUseStableMachineResults(t *testing.T) {
 	if runView.Run.RunID != started.RunID || len(runView.Nodes) != 1 || runView.Nodes[0].NodeID != "finish" || len(runView.Attempts) != 1 ||
 		runView.Attempts[0].NodeID != "finish" || runView.Attempts[0].Scenario != runexecution.ScenarioWorkflow || runView.Attempts[0].Provider != runexecution.ProviderCodex {
 		t.Fatalf("run view = %#v", runView)
+	}
+}
+
+func TestParseWorkTransitionKeepsReadyPreparationTargetSpecific(t *testing.T) {
+	workID := "work_01K3Z1C1AAAAAAAAAAAAAAAAAA"
+	planned, err := parseWorkTransition([]string{"plan", workID, "--to", "ready", "--workflow", "delivery", "--version", "1.0.0", "--profile", "fast"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.action != "plan" || planned.request.Target != worklifecycle.StateReady || planned.request.Preparation == nil || planned.request.Preparation.Profile != "fast" || planned.expected != 0 || planned.key != "" {
+		t.Fatalf("planned = %#v", planned)
+	}
+	applied, err := parseWorkTransition([]string{"apply", workID, "--to", "running", "--if-match", "7", "--idempotency-key", "transition-command"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.action != "apply" || applied.expected != 7 || applied.key != "transition-command" || applied.request.Preparation != nil {
+		t.Fatalf("applied = %#v", applied)
+	}
+}
+
+func TestParseWorkTransitionRejectsContradictorySiblingFields(t *testing.T) {
+	workID := "work_01K3Z1C1AAAAAAAAAAAAAAAAAA"
+	for _, args := range [][]string{
+		{"apply", workID, "--to", "running", "--workflow", "delivery", "--version", "1", "--if-match", "1"},
+		{"plan", workID, "--to", "ready", "--confirm"},
+		{"apply", workID, "--to", "running"},
+	} {
+		if _, err := parseWorkTransition(args); err == nil {
+			t.Fatalf("args=%v unexpectedly accepted", args)
+		}
 	}
 }

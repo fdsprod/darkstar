@@ -12,8 +12,10 @@ import {
   availableCardActions,
   buildCreateWorkItemRequest,
   buildPrepareRunRequest,
+  buildWorkTransitionRequest,
   deriveBoardCards,
   filterBoardCards,
+  transitionTargetForAction,
   workflowProfiles,
   type BoardCard,
   type BoardCardAction,
@@ -51,6 +53,7 @@ export function BoardPage() {
   const [query, setQuery] = useState("");
   const [pendingAction, setPendingAction] = useState("");
   const [actionMessage, setActionMessage] = useState<{ kind: "success" | "error"; text: string }>();
+  const [transitionPlans, setTransitionPlans] = useState<Record<string, Schemas["WorkTransitionPlan"]>>({});
 
   const allCards = useMemo(() => deriveBoardCards(state.snapshot), [state.snapshot]);
   const cards = useMemo(
@@ -71,6 +74,13 @@ export function BoardPage() {
     void apiClient.listWorkflows().then((values) => { if (live) setWorkflows(values); }).catch(() => undefined);
     return () => { live = false; };
   }, [state.lastSynchronizedAt]);
+  useEffect(() => {
+    let live = true;
+    void Promise.all(allCards.map(async (card) => [card.work.id, await apiClient.planWorkItemTransition(card.work.id, "running")] as const))
+      .then((entries) => { if (live) setTransitionPlans(Object.fromEntries(entries)); })
+      .catch(() => { if (live) setTransitionPlans({}); });
+    return () => { live = false; };
+  }, [allCards, state.lastSynchronizedAt]);
 
   function beginPrepare(card: BoardCard) {
     setPrepareCard(card);
@@ -79,21 +89,20 @@ export function BoardPage() {
 
   async function runCardAction(card: BoardCard, action: BoardCardAction) {
     if (action === "prepare") return beginPrepare(card);
-    if (!card.run) return;
+    const plan = transitionPlans[card.work.id];
+    if (!plan) return;
     if (action === "cancel" && !window.confirm(`Cancel “${card.work.title}”? Its run history and evidence will be preserved.`)) return;
-    const key = `${action}:${card.run.id}`;
+    const key = `${action}:${card.work.id}`;
     setPendingAction(key);
     setActionMessage(undefined);
     try {
       const idempotencyKey = `dashboard-${action}-${crypto.randomUUID()}`;
-      if (action === "launch") await apiClient.startRun(card.run.id, card.run.resourceVersion, idempotencyKey);
-      if (action === "pause") await apiClient.pauseRun(card.run.id, card.run.resourceVersion, idempotencyKey);
-      if (action === "resume") await apiClient.resumeRun(card.run.id, card.run.resourceVersion, idempotencyKey);
-      if (action === "retry") await apiClient.retryRun(card.run.id, card.run.resourceVersion, idempotencyKey);
-      if (action === "cancel") await apiClient.cancelRun(card.run.id, card.run.resourceVersion, idempotencyKey);
+      const target = transitionTargetForAction(action);
+      await apiClient.applyWorkItemTransition(card.work.id, plan.resourceVersion, idempotencyKey, buildWorkTransitionRequest("menu", target));
       await refresh();
       setActionMessage({ kind: "success", text: `${actionLabels[action]} requested. The board now reflects daemon state.` });
     } catch (error) {
+      if (error instanceof ApiRequestError && error.workTransitionPlan) setTransitionPlans((current) => ({ ...current, [card.work.id]: error.workTransitionPlan! }));
       await refresh().catch(() => undefined);
       setActionMessage({ kind: "error", text: safeActionError(error) });
     } finally {
@@ -127,7 +136,7 @@ export function BoardPage() {
       {actionMessage && <AsyncPanel compact state={actionMessage.kind} title={actionMessage.kind === "success" ? "Command accepted" : "Command failed"} message={actionMessage.text} />}
 
       <section className="board-preview" aria-label="Work lifecycle" aria-busy={loading || state.hydration === "refreshing"}>
-        {LIFECYCLE_COLUMNS.map((lifecycle) => <BoardColumn key={lifecycle} lifecycle={lifecycle} cards={cards.filter((card) => card.lifecycle === lifecycle)} count={counts[lifecycle]} loading={loading} pendingAction={pendingAction} onAction={runCardAction} onCreate={() => createDialog.current?.showModal()} />)}
+        {LIFECYCLE_COLUMNS.map((lifecycle) => <BoardColumn key={lifecycle} lifecycle={lifecycle} cards={cards.filter((card) => card.lifecycle === lifecycle)} count={counts[lifecycle]} loading={loading} pendingAction={pendingAction} plans={transitionPlans} onAction={runCardAction} onCreate={() => createDialog.current?.showModal()} />)}
       </section>
 
       {!loading && cards.length === 0 && filtered && <EmptyState compact kind="filtered" title="No work matches these filters" message="The active project, workflow, search, or attention filters exclude every work item." action={<button type="button" className="button" onClick={() => { setProjectId(""); setWorkflowId(""); setQuery(""); setView("all"); }}>Clear filters</button>} />}
@@ -138,20 +147,20 @@ export function BoardPage() {
   );
 }
 
-function BoardColumn({ lifecycle, cards, count, loading, pendingAction, onAction, onCreate }: { lifecycle: BoardLifecycle; cards: BoardCard[]; count: number; loading: boolean; pendingAction: string; onAction(card: BoardCard, action: BoardCardAction): Promise<void>; onCreate(): void }) {
+function BoardColumn({ lifecycle, cards, count, loading, pendingAction, plans, onAction, onCreate }: { lifecycle: BoardLifecycle; cards: BoardCard[]; count: number; loading: boolean; pendingAction: string; plans: Record<string, Schemas["WorkTransitionPlan"]>; onAction(card: BoardCard, action: BoardCardAction): Promise<void>; onCreate(): void }) {
   return <article className="board-column" data-lifecycle={lifecycle}>
     <header className="board-column__header"><span className={`state-dot state-dot--${lifecycle}`} aria-hidden="true" /><h2>{lifecycleLabels[lifecycle]}</h2><span className="board-column__count" aria-label={`${count} work items`}>{count}</span></header>
     <div className="board-column__cards">
       {loading && [0, 1].map((key) => <div className="work-card work-card--loading" key={key} aria-hidden="true"><span /><span /><span /></div>)}
-      {!loading && cards.map((card) => <WorkCard key={card.work.id} card={card} pendingAction={pendingAction} onAction={onAction} />)}
+      {!loading && cards.map((card) => <WorkCard key={card.work.id} card={card} plan={plans[card.work.id]} pendingAction={pendingAction} onAction={onAction} />)}
       {!loading && cards.length === 0 && lifecycle === "backlog" && <button className="board-empty-card" type="button" onClick={onCreate}><span className="board-empty-card__icon"><Icon name="spark" /></span><strong>No backlog work</strong><span>Create a work item to begin.</span></button>}
       {!loading && cards.length === 0 && lifecycle !== "backlog" && <div className="board-column__empty"><span>No {lifecycleLabels[lifecycle].toLowerCase()} work</span></div>}
     </div>
   </article>;
 }
 
-function WorkCard({ card, pendingAction, onAction }: { card: BoardCard; pendingAction: string; onAction(card: BoardCard, action: BoardCardAction): Promise<void> }) {
-  const actions = availableCardActions(card);
+function WorkCard({ card, plan, pendingAction, onAction }: { card: BoardCard; plan?: Schemas["WorkTransitionPlan"]; pendingAction: string; onAction(card: BoardCard, action: BoardCardAction): Promise<void> }) {
+  const actions = availableCardActions(card, plan);
   const projectName = card.project?.name ?? "Unknown project";
   return <article className="work-card">
     <div className="work-card__project"><span aria-hidden="true">{initials(projectName)}</span><span>{projectName}</span></div>
@@ -159,7 +168,7 @@ function WorkCard({ card, pendingAction, onAction }: { card: BoardCard; pendingA
     <div className="work-card__metadata"><span title={card.work.id}>{compactId(card.work.id)}</span><span>Priority {card.work.priority}</span></div>
     {card.run ? <div className="work-card__run"><AppLink to={`/work/${encodeURIComponent(card.work.id)}/run/${encodeURIComponent(card.run.id)}`}>{card.run.workflowId} · v{card.run.workflowVersion}</AppLink><span className={`run-status run-status--${card.lifecycle}`}><span aria-hidden="true" />{humanize(card.run.status)}</span></div> : <p className="work-card__unrouted">Route not selected</p>}
     <div className="work-card__actions" aria-label={`Actions for ${card.work.title}`}><AppLink className="card-action" to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(card.work.id)}&ingest=1`}>Add evidence</AppLink>{actions.map((action) => {
-      const key = `${action}:${card.run?.id ?? card.work.id}`;
+      const key = `${action}:${card.work.id}`;
       const pending = pendingAction === key;
       return <button key={action} type="button" className={action === "cancel" ? "card-action card-action--danger" : "card-action"} disabled={Boolean(pendingAction)} onClick={() => void onAction(card, action)}>{pending ? "Working…" : actionLabels[action]}</button>;
     })}</div>
@@ -211,7 +220,13 @@ function PrepareRunDialog({ dialogRef, card, workflows, onRefresh, onPrepared }:
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!card) return; const [workflowId, workflowVersion] = selection.split("\u0000"); if (!workflowId || !workflowVersion) return setError("Choose a workflow version.");
     setSubmitting(true); setError("");
-    try { const body = buildPrepareRunRequest({ workItemId: card.work.id, workflowId, workflowVersion, profile }); await apiClient.prepareRun(body, `dashboard-prepare-run-${crypto.randomUUID()}`); await onRefresh(); onPrepared(); dialogRef.current?.close(); }
+    try {
+      const body = buildPrepareRunRequest({ workItemId: card.work.id, workflowId, workflowVersion, profile });
+      const preparation: Schemas["WorkTransitionPreparation"] = { workflowId: body.workflowId, workflowVersion: body.workflowVersion, ...(body.profile ? { profile: body.profile } : {}) };
+      const plan = await apiClient.planWorkItemTransition(card.work.id, "ready", preparation);
+      await apiClient.applyWorkItemTransition(card.work.id, plan.resourceVersion, `dashboard-transition-ready-${crypto.randomUUID()}`, buildWorkTransitionRequest("menu", "ready", preparation));
+      await onRefresh(); onPrepared(); dialogRef.current?.close();
+    }
     catch (cause) { setError(safeActionError(cause)); await onRefresh().catch(() => undefined); }
     finally { setSubmitting(false); }
   }

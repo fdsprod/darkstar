@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 
+	"darkstar/src/core/worklifecycle"
 	"darkstar/src/core/workmanagement"
 	"darkstar/src/ports/statestore"
 )
@@ -122,6 +124,14 @@ func (s *Server) serveWorkItems(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	clean := path.Clean(request.URL.Path)
+	if strings.HasSuffix(clean, "/transition-plan") {
+		s.serveWorkTransitionPlan(response, request, requestID, strings.TrimSuffix(clean, "/transition-plan"))
+		return
+	}
+	if strings.HasSuffix(clean, "/transitions") {
+		s.serveWorkTransitionApply(response, request, requestID, strings.TrimSuffix(clean, "/transitions"))
+		return
+	}
 	if clean == "/api/v1/work-items/import" {
 		if request.Method != http.MethodPost {
 			writeWorkMethod(response, requestID, "POST")
@@ -206,6 +216,117 @@ func (s *Server) serveWorkItems(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	writeJSON(response, http.StatusOK, value)
+}
+
+func (s *Server) lifecycleService() WorkLifecycleService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.workLifecycle
+}
+
+func transitionWorkID(resource string) (string, bool) {
+	id := strings.TrimPrefix(resource, "/api/v1/work-items/")
+	return id, workIDPattern.MatchString(id)
+}
+
+func (s *Server) serveWorkTransitionPlan(response http.ResponseWriter, request *http.Request, requestID, resource string) {
+	service := s.lifecycleService()
+	if service == nil {
+		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "WORK_LIFECYCLE_UNAVAILABLE", Message: "Work lifecycle operations are not configured.", RequestID: requestID, Retryable: true})
+		return
+	}
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		writeWorkMethod(response, requestID, "GET, HEAD")
+		return
+	}
+	workID, ok := transitionWorkID(resource)
+	if !ok {
+		writeWorkNotFound(response, requestID, "work item")
+		return
+	}
+	query := request.URL.Query()
+	allowed := map[string]bool{"target": true, "workflowId": true, "workflowVersion": true, "profile": true}
+	for key, values := range query {
+		if !allowed[key] || len(values) != 1 {
+			writeWorkTransitionError(response, requestID, worklifecycle.ErrInvalidRequest)
+			return
+		}
+	}
+	planRequest := worklifecycle.PlanRequest{Target: worklifecycle.State(query.Get("target"))}
+	if query.Has("workflowId") || query.Has("workflowVersion") || query.Has("profile") {
+		planRequest.Preparation = &worklifecycle.Preparation{WorkflowID: query.Get("workflowId"), WorkflowVersion: query.Get("workflowVersion"), Profile: query.Get("profile")}
+	}
+	plan, err := service.Plan(request.Context(), workID, planRequest)
+	if err != nil {
+		writeWorkTransitionError(response, requestID, err)
+		return
+	}
+	response.Header().Set("ETag", fmt.Sprintf("\"%d\"", plan.ResourceVersion))
+	writeJSON(response, http.StatusOK, plan)
+}
+
+func (s *Server) serveWorkTransitionApply(response http.ResponseWriter, request *http.Request, requestID, resource string) {
+	service := s.lifecycleService()
+	if service == nil {
+		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "WORK_LIFECYCLE_UNAVAILABLE", Message: "Work lifecycle operations are not configured.", RequestID: requestID, Retryable: true})
+		return
+	}
+	if request.Method != http.MethodPost {
+		writeWorkMethod(response, requestID, "POST")
+		return
+	}
+	workID, ok := transitionWorkID(resource)
+	if !ok {
+		writeWorkNotFound(response, requestID, "work item")
+		return
+	}
+	key, ok := requireIdempotencyKey(response, request, requestID)
+	if !ok {
+		return
+	}
+	expected, err := parseIfMatch(request.Header.Get("If-Match"))
+	if err != nil {
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: err.Error(), RequestID: requestID})
+		return
+	}
+	var body struct {
+		Target       worklifecycle.State        `json:"target"`
+		Preparation  *worklifecycle.Preparation `json:"preparation,omitempty"`
+		Confirmation string                     `json:"confirmation,omitempty"`
+	}
+	if err := decodeWorkJSON(request, &body); err != nil {
+		writeWorkTransitionError(response, requestID, err)
+		return
+	}
+	result, err := service.Apply(request.Context(), workID, worklifecycle.ApplyRequest{PlanRequest: worklifecycle.PlanRequest{Target: body.Target, Preparation: body.Preparation}, ExpectedResourceVersion: expected, Confirmation: body.Confirmation, IdempotencyKey: key})
+	if err != nil {
+		writeWorkTransitionError(response, requestID, err)
+		return
+	}
+	response.Header().Set("ETag", fmt.Sprintf("\"%d\"", result.After.ResourceVersion))
+	writeJSON(response, http.StatusOK, result)
+}
+
+func writeWorkTransitionError(response http.ResponseWriter, requestID string, err error) {
+	if errors.Is(err, statestore.ErrNotFound) {
+		writeWorkNotFound(response, requestID, "work item")
+		return
+	}
+	if errors.Is(err, worklifecycle.ErrInvalidRequest) {
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: err.Error(), RequestID: requestID})
+		return
+	}
+	var conflict *worklifecycle.VersionConflictError
+	if errors.As(err, &conflict) {
+		version := int64(conflict.Current.ResourceVersion)
+		writeAPIError(response, http.StatusPreconditionFailed, apiError{SchemaVersion: 1, Code: "WORK_TRANSITION_VERSION_CONFLICT", Message: err.Error(), RequestID: requestID, ResourceVersion: &version, WorkTransitionPlan: &conflict.Current})
+		return
+	}
+	if errors.Is(err, worklifecycle.ErrRejected) {
+		writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "WORK_TRANSITION_REJECTED", Message: err.Error(), RequestID: requestID})
+		return
+	}
+	writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "WORK_TRANSITION_FAILED", Message: err.Error(), RequestID: requestID})
 }
 
 func (s *Server) workService() WorkService {

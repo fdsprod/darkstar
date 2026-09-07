@@ -161,6 +161,8 @@ darkstar work create <description> [--project <project-id>] [--priority <n>]
 darkstar work import <source-ref> [--project <project-id>] [--title <title>] [--priority <n>]
 darkstar work list [--project <project-id>]
 darkstar work show <work-id>
+darkstar work transition plan <work-id> --to <state> [--workflow <name> --version <version>] [--profile <profile>]
+darkstar work transition apply <work-id> --to <state> --if-match <work-version> [--workflow <name> --version <version>] [--profile <profile>] [--confirm] [--idempotency-key <key>]
 ```
 
 `project add` and `project register` are equivalent. The CLI canonicalizes an
@@ -174,6 +176,13 @@ external source reference and defaults its local title to that reference. When
 ambiguous selection fails explicitly. Successful JSON output uses the common
 `{"schemaVersion":1,"result":...}` envelope, while project and work show
 results include their directly owned aggregate projections.
+
+`work transition plan` prints the daemon-derived current state and enabled
+targets. Moving backlog work to Ready requires the workflow preparation options;
+other targets reject them. `work transition apply` uses the displayed work
+resource version, requires confirmation for Done, and is replay-safe under the
+same idempotency key. A stale apply exits as a conflict and JSON output includes
+the refreshed `workTransitionPlan` supplied by the daemon.
 
 ## Artifact commands
 

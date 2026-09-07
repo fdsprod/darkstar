@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	clientapi "darkstar/src/api/client"
+	"darkstar/src/core/worklifecycle"
 	"darkstar/src/core/workmanagement"
 	"darkstar/src/ports/statestore"
 )
@@ -86,7 +87,7 @@ func runProject(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 
 func runWork(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		return workArgumentError(stdout, stderr, jsonOutput, "darkstar work", errors.New("a work command is required (create, import, list, show)"))
+		return workArgumentError(stdout, stderr, jsonOutput, "darkstar work", errors.New("a work command is required (create, import, list, show, transition)"))
 	}
 	command := "darkstar work " + args[0]
 	switch args[0] {
@@ -153,9 +154,160 @@ func runWork(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		}
 		human := fmt.Sprintf("%s %s: %s (%d runs, %d stories).", result.Work.WorkItemID, result.Work.Status, result.Work.Title, len(result.Runs), len(result.Stories))
 		return writeWorkResult(result, human, jsonOutput, stdout, stderr, command)
+	case "transition":
+		return runWorkTransition(args[1:], jsonOutput, stdout, stderr)
 	default:
 		return workArgumentError(stdout, stderr, jsonOutput, "darkstar work", fmt.Errorf("unknown work command %q", args[0]))
 	}
+}
+
+type parsedWorkTransition struct {
+	action, workID string
+	request        worklifecycle.PlanRequest
+	expected       uint64
+	confirmed      bool
+	key            string
+}
+
+func runWorkTransition(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
+	parsed, err := parseWorkTransition(args)
+	command := "darkstar work transition"
+	if len(args) != 0 {
+		command += " " + args[0]
+	}
+	if err != nil {
+		return workArgumentError(stdout, stderr, jsonOutput, command, err)
+	}
+	session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+	if session == nil {
+		return code
+	}
+	resource := "work-items/" + parsed.workID
+	if parsed.action == "plan" {
+		query := url.Values{"target": []string{string(parsed.request.Target)}}
+		if parsed.request.Preparation != nil {
+			query.Set("workflowId", parsed.request.Preparation.WorkflowID)
+			query.Set("workflowVersion", parsed.request.Preparation.WorkflowVersion)
+			if parsed.request.Preparation.Profile != "" {
+				query.Set("profile", parsed.request.Preparation.Profile)
+			}
+		}
+		var result worklifecycle.Plan
+		if err := session.DoJSON(context.Background(), http.MethodGet, resource+"/transition-plan?"+query.Encode(), nil, &result); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		var enabled []string
+		for _, decision := range result.Targets {
+			if decision.Availability == worklifecycle.AvailabilityEnabled {
+				enabled = append(enabled, string(decision.Target))
+			}
+		}
+		human := fmt.Sprintf("%s is %s at version %d; enabled targets: %s.", result.WorkItemID, result.State, result.ResourceVersion, strings.Join(enabled, ", "))
+		return writeWorkResult(result, human, jsonOutput, stdout, stderr, command)
+	}
+	body := struct {
+		Target       worklifecycle.State        `json:"target"`
+		Preparation  *worklifecycle.Preparation `json:"preparation,omitempty"`
+		Confirmation string                     `json:"confirmation,omitempty"`
+	}{Target: parsed.request.Target, Preparation: parsed.request.Preparation}
+	if parsed.confirmed {
+		body.Confirmation = "confirmed"
+	}
+	var result worklifecycle.Result
+	if err := session.DoJSON(context.Background(), http.MethodPost, resource+"/transitions", body, &result, clientapi.WithHeader("If-Match", fmt.Sprintf("\"%d\"", parsed.expected)), clientapi.WithHeader("Idempotency-Key", parsed.key)); err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	return writeWorkResult(result, fmt.Sprintf("Moved %s to %s (%s).", result.After.WorkItemID, result.After.State, result.Effect), jsonOutput, stdout, stderr, command)
+}
+
+func parseWorkTransition(args []string) (parsedWorkTransition, error) {
+	if len(args) < 2 || (args[0] != "plan" && args[0] != "apply") || !workIdentityPattern.MatchString(args[1]) {
+		return parsedWorkTransition{}, errors.New("expected work transition <plan|apply> <work-id> --to <state>")
+	}
+	result := parsedWorkTransition{action: args[0], workID: args[1]}
+	workflowID, workflowVersion, profile := "", "", ""
+	for index := 2; index < len(args); {
+		option := args[index]
+		if option == "--confirm" {
+			if result.confirmed {
+				return parsedWorkTransition{}, errors.New("--confirm may be specified only once")
+			}
+			result.confirmed = true
+			index++
+			continue
+		}
+		if index+1 >= len(args) || args[index+1] == "" {
+			return parsedWorkTransition{}, fmt.Errorf("%s requires a value", option)
+		}
+		value := args[index+1]
+		switch option {
+		case "--to":
+			if result.request.Target != "" {
+				return parsedWorkTransition{}, errors.New("--to may be specified only once")
+			}
+			result.request.Target = worklifecycle.State(value)
+		case "--workflow":
+			if workflowID != "" {
+				return parsedWorkTransition{}, errors.New("--workflow may be specified only once")
+			}
+			workflowID = value
+		case "--version":
+			if workflowVersion != "" {
+				return parsedWorkTransition{}, errors.New("--version may be specified only once")
+			}
+			workflowVersion = value
+		case "--profile":
+			if profile != "" {
+				return parsedWorkTransition{}, errors.New("--profile may be specified only once")
+			}
+			profile = value
+		case "--if-match", "--expected-version":
+			if result.expected != 0 {
+				return parsedWorkTransition{}, errors.New("expected version may be specified only once")
+			}
+			parsed, err := strconv.ParseUint(value, 10, 64)
+			if err != nil || parsed == 0 {
+				return parsedWorkTransition{}, errors.New("--if-match requires a positive work resource version")
+			}
+			result.expected = parsed
+		case "--idempotency-key":
+			if result.key != "" {
+				return parsedWorkTransition{}, errors.New("--idempotency-key may be specified only once")
+			}
+			result.key = value
+		default:
+			return parsedWorkTransition{}, fmt.Errorf("unknown work transition option %q", option)
+		}
+		index += 2
+	}
+	if result.request.Target == "" {
+		return parsedWorkTransition{}, errors.New("--to is required")
+	}
+	validTarget := false
+	for _, state := range []worklifecycle.State{worklifecycle.StateBacklog, worklifecycle.StateReady, worklifecycle.StateRunning, worklifecycle.StateWaiting, worklifecycle.StateBlocked, worklifecycle.StateReview, worklifecycle.StateFailed, worklifecycle.StateDone} {
+		validTarget = validTarget || result.request.Target == state
+	}
+	if !validTarget {
+		return parsedWorkTransition{}, errors.New("--to must be backlog, ready, running, waiting, blocked, review, failed, or done")
+	}
+	if workflowID != "" || workflowVersion != "" || profile != "" {
+		result.request.Preparation = &worklifecycle.Preparation{WorkflowID: workflowID, WorkflowVersion: workflowVersion, Profile: profile}
+	}
+	if result.request.Target != worklifecycle.StateReady && result.request.Preparation != nil {
+		return parsedWorkTransition{}, errors.New("workflow preparation options are valid only with --to ready")
+	}
+	if result.action == "plan" && (result.expected != 0 || result.confirmed || result.key != "") {
+		return parsedWorkTransition{}, errors.New("plan does not accept --if-match, --confirm, or --idempotency-key")
+	}
+	if result.action == "apply" {
+		if result.expected == 0 {
+			return parsedWorkTransition{}, errors.New("apply requires --if-match <work-resource-version>")
+		}
+		if result.key == "" {
+			result.key = newIdempotencyKey()
+		}
+	}
+	return result, nil
 }
 
 func parseProjectRegistration(args []string) (workmanagement.ProjectRegistration, string, error) {

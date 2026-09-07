@@ -5,6 +5,7 @@ import test from "node:test";
 import { operationDefinitions } from "../src/api/schema.generated.ts";
 import {
   availableCardActions,
+  buildWorkTransitionRequest,
   buildPrepareRunRequest,
   buildCreateWorkItemRequest,
   deriveBoardCards,
@@ -24,6 +25,22 @@ function project(id, name) {
     lastGlobalPosition: 1,
     createdAt: timestamp,
     updatedAt: timestamp,
+  };
+}
+
+function transitionPlan(workItemId, state, decisions) {
+  const enabled = new Set(decisions);
+  return {
+    schemaVersion: 1,
+    workItemId,
+    state,
+    resourceVersion: 1,
+    targets: ["backlog", "ready", "running", "waiting", "blocked", "review", "failed", "done"].map((target) => ({
+      target,
+      availability: enabled.has(target) ? "enabled" : "disabled",
+      disabledReasons: enabled.has(target) ? [] : [target === "ready" ? "preparation_required" : "unsupported_target"],
+      confirmation: target === "done" && enabled.has(target) ? "required" : "none",
+    })),
   };
 }
 
@@ -172,8 +189,17 @@ test("run preparation is distinct from launching a ready run", () => {
   const backlog = deriveBoardCards({ projects: [alpha], workItems: [item], runs: [] })[0];
   const ready = deriveBoardCards({ projects: [alpha], workItems: [item], runs: [run("run_ready", item.id, "ready", 2)] })[0];
 
-  assert.deepEqual(availableCardActions(backlog), ["prepare"]);
-  assert.deepEqual(availableCardActions(ready), ["launch", "cancel"]);
+  assert.deepEqual(availableCardActions(backlog, transitionPlan(item.id, "backlog", ["done"])), ["prepare", "cancel"]);
+  assert.deepEqual(availableCardActions(ready, transitionPlan(item.id, "ready", ["running", "done"])), ["launch", "cancel"]);
+});
+
+test("drag keyboard and menu movement share one typed transition command", () => {
+  const preparation = { workflowId: "delivery", workflowVersion: "1.0.0", profile: "fast" };
+  assert.deepEqual(buildWorkTransitionRequest("drag", "ready", preparation), buildWorkTransitionRequest("keyboard", "ready", preparation));
+  assert.deepEqual(buildWorkTransitionRequest("keyboard", "ready", preparation), buildWorkTransitionRequest("menu", "ready", preparation));
+  assert.deepEqual(buildWorkTransitionRequest("drag", "running"), { target: "running" });
+  assert.deepEqual(buildWorkTransitionRequest("menu", "done"), { target: "done", confirmation: "confirmed" });
+  assert.throws(() => buildWorkTransitionRequest("menu", "ready"), /exact workflow preparation/);
 });
 
 test("run preparation normalizes the optional profile without inventing a default", () => {
@@ -223,18 +249,19 @@ test("workflow profile choices come from the exact selected definition", () => {
   ]);
 });
 
-test("board run controls use the prepare and start lifecycle API operations", async () => {
-  assert.deepEqual(operationDefinitions.prepareRun, { method: "POST", path: "/api/v1/runs/prepare" });
-  assert.deepEqual(operationDefinitions.startPreparedRun, { method: "POST", path: "/api/v1/runs/{runId}/start" });
+test("board movement uses only the work lifecycle plan and apply operations", async () => {
+  assert.deepEqual(operationDefinitions.planWorkItemTransition, { method: "GET", path: "/api/v1/work-items/{workItemId}/transition-plan" });
+  assert.deepEqual(operationDefinitions.applyWorkItemTransition, { method: "POST", path: "/api/v1/work-items/{workItemId}/transitions" });
 
   const [client, page] = await Promise.all([
     readFile(new URL("../src/api/client.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/BoardPage.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(client, /prepareRun\([^\n]*this\.operation\("prepareRun", \{ body, idempotencyKey, signal \}\)/);
-  assert.match(client, /startRun\([^\n]*this\.operation\("startPreparedRun", \{ path: \{ runId \}, resourceVersion, idempotencyKey, signal \}\)/);
+  assert.match(client, /planWorkItemTransition\([^\n]*this\.operation\("planWorkItemTransition"/);
+  assert.match(client, /applyWorkItemTransition\([^\n]*this\.operation\("applyWorkItemTransition"/);
   assert.match(page, /apiClient\.showWorkflow\(workflowId, workflowVersion, controller\.signal\)/);
-  assert.match(page, /apiClient\.prepareRun\(body,/);
-  assert.match(page, /apiClient\.startRun\(card\.run\.id, card\.run\.resourceVersion,/);
+  assert.match(page, /apiClient\.planWorkItemTransition\(card\.work\.id, "ready", preparation\)/);
+  assert.match(page, /apiClient\.applyWorkItemTransition\(card\.work\.id, plan\.resourceVersion,/);
+  assert.doesNotMatch(page, /apiClient\.(?:prepareRun|startRun|pauseRun|resumeRun|retryRun|cancelRun)\(/);
   assert.match(page, /"Move to Ready"/);
 });

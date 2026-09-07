@@ -8,6 +8,7 @@ export const LIFECYCLE_COLUMNS = ["backlog", "ready", "running", "waiting", "blo
 export type BoardLifecycle = typeof LIFECYCLE_COLUMNS[number];
 export type BoardView = "all" | "attention";
 export type BoardCardAction = "prepare" | "launch" | "pause" | "resume" | "retry" | "cancel";
+export type WorkTransitionSource = "drag" | "keyboard" | "menu";
 
 export interface BoardCard {
   work: Schemas["WorkItem"];
@@ -74,17 +75,41 @@ export function filterBoardCards(cards: readonly BoardCard[], filters: BoardFilt
   });
 }
 
-/** Mirrors the legal run-control edges exposed by the daemon and CLI. */
-export function availableCardActions(card: BoardCard): BoardCardAction[] {
-  const status = card.run?.status;
-  if (!status) return card.work.status === "open" && card.project?.status === "active" ? ["prepare"] : [];
-  if (status === "completed" || status === "cancelled" || status === "reconcile_required") return [];
-  if (status === "ready") return ["launch", "cancel"];
-  if (status === "queued" || status === "running") return ["pause", "cancel"];
-  if (status === "waiting" || status === "blocked") return ["resume", "cancel"];
-  if (status === "failed") return ["retry", "cancel"];
-  if (status === "pending" || status === "draft") return ["cancel"];
-  return [];
+/** Converts the server decision table into presentation actions without a client legality matrix. */
+export function availableCardActions(card: BoardCard, plan?: Schemas["WorkTransitionPlan"]): BoardCardAction[] {
+  if (!plan) return [];
+  const actions: BoardCardAction[] = [];
+  const ready = transitionDecision(plan, "ready");
+  if (plan.state === "backlog" && (ready?.availability === "enabled" || (ready?.disabledReasons.length === 1 && ready.disabledReasons[0] === "preparation_required"))) actions.push("prepare");
+  if (transitionDecision(plan, "running")?.availability === "enabled") {
+    if (plan.state === "ready") actions.push("launch");
+    else if (plan.state === "failed") actions.push("retry");
+    else actions.push("resume");
+  }
+  if (transitionDecision(plan, "waiting")?.availability === "enabled") actions.push("pause");
+  if (transitionDecision(plan, "done")?.availability === "enabled") actions.push("cancel");
+  return actions;
+}
+
+export function transitionDecision(plan: Schemas["WorkTransitionPlan"], target: Schemas["WorkLifecycleState"]) {
+  return plan.targets.find((decision) => decision.target === target);
+}
+
+export function transitionTargetForAction(action: BoardCardAction): Schemas["WorkLifecycleState"] {
+  if (action === "prepare") return "ready";
+  if (action === "pause") return "waiting";
+  if (action === "cancel") return "done";
+  return "running";
+}
+
+/** Drag, keyboard, and menu input deliberately produce the identical API command body. */
+export function buildWorkTransitionRequest(_source: WorkTransitionSource, target: Schemas["WorkLifecycleState"], preparation?: Schemas["WorkTransitionPreparation"]): Schemas["WorkTransitionApplyRequest"] {
+  if (target === "ready") {
+    if (!preparation) throw new Error("Moving work to Ready requires an exact workflow preparation.");
+    return { target, preparation };
+  }
+  if (target === "done") return { target, confirmation: "confirmed" };
+  return { target };
 }
 
 export function buildCreateWorkItemRequest(input: CreateWorkInput): Schemas["CreateWorkItemRequest"] {
