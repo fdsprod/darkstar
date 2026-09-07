@@ -723,3 +723,29 @@ div.settings-boundary p { flex-basis: 100%; margin: 2px 0 0; }
 .permission-scope dl, .permission-receipt dl { overflow: hidden; margin: 0; border: 1px solid #222b38; border-radius: 7px; }.permission-scope dl > div, .permission-receipt dl > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; padding: 8px 10px; border-top: 1px solid #202835; font-size: var(--font-caption); }.permission-scope dl > div:first-child, .permission-receipt dl > div:first-child { border-top: 0; }.permission-scope dt, .permission-receipt dt { color: #738095; }.permission-scope dd, .permission-receipt dd { min-width: 0; margin: 0; overflow: hidden; color: #a3aebd; text-overflow: ellipsis; white-space: nowrap; }.permission-scope dd code { color: #8395ad; font-size: var(--font-caption); }.permission-scope h3 { margin: 13px 0 7px; color: #718097; font-size: var(--font-caption); font-weight: 500; text-transform: uppercase; }.permission-actions > div:last-child { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }.permission-dialog { width: min(560px, calc(100vw - 32px)); }.permission-confirm { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; color: #9ca8b8; font-size: var(--font-caption); line-height: 1.45; }.permission-confirm input { margin-top: 1px; accent-color: var(--accent); }
 @media (max-width: 950px) { .agents-layout, .permission-layout { grid-template-columns: 1fr; }.agent-list, .permission-list { max-height: 315px; border-right: 0; border-bottom: 1px solid var(--border); }.permission-actions > div:last-child { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .agents-toolbar, .permission-filters { align-items: stretch; flex-direction: column; }.agents-toolbar input, .permission-filters input, .permission-filters select { width: 100%; min-width: 0; }.permission-filters > strong { margin: 0; align-self: flex-start; }.agent-detail, .permission-detail { padding: 14px; }.agent-detail-header { align-items: flex-start; flex-direction: column; }.agent-detail-header > div:last-child { width: 100%; justify-content: space-between; }.agent-scope dl > div, .permission-scope dl > div, .permission-receipt dl > div { grid-template-columns: 1fr; gap: 4px; }.log-boundary, .agent-links { align-items: flex-start; flex-direction: column; }.agent-list li > button, .permission-list li > button { grid-template-columns: 8px minmax(0, 1fr); }.agent-list .detail-status, .permission-list .detail-status { grid-column: 2; width: max-content; } }
+/* Typed workflow ports share the persisted workflow document with Structure view. */
+.workflow-port-connections { padding: 12px; border-bottom: 1px solid var(--border); }
+.workflow-port-connections summary, .inspector-section > summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.workflow-port-connections form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.workflow-port-connections label { display: grid; gap: 5px; max-width: 100%; }
+.workflow-port-connections select { max-width: 290px; }
+.workflow-port-connections ul { padding-left: 20px; overflow-wrap: anywhere; }
+.port-finding { display: block; width: 100%; text-align: left; margin-top: 5px; }
+.port-canvas-toolbar, .run-input-ports { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px; }
+.port-canvas-toolbar span { font-size: var(--font-caption); color: var(--text-muted); }
+.workflow-canvas--ports { height: 560px; }
+.workflow-canvas--ports svg { min-width: 0; }
+.workflow-port { fill: #83b3f6; stroke: #111b28; stroke-width: 2; cursor: pointer; }
+.workflow-port--data { fill: #68c8b5; }
+.workflow-port:focus-visible { outline: none; stroke: #f3cc72; stroke-width: 4; }
+.port-label { fill: #c7d6e9; font-size: var(--font-caption); pointer-events: none; }
+.canvas-edge--data path { stroke: #68c8b5; stroke-dasharray: 6 4; }
+.workflow-minimap { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 10px; border-top: 1px solid var(--border); }
+.workflow-minimap svg { width: 130px; height: 75px; background: #0b111a; }
+.workflow-minimap rect { fill: #456387; }
+.workflow-minimap .minimap-viewport { fill: none; stroke: #f3cc72; stroke-width: 5; }
+.workflow-minimap button { font-size: var(--font-caption); }
+.port-message { margin: 0; padding: 0 10px 8px; }
+.inspector-section { border-top: 1px solid var(--border); padding: 8px 0; }
+@media (max-width: 820px) { .workflow-view-tabs button:first-child { display: inline-flex; }.workflow-port-connections select { width: 100%; max-width: 100%; } }
+.node-palette > .field { grid-column: 1 / -1; }

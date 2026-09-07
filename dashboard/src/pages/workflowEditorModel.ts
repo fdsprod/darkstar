@@ -157,6 +157,7 @@ export function deriveEditorGraph(document: unknown, layoutValue: unknown, findi
   const layout = normalizeLayout(layoutValue);
   const nodes: VisualNode[] = [];
   const edges: VisualEdge[] = [];
+  const rowHeight = Math.max(220, ...Object.values(nodesRecord).map((raw) => 220 + 28 * Math.max(Object.keys(record(record(raw).inputs)).length, Object.keys(record(record(raw).outputs)).length)));
   let index = 0;
   for (const [id, rawNode] of Object.entries(nodesRecord)) {
     const node = record(rawNode);
@@ -169,7 +170,7 @@ export function deriveEditorGraph(document: unknown, layoutValue: unknown, findi
       entry: node.entry === true, terminal: node.terminal === true,
       validationCount: validators + findingCount, checkpoint: checkpointLabel(node.checkpoint),
       ...(type === "subworkflow" && typeof workflow.name === "string" ? { subworkflow: `${workflow.name}@${String(workflow.version ?? "unversioned")}` } : {}),
-      position: layout.nodes[id] ?? { x: 72 + (index % 3) * 240, y: 64 + Math.floor(index / 3) * 160 },
+      position: layout.nodes[id] ?? { x: 72 + (index % 3) * 330, y: 64 + Math.floor(index / 3) * rowHeight },
     });
     const transitions = Array.isArray(node.transitions) ? node.transitions : [];
     for (const rawTransition of transitions) {

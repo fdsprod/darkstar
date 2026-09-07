@@ -1,18 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { ApiRequestError } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { tabKeyTarget } from "../accessibility/keyboard";
 import { useRouter } from "../app/router";
 import { PageHeader } from "../components/PageStructure";
+import { WorkflowPortCanvas, WorkflowPortConnections } from "./WorkflowPortGraph";
+import { bindPorts, connectionError, derivePortGraph, type Port } from "./workflowPortModel";
 import { WorkflowAuthoringInspector } from "./WorkflowAuthoringInspector";
 import { humanize, shortIdentifier } from "./runDetailModel";
 import { workflowEditorApi } from "./workflowEditorApi";
 import {
-  addNode, connectNodes, createStarterDocument, deriveEditorGraph, draftRevision, findingTarget, inspectNode, moveNode, nodeTypeAvailability, persistenceLabel,
+  addNode, connectNodes, createStarterDocument, deriveEditorGraph, draftRevision, findingTarget, inspectNode, moveNode, normalizeLayout, nodeTypeAvailability, persistenceLabel,
   removeEdge, removeNode, removeNodeLayout, renameNode, reorderNode, updateNodeExecutor, validationMatches,
   type AuthoredTransitionKind, type EditorGraph, type EditorSelection, type EditorView, type JsonObject, type PersistenceState,
-  type PublishState, type RoutePreviewState, type ValidationState, type VisualNode, type WorkflowNodeType,
+  type PublishState, type RoutePreviewState, type ValidationState, type WorkflowNodeType,
 } from "./workflowEditorModel";
 
 type Schemas = components["schemas"];
@@ -38,6 +40,7 @@ export function WorkflowsPage() {
   const [validation, setValidation] = useState<ValidationState>({ kind: "not_run" });
   const [publish, setPublish] = useState<PublishState>({ kind: "closed" });
   const [routePreview, setRoutePreview] = useState<RoutePreviewState>({ kind: "closed" });
+  const [focusRequest, setFocusRequest] = useState(0);
   const [announcement, setAnnouncement] = useState("");
   const [connectFrom, setConnectFrom] = useState<string>();
   const [newOpen, setNewOpen] = useState(false);
@@ -48,7 +51,7 @@ export function WorkflowsPage() {
   const [advancedError, setAdvancedError] = useState("");
   const [busy, setBusy] = useState("");
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const dragRef = useRef<{ id: string; offsetX: number; offsetY: number } | undefined>(undefined);
+  const [paletteQuery, setPaletteQuery] = useState("");
   const validationRequestRef = useRef(0);
   const previewRequestRef = useRef(0);
   const publishRequestRef = useRef(0);
@@ -105,7 +108,7 @@ export function WorkflowsPage() {
     return () => window.clearTimeout(timer);
   }, [draft?.id, document, layout, persistence]);
   useEffect(() => { const online = () => setPersistence((current) => current && (current.kind === "offline" || current.kind === "error") ? { kind: "dirty", revision: current.revision } : current); window.addEventListener("online", online); return () => window.removeEventListener("online", online); }, []);
-  useEffect(() => { const pending = pendingFindingFocus.current; if (!pending) return; pendingFindingFocus.current = undefined; window.requestAnimationFrame(() => { const fields = [...(inspectorRef.current?.querySelectorAll<HTMLElement>("[data-workflow-field]") ?? [])].sort((left, right) => (right.dataset.workflowField?.length ?? 0) - (left.dataset.workflowField?.length ?? 0)); const target = fields.find((field) => pending.field === field.dataset.workflowField || pending.field?.startsWith(`${field.dataset.workflowField}.`))?.querySelector<HTMLElement>("input, select, textarea, button") ?? inspectorRef.current?.querySelector<HTMLElement>("input, select, textarea, button"); target?.focus(); }); }, [selection, document]);
+  useEffect(() => { const pending = pendingFindingFocus.current; if (!pending) return; pendingFindingFocus.current = undefined; window.requestAnimationFrame(() => { const fields = [...(inspectorRef.current?.querySelectorAll<HTMLElement>("[data-workflow-field]") ?? [])].sort((left, right) => (right.dataset.workflowField?.length ?? 0) - (left.dataset.workflowField?.length ?? 0)); const target = fields.find((field) => pending.field === field.dataset.workflowField || pending.field?.startsWith(`${field.dataset.workflowField}.`))?.querySelector<HTMLElement>("input, select, textarea, button") ?? inspectorRef.current?.querySelector<HTMLElement>("input, select, textarea, button"); for (let parent = target?.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parent.open = true; target?.focus(); }); }, [selection, document, focusRequest]);
   const modalActive = newOpen || advancedOpen || routePreview.kind === "available" || routePreview.kind === "error" || ["confirm", "publishing", "conflict", "invalid", "error"].includes(publish.kind);
   useEffect(() => {
     if (!modalActive) return;
@@ -120,6 +123,7 @@ export function WorkflowsPage() {
   }, [modalActive]);
 
   const graph = useMemo(() => document ? deriveEditorGraph(document, layout, validation.kind === "invalid" ? validation.findings : []) : undefined, [document, layout, validation]);
+  const portGraph = useMemo(() => document && graph ? derivePortGraph(document, graph) : undefined, [document, graph]);
   const selectedNode = selection.kind === "node" ? graph?.nodes.find((node) => node.id === selection.nodeId) : undefined;
   const selectedEdge = selection.kind === "edge" ? graph?.edges.find((edge) => edge.id === selection.edgeId) : undefined;
   const visibleItems = items.filter((item) => itemSearch(item).includes(query.trim().toLowerCase()));
@@ -160,7 +164,7 @@ export function WorkflowsPage() {
     try { const preview = await workflowEditorApi.preview({ id: draft.id, expectedRevision: evidence.revision, range: {}, context: {} }); if (request !== previewRequestRef.current || currentDraftRef.current?.id !== evidence.draftId || preview.draftId !== evidence.draftId || preview.revision !== evidence.revision || preview.documentDigest !== evidence.documentDigest) return; setRoutePreview({ kind: "available", preview }); setAnnouncement(`Stateless route preview includes ${preview.route.nodes.length} nodes.`); }
     catch (cause) { if (request === previewRequestRef.current && currentDraftRef.current?.id === evidence.draftId) setRoutePreview({ kind: "error", ...evidence, message: cause instanceof Error ? cause.message : "Route preview failed." }); }
   }
-  function selectFinding(finding: Schemas["WorkflowAuthoringFinding"]) { if (!document) return; const target = findingTarget(document, finding); pendingFindingFocus.current = { nodeId: finding.nodeId, field: target.field }; select(target.selection); }
+  function selectFinding(finding: Schemas["WorkflowAuthoringFinding"]) { if (!document) return; const target = findingTarget(document, finding); pendingFindingFocus.current = { nodeId: finding.nodeId, field: target.field }; setFocusRequest((value) => value + 1); select(target.selection); }
   function openPublish() {
     if (!draft || !persistence || persistence.kind !== "clean") return;
     const evidence = { draftId: draft.id, revision: persistence.revision, documentDigest: draft.documentDigest };
@@ -215,7 +219,13 @@ export function WorkflowsPage() {
     if (!inspectNode(next, result.nodeId)) { setAnnouncement(`The ${humanize(type)} node could not be created from authoritative catalog data.`); return; }
     changeDocument(next, `${humanize(type)} node added.`); select({ kind: "node", nodeId: result.nodeId });
   }
-  function chooseConnectionTarget(nodeId: string) { if (!document || !connectFrom) return; changeDocument(connectNodes(document, connectFrom, nodeId), `Connected ${connectFrom} to ${nodeId}.`); setConnectFrom(undefined); }
+  function focusNode(nodeId: string, field?: string) { if (connectFrom && !field && document) { if (connectFrom === nodeId) { setAnnouncement("Self transitions require a bounded repair path in Structure view."); return; } changeDocument(connectNodes(document, connectFrom, nodeId), "Execution ports connected."); setConnectFrom(undefined); return; } pendingFindingFocus.current = { nodeId, field }; setFocusRequest((value) => value + 1); select(document && field ? findingTarget(document, { nodeId, field, code: "PORT_FIELD", severity: "error", message: "" }).selection : { kind: "node", nodeId }); }
+  function connectPorts(source: Port, target: Port) {
+    if (!document || !portGraph) return;
+    const error = connectionError(source, target); if (error) { setAnnouncement(error); return; }
+    if (source.kind === "execution" && target.kind === "execution") changeDocument(connectNodes(document, source.nodeId, target.nodeId), "Execution ports connected.");
+    else { const result = bindPorts(document, source, target, portGraph.ports); if (result.kind === "invalid") setAnnouncement(result.message); else changeDocument(result.document, "Data ports connected."); }
+  }
   function onViewKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) { const target = tabKeyTarget(index, event.key, editorViews.length); if (target === undefined) return; event.preventDefault(); setParams({ view: editorViews[target] }); tabRefs.current[target]?.focus(); }
 
   return <div ref={pageRef} className="page workflows-page workflow-authoring-page" onKeyDown={(event) => { if (event.key === "Escape") { if (newOpen) setNewOpen(false); if (advancedOpen) setAdvancedOpen(false); if (routePreview.kind !== "loading") setRoutePreview({ kind: "closed" }); if (publish.kind !== "publishing" && publish.kind !== "closed") setPublish({ kind: "closed" }); setConnectFrom(undefined); select({ kind: "none" }); } }}>
@@ -227,15 +237,16 @@ export function WorkflowsPage() {
         <div className="workflow-editor-left__actions"><button className="button button--primary button--compact" type="button" onClick={() => setNewOpen(true)}>New</button></div>
         <label className="workflow-search"><span className="sr-only">Search workflows by name, version, scope, or status</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workflows…" /></label>
         <div className="workflow-library-list" aria-busy={loadState === "loading"}>{visibleItems.map((item) => <article key={itemKey(item)} className={`workflow-library-item${selectedKey === itemKey(item) ? " workflow-library-item--selected" : ""}`}><button type="button" onClick={() => selectItem(item)}><strong>{itemName(item)}</strong><span>{itemVersion(item)} · {itemScope(item)}</span><small>{humanize(item.kind)}</small></button><div>{item.kind === "installed" && <button type="button" disabled={Boolean(busy)} onClick={() => void duplicateInstalled(item)}>Duplicate as draft</button>}{item.kind === "installed" && <button type="button" disabled={item.version.sourceScope === "default" || Boolean(busy)} title={item.version.sourceScope === "default" ? "Built-in workflows are immutable" : undefined} onClick={() => void archiveInstalled(item)}>Archive</button>}</div></article>)}</div>
-        {draft && <section className="node-palette" aria-labelledby="node-palette-title"><h2 id="node-palette-title">Add node</h2>{palette.map((item) => { const availability = nodeTypeAvailability(item.type, catalog); return <button type="button" key={item.type} disabled={!availability.available} title={availability.message} onClick={() => void add(item.type)}><strong>{item.label}</strong><span>{availability.message ?? item.description}</span></button>; })}</section>}
+        {draft && <section className="node-palette" aria-labelledby="node-palette-title"><h2 id="node-palette-title">Add node</h2><label className="field"><span>Search nodes</span><input type="search" value={paletteQuery} onChange={(event) => setPaletteQuery(event.target.value)} /></label>{palette.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(paletteQuery.toLowerCase().trim())).map((item) => { const availability = nodeTypeAvailability(item.type, catalog); return <button type="button" key={item.type} disabled={!availability.available} title={availability.message} onClick={() => void add(item.type)}><strong>{item.label}</strong><span>{availability.message ?? item.description}</span></button>; })}</section>}
       </aside>
 
       <section className="workflow-editor-center" aria-label="Workflow editor">
         {selected?.kind === "installed" ? <InstalledSummary item={selected} onDuplicate={() => void duplicateInstalled(selected)} /> : selected?.kind === "archived" ? <ArchivedSummary item={selected} /> : !draft || !document || !graph ? <div className="workflow-editor-empty"><h2>{loadState === "loading" ? "Loading workflow library…" : "Create or select a draft"}</h2><p>Start a workflow without editing YAML, or duplicate an installed version into an editable draft.</p></div> : <>
           <header className="workflow-editor-toolbar"><div><strong>{draft.name}</strong><span>Draft · revision {draft.revision} · {draft.scope}</span></div><div className="workflow-view-tabs" role="tablist" aria-label="Editor view">{editorViews.map((item, index) => <button key={item} ref={(element) => { tabRefs.current[index] = element; }} type="button" role="tab" id={`workflow-editor-tab-${item}`} aria-selected={view === item} aria-controls={`workflow-editor-panel-${item}`} tabIndex={view === item ? 0 : -1} onKeyDown={(event) => onViewKeyDown(event, index)} onClick={() => setParams({ view: item })}>{humanize(item)}</button>)}</div></header>
+          {portGraph && <WorkflowPortConnections graph={graph} ports={portGraph} onConnect={connectPorts} onFocus={focusNode} />}
           <ValidationSlot state={validation} currentRevision={draft.revision} onSelect={selectFinding} />
-          <div id="workflow-editor-panel-canvas" role="tabpanel" aria-labelledby="workflow-editor-tab-canvas" tabIndex={view === "canvas" ? 0 : -1} hidden={view !== "canvas"}>{view === "canvas" && <GraphCanvas graph={graph} selection={selection} connectFrom={connectFrom} onSelect={select} onConnect={chooseConnectionTarget} onMove={(id, x, y) => changeLayout(moveNode(layout, id, { x, y }), `Moved ${id}.`)} dragRef={dragRef} />}</div>
-          <div id="workflow-editor-panel-structure" role="tabpanel" aria-labelledby="workflow-editor-tab-structure" tabIndex={view === "structure" ? 0 : -1} hidden={view !== "structure"}>{view === "structure" && <StructureView graph={graph} selection={selection} onSelect={select} onMove={(id, direction) => changeDocument(reorderNode(document, id, direction), `Reordered ${id}.`)} onRemoveNode={(id) => { changeDocument(removeNode(document, id), `Removed ${id}.`); select({ kind: "none" }); }} onRemoveEdge={(id) => changeDocument(removeEdge(document, id), "Transition removed.")} onConnect={(from, to, kind) => changeDocument(connectNodes(document, from, to, kind), `Connected ${from} to ${to}.`)} />}</div>
+          <div id="workflow-editor-panel-canvas" role="tabpanel" aria-labelledby="workflow-editor-tab-canvas" tabIndex={view === "canvas" ? 0 : -1} hidden={view !== "canvas"}>{view === "canvas" && <WorkflowPortCanvas graph={graph} ports={portGraph!} layout={normalizeLayout(layout)} selection={selection} onSelect={select} onConnect={connectPorts} onFocus={focusNode} onLayout={changeLayout} />}</div>
+          <div id="workflow-editor-panel-structure" role="tabpanel" aria-labelledby="workflow-editor-tab-structure" tabIndex={view === "structure" ? 0 : -1} hidden={view !== "structure"}>{view === "structure" && <StructureView graph={graph} selection={selection} onSelect={(value) => { if (value.kind === "node" && connectFrom) { changeDocument(connectNodes(document, connectFrom, value.nodeId), "Execution ports connected."); setConnectFrom(undefined); } else if (value.kind === "node") focusNode(value.nodeId); else select(value); }} onMove={(id, direction) => changeDocument(reorderNode(document, id, direction), `Reordered ${id}.`)} onRemoveNode={(id) => { changeDocument(removeNode(document, id), `Removed ${id}.`); select({ kind: "none" }); }} onRemoveEdge={(id) => changeDocument(removeEdge(document, id), "Transition removed.")} onConnect={(from, to, kind) => changeDocument(connectNodes(document, from, to, kind), `Connected ${from} to ${to}.`)} />}</div>
         </>}
       </section>
 
@@ -250,13 +261,6 @@ export function WorkflowsPage() {
     {(publish.kind === "confirm" || publish.kind === "publishing" || publish.kind === "conflict" || publish.kind === "invalid" || publish.kind === "error") && <div className="workflow-modal" role="presentation"><section role="dialog" aria-modal="true" aria-labelledby="publish-workflow-title"><h2 id="publish-workflow-title">Publish immutable workflow</h2><p>Publishing uses draft <code>{publish.draftId}</code>, saved document <code>{shortIdentifier(publish.documentDigest)}</code>, canonical validation <code>{shortIdentifier(publish.semanticDigest)}</code>, and current revision {publish.revision}.</p><label className="field"><span>New semantic version</span><input required pattern="[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?" value={publish.version} disabled={publish.kind === "publishing"} onChange={(event) => setPublish({ ...publish, version: event.target.value })} /></label>{"message" in publish && <p role="alert">{publish.message}</p>}<footer><button className="button" type="button" disabled={publish.kind === "publishing"} onClick={() => setPublish({ kind: "closed" })}>Cancel</button><button className="button button--primary" type="button" disabled={publish.kind === "publishing"} onClick={() => void publishDraft()}>{publish.kind === "publishing" ? "Publishing…" : "Publish exact revision"}</button></footer></section></div>}
     {publish.kind === "published" && <div className="workflow-publish-result" role="status"><strong>{publish.result.published.name} {publish.result.published.version}</strong><span>{publish.result.disposition === "created" ? "Published" : "Already installed"} · {shortIdentifier(publish.result.published.digest)}</span><button type="button" onClick={() => { setPublish({ kind: "closed" }); setParams({ item: `installed:${publish.result.published.name}:${publish.result.published.version}:${publish.result.published.digest}`, selection: undefined }); }}>Open immutable version</button></div>}
   </div>;
-}
-
-function GraphCanvas({ graph, selection, connectFrom, onSelect, onConnect, onMove, dragRef }: { graph: EditorGraph; selection: EditorSelection; connectFrom?: string; onSelect(value: EditorSelection): void; onConnect(id: string): void; onMove(id: string, x: number, y: number): void; dragRef: React.MutableRefObject<{ id: string; offsetX: number; offsetY: number } | undefined> }) {
-  const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
-  function down(event: ReactPointerEvent, node: VisualNode) { const target = event.currentTarget as SVGElement; target.setPointerCapture(event.pointerId); dragRef.current = { id: node.id, offsetX: event.clientX - node.position.x, offsetY: event.clientY - node.position.y }; onSelect({ kind: "node", nodeId: node.id }); }
-  function move(event: ReactPointerEvent) { const drag = dragRef.current; if (drag) onMove(drag.id, event.clientX - drag.offsetX, event.clientY - drag.offsetY); }
-  return <div className="workflow-canvas" tabIndex={0} aria-label="Workflow canvas. Arrow keys pan, or move the selected node." onKeyDown={(event) => { if (!event.key.startsWith("Arrow")) return; event.preventDefault(); const selected = selection.kind === "node" ? nodeMap.get(selection.nodeId) : undefined; const dx = event.key === "ArrowLeft" ? -20 : event.key === "ArrowRight" ? 20 : 0; const dy = event.key === "ArrowUp" ? -20 : event.key === "ArrowDown" ? 20 : 0; if (selected) onMove(selected.id, selected.position.x + dx, selected.position.y + dy); else event.currentTarget.scrollBy({ left: dx, top: dy }); }} onPointerMove={move} onPointerUp={() => { dragRef.current = undefined; }}><svg width="100%" height="100%" viewBox="0 0 900 620" role="img" aria-labelledby="workflow-canvas-title"><title id="workflow-canvas-title">Workflow graph. Every canvas action is also available in Structure view.</title><defs><marker id="edge-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{graph.edges.map((edge) => { const from = nodeMap.get(edge.from); const to = nodeMap.get(edge.to); if (!from || !to) return null; const selectEdge = () => onSelect({ kind: "edge" as const, edgeId: edge.id }); return <g key={edge.id} className={`canvas-edge canvas-edge--${edge.kind}${selection.kind === "edge" && selection.edgeId === edge.id ? " canvas-edge--selected" : ""}`}><path tabIndex={0} role="button" aria-label={`${humanize(edge.kind)} transition ${edge.transitionId}, ${edge.from} to ${edge.to}`} d={`M ${from.position.x + 170} ${from.position.y + 45} C ${from.position.x + 210} ${from.position.y + 45}, ${to.position.x - 40} ${to.position.y + 45}, ${to.position.x} ${to.position.y + 45}`} markerEnd="url(#edge-arrow)" onClick={selectEdge} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectEdge(); } }} /><title>{edge.kind}: {edge.from} to {edge.to}</title></g>; })}{graph.nodes.map((node) => <g key={node.id} transform={`translate(${node.position.x} ${node.position.y})`} className={`canvas-node${selection.kind === "node" && selection.nodeId === node.id ? " canvas-node--selected" : ""}`} onPointerDown={(event) => down(event, node)}><rect width="170" height="90" rx="10" /><foreignObject width="170" height="90"><button type="button" aria-label={`${node.displayName}, ${humanize(node.type)} node${connectFrom ? ". Select as connection target" : ""}`} onClick={() => connectFrom ? onConnect(node.id) : onSelect({ kind: "node", nodeId: node.id })}><span>{humanize(node.type)}</span><strong>{node.displayName}</strong><small>{node.id}</small><i>{node.entry ? "Entry " : ""}{node.terminal ? "Terminal " : ""}{node.validationCount ? `${node.validationCount} validation` : ""}</i></button></foreignObject></g>)}</svg></div>;
 }
 
 function StructureView({ graph, selection, onSelect, onMove, onRemoveNode, onRemoveEdge, onConnect }: { graph: EditorGraph; selection: EditorSelection; onSelect(value: EditorSelection): void; onMove(id: string, direction: -1 | 1): void; onRemoveNode(id: string): void; onRemoveEdge(id: string): void; onConnect(from: string, to: string, kind: AuthoredTransitionKind): void }) {
