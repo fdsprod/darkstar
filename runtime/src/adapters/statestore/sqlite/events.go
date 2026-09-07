@@ -1040,7 +1040,7 @@ func queryProviderPermissions(ctx context.Context, query rowsQueryer, suffix str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	values := make([]statestore.ProviderPermissionProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanProviderPermissionProjection(rows)

@@ -16,7 +16,7 @@ func TestInputRequestProjectionQueriesAndRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 	id := "input_00000000000000000000000000"
 	runID := "run_00000000000000000000000000"

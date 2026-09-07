@@ -70,24 +70,24 @@ func TestConfigurationMutationRoutesAndRedaction(t *testing.T) {
 		t.Fatalf("catalog status=%d", catalog.StatusCode)
 	}
 	_, _ = io.Copy(io.Discard, catalog.Body)
-	catalog.Body.Close()
+	_ = catalog.Body.Close()
 	state := configurationRequest(t, endpoint, http.MethodGet, "/api/v1/configuration/state", "", "")
 	if state.StatusCode != http.StatusOK || state.Header.Get("ETag") != `"`+strings.Repeat("a", 64)+`"` {
 		t.Fatalf("state status=%d etag=%q", state.StatusCode, state.Header.Get("ETag"))
 	}
 	_, _ = io.Copy(io.Discard, state.Body)
-	state.Body.Close()
+	_ = state.Body.Close()
 	body := `{"scope":{"type":"user"},"key":"provider.codex.actionAvailability","change":{"operation":"set","value":{"type":"enum","value":"disabled"}},"expectedRevision":"` + strings.Repeat("a", 64) + `"}`
 	applied := configurationRequest(t, endpoint, http.MethodPost, "/api/v1/configuration/apply", body, "apply-config-key")
 	if applied.StatusCode != http.StatusOK || service.apply.IdempotencyKey != "apply-config-key" {
 		t.Fatalf("apply status=%d request=%#v", applied.StatusCode, service.apply)
 	}
 	_, _ = io.Copy(io.Discard, applied.Body)
-	applied.Body.Close()
+	_ = applied.Body.Close()
 	canary := "API-SECRET-CANARY"
 	secret := configurationRequest(t, endpoint, http.MethodPost, "/api/v1/configuration/secrets", `{"name":"codex-api-key","value":"`+canary+`","expectedRevision":"`+strings.Repeat("c", 64)+`"}`, "secret-config-key")
 	payload, _ := io.ReadAll(secret.Body)
-	secret.Body.Close()
+	_ = secret.Body.Close()
 	if secret.StatusCode != http.StatusOK || service.secret.Value != canary || strings.Contains(string(payload), canary) {
 		t.Fatalf("secret status=%d payload=%s recorded=%#v", secret.StatusCode, payload, service.secret)
 	}
@@ -110,7 +110,7 @@ func TestConfigurationMutationTypedErrors(t *testing.T) {
 	endpoint, _ := server.Endpoint()
 	body := `{"scope":{"type":"user"},"key":"provider.codex.actionAvailability","change":{"operation":"unset"},"expectedRevision":"` + strings.Repeat("a", 64) + `"}`
 	response := configurationRequest(t, endpoint, http.MethodPost, "/api/v1/configuration/apply", body, "conflict-key")
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	payload, _ := io.ReadAll(response.Body)
 	if response.StatusCode != http.StatusConflict || !strings.Contains(string(payload), "REVISION_CONFLICT") {
 		t.Fatalf("status=%d payload=%s", response.StatusCode, payload)

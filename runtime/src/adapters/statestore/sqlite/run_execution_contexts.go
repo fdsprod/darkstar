@@ -123,9 +123,6 @@ func normalizeRunExecutionContext(value statestore.RunExecutionContext) (statest
 		}
 		outputs[nodeID] = normalized
 	}
-	if outputs == nil {
-		outputs = map[string]map[string]json.RawMessage{}
-	}
 	frame, err := normalizeJSONObject(value.FrameSnapshot, "workflow frame snapshot")
 	if err != nil {
 		return value, "", "", "", err

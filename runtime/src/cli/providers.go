@@ -95,20 +95,20 @@ func (wiring *daemonProviderWiring) Provider(_ context.Context, request runexecu
 		return newFakeRunProvider(request.Scenario, request.AttemptID, request.Resume)
 	case runexecution.ProviderCodex:
 		if request.Scenario != runexecution.ScenarioWorkflow {
-			return nil, fmt.Errorf("Codex provider does not support scenario %q", request.Scenario)
+			return nil, fmt.Errorf("codex provider does not support scenario %q", request.Scenario)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported durable provider %q", request.Provider)
 	}
 	if wiring.selectionErr != nil {
-		return nil, fmt.Errorf("Codex provider is unavailable: %w", wiring.selectionErr)
+		return nil, fmt.Errorf("codex provider is unavailable: %w", wiring.selectionErr)
 	}
 	return wiring.codexProvider()
 }
 
 func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, request runexecution.AttemptRequestContext) (providerport.AttemptRequest, error) {
 	if wiring.selectionErr != nil {
-		return providerport.AttemptRequest{}, fmt.Errorf("Codex provider is unavailable: %w", wiring.selectionErr)
+		return providerport.AttemptRequest{}, fmt.Errorf("codex provider is unavailable: %w", wiring.selectionErr)
 	}
 	adapter, err := wiring.codexProvider()
 	if err != nil {

@@ -96,7 +96,7 @@ func TestCheckpointQueueIsDiscoverableWithoutKnownID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	var queue checkpointport.Queue
 	if err := json.NewDecoder(response.Body).Decode(&queue); err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestReviewFeedbackAPIRequiresExactCandidateAndRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK || response.Header.Get("ETag") != `"8"` {
 		t.Fatalf("status=%d etag=%q", response.StatusCode, response.Header.Get("ETag"))
 	}

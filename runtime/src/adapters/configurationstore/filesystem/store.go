@@ -294,7 +294,7 @@ func readBounded(path string) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	content, err := io.ReadAll(io.LimitReader(file, configuration.MaxFileSize+1))
 	if err != nil {
 		return nil, false, err

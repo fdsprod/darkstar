@@ -580,9 +580,10 @@ func (service *Service) reviewConversation(ctx context.Context, approval statest
 			}
 			active = nil
 		case "approval.decided":
-			if approval.Status == statestore.ApprovalApproved {
+			switch approval.Status {
+			case statestore.ApprovalApproved:
 				state = checkpointport.ReviewApproved
-			} else if approval.Status == statestore.ApprovalRejected {
+			case statestore.ApprovalRejected:
 				state = checkpointport.ReviewRejected
 			}
 		case "approval.cancelled", "approval.expired":

@@ -1232,7 +1232,7 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 		s.mu.Unlock()
 		if workflowFactory == nil || requestBuilder == nil {
 			if ctx.Err() == nil {
-				s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DISPATCH_UNAVAILABLE", errors.New("Codex workflow dispatch is not configured"))
+				s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DISPATCH_UNAVAILABLE", errors.New("codex workflow dispatch is not configured"))
 			}
 			return
 		}
@@ -1269,7 +1269,7 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 		health, healthErr := adapter.ProbeHealth(ctx)
 		if healthErr != nil || (health.State != provider.HealthAvailable && health.State != provider.HealthDegraded) {
 			if healthErr == nil {
-				healthErr = fmt.Errorf("Codex provider is not ready: %s", health.State)
+				healthErr = fmt.Errorf("codex provider is not ready: %s", health.State)
 			}
 			if ctx.Err() == nil {
 				s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "PROVIDER_NOT_READY", healthErr)

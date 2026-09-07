@@ -210,7 +210,9 @@ func (s *Service) Resume(ctx context.Context, request ControlRequest) (statestor
 	attempts, _ := s.store.AttemptsForRun(ctx, request.RunID)
 	for index := len(attempts) - 1; index >= 0; index-- {
 		if !attempts[index].Status.Terminal() {
-			s.launch(attempts[index])
+			if launchErr := s.launch(attempts[index]); launchErr != nil {
+				s.failAttemptWithCode(attempts[index].AttemptID, attempts[index].RunID, "WORKFLOW_DISPATCH_FAILED", launchErr)
+			}
 			break
 		}
 	}
@@ -291,7 +293,9 @@ func (s *Service) Retry(ctx context.Context, request RetryRequest) (statestore.R
 	if previous.VisitID != "" {
 		created, getErr := s.store.Attempt(ctx, attemptID)
 		if getErr == nil {
-			s.launch(created)
+			if launchErr := s.launch(created); launchErr != nil {
+				s.failAttemptWithCode(created.AttemptID, created.RunID, "WORKFLOW_DISPATCH_FAILED", launchErr)
+			}
 		}
 	}
 	return value, s.finishControl(ctx, action, request.IdempotencyKey, value, committed)

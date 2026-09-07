@@ -414,7 +414,6 @@ type commandFailure struct {
 
 // Apply verifies the exact plan version, then delegates one replay-safe runtime effect.
 func (s *Service) Apply(ctx context.Context, workItemID string, request ApplyRequest) (Result, error) {
-	request.PlanRequest.Target = request.Target
 	normalized, err := normalize(request.PlanRequest)
 	if err != nil {
 		return Result{}, err
@@ -471,13 +470,14 @@ func (s *Service) Apply(ctx context.Context, workItemID string, request ApplyReq
 	case StateRunning:
 		control.RunID, control.ExpectedResourceVersion = before.RunID, currentRunVersion(ctx, s.store, before.RunID)
 		var value statestore.RunProjection
-		if before.State == StateFailed {
+		switch before.State {
+		case StateFailed:
 			value, err = s.runtime.Retry(ctx, runexecution.RetryRequest{ControlRequest: control})
 			effect = EffectRetried
-		} else if before.State == StateWaiting || before.State == StateBlocked {
+		case StateWaiting, StateBlocked:
 			value, err = s.runtime.Resume(ctx, control)
 			effect = EffectResumed
-		} else {
+		default:
 			value, err = s.runtime.Launch(ctx, control)
 			effect = EffectStarted
 		}

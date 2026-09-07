@@ -16,7 +16,7 @@ func TestProviderPermissionProjectionQueriesAndRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	id, runID, attemptID := "permission_00000000000000000000000000", "run_00000000000000000000000000", "attempt_00000000000000000000000000"
 	appendPermission := func(revision uint64, kind, command string, actor statestore.Actor, data string) {

@@ -61,6 +61,60 @@ func TestPauseResumePreservesAttemptCursorAndIsIdempotent(t *testing.T) {
 	assertControlEventCount(t, evidence.Events, "run.resumed", 1)
 }
 
+func TestResumeAndRetryPersistLaunchFailure(t *testing.T) {
+	for _, action := range []string{"resume", "retry"} {
+		t.Run(action, func(t *testing.T) {
+			service, database, _ := newControlTestService(t, action == "retry")
+			scenario := ScenarioRestart
+			if action == "retry" {
+				scenario = ScenarioSuccess
+			}
+			view, err := service.Start(context.Background(), StartRequest{Scenario: scenario}, "start-launch-failure")
+			if err != nil {
+				t.Fatal(err)
+			}
+			current := waitForControlRun(t, service, view.Run.RunID, func(value View) bool {
+				if action == "retry" {
+					return value.Run.Status == statestore.RunFailed
+				}
+				return value.Run.Status == statestore.RunRunning && value.Attempts[0].LastSequence == 1
+			}).Run
+			if action == "resume" {
+				current, err = service.Pause(context.Background(), ControlRequest{RunID: current.RunID, ExpectedResourceVersion: current.ResourceVersion, IdempotencyKey: "pause-launch-failure"})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := service.Close(); err != nil {
+				t.Fatal(err)
+			}
+			request := ControlRequest{RunID: current.RunID, ExpectedResourceVersion: current.ResourceVersion, IdempotencyKey: action + "-launch-failure"}
+			if action == "resume" {
+				_, err = service.Resume(context.Background(), request)
+			} else {
+				_, err = service.Retry(context.Background(), RetryRequest{ControlRequest: request})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			final, err := service.Get(context.Background(), current.RunID)
+			if err != nil || final.Run.Status != statestore.RunFailed {
+				t.Fatalf("run after failed launch = %#v, %v", final.Run, err)
+			}
+			evidence, err := database.RunEvidence(context.Background(), current.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, event := range evidence.Events {
+				if event.Kind == "attempt.failed" && strings.Contains(string(event.Data), "WORKFLOW_DISPATCH_FAILED") {
+					return
+				}
+			}
+			t.Fatal("missing durable dispatch failure evidence")
+		})
+	}
+}
+
 func TestRecoveryAdmissionBlocksSchedulingControls(t *testing.T) {
 	service, _, _ := newControlTestService(t, false)
 	if err := service.SetSchedulingAllowed(false); err != nil {

@@ -482,9 +482,10 @@ func (c *Catalog) AuthoringCatalog(ctx context.Context) (AuthoringCatalog, error
 			skills, tools = CapabilityReferenceGroup{Status: ReferenceKnown, Items: []CapabilityCatalogItem{}}, CapabilityReferenceGroup{Status: ReferenceKnown, Items: []CapabilityCatalogItem{}}
 			for _, record := range records {
 				item := CapabilityCatalogItem{Name: record.Name, Kind: record.Kind, Class: record.Class, Version: record.DeclaredVersion, Fingerprint: record.Fingerprint, Availability: record.Availability}
-				if record.Kind == registryport.KindSkill {
+				switch record.Kind {
+				case registryport.KindSkill:
 					skills.Items = append(skills.Items, item)
-				} else if record.Kind == registryport.KindTool {
+				case registryport.KindTool:
 					tools.Items = append(tools.Items, item)
 				}
 			}
@@ -1045,17 +1046,6 @@ func numericIdentifier(value string) bool {
 		}
 	}
 	return true
-}
-
-func sortedStringSet(values map[string]bool) []string {
-	result := make([]string, 0, len(values))
-	for value := range values {
-		if value != "" {
-			result = append(result, value)
-		}
-	}
-	sort.Strings(result)
-	return result
 }
 
 // Graph returns a stable node/edge projection of one installed definition.
