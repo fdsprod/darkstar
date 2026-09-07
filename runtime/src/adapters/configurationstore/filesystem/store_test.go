@@ -180,8 +180,12 @@ func TestRejectsLinkedConfigurationBoundary(t *testing.T) {
 	root := t.TempDir()
 	realDirectory := filepath.Join(root, "real")
 	linkedDirectory := filepath.Join(root, "linked")
-	if err := os.Mkdir(realDirectory, 0o700); err != nil { t.Fatal(err) }
-	if err := os.Symlink(realDirectory, linkedDirectory); err != nil { t.Skipf("directory links unavailable: %v", err) }
+	if err := os.Mkdir(realDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realDirectory, linkedDirectory); err != nil {
+		t.Skipf("directory links unavailable: %v", err)
+	}
 	store := mustStore(t, filepath.Join(linkedDirectory, "config.yaml"), filepath.Join(root, "project.yaml"), filepath.Join(root, "secrets.yaml"), filepath.Join(root, "data"))
 	if _, err := store.Snapshot(context.Background(), configurationstore.TargetUser); !errors.Is(err, configurationstore.ErrPathBoundary) {
 		t.Fatalf("linked boundary error = %v", err)
