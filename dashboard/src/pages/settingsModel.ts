@@ -153,8 +153,16 @@ export interface ProjectRegistration {
   source: string;
 }
 
-export const SETTINGS_TABS = ["health", "provider", "projects", "configuration"] as const;
+export const SETTINGS_TABS = ["general", "projects", "providers", "execution", "health"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+export const SETTINGS_TAB_GROUPS: Record<SettingsTab, readonly ConfigurationGroup[]> = {
+  general: ["General", "Delivery", "Storage"],
+  projects: ["Project"],
+  providers: ["Providers"],
+  execution: ["Workflow defaults", "Permissions"],
+  health: ["Advanced"],
+};
 
 const HEALTH_STATUS_SEVERITY: Record<HealthStatus, number> = {
   healthy: 0,
@@ -270,7 +278,14 @@ export function normalizeProjectRegistration(value: ProjectRegistration | string
 }
 
 export function parseSettingsTab(value: string | null | undefined): SettingsTab {
-  return SETTINGS_TABS.includes(value as SettingsTab) ? value as SettingsTab : "configuration";
+  if (value === "configuration") return "general";
+  if (value === "provider") return "providers";
+  return SETTINGS_TABS.includes(value as SettingsTab) ? value as SettingsTab : "general";
+}
+
+export function settingsTabForSetting(key: string): SettingsTab {
+  const group = settingGroup(key);
+  return SETTINGS_TABS.find((tab) => SETTINGS_TAB_GROUPS[tab].includes(group)) ?? "general";
 }
 
 export function configurationScope(kind: "user", projectId?: string): ConfigurationScope;

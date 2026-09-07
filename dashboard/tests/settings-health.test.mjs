@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   CONFIGURATION_GROUPS,
+  SETTINGS_TAB_GROUPS,
   SETTINGS_TABS,
   configurationScope,
   decodeDoctorReport,
@@ -14,6 +15,7 @@ import {
   normalizeProjectRegistration,
   parseConfigurationScope,
   parseSettingsTab,
+  settingsTabForSetting,
   settingMatchesSearch,
   sortProjects,
 } from "../src/pages/settingsModel.ts";
@@ -218,9 +220,15 @@ test("project registration normalization and sorting are deterministic and non-m
 });
 
 test("settings tabs accept only the closed route vocabulary", () => {
-  assert.deepEqual(SETTINGS_TABS, ["health", "provider", "projects", "configuration"]);
+  assert.deepEqual(SETTINGS_TABS, ["general", "projects", "providers", "execution", "health"]);
   for (const tab of SETTINGS_TABS) assert.equal(parseSettingsTab(tab), tab);
-  for (const invalid of [undefined, null, "", "providers", "Health", "debug"]) assert.equal(parseSettingsTab(invalid), "configuration");
+  for (const invalid of [undefined, null, "", "Health", "debug"]) assert.equal(parseSettingsTab(invalid), "general");
+  assert.equal(parseSettingsTab("configuration"), "general", "legacy configuration links remain valid");
+  assert.equal(parseSettingsTab("provider"), "providers", "legacy provider links remain valid");
+  assert.deepEqual(SETTINGS_TAB_GROUPS.execution, ["Workflow defaults", "Permissions"]);
+  assert.equal(settingsTabForSetting("provider.codex.executable"), "providers");
+  assert.equal(settingsTabForSetting("permissions.shell"), "execution");
+  assert.equal(settingsTabForSetting("debug.receipts"), "health");
 });
 
 test("settings route uses public catalog/state/preview/apply/restore/secret operations for configuration", async () => {
@@ -233,6 +241,9 @@ test("settings route uses public catalog/state/preview/apply/restore/secret oper
   for (const method of ["getHealth", "getDoctorReport", "listProjects", "getConfigurationCatalog", "getConfigurationState", "previewConfigurationMutation", "applyConfigurationMutation", "restoreConfiguration", "writeConfigurationSecret"]) assert.match(page, new RegExp(`apiClient\\.${method}`));
   assert.match(page, /Promise\.allSettled/);
   assert.match(page, /apiClient\.registerProject/);
+  assert.match(page, /Reset to inherited/);
+  assert.match(page, /previewConfigurationMutation\(body\)[\s\S]*applyConfigurationMutation\(body, resetKey\)[\s\S]*await refetch\(scope\)/);
+  assert.match(page, /resetKeys\.current\.delete\(descriptor\.key\)[\s\S]*safeRefetch\(refetch, scope\)/);
   assert.doesNotMatch(page, /apiClient\.getEffectiveConfiguration/);
   assert.doesNotMatch(page, /apiClient\.(?:stopDaemon|restartDaemon|enableProvider|disableProvider|setConfiguration)/);
   assert.match(page, /Doctor guidance/);
@@ -283,10 +294,15 @@ test("typed controls and responsive CSS cover the complete catalog vocabulary", 
   assert.match(page, /draft\.type === "enum"/);
   assert.match(page, /draft\.type === "integer" \? "number" : "text"/);
   assert.match(page, /step=\{draft\.type === "integer" \? 1 : undefined\}/);
-  assert.match(page, /Winning source/);
-  assert.match(page, /Before \/ after preview/);
+  assert.match(page, /Effective value/);
+  assert.match(page, /Source reference/);
+  assert.match(page, /Effective change/);
+  assert.match(page, /Save validated change/);
+  assert.match(page, /Advanced diagnostics and repair guidance/);
+  assert.match(page, /Technical details/);
   assert.match(page, /aria-busy=\{busy\}/);
   assert.match(styles, /@media \(max-width: 480px\)/);
+  assert.match(styles, /@media \(max-width: 360px\)/);
   assert.match(styles, /\.configuration-preview > div \{ grid-template-columns: 1fr/);
   assert.match(styles, /\.configuration-setting-list \{ grid-template-columns: 1fr/);
   assert.match(styles, /overflow-wrap: anywhere/);

@@ -36,6 +36,22 @@ client synchronously consumes its API version and authorization header into
 module-private memory and removes the global. It never writes that credential to
 a URL or browser storage. Requests use relative `/api/v1` paths.
 
+## Settings contract
+
+Settings is organized into General, Projects, Providers, Execution &
+permissions, and Health. Editable controls are derived from the server catalog;
+each control keeps its effective value and source, validation result, restart
+impact, and save action together. Reset is a typed unset mutation that is
+previewed, applied with revision protection, and followed by an authoritative
+state refresh.
+
+Health guidance, provider executable details, project identifiers and source
+fingerprints, configuration revisions, and recovery receipts are disclosed only
+when requested. Secret values continue to use the write-only secret operation
+and never enter React state. Legacy `configuration` and `provider` tab links are
+mapped to their current sections, while setting deep links select the section
+owned by the catalog key.
+
 Run `npm run api:generate --workspace @darkstar/dashboard` after updating the
 OpenAPI document. Build and check commands run `api:check`, which fails when the
 committed generated surface is stale.
