@@ -109,7 +109,7 @@ func runWork(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		}
 		var result statestore.WorkItemProjection
 		resource := "work-items"
-		var request any = workmanagement.CreateWorkRequest{ProjectID: projectID, Title: input.value, Priority: input.priority}
+		var request any = workmanagement.CreateWorkRequest{ProjectID: projectID, Title: input.value, Details: input.details, Evidence: input.evidence, RoutingIntent: input.routingIntent(), Priority: input.priority}
 		if args[0] == "import" {
 			resource += "/import"
 			request = workmanagement.ImportWorkRequest{ProjectID: projectID, SourceReference: input.value, Title: input.title, Priority: input.priority}
@@ -363,8 +363,17 @@ func parseProjectRegistration(args []string) (workmanagement.ProjectRegistration
 }
 
 type parsedWorkMutation struct {
-	value, projectID, title string
-	priority                int
+	value, projectID, title, details                      string
+	routingMode, workflowID, workflowVersion, entryNodeID string
+	evidence, terminalNodeIDs                             []string
+	priority                                              int
+}
+
+func (input parsedWorkMutation) routingIntent() *statestore.WorkRoutingIntent {
+	if input.routingMode == "" || input.routingMode == string(statestore.WorkRoutingAutomatic) {
+		return &statestore.WorkRoutingIntent{Mode: statestore.WorkRoutingAutomatic}
+	}
+	return &statestore.WorkRoutingIntent{Mode: statestore.WorkRoutingOverride, WorkflowID: input.workflowID, WorkflowVersion: input.workflowVersion, EntryNodeID: input.entryNodeID, TerminalNodeIDs: input.terminalNodeIDs}
 }
 
 func parseWorkMutation(kind string, args []string) (parsedWorkMutation, string, error) {
@@ -389,6 +398,41 @@ func parseWorkMutation(kind string, args []string) (parsedWorkMutation, string, 
 				return parsedWorkMutation{}, "", errors.New("--title is supported once for work import")
 			}
 			result.title = value
+		case "--details":
+			if kind != "create" || result.details != "" {
+				return parsedWorkMutation{}, "", errors.New("--details is supported once for work create")
+			}
+			result.details = value
+		case "--evidence":
+			if kind != "create" {
+				return parsedWorkMutation{}, "", errors.New("--evidence is supported only for work create")
+			}
+			result.evidence = append(result.evidence, value)
+		case "--routing":
+			if kind != "create" || result.routingMode != "" || (value != "automatic" && value != "override") {
+				return parsedWorkMutation{}, "", errors.New("--routing requires automatic or override once for work create")
+			}
+			result.routingMode = value
+		case "--workflow":
+			if kind != "create" || result.workflowID != "" {
+				return parsedWorkMutation{}, "", errors.New("--workflow is supported once for work create")
+			}
+			result.workflowID = value
+		case "--workflow-version":
+			if kind != "create" || result.workflowVersion != "" {
+				return parsedWorkMutation{}, "", errors.New("--workflow-version is supported once for work create")
+			}
+			result.workflowVersion = value
+		case "--entry-node":
+			if kind != "create" || result.entryNodeID != "" {
+				return parsedWorkMutation{}, "", errors.New("--entry-node is supported once for work create")
+			}
+			result.entryNodeID = value
+		case "--terminal-node":
+			if kind != "create" {
+				return parsedWorkMutation{}, "", errors.New("--terminal-node is supported only for work create")
+			}
+			result.terminalNodeIDs = append(result.terminalNodeIDs, value)
 		case "--priority":
 			if seenPriority {
 				return parsedWorkMutation{}, "", errors.New("--priority may be specified only once")
@@ -409,6 +453,18 @@ func parseWorkMutation(kind string, args []string) (parsedWorkMutation, string, 
 	}
 	if key == "" {
 		key = newIdempotencyKey()
+	}
+	if kind == "create" {
+		hasOverride := result.workflowID != "" || result.workflowVersion != "" || result.entryNodeID != "" || len(result.terminalNodeIDs) != 0
+		if result.routingMode == "automatic" && hasOverride {
+			return parsedWorkMutation{}, "", errors.New("automatic routing cannot be combined with override options")
+		}
+		if result.routingMode == "override" && result.workflowID == "" {
+			return parsedWorkMutation{}, "", errors.New("override routing requires --workflow")
+		}
+		if result.routingMode == "" && hasOverride {
+			return parsedWorkMutation{}, "", errors.New("workflow route options require --routing override")
+		}
 	}
 	return result, key, nil
 }

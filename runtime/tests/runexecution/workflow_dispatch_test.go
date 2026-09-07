@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -117,6 +118,67 @@ func TestCreateRejectsSchedulingWhileRecoveryIsBlocked(t *testing.T) {
 	_, err := service.Create(context.Background(), CreateRequest{WorkItemID: workID, WorkflowID: planner.preview.Workflow.Name, WorkflowVersion: planner.preview.Workflow.Version}, "blocked-schedule")
 	if !errors.Is(err, ErrSchedulingBlocked) {
 		t.Fatalf("Create() error = %v, want ErrSchedulingBlocked", err)
+	}
+}
+
+func TestPrepareUsesPersistedRoutingOverrideAndResolvesOmittedVersion(t *testing.T) {
+	service, database, _ := newControlTestService(t, false)
+	projectID, workID := identity.Deterministic("project_", "routing-project"), identity.Deterministic("work_", "routing-work")
+	now := time.Now().UTC()
+	if _, err := database.Append(context.Background(),
+		pendingEvent("project.created", statestore.AggregateProject, projectID, 0, projectID, "routing-project", statestore.ActorUser, "test", now, map[string]any{"name": "test", "sourceHash": strings.Repeat("c", 64)}),
+		pendingEvent("work.created", statestore.AggregateWork, workID, 0, workID, "routing-work", statestore.ActorUser, "test", now, map[string]any{"projectId": projectID, "title": "Bounded route", "sourceHash": strings.Repeat("d", 64), "priority": 0, "routingIntent": map[string]any{"mode": "override", "workflowId": "test/workflow", "entryNodeId": "design", "terminalNodeIds": []string{"delivery"}}}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	planner := &routeCapturePlanner{workflowDispatchPlanner: workflowDispatchPlannerFor(workflow.NoCheckpoint{}, false)}
+	if err := service.SetWorkflowPlanner(planner); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := service.Prepare(context.Background(), CreateRequest{WorkItemID: workID}, "prepare-routing-override")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.WorkflowVersion != "1.0.0" || planner.version != "" || planner.request.From != "design" || !reflect.DeepEqual(planner.request.Until, []workflow.Identifier{"delivery"}) {
+		t.Fatalf("prepared=%#v planner version=%q route=%#v", prepared, planner.version, planner.request)
+	}
+}
+
+func TestPrepareResolvesAutomaticWorkToServerDefault(t *testing.T) {
+	service, database, _ := newControlTestService(t, false)
+	_, workID := seedWorkflowWork(t, database)
+	planner := &routeCapturePlanner{workflowDispatchPlanner: workflowDispatchPlannerFor(workflow.NoCheckpoint{}, true)}
+	if err := service.SetWorkflowPlanner(planner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Prepare(context.Background(), CreateRequest{WorkItemID: workID}, "prepare-automatic-route"); err != nil {
+		t.Fatal(err)
+	}
+	if planner.name != DefaultWorkflowID || planner.version != DefaultWorkflowVersion || planner.request.From != "" || len(planner.request.Until) != 0 {
+		t.Fatalf("automatic planner input = %s@%s %#v", planner.name, planner.version, planner.request)
+	}
+}
+
+func TestPrepareRejectsInvalidRoutingOverrideBeforeRunCreation(t *testing.T) {
+	service, database, _ := newControlTestService(t, false)
+	projectID, workID := identity.Deterministic("project_", "invalid-routing-project"), identity.Deterministic("work_", "invalid-routing-work")
+	now := time.Now().UTC()
+	if _, err := database.Append(context.Background(),
+		pendingEvent("project.created", statestore.AggregateProject, projectID, 0, projectID, "invalid-routing-project", statestore.ActorUser, "test", now, map[string]any{"name": "test", "sourceHash": strings.Repeat("c", 64)}),
+		pendingEvent("work.created", statestore.AggregateWork, workID, 0, workID, "invalid-routing-work", statestore.ActorUser, "test", now, map[string]any{"projectId": projectID, "title": "Invalid route", "sourceHash": strings.Repeat("d", 64), "priority": 0, "routingIntent": map[string]any{"mode": "override", "workflowId": "test/workflow", "entryNodeId": "ghost"}}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	planner := &routeCapturePlanner{workflowDispatchPlanner: workflowDispatchPlannerFor(workflow.NoCheckpoint{}, false), issues: workflow.ValidationErrors{{Code: workflow.ValidationRouteEntryInvalid, Message: "unknown entry"}}}
+	if err := service.SetWorkflowPlanner(planner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Prepare(context.Background(), CreateRequest{WorkItemID: workID}, "prepare-invalid-routing"); err == nil {
+		t.Fatal("invalid route unexpectedly prepared")
+	}
+	runs, err := database.RunsForWorkItem(context.Background(), workID)
+	if err != nil || len(runs) != 0 {
+		t.Fatalf("runs after invalid route = %#v, %v", runs, err)
 	}
 }
 
@@ -246,6 +308,22 @@ func TestResumeActiveRefusesCreatedWorkflowAttemptAfterCrashWindow(t *testing.T)
 type workflowDispatchPlanner struct {
 	preview    workflow.RoutePreview
 	definition workflow.Definition
+}
+
+type routeCapturePlanner struct {
+	workflowDispatchPlanner
+	request workflow.RouteRequest
+	name    string
+	version string
+	issues  workflow.ValidationErrors
+}
+
+func (planner *routeCapturePlanner) Preview(_ context.Context, name string, version string, request workflow.RouteRequest, _ workflow.RouteContext) (workflow.RoutePreview, workflow.ValidationErrors, error) {
+	planner.request, planner.name, planner.version = request, name, version
+	if len(planner.issues) != 0 {
+		return workflow.RoutePreview{}, planner.issues, nil
+	}
+	return planner.preview, nil, nil
 }
 
 func (planner workflowDispatchPlanner) Preview(context.Context, string, string, workflow.RouteRequest, workflow.RouteContext) (workflow.RoutePreview, workflow.ValidationErrors, error) {

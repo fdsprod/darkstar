@@ -11,7 +11,7 @@ import (
 )
 
 // ReducerVersion changes whenever replay semantics change incompatibly.
-const ReducerVersion = "9"
+const ReducerVersion = "10"
 
 // UnsupportedSchemaVersionError means replay cannot safely interpret an event.
 type UnsupportedSchemaVersionError struct {

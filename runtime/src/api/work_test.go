@@ -56,10 +56,16 @@ func TestProjectAndWorkAPICommands(t *testing.T) {
 		t.Fatalf("project = %#v, location = %q", project, projectResponse.Header.Get("Location"))
 	}
 
-	createdResponse := workRequest(t, endpoint, http.MethodPost, "/api/v1/work-items", `{"projectId":"`+project.ProjectID+`","title":"Implement commands","priority":80}`, "work-create-command")
+	createdResponse := workRequest(t, endpoint, http.MethodPost, "/api/v1/work-items", `{"projectId":"`+project.ProjectID+`","title":"Implement commands","details":"Keep the route bounded","evidence":["DAR-144","design.md"],"routingIntent":{"mode":"override","workflowId":"delivery","entryNodeId":"design","terminalNodeIds":["publish"]},"priority":80}`, "work-create-command")
 	var created statestore.WorkItemProjection
 	decodeJSON(t, createdResponse, &created)
 	_ = createdResponse.Body.Close()
+	if created.Details != "Keep the route bounded" || len(created.Evidence) != 2 || created.RoutingIntent.Mode != statestore.WorkRoutingOverride || created.RoutingIntent.EntryNodeID != "design" {
+		t.Fatalf("created intent = %#v", created)
+	}
+	invalidRouting := workRequest(t, endpoint, http.MethodPost, "/api/v1/work-items", `{"projectId":"`+project.ProjectID+`","title":"Contradictory","routingIntent":{"mode":"automatic","workflowId":"delivery"}}`, "invalid-routing-command")
+	assertAPIError(t, invalidRouting, http.StatusBadRequest, "VALIDATION_FAILED")
+	_ = invalidRouting.Body.Close()
 	importResponse := workRequest(t, endpoint, http.MethodPost, "/api/v1/work-items/import", `{"projectId":"`+project.ProjectID+`","sourceReference":"DAR-65","priority":90}`, "work-import-command")
 	var imported statestore.WorkItemProjection
 	decodeJSON(t, importResponse, &imported)

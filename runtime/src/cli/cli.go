@@ -78,7 +78,7 @@ Project commands:
   project show <project-id> [--json]
 
 Work commands:
-  work create <description> [--project <project-id>] [--priority <n>] [--idempotency-key <key>] [--json]
+  work create <outcome> [--project <project-id>] [--details <text>] [--evidence <ref>] [--routing <automatic|override>] [--workflow <name>] [--workflow-version <version>] [--entry-node <id>] [--terminal-node <id>] [--priority <n>] [--idempotency-key <key>] [--json]
   work import <source-ref> [--project <project-id>] [--title <title>] [--priority <n>] [--idempotency-key <key>] [--json]
   work list [--project <project-id>] [--json]
   work show <work-id> [--json]

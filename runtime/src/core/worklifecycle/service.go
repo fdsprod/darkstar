@@ -250,9 +250,6 @@ func (s *Service) reasons(value facts, target State, request PlanRequest) []Disa
 		if value.state != StateBacklog {
 			reasons = append(reasons, ReasonActiveRun)
 		}
-		if request.Preparation == nil {
-			reasons = append(reasons, ReasonPreparationRequired)
-		}
 	case StateRunning:
 		if value.run == nil || (value.run.Status != statestore.RunReady && value.run.Status != statestore.RunWaiting && value.run.Status != statestore.RunBlocked && value.run.Status != statestore.RunFailed) {
 			reasons = append(reasons, ReasonRunNotReady)
@@ -463,7 +460,11 @@ func (s *Service) Apply(ctx context.Context, workItemID string, request ApplyReq
 	switch request.Target {
 	case StateReady:
 		p := request.Preparation
-		value, callErr := s.runtime.Prepare(ctx, runexecution.CreateRequest{WorkItemID: workItemID, WorkflowID: p.WorkflowID, WorkflowVersion: p.WorkflowVersion, Profile: p.Profile}, request.IdempotencyKey)
+		create := runexecution.CreateRequest{WorkItemID: workItemID}
+		if p != nil {
+			create.WorkflowID, create.WorkflowVersion, create.Profile = p.WorkflowID, p.WorkflowVersion, p.Profile
+		}
+		value, callErr := s.runtime.Prepare(ctx, create, request.IdempotencyKey)
 		err = callErr
 		run = &value
 		effect = EffectPrepared

@@ -369,8 +369,8 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	request.WorkflowID = strings.TrimSpace(request.WorkflowID)
 	request.WorkflowVersion = strings.TrimSpace(request.WorkflowVersion)
 	request.Profile = strings.TrimSpace(request.Profile)
-	if request.WorkItemID == "" || request.WorkflowID == "" || request.WorkflowVersion == "" {
-		return statestore.RunProjection{}, fmt.Errorf("%w: workItemId, workflowId, and workflowVersion are required", ErrInvalidRequest)
+	if request.WorkItemID == "" {
+		return statestore.RunProjection{}, fmt.Errorf("%w: workItemId is required", ErrInvalidRequest)
 	}
 	if strings.TrimSpace(idempotencyKey) != idempotencyKey || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
 		return statestore.RunProjection{}, fmt.Errorf("%w: idempotency key must be between 8 and 128 bytes without surrounding whitespace", ErrInvalidRequest)
@@ -381,6 +381,19 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	}
 	if work.Status.Terminal() {
 		return statestore.RunProjection{}, fmt.Errorf("%w: work item %s is %s", ErrInvalidRequest, work.WorkItemID, work.Status)
+	}
+	if work.RoutingIntent.Mode == "" {
+		work.RoutingIntent.Mode = statestore.WorkRoutingAutomatic
+	}
+	if request.WorkflowID == "" {
+		if work.RoutingIntent.Mode == statestore.WorkRoutingOverride {
+			request.WorkflowID, request.WorkflowVersion = work.RoutingIntent.WorkflowID, work.RoutingIntent.WorkflowVersion
+		} else {
+			request.WorkflowID, request.WorkflowVersion = DefaultWorkflowID, DefaultWorkflowVersion
+		}
+	}
+	if request.WorkflowID == "" {
+		return statestore.RunProjection{}, fmt.Errorf("%w: routing did not resolve a workflowId", ErrInvalidRequest)
 	}
 	project, err := s.store.Project(ctx, work.ProjectID)
 	if err != nil {
@@ -401,9 +414,16 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	}
 	var preview workflow.RoutePreview
 	var issues workflow.ValidationErrors
+	routeRequest, err := workRouteRequest(work, request)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
 	if request.Profile == "" {
-		preview, issues, err = planner.Preview(ctx, request.WorkflowID, request.WorkflowVersion, workflow.RouteRequest{}, routeContext)
+		preview, issues, err = planner.Preview(ctx, request.WorkflowID, request.WorkflowVersion, routeRequest, routeContext)
 	} else {
+		if work.RoutingIntent.Mode == statestore.WorkRoutingOverride {
+			return statestore.RunProjection{}, fmt.Errorf("%w: a route profile cannot replace the work item's routing override", ErrInvalidRequest)
+		}
 		profilePlanner, supported := planner.(WorkflowProfilePlanner)
 		if !supported {
 			return statestore.RunProjection{}, fmt.Errorf("%w: workflow planner does not support route profiles", ErrWorkflowUnavailable)
@@ -559,6 +579,31 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 		s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DISPATCH_FAILED", err)
 	}
 	return value, nil
+}
+
+func workRouteRequest(work statestore.WorkItemProjection, request CreateRequest) (workflow.RouteRequest, error) {
+	intent := work.RoutingIntent
+	if intent.Mode == "" {
+		intent.Mode = statestore.WorkRoutingAutomatic
+	}
+	switch intent.Mode {
+	case statestore.WorkRoutingAutomatic:
+		return workflow.RouteRequest{}, nil
+	case statestore.WorkRoutingOverride:
+		if request.WorkflowID != intent.WorkflowID {
+			return workflow.RouteRequest{}, fmt.Errorf("%w: workflowId conflicts with the work item's routing override", ErrInvalidRequest)
+		}
+		if intent.WorkflowVersion != "" && request.WorkflowVersion != intent.WorkflowVersion {
+			return workflow.RouteRequest{}, fmt.Errorf("%w: workflowVersion conflicts with the work item's routing override", ErrInvalidRequest)
+		}
+		terminals := make([]workflow.Identifier, len(intent.TerminalNodeIDs))
+		for index, nodeID := range intent.TerminalNodeIDs {
+			terminals[index] = workflow.Identifier(nodeID)
+		}
+		return workflow.RouteRequest{From: workflow.Identifier(intent.EntryNodeID), Until: terminals}, nil
+	default:
+		return workflow.RouteRequest{}, fmt.Errorf("%w: work item has an unsupported routing intent", ErrInvalidRequest)
+	}
 }
 
 func (s *Service) saveInitialExecutionContext(ctx context.Context, run statestore.RunProjection, route workflow.Route, inputs map[workflow.Identifier]json.RawMessage) (statestore.RunExecutionContext, error) {

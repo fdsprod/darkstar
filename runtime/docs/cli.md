@@ -157,7 +157,7 @@ darkstar project add [path] [--name <name>]
 darkstar project register [path] [--name <name>]
 darkstar project list
 darkstar project show <project-id>
-darkstar work create <description> [--project <project-id>] [--priority <n>]
+darkstar work create <outcome> [--project <project-id>] [--details <text>] [--evidence <ref>] [--routing automatic|override] [--workflow <name>] [--workflow-version <version>] [--entry-node <id>] [--terminal-node <id>]
 darkstar work import <source-ref> [--project <project-id>] [--title <title>] [--priority <n>]
 darkstar work list [--project <project-id>]
 darkstar work show <work-id>

@@ -161,7 +161,7 @@ func contains(values []DisabledReason, wanted DisabledReason) bool {
 	return false
 }
 
-func TestPlanIsExhaustiveAndRequiresTypedReadyPreparation(t *testing.T) {
+func TestPlanIsExhaustiveAndAllowsServerResolvedReadyPreparation(t *testing.T) {
 	store := newMemoryStore()
 	runtime := &fakeRuntime{store: store}
 	service, _ := New(store, runtime)
@@ -172,14 +172,14 @@ func TestPlanIsExhaustiveAndRequiresTypedReadyPreparation(t *testing.T) {
 	if without.State != StateBacklog || without.ResourceVersion != store.work.LastGlobalPosition || len(without.Targets) != len(allStates) {
 		t.Fatalf("plan = %#v", without)
 	}
-	if decision := target(without, StateReady); decision.Availability != AvailabilityDisabled || !contains(decision.DisabledReasons, ReasonPreparationRequired) {
+	if decision := target(without, StateReady); decision.Availability != AvailabilityEnabled || len(decision.DisabledReasons) != 0 {
 		t.Fatalf("ready = %#v", decision)
 	}
 	sibling, err := service.Plan(context.Background(), store.work.WorkItemID, PlanRequest{Target: StateRunning})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision := target(sibling, StateReady); decision.Availability != AvailabilityDisabled || !contains(decision.DisabledReasons, ReasonPreparationRequired) {
+	if decision := target(sibling, StateReady); decision.Availability != AvailabilityEnabled || len(decision.DisabledReasons) != 0 {
 		t.Fatalf("sibling ready = %#v", decision)
 	}
 	with, err := service.Plan(context.Background(), store.work.WorkItemID, PlanRequest{Target: StateReady, Preparation: &Preparation{WorkflowID: " delivery ", WorkflowVersion: " 1.0.0 "}})

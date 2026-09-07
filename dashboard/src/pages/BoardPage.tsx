@@ -11,17 +11,14 @@ import {
   LIFECYCLE_COLUMNS,
   availableCardActions,
   buildCreateWorkItemRequest,
-  buildPrepareRunRequest,
   buildWorkTransitionRequest,
   deriveBoardCards,
   filterBoardCards,
   transitionTargetForAction,
-  workflowProfiles,
   type BoardCard,
   type BoardCardAction,
   type BoardLifecycle,
   type BoardView,
-  type WorkflowProfileOption,
 } from "./boardModel";
 
 type Schemas = components["schemas"];
@@ -34,18 +31,10 @@ const actionLabels: Record<BoardCardAction, string> = {
   prepare: "Prepare run", launch: "Start run", pause: "Pause", resume: "Resume", retry: "Retry", cancel: "Cancel",
 };
 
-type WorkflowProfileState =
-  | { kind: "idle" }
-  | { kind: "loading"; selection: string }
-  | { kind: "ready"; selection: string; profiles: WorkflowProfileOption[] }
-  | { kind: "error"; selection: string };
-
 export function BoardPage() {
   const { state, refresh } = useDashboardState();
   const { search } = useRouter();
   const createDialog = useRef<HTMLDialogElement>(null);
-  const prepareDialog = useRef<HTMLDialogElement>(null);
-  const [prepareCard, setPrepareCard] = useState<BoardCard>();
   const [workflows, setWorkflows] = useState<Schemas["WorkflowVersionSummary"][]>([]);
   const [view, setView] = useState<BoardView>("all");
   const [projectId, setProjectId] = useState("");
@@ -82,13 +71,7 @@ export function BoardPage() {
     return () => { live = false; };
   }, [allCards, state.lastSynchronizedAt]);
 
-  function beginPrepare(card: BoardCard) {
-    setPrepareCard(card);
-    window.setTimeout(() => prepareDialog.current?.showModal(), 0);
-  }
-
   async function runCardAction(card: BoardCard, action: BoardCardAction) {
-    if (action === "prepare") return beginPrepare(card);
     const plan = transitionPlans[card.work.id];
     if (!plan) return;
     if (action === "cancel" && !window.confirm(`Cancel “${card.work.title}”? Its run history and evidence will be preserved.`)) return;
@@ -141,8 +124,7 @@ export function BoardPage() {
 
       {!loading && cards.length === 0 && filtered && <EmptyState compact kind="filtered" title="No work matches these filters" message="The active project, workflow, search, or attention filters exclude every work item." action={<button type="button" className="button" onClick={() => { setProjectId(""); setWorkflowId(""); setQuery(""); setView("all"); }}>Clear filters</button>} />}
       {!loading && !canCreate && <p className="board-setup-note">Register an active project with <code>darkstar project add</code> before creating work.</p>}
-      <CreateWorkDialog dialogRef={createDialog} projects={state.snapshot.projects} onCreated={refresh} />
-      <PrepareRunDialog dialogRef={prepareDialog} card={prepareCard} workflows={workflows} onRefresh={refresh} onPrepared={() => setActionMessage({ kind: "success", text: "Run prepared and ready to start. The board now reflects daemon state." })} />
+      <CreateWorkDialog dialogRef={createDialog} projects={state.snapshot.projects} workflows={workflows} onCreated={refresh} />
     </div>
   );
 }
@@ -175,16 +157,22 @@ function WorkCard({ card, plan, pendingAction, onAction }: { card: BoardCard; pl
   </article>;
 }
 
-function CreateWorkDialog({ dialogRef, projects, onCreated }: { dialogRef: RefObject<HTMLDialogElement | null>; projects: Schemas["Project"][]; onCreated(): Promise<void> }) {
+function CreateWorkDialog({ dialogRef, projects, workflows, onCreated }: { dialogRef: RefObject<HTMLDialogElement | null>; projects: Schemas["Project"][]; workflows: Schemas["WorkflowVersionSummary"][]; onCreated(): Promise<void> }) {
   const { navigate } = useRouter();
   const activeProjects = projects.filter((project) => project.status === "active");
-  const [projectId, setProjectId] = useState(""); const [title, setTitle] = useState(""); const [priority, setPriority] = useState("0");
+  const workflowNames = [...new Set(workflows.map((workflow) => workflow.name))].sort((left, right) => left.localeCompare(right));
+  const [projectId, setProjectId] = useState(""); const [title, setTitle] = useState(""); const [details, setDetails] = useState(""); const [evidence, setEvidence] = useState("");
+  const [routingMode, setRoutingMode] = useState<"automatic" | "override">("automatic"); const [workflowSelection, setWorkflowSelection] = useState(""); const [entryNodeId, setEntryNodeId] = useState(""); const [terminalNodeIds, setTerminalNodeIds] = useState("");
   const [submitting, setSubmitting] = useState(false); const [error, setError] = useState("");
   useEffect(() => { if (!projectId && activeProjects.length === 1) setProjectId(activeProjects[0].id); }, [activeProjects, projectId]);
   function close() { if (!submitting) { dialogRef.current?.close(); if (new URLSearchParams(window.location.search).has("create")) navigate("/board", { replace: true }); } }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(""); setSubmitting(true);
-    try { const body = buildCreateWorkItemRequest({ projectId, title, priority: Number(priority) }); await apiClient.createWorkItem(body, `dashboard-create-work-${crypto.randomUUID()}`); await onCreated(); setTitle(""); setPriority("0"); dialogRef.current?.close(); }
+    try {
+      const [workflowId, workflowVersion] = workflowSelection.split("\u0000");
+      const routingIntent: Schemas["WorkRoutingIntent"] = routingMode === "automatic" ? { mode: "automatic" } : { mode: "override", workflowId: workflowId ?? "", ...(workflowVersion ? { workflowVersion } : {}), ...(entryNodeId.trim() ? { entryNodeId } : {}), ...(terminalNodeIds.trim() ? { terminalNodeIds: terminalNodeIds.split(",") } : {}) };
+      const body = buildCreateWorkItemRequest({ projectId, title, details, evidence: evidence.split("\n"), routingIntent }); await apiClient.createWorkItem(body, `dashboard-create-work-${crypto.randomUUID()}`); await onCreated(); setTitle(""); setDetails(""); setEvidence(""); setRoutingMode("automatic"); setWorkflowSelection(""); setEntryNodeId(""); setTerminalNodeIds(""); dialogRef.current?.close();
+    }
     catch (cause) { setError(cause instanceof Error && !(cause instanceof ApiRequestError) ? cause.message : safeActionError(cause)); }
     finally { setSubmitting(false); }
   }
@@ -193,52 +181,14 @@ function CreateWorkDialog({ dialogRef, projects, onCreated }: { dialogRef: RefOb
     <p className="work-dialog__intro">Create authored work in a registered project. Route selection happens from the durable work record.</p>
     <label className="field"><span>Project</span><select required autoFocus value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="" disabled>Choose a project</option>{activeProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
     <label className="field"><span>Requested outcome</span><textarea required rows={4} maxLength={500} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Describe the result you want DARKSTAR to deliver" /><small>{title.length}/500</small></label>
-    <label className="field field--priority"><span>Priority</span><input required type="number" inputMode="numeric" min="0" step="1" value={priority} onChange={(event) => setPriority(event.target.value)} /><small>Higher values are scheduled first.</small></label>
+    <label className="field"><span>Details <small>(optional)</small></span><textarea rows={3} value={details} onChange={(event) => setDetails(event.target.value)} placeholder="Constraints, context, or success criteria" /></label>
+    <label className="field"><span>Evidence <small>(optional)</small></span><textarea rows={2} value={evidence} onChange={(event) => setEvidence(event.target.value)} placeholder="One file, URL, or reference per line" /><small>Evidence is attached to the work record and does not start a run.</small></label>
+    <details className="diagnostics-details"><summary>Advanced routing</summary><div className="diagnostics-details__body">
+      <label className="field"><span>Routing</span><select value={routingMode} onChange={(event) => setRoutingMode(event.target.value as "automatic" | "override")}><option value="automatic">Automatic (recommended)</option><option value="override">Override workflow</option></select></label>
+      {routingMode === "override" && <><label className="field"><span>Workflow</span><select required value={workflowSelection} onChange={(event) => setWorkflowSelection(event.target.value)}><option value="" disabled>Choose a workflow</option>{workflowNames.map((name) => <option key={`${name}:latest`} value={`${name}\u0000`}>{name} · latest installed</option>)}{workflows.map((workflow) => <option key={`${workflow.name}:${workflow.version}:${workflow.digest}`} value={`${workflow.name}\u0000${workflow.version}`}>{workflow.name} · {workflow.version}</option>)}</select><small>Latest installed resolves by semantic version when the run is prepared.</small></label><label className="field"><span>Entry node <small>(optional)</small></span><input value={entryNodeId} onChange={(event) => setEntryNodeId(event.target.value)} /></label><label className="field"><span>Terminal nodes <small>(optional, comma-separated)</small></span><input value={terminalNodeIds} onChange={(event) => setTerminalNodeIds(event.target.value)} /></label></>}
+    </div></details>
     {error && <p className="form-error" role="alert">{error}</p>}
     <footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button className="button" type="button" disabled={submitting} onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || activeProjects.length === 0}>{submitting ? "Creating…" : "Create work"}</button></footer>
-  </form></dialog>;
-}
-
-function PrepareRunDialog({ dialogRef, card, workflows, onRefresh, onPrepared }: { dialogRef: RefObject<HTMLDialogElement | null>; card?: BoardCard; workflows: Schemas["WorkflowVersionSummary"][]; onRefresh(): Promise<void>; onPrepared(): void }) {
-  const [selection, setSelection] = useState(""); const [profile, setProfile] = useState(""); const [profileState, setProfileState] = useState<WorkflowProfileState>({ kind: "idle" });
-  const [profileReload, setProfileReload] = useState(0);
-  const [submitting, setSubmitting] = useState(false); const [error, setError] = useState("");
-  function close() { if (!submitting) { dialogRef.current?.close(); setError(""); } }
-  useEffect(() => { if (!selection && workflows.length === 1) setSelection(`${workflows[0].name}\u0000${workflows[0].version}`); }, [selection, workflows]);
-  useEffect(() => {
-    setProfile("");
-    if (!selection) { setProfileState({ kind: "idle" }); return; }
-    const [workflowId, workflowVersion] = selection.split("\u0000");
-    if (!workflowId || !workflowVersion) { setProfileState({ kind: "error", selection }); return; }
-    const controller = new AbortController();
-    setProfileState({ kind: "loading", selection });
-    void apiClient.showWorkflow(workflowId, workflowVersion, controller.signal)
-      .then((definition) => { if (!controller.signal.aborted) setProfileState({ kind: "ready", selection, profiles: workflowProfiles(definition) }); })
-      .catch(() => { if (!controller.signal.aborted) setProfileState({ kind: "error", selection }); });
-    return () => controller.abort();
-  }, [profileReload, selection]);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!card) return; const [workflowId, workflowVersion] = selection.split("\u0000"); if (!workflowId || !workflowVersion) return setError("Choose a workflow version.");
-    setSubmitting(true); setError("");
-    try {
-      const body = buildPrepareRunRequest({ workItemId: card.work.id, workflowId, workflowVersion, profile });
-      const preparation: Schemas["WorkTransitionPreparation"] = { workflowId: body.workflowId, workflowVersion: body.workflowVersion, ...(body.profile ? { profile: body.profile } : {}) };
-      const plan = await apiClient.planWorkItemTransition(card.work.id, "ready", preparation);
-      await apiClient.applyWorkItemTransition(card.work.id, plan.resourceVersion, `dashboard-transition-ready-${crypto.randomUUID()}`, buildWorkTransitionRequest("menu", "ready", preparation));
-      await onRefresh(); onPrepared(); dialogRef.current?.close();
-    }
-    catch (cause) { setError(safeActionError(cause)); await onRefresh().catch(() => undefined); }
-    finally { setSubmitting(false); }
-  }
-  return <dialog ref={dialogRef} className="work-dialog work-dialog--compact" onCancel={(event) => { if (submitting) event.preventDefault(); }} onClose={() => { if (!submitting) setError(""); }}><form aria-busy={submitting} onSubmit={(event) => void submit(event)}>
-    <header className="work-dialog__header"><div><p className="eyebrow">Prepare run</p><h2>{card?.work.title ?? "Choose a workflow"}</h2></div><button className="icon-button" type="button" aria-label="Close prepare run dialog" disabled={submitting} onClick={close}><Icon name="x" /></button></header>
-    <p className="work-dialog__intro">Select the installed workflow route to validate and move this work to Ready. Starting remains a separate action.</p>
-    <label className="field"><span>Workflow version</span><select required autoFocus value={selection} onChange={(event) => setSelection(event.target.value)}><option value="" disabled>Choose a workflow</option>{workflows.map((workflow) => <option key={`${workflow.name}:${workflow.version}:${workflow.digest}`} value={`${workflow.name}\u0000${workflow.version}`}>{workflow.name} · {workflow.version} ({workflow.sourceScope})</option>)}</select></label>
-    {profileState.kind === "loading" && <p role="status">Loading workflow profiles…</p>}
-    {profileState.kind === "ready" && profileState.selection === selection && <label className="field"><span>Workflow profile</span><select value={profile} onChange={(event) => setProfile(event.target.value)}><option value="">Default route</option>{profileState.profiles.map((option) => <option key={option.id} value={option.id}>{option.id}{option.description ? ` — ${option.description}` : ""}</option>)}</select><small>Profiles choose an authored route and its declared input defaults.</small></label>}
-    {profileState.kind === "error" && profileState.selection === selection && <div><p className="form-error" role="alert">The selected workflow definition could not be loaded. Retry after checking daemon health.</p><button className="button" type="button" onClick={() => setProfileReload((value) => value + 1)}>Retry profile load</button></div>}
-    {workflows.length === 0 && <p className="form-error" role="status">No installed workflows are available. Install one with the CLI first.</p>}{error && <p className="form-error" role="alert">{error}</p>}
-    <footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button className="button" type="button" disabled={submitting} onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || workflows.length === 0 || profileState.kind !== "ready" || profileState.selection !== selection}>{submitting ? "Preparing…" : "Move to Ready"}</button></footer>
   </form></dialog>;
 }
 

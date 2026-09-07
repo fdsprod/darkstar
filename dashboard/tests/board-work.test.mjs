@@ -145,6 +145,7 @@ test("create-work normalizes the body and the API client supplies required reque
   assert.deepEqual(body, {
     projectId: "project_alpha",
     title: "Ship dashboard",
+    routingIntent: { mode: "automatic" },
     priority: 4,
   });
   assert.deepEqual(operationDefinitions.createWorkItem, {
@@ -199,7 +200,21 @@ test("drag keyboard and menu movement share one typed transition command", () =>
   assert.deepEqual(buildWorkTransitionRequest("keyboard", "ready", preparation), buildWorkTransitionRequest("menu", "ready", preparation));
   assert.deepEqual(buildWorkTransitionRequest("drag", "running"), { target: "running" });
   assert.deepEqual(buildWorkTransitionRequest("menu", "done"), { target: "done", confirmation: "confirmed" });
-  assert.throws(() => buildWorkTransitionRequest("menu", "ready"), /exact workflow preparation/);
+  assert.deepEqual(buildWorkTransitionRequest("menu", "ready"), { target: "ready" });
+});
+
+test("create-work emits the closed automatic or override routing intent", () => {
+  assert.deepEqual(buildCreateWorkItemRequest({ projectId: "project_alpha", title: "Automatic" }), {
+    projectId: "project_alpha", title: "Automatic", routingIntent: { mode: "automatic" },
+  });
+  assert.deepEqual(buildCreateWorkItemRequest({
+    projectId: "project_alpha", title: "Bounded", details: "Keep review", evidence: [" plan.md ", "plan.md", "ticket:DAR-144"],
+    routingIntent: { mode: "override", workflowId: " delivery ", workflowVersion: " 2.0.0 ", entryNodeId: " design ", terminalNodeIds: [" review ", "review", "publish"] },
+  }), {
+    projectId: "project_alpha", title: "Bounded", details: "Keep review", evidence: ["plan.md", "ticket:DAR-144"],
+    routingIntent: { mode: "override", workflowId: "delivery", workflowVersion: "2.0.0", entryNodeId: "design", terminalNodeIds: ["review", "publish"] },
+  });
+  assert.throws(() => buildCreateWorkItemRequest({ projectId: "project_alpha", title: "Invalid", routingIntent: { mode: "override", workflowId: " " } }), /Choose a workflow/);
 });
 
 test("run preparation normalizes the optional profile without inventing a default", () => {
@@ -259,9 +274,9 @@ test("board movement uses only the work lifecycle plan and apply operations", as
   ]);
   assert.match(client, /planWorkItemTransition\([^\n]*this\.operation\("planWorkItemTransition"/);
   assert.match(client, /applyWorkItemTransition\([^\n]*this\.operation\("applyWorkItemTransition"/);
-  assert.match(page, /apiClient\.showWorkflow\(workflowId, workflowVersion, controller\.signal\)/);
-  assert.match(page, /apiClient\.planWorkItemTransition\(card\.work\.id, "ready", preparation\)/);
+  assert.doesNotMatch(page, /PrepareRunDialog/);
+  assert.match(page, /buildWorkTransitionRequest\("menu", target\)/);
   assert.match(page, /apiClient\.applyWorkItemTransition\(card\.work\.id, plan\.resourceVersion,/);
   assert.doesNotMatch(page, /apiClient\.(?:prepareRun|startRun|pauseRun|resumeRun|retryRun|cancelRun)\(/);
-  assert.match(page, /"Move to Ready"/);
+  assert.match(page, /Advanced routing/);
 });

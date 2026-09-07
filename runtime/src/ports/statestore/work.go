@@ -2,6 +2,25 @@ package statestore
 
 import "time"
 
+// WorkRoutingMode is the closed authoring choice for how a work item selects
+// its eventual workflow route.
+type WorkRoutingMode string
+
+const (
+	WorkRoutingAutomatic WorkRoutingMode = "automatic"
+	WorkRoutingOverride  WorkRoutingMode = "override"
+)
+
+// WorkRoutingIntent is persisted with work, not with a run. Historical runs
+// remain governed by their immutable frozen route snapshots.
+type WorkRoutingIntent struct {
+	Mode            WorkRoutingMode `json:"mode"`
+	WorkflowID      string          `json:"workflowId,omitempty"`
+	WorkflowVersion string          `json:"workflowVersion,omitempty"`
+	EntryNodeID     string          `json:"entryNodeId,omitempty"`
+	TerminalNodeIDs []string        `json:"terminalNodeIds,omitempty"`
+}
+
 // ProjectStatus is the closed lifecycle of a registered project.
 type ProjectStatus string
 
@@ -40,16 +59,19 @@ func (status WorkItemStatus) Terminal() bool {
 
 // WorkItemProjection is the rebuildable current state of one project outcome.
 type WorkItemProjection struct {
-	WorkItemID         string         `json:"id"`
-	ProjectID          string         `json:"projectId"`
-	Title              string         `json:"title"`
-	SourceHash         string         `json:"sourceHash"`
-	Priority           int            `json:"priority"`
-	Status             WorkItemStatus `json:"status"`
-	ResourceVersion    uint64         `json:"resourceVersion"`
-	LastGlobalPosition uint64         `json:"lastGlobalPosition"`
-	CreatedAt          time.Time      `json:"createdAt"`
-	UpdatedAt          time.Time      `json:"updatedAt"`
+	WorkItemID         string            `json:"id"`
+	ProjectID          string            `json:"projectId"`
+	Title              string            `json:"title"`
+	Details            string            `json:"details,omitempty"`
+	Evidence           []string          `json:"evidence"`
+	RoutingIntent      WorkRoutingIntent `json:"routingIntent"`
+	SourceHash         string            `json:"sourceHash"`
+	Priority           int               `json:"priority"`
+	Status             WorkItemStatus    `json:"status"`
+	ResourceVersion    uint64            `json:"resourceVersion"`
+	LastGlobalPosition uint64            `json:"lastGlobalPosition"`
+	CreatedAt          time.Time         `json:"createdAt"`
+	UpdatedAt          time.Time         `json:"updatedAt"`
 }
 
 // StoryStatus is the closed lifecycle of one accepted-plan outcome.

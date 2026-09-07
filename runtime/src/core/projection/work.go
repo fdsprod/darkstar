@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"darkstar/src/ports/statestore"
@@ -64,10 +65,13 @@ func ReduceWorkItem(current *statestore.WorkItemProjection, event statestore.Eve
 			return statestore.WorkItemProjection{}, true, fmt.Errorf("work item %s first event is %s, want work.created", event.AggregateID, event.Kind)
 		}
 		var data struct {
-			ProjectID  string `json:"projectId"`
-			Title      string `json:"title"`
-			SourceHash string `json:"sourceHash"`
-			Priority   int    `json:"priority"`
+			ProjectID     string                       `json:"projectId"`
+			Title         string                       `json:"title"`
+			Details       string                       `json:"details"`
+			Evidence      []string                     `json:"evidence"`
+			RoutingIntent statestore.WorkRoutingIntent `json:"routingIntent"`
+			SourceHash    string                       `json:"sourceHash"`
+			Priority      int                          `json:"priority"`
 		}
 		if err := decodeData(event, &data); err != nil {
 			return statestore.WorkItemProjection{}, true, err
@@ -75,7 +79,26 @@ func ReduceWorkItem(current *statestore.WorkItemProjection, event statestore.Eve
 		if data.ProjectID == "" || data.Title == "" || !validSourceHash(data.SourceHash) || data.Priority < 0 {
 			return statestore.WorkItemProjection{}, true, errors.New("work.created requires projectId, title, SHA-256 sourceHash, and non-negative priority")
 		}
-		return statestore.WorkItemProjection{WorkItemID: event.AggregateID, ProjectID: data.ProjectID, Title: data.Title, SourceHash: data.SourceHash, Priority: data.Priority, Status: statestore.WorkItemOpen,
+		if data.RoutingIntent.Mode == "" {
+			if data.RoutingIntent.WorkflowID != "" || data.RoutingIntent.WorkflowVersion != "" || data.RoutingIntent.EntryNodeID != "" || len(data.RoutingIntent.TerminalNodeIDs) != 0 {
+				return statestore.WorkItemProjection{}, true, errors.New("work.created routingIntent without a mode cannot contain override fields")
+			}
+			data.RoutingIntent.Mode = statestore.WorkRoutingAutomatic
+		}
+		if err := validateWorkRoutingIntent(data.RoutingIntent); err != nil {
+			return statestore.WorkItemProjection{}, true, err
+		}
+		seenEvidence := make(map[string]bool, len(data.Evidence))
+		for _, value := range data.Evidence {
+			if value == "" || strings.TrimSpace(value) != value || seenEvidence[value] {
+				return statestore.WorkItemProjection{}, true, errors.New("work.created evidence must contain distinct trimmed non-empty references")
+			}
+			seenEvidence[value] = true
+		}
+		if data.Evidence == nil {
+			data.Evidence = []string{}
+		}
+		return statestore.WorkItemProjection{WorkItemID: event.AggregateID, ProjectID: data.ProjectID, Title: data.Title, Details: data.Details, Evidence: data.Evidence, RoutingIntent: data.RoutingIntent, SourceHash: data.SourceHash, Priority: data.Priority, Status: statestore.WorkItemOpen,
 			ResourceVersion: event.AggregateRevision, LastGlobalPosition: event.GlobalPosition, CreatedAt: event.RecordedAt, UpdatedAt: event.RecordedAt}, true, nil
 	}
 	if err := validateCurrent("work item", current.WorkItemID, current.ResourceVersion, event); err != nil {
@@ -103,6 +126,33 @@ func ReduceWorkItem(current *statestore.WorkItemProjection, event statestore.Eve
 	}
 	advance(&next.ResourceVersion, &next.LastGlobalPosition, &next.UpdatedAt, event)
 	return next, true, nil
+}
+
+func validateWorkRoutingIntent(intent statestore.WorkRoutingIntent) error {
+	trimmed := func(value string) bool { return value == strings.TrimSpace(value) }
+	if !trimmed(intent.WorkflowID) || !trimmed(intent.WorkflowVersion) || !trimmed(intent.EntryNodeID) {
+		return errors.New("work.created routingIntent fields must be trimmed")
+	}
+	seen := make(map[string]bool, len(intent.TerminalNodeIDs))
+	for _, nodeID := range intent.TerminalNodeIDs {
+		if nodeID == "" || !trimmed(nodeID) || seen[nodeID] {
+			return errors.New("work.created terminalNodeIds must be distinct trimmed non-empty identifiers")
+		}
+		seen[nodeID] = true
+	}
+	switch intent.Mode {
+	case statestore.WorkRoutingAutomatic:
+		if intent.WorkflowID != "" || intent.WorkflowVersion != "" || intent.EntryNodeID != "" || len(intent.TerminalNodeIDs) != 0 {
+			return errors.New("work.created automatic routingIntent cannot contain override fields")
+		}
+	case statestore.WorkRoutingOverride:
+		if intent.WorkflowID == "" {
+			return errors.New("work.created override routingIntent requires workflowId")
+		}
+	default:
+		return errors.New("work.created routingIntent mode must be automatic or override")
+	}
+	return nil
 }
 
 // ReduceStory applies an event to a story projection.

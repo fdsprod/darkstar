@@ -49,6 +49,13 @@ test("project and work command contracts publish exact request variants and aggr
   assert.equal(api.paths["/api/v1/work-items/import"].post.operationId, "importWorkItem");
   assert.equal(api.components.schemas.ProjectRegistration.additionalProperties, false);
   assert.equal(api.components.schemas.CreateWorkItemRequest.additionalProperties, false);
+  assert.deepEqual(api.components.schemas.WorkRoutingIntent.oneOf.map((variant) => variant.$ref), [
+    "#/components/schemas/AutomaticWorkRoutingIntent",
+    "#/components/schemas/OverrideWorkRoutingIntent",
+  ]);
+  assert.equal(api.components.schemas.AutomaticWorkRoutingIntent.properties.mode.const, "automatic");
+  assert.deepEqual(api.components.schemas.OverrideWorkRoutingIntent.required, ["mode", "workflowId"]);
+  assert.equal(api.components.schemas.OverrideWorkRoutingIntent.additionalProperties, false);
   assert.equal(api.components.schemas.ImportWorkItemRequest.additionalProperties, false);
   assert.deepEqual(api.components.schemas.WorkItem.properties.status.enum, ["open", "active", "completed", "cancelled"]);
 });

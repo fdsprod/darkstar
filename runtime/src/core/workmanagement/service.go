@@ -35,9 +35,12 @@ type ProjectRegistration struct {
 
 // CreateWorkRequest is authored work under one registered project.
 type CreateWorkRequest struct {
-	ProjectID string `json:"projectId"`
-	Title     string `json:"title"`
-	Priority  int    `json:"priority,omitempty"`
+	ProjectID     string                        `json:"projectId"`
+	Title         string                        `json:"title"`
+	Details       string                        `json:"details,omitempty"`
+	Evidence      []string                      `json:"evidence,omitempty"`
+	RoutingIntent *statestore.WorkRoutingIntent `json:"routingIntent,omitempty"`
+	Priority      int                           `json:"priority,omitempty"`
 }
 
 // ImportWorkRequest is externally sourced work. SourceReference is fingerprinted,
@@ -154,10 +157,17 @@ func (s *Service) Project(ctx context.Context, projectID string) (ProjectView, e
 func (s *Service) CreateWork(ctx context.Context, request CreateWorkRequest, idempotencyKey string) (statestore.WorkItemProjection, error) {
 	request.ProjectID = strings.TrimSpace(request.ProjectID)
 	request.Title = strings.TrimSpace(request.Title)
+	request.Details = strings.TrimSpace(request.Details)
+	request.Evidence = normalizedEvidence(request.Evidence)
+	intent, err := normalizedRoutingIntent(request.RoutingIntent)
+	if err != nil {
+		return statestore.WorkItemProjection{}, err
+	}
+	request.RoutingIntent = &intent
 	if request.ProjectID == "" || request.Title == "" || request.Priority < 0 {
 		return statestore.WorkItemProjection{}, fmt.Errorf("%w: projectId, title, and a non-negative priority are required", ErrInvalidRequest)
 	}
-	return s.createWork(ctx, workCreateScope, request.ProjectID, request.Title, request.Title, request.Priority, idempotencyKey, request)
+	return s.createWork(ctx, workCreateScope, request.ProjectID, request.Title, request.Title, request.Priority, request.Details, request.Evidence, intent, idempotencyKey, request)
 }
 
 // ImportWork creates externally sourced work without storing provider-specific source data.
@@ -171,7 +181,7 @@ func (s *Service) ImportWork(ctx context.Context, request ImportWorkRequest, ide
 	if request.ProjectID == "" || request.SourceReference == "" || request.Priority < 0 {
 		return statestore.WorkItemProjection{}, fmt.Errorf("%w: projectId, sourceReference, and a non-negative priority are required", ErrInvalidRequest)
 	}
-	return s.createWork(ctx, workImportScope, request.ProjectID, request.Title, request.SourceReference, request.Priority, idempotencyKey, request)
+	return s.createWork(ctx, workImportScope, request.ProjectID, request.Title, request.SourceReference, request.Priority, "", nil, statestore.WorkRoutingIntent{Mode: statestore.WorkRoutingAutomatic}, idempotencyKey, request)
 }
 
 // WorkItems returns all work, or only work owned by one exact project.
@@ -211,7 +221,7 @@ func (s *Service) WorkItem(ctx context.Context, workItemID string) (WorkView, er
 	return WorkView{SchemaVersion: 1, Work: work, Runs: runs, Stories: stories, Points: points}, nil
 }
 
-func (s *Service) createWork(ctx context.Context, scope, projectID, title, source string, priority int, idempotencyKey string, request any) (statestore.WorkItemProjection, error) {
+func (s *Service) createWork(ctx context.Context, scope, projectID, title, source string, priority int, details string, evidence []string, routingIntent statestore.WorkRoutingIntent, idempotencyKey string, request any) (statestore.WorkItemProjection, error) {
 	project, err := s.store.Project(ctx, projectID)
 	if err != nil {
 		return statestore.WorkItemProjection{}, err
@@ -241,7 +251,7 @@ func (s *Service) createWork(ctx context.Context, scope, projectID, title, sourc
 
 	now := s.now().UTC().Round(0)
 	events, err := s.store.Append(ctx, pendingEvent("work.created", statestore.AggregateWork, workID, workID, idempotencyKey, now, map[string]any{
-		"projectId": projectID, "title": title, "sourceHash": digest(source), "priority": priority,
+		"projectId": projectID, "title": title, "details": details, "evidence": evidence, "routingIntent": routingIntent, "sourceHash": digest(source), "priority": priority,
 	}))
 	if err != nil {
 		return statestore.WorkItemProjection{}, err
@@ -251,6 +261,43 @@ func (s *Service) createWork(ctx context.Context, scope, projectID, title, sourc
 		return statestore.WorkItemProjection{}, err
 	}
 	return value, s.complete(ctx, scope, idempotencyKey, httpCreated, value, events)
+}
+
+func normalizedEvidence(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func normalizedRoutingIntent(value *statestore.WorkRoutingIntent) (statestore.WorkRoutingIntent, error) {
+	if value == nil || value.Mode == "" {
+		return statestore.WorkRoutingIntent{Mode: statestore.WorkRoutingAutomatic}, nil
+	}
+	intent := *value
+	intent.WorkflowID = strings.TrimSpace(intent.WorkflowID)
+	intent.WorkflowVersion = strings.TrimSpace(intent.WorkflowVersion)
+	intent.EntryNodeID = strings.TrimSpace(intent.EntryNodeID)
+	intent.TerminalNodeIDs = normalizedEvidence(intent.TerminalNodeIDs)
+	switch intent.Mode {
+	case statestore.WorkRoutingAutomatic:
+		if intent.WorkflowID != "" || intent.WorkflowVersion != "" || intent.EntryNodeID != "" || len(intent.TerminalNodeIDs) != 0 {
+			return statestore.WorkRoutingIntent{}, fmt.Errorf("%w: automatic routing cannot contain override fields", ErrInvalidRequest)
+		}
+	case statestore.WorkRoutingOverride:
+		if intent.WorkflowID == "" {
+			return statestore.WorkRoutingIntent{}, fmt.Errorf("%w: override routing requires workflowId", ErrInvalidRequest)
+		}
+	default:
+		return statestore.WorkRoutingIntent{}, fmt.Errorf("%w: routingIntent mode must be automatic or override", ErrInvalidRequest)
+	}
+	return intent, nil
 }
 
 const (

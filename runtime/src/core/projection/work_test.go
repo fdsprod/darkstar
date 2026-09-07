@@ -28,6 +28,9 @@ func TestWorkHierarchyReducersPreserveStableRelationships(t *testing.T) {
 	if err != nil || work.ProjectID != project.ProjectID || work.Status != statestore.WorkItemOpen || work.Priority != 90 {
 		t.Fatalf("work item = (%#v, %v)", work, err)
 	}
+	if work.RoutingIntent.Mode != statestore.WorkRoutingAutomatic || work.Evidence == nil || len(work.Evidence) != 0 {
+		t.Fatalf("historical work defaults = routing %#v, evidence %#v", work.RoutingIntent, work.Evidence)
+	}
 
 	story, _, err := ReduceStory(nil, workEvent(statestore.AggregateStory, "story_A", 1, "story.created", map[string]any{
 		"workItemId": work.WorkItemID, "title": "Persist hierarchy", "sourceHash": testSourceHash, "priority": 80, "position": 2,
@@ -45,6 +48,25 @@ func TestWorkHierarchyReducersPreserveStableRelationships(t *testing.T) {
 	}
 	if !reflect.DeepEqual(point.Dependencies, []string{"point_B", "point_C"}) {
 		t.Fatalf("dependencies = %#v, want deterministic order", point.Dependencies)
+	}
+}
+
+func TestWorkRoutingIntentReplayRejectsContradictoryVariants(t *testing.T) {
+	t.Parallel()
+	base := map[string]any{"projectId": "project_A", "title": "Route", "sourceHash": testSourceHash, "priority": 0}
+	for name, intent := range map[string]any{
+		"unknown mode":              map[string]any{"mode": "sometimes"},
+		"automatic override fields": map[string]any{"mode": "automatic", "workflowId": "delivery"},
+		"override missing workflow": map[string]any{"mode": "override", "entryNodeId": "design"},
+		"mode omitted with fields":  map[string]any{"workflowId": "delivery"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			data := cloneAnyMap(base)
+			data["routingIntent"] = intent
+			if _, _, err := ReduceWorkItem(nil, workEvent(statestore.AggregateWork, "work_A", 1, "work.created", data)); err == nil {
+				t.Fatal("contradictory routing intent unexpectedly replayed")
+			}
+		})
 	}
 }
 

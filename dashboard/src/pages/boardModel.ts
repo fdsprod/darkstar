@@ -27,6 +27,9 @@ export interface BoardFilters {
 export interface CreateWorkInput {
   projectId: string;
   title: string;
+  details?: string;
+  evidence?: readonly string[];
+  routingIntent?: Schemas["WorkRoutingIntent"];
   priority?: number;
 }
 
@@ -105,8 +108,7 @@ export function transitionTargetForAction(action: BoardCardAction): Schemas["Wor
 /** Drag, keyboard, and menu input deliberately produce the identical API command body. */
 export function buildWorkTransitionRequest(_source: WorkTransitionSource, target: Schemas["WorkLifecycleState"], preparation?: Schemas["WorkTransitionPreparation"]): Schemas["WorkTransitionApplyRequest"] {
   if (target === "ready") {
-    if (!preparation) throw new Error("Moving work to Ready requires an exact workflow preparation.");
-    return { target, preparation };
+    return preparation ? { target, preparation } : { target };
   }
   if (target === "done") return { target, confirmation: "confirmed" };
   return { target };
@@ -115,11 +117,24 @@ export function buildWorkTransitionRequest(_source: WorkTransitionSource, target
 export function buildCreateWorkItemRequest(input: CreateWorkInput): Schemas["CreateWorkItemRequest"] {
   const title = input.title.trim();
   const projectId = input.projectId.trim();
+  const details = input.details?.trim();
+  const evidence = [...new Set((input.evidence ?? []).map((value) => value.trim()).filter(Boolean))];
   const priority = input.priority ?? 0;
   if (!projectId) throw new Error("Choose a project.");
   if (!title) throw new Error("Describe the requested outcome.");
   if (!Number.isSafeInteger(priority) || priority < 0) throw new Error("Priority must be a whole number of zero or greater.");
-  return { projectId, title, priority };
+  const routingIntent = normalizeRoutingIntent(input.routingIntent ?? { mode: "automatic" });
+  return { projectId, title, ...(details ? { details } : {}), ...(evidence.length ? { evidence } : {}), routingIntent, ...(priority ? { priority } : {}) };
+}
+
+function normalizeRoutingIntent(intent: Schemas["WorkRoutingIntent"]): Schemas["WorkRoutingIntent"] {
+  if (intent.mode === "automatic") return { mode: "automatic" };
+  const workflowId = intent.workflowId.trim();
+  const workflowVersion = intent.workflowVersion?.trim();
+  const entryNodeId = intent.entryNodeId?.trim();
+  const terminalNodeIds = [...new Set((intent.terminalNodeIds ?? []).map((value) => value.trim()).filter(Boolean))];
+  if (!workflowId) throw new Error("Choose a workflow for the routing override.");
+  return { mode: "override", workflowId, ...(workflowVersion ? { workflowVersion } : {}), ...(entryNodeId ? { entryNodeId } : {}), ...(terminalNodeIds.length ? { terminalNodeIds } : {}) };
 }
 
 export function buildPrepareRunRequest(input: PrepareRunInput): Schemas["CreateRunRequest"] {

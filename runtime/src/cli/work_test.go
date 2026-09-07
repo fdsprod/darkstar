@@ -37,11 +37,11 @@ func TestProjectAndWorkCLICommandsUseStableMachineResults(t *testing.T) {
 	}
 
 	var created statestore.WorkItemProjection
-	runCLIJSON(t, []string{"work", "create", "Implement CLI commands", "--priority", "80", "--idempotency-key", "work-cli-command", "--json"}, &struct {
+	runCLIJSON(t, []string{"work", "create", "Implement CLI commands", "--details", "Keep the final node", "--evidence", "DAR-144", "--routing", "override", "--workflow", "cli-workflow", "--entry-node", "finish", "--terminal-node", "finish", "--priority", "80", "--idempotency-key", "work-cli-command", "--json"}, &struct {
 		SchemaVersion int                            `json:"schemaVersion"`
 		Result        *statestore.WorkItemProjection `json:"result"`
 	}{Result: &created})
-	if created.ProjectID != project.ProjectID || created.Priority != 80 {
+	if created.ProjectID != project.ProjectID || created.Priority != 80 || created.Details != "Keep the final node" || len(created.Evidence) != 1 || created.RoutingIntent.Mode != statestore.WorkRoutingOverride {
 		t.Fatalf("created = %#v", created)
 	}
 
