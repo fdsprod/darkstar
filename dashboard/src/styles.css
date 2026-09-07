@@ -157,6 +157,27 @@ kbd, .key-button { padding: 2px 5px; border: 1px solid #293140; border-radius: 4
 .board-toolbar { flex-wrap: wrap; gap: 12px; }
 .view-tab[aria-pressed="true"] { background: #141b26; color: #dce2ed; }
 .view-tab span { margin-left: 4px; color: #748095; }
+.context-tabs { display: flex; gap: 2px; margin: 14px 0; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.context-tabs button { position: relative; flex: 0 0 auto; padding: 10px 11px; background: transparent; color: var(--text-muted); font-size: var(--font-caption); cursor: pointer; }
+.context-tabs button:hover { color: var(--text-secondary); }
+.context-tabs button[aria-selected="true"] { color: #e0e6ef; }
+.context-tabs button[aria-selected="true"]::after { position: absolute; right: 8px; bottom: -1px; left: 8px; height: 2px; background: var(--accent); content: ""; }
+.context-tabs button span { margin-left: 5px; color: #748095; }
+.run-context-actions, .diagnostic-route-links { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0; }
+.current-run-card > p { color: var(--text-muted); font-size: var(--font-caption); }
+.run-operations-workspace { display: grid; gap: 18px; }
+.run-operations-workspace > section { min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: #0b1018; }
+.produced-artifact-list { display: grid; gap: 9px; }
+.produced-artifact-list article { padding: 12px; border: 1px solid #263044; border-radius: 7px; background: #0d131d; }
+.produced-artifact-list article header { display: flex; justify-content: space-between; gap: 12px; }
+.produced-artifact-list article header span { color: var(--text-muted); font-size: var(--font-caption); }
+.produced-artifact-list article h3 { margin: 4px 0 0; font-size: var(--font-body); }
+.produced-artifact-list article > p { color: var(--text-muted); font-size: var(--font-caption); }
+.produced-artifact-list dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.produced-artifact-list dl > div { min-width: 0; }
+.produced-artifact-list dt, .produced-artifact-list dd { font-size: var(--font-caption); }
+.produced-artifact-list dt { color: var(--text-muted); }
+.produced-artifact-list dd { margin: 3px 0 0; overflow-wrap: anywhere; }
 .board-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
 .board-search { display: flex; width: 180px; height: 30px; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: #0c1119; }
 .board-search svg { width: 13px; color: var(--text-muted); }

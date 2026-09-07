@@ -3,22 +3,28 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
+import { ContextPanel, ContextTabs } from "../components/ContextTabs";
 import { AsyncPanel, DiagnosticsDetails, SectionHeader } from "../components/InteractionPatterns";
 import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
+import { RunAgentWorkspace } from "./AgentsPage";
 import { DetailFailure, DetailLoading, EmptyDetail, formatDate, StatusPill, SummaryFact } from "./WorkDetailPage";
+import { availableCardActions, buildWorkTransitionRequest, transitionDecision, transitionTargetForAction, type BoardCardAction } from "./boardModel";
 import { attemptsForVisit, eventCategory, hasValidationEvidence, humanize, shortIdentifier, sortNodeVisits, statusTone, terminalBoundary } from "./runDetailModel";
+import { ProducedArtifacts } from "./ProducedArtifacts";
+import { contextLocation, parseRunContextTab, type RunContextTab } from "./workContextModel";
 
 type Schemas = components["schemas"];
 type RunView = Schemas["RunView"];
 
 export function RunDetailPage() {
-  const { route } = useRouter();
+  const { route, search, navigate } = useRouter();
   const { state } = useDashboardState();
   const workId = route.params.workId;
   const runId = route.params.runId;
   const [view, setView] = useState<RunView>();
   const [work, setWork] = useState<Schemas["WorkItem"]>();
+  const [transitionPlan, setTransitionPlan] = useState<Schemas["WorkTransitionPlan"]>();
   const [error, setError] = useState("");
   const [action, setAction] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -27,7 +33,8 @@ export function RunDetailPage() {
     try {
       const [runView, workView] = await Promise.all([apiClient.getRun(runId, signal), apiClient.getWorkItem(workId, signal)]);
       if (runView.run.workItemId !== workView.work.id) throw new MismatchedRunError();
-      setView(runView); setWork(workView.work); setError("");
+      const plan = await apiClient.planWorkItemTransition(workView.work.id, lifecycleHint(runView.run.status), undefined, signal);
+      setView(runView); setWork(workView.work); setTransitionPlan(plan); setError("");
     } catch (cause) {
       if (signal?.aborted) return;
       setError(runDetailError(cause));
@@ -40,17 +47,21 @@ export function RunDetailPage() {
     return () => abort.abort();
   }, [load, state.cursor]);
 
-  const invoke = async (name: "pause" | "resume" | "retry") => {
-    if (!view) return;
+  const invoke = async (name: BoardCardAction) => {
+    if (!view || !work || !transitionPlan) return;
+    const target = transitionTargetForAction(name);
+    const decision = transitionDecision(transitionPlan, target);
+    if (decision?.availability !== "enabled") return;
+    if (decision.confirmation === "required" && !window.confirm(`Apply ${humanize(name)} to “${work.title}”? Durable run history and evidence will be preserved.`)) return;
     setAction(name); setActionMessage("");
     try {
-      const key = `dashboard-${name}-${crypto.randomUUID()}`;
-      if (name === "pause") await apiClient.pauseRun(view.run.id, view.run.resourceVersion, key);
-      if (name === "resume") await apiClient.resumeRun(view.run.id, view.run.resourceVersion, key);
-      if (name === "retry") await apiClient.retryRun(view.run.id, view.run.resourceVersion, key);
+      const key = `dashboard-work-transition-${crypto.randomUUID()}`;
+      const result = await apiClient.applyWorkItemTransition(work.id, transitionPlan.resourceVersion, key, buildWorkTransitionRequest("menu", target));
+      setTransitionPlan(result.after);
       await load();
       setActionMessage(`${humanize(name)} requested. The detail now reflects daemon state.`);
     } catch (cause) {
+      if (cause instanceof ApiRequestError && cause.workTransitionPlan) setTransitionPlan(cause.workTransitionPlan);
       await load();
       setActionMessage(safeActionError(cause));
     } finally { setAction(""); }
@@ -63,36 +74,47 @@ export function RunDetailPage() {
   const visits = sortNodeVisits(view.nodes);
   const linkedAttempts = new Set(visits.flatMap((visit) => attemptsForVisit(view.attempts, visit.id).map((attempt) => attempt.id)));
   const unlinkedAttempts = view.attempts.filter((attempt) => !linkedAttempts.has(attempt.id));
-  const controls = runControls(view.run.status);
+  const controls = availableCardActions({ work, run: view.run, lifecycle: transitionPlan?.state ?? lifecycleHint(view.run.status) }, transitionPlan)
+    .filter((control) => control !== "prepare");
+  const params = new URLSearchParams(search);
+  const tab = parseRunContextTab(params.get("tab"));
+  const path = `/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(view.run.id)}`;
+  const tabs = [
+    { id: "overview", label: "Overview" }, { id: "execution", label: "Execution", count: visits.length },
+    { id: "agents", label: "Agents & permissions", count: view.attempts.length }, { id: "evidence", label: "Evidence" },
+    { id: "activity", label: "Activity", count: view.timeline.length }, { id: "diagnostics", label: "Diagnostics" },
+  ] satisfies Array<{ id: RunContextTab; label: string; count?: number }>;
 
   return (
     <div className="page detail-page run-detail-page">
-      <PageHeader className="detail-header run-detail-header" eyebrow="Execution run" title={work.title} description={<>{view.run.workflowId} · v{view.run.workflowVersion}. Node visits, attempts, and evidence are read from durable projections.</>} breadcrumbs={[{ label: "Board", to: "/board" }, { label: work.title, to: `/work/${encodeURIComponent(work.id)}` }, { label: "Run" }]} status={<StatusPill status={view.run.status} />} actions={<><AppLink className="navigation-action" to={`/artifacts?targetKind=run&targetId=${encodeURIComponent(view.run.id)}&ingest=1`}>Add evidence</AppLink><AppLink className="navigation-action" to={`/checkpoints?runId=${encodeURIComponent(view.run.id)}`}>Checkpoints</AppLink><AppLink className="navigation-action" to={`/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(view.run.id)}/readiness`}>Readiness</AppLink>{controls.map((control) => <button className="button" type="button" key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : humanize(control)}</button>)}</>} />
+      <PageHeader className="detail-header run-detail-header" eyebrow="Execution run" title={work.title} description={<>{view.run.workflowId} · v{view.run.workflowVersion}. Current status, next controls, and evidence share this authoritative run context.</>} breadcrumbs={[{ label: "Board", to: "/board" }, { label: work.title, to: `/work/${encodeURIComponent(work.id)}` }, { label: "Run" }]} status={<StatusPill status={view.run.status} />} actions={<>{controls.map((control) => <button className={`button ${control === "cancel" ? "button--danger" : ""}`} type="button" key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : humanize(control)}</button>)}</>} />
+      <ContextTabs tabs={tabs} active={tab} onSelect={(value) => navigate(contextLocation(path, params, value))} label="Run context" />
       {action && <AsyncPanel compact state="loading" title={`${humanize(action)} request pending`} message="Other run mutations remain unavailable until this request settles." />}
       {actionMessage && <AsyncPanel compact state={actionMessage.endsWith("daemon state.") ? "success" : "error"} title={actionMessage.endsWith("daemon state.") ? "Run command accepted" : "Run command failed"} message={actionMessage} />}
       {error && <AsyncPanel compact state="error" title="Run refresh failed" message={error} />}
-      {view.issue && <AsyncPanel compact state={view.issue.kind === "input_required" ? "validation" : "error"} title={humanize(view.issue.code)} message={view.issue.message} />}
 
-      <section className="detail-summary" aria-label="Run summary">
+      <ContextPanel id="overview" active={tab === "overview"}><section className="detail-summary" aria-label="Run summary">
         <SummaryFact label="Workflow" value={`${view.run.workflowId} v${view.run.workflowVersion}`} />
         <SummaryFact label="Status" value={humanize(view.run.status)} />
         <SummaryFact label="Created" value={formatDate(view.run.createdAt)} />
         <SummaryFact label="Last updated" value={formatDate(view.run.updatedAt)} />
-      </section>
-      <DiagnosticsDetails label="Run diagnostics"><dl><div><dt>Run identifier</dt><dd>{view.run.id}</dd></div><div><dt>Resource version</dt><dd>{view.run.resourceVersion}</dd></div>{view.run.routeDigest && <div><dt>Route digest</dt><dd>{view.run.routeDigest}</dd></div>}</dl></DiagnosticsDetails>
+      </section><div className="run-context-actions"><AppLink className="navigation-action" to={contextLocation(path, params, "execution")}>Inspect execution</AppLink><AppLink className="navigation-action" to={`/checkpoints?runId=${encodeURIComponent(view.run.id)}`}>Open checkpoints</AppLink><AppLink className="navigation-action" to={`/work/${encodeURIComponent(work.id)}/run/${encodeURIComponent(view.run.id)}/readiness`}>Review readiness</AppLink></div>{view.issue && <AsyncPanel compact state={view.issue.kind === "input_required" ? "validation" : "error"} title={humanize(view.issue.code)} message={view.issue.message} />}</ContextPanel>
 
-      <div className="run-detail-grid">
+      <ContextPanel id="execution" active={tab === "execution"}><div className="run-detail-grid">
         <section className="run-detail-primary">
           <RoutePanel run={view.run} visits={visits} />
           <NodeTimeline runId={view.run.id} visits={visits} attempts={view.attempts} unlinkedAttempts={unlinkedAttempts} />
-          <DiagnosticsDetails label="Event diagnostics"><EventTimeline view={view} /></DiagnosticsDetails>
         </section>
         <aside className="run-detail-aside" aria-label="Run evidence">
           <BoundaryPanel route={routeSnapshot} />
           <RecordedCommands view={view} />
           <EvidenceCoverage view={view} />
         </aside>
-      </div>
+      </div></ContextPanel>
+      <ContextPanel id="agents" active={tab === "agents"}>{tab === "agents" && <RunAgentWorkspace runId={view.run.id} path={path} params={params} navigate={navigate} />}</ContextPanel>
+      <ContextPanel id="evidence" active={tab === "evidence"}>{tab === "evidence" && <><ProducedArtifacts scopes={[{ kind: "run", id: view.run.id, label: "Run" }, ...visits.map((visit) => ({ kind: "node" as const, id: `${view.run.id}/${visit.nodeId}`, label: `Node · ${visit.nodeId}` }))]} /><AppLink className="button button--primary" to={`/artifacts?targetKind=run&targetId=${encodeURIComponent(view.run.id)}&ingest=1`}>Add run evidence</AppLink></>}</ContextPanel>
+      <ContextPanel id="activity" active={tab === "activity"}><EventTimeline view={view} /></ContextPanel>
+      <ContextPanel id="diagnostics" active={tab === "diagnostics"}><DiagnosticsDetails label="Run diagnostics"><dl><div><dt>Run identifier</dt><dd>{view.run.id}</dd></div><div><dt>Resource version</dt><dd>{view.run.resourceVersion}</dd></div>{view.run.routeDigest && <div><dt>Route digest</dt><dd>{view.run.routeDigest}</dd></div>}</dl></DiagnosticsDetails><DiagnosticsDetails label="Raw event and command identifiers"><EventTimeline view={view} diagnostics /></DiagnosticsDetails><p className="diagnostic-route-links"><AppLink to={view.attempts[0] ? `/agents?attemptId=${encodeURIComponent(view.attempts[0].id)}` : "/agents"}>Agent diagnostics</AppLink><AppLink to={`/artifacts?targetKind=run&targetId=${encodeURIComponent(view.run.id)}`}>Artifact diagnostics</AppLink></p></ContextPanel>
     </div>
   );
 }
@@ -138,11 +160,11 @@ function AttemptRow({ attempt, ordinal }: { attempt: Schemas["Attempt"]; ordinal
   return <article className="attempt-row"><div className="attempt-row__ordinal">{ordinal}</div><div className="attempt-row__copy"><strong>{attempt.provider} · {target}</strong>{attempt.pointId && <AppLink className="attempt-evidence-link" to={`/artifacts?targetKind=implementation_point&targetId=${encodeURIComponent(attempt.pointId)}&ingest=1`}>Add point evidence</AppLink>}<DiagnosticsDetails label="Attempt diagnostics"><dl><div><dt>Attempt identifier</dt><dd>{attempt.id}</dd></div><div><dt>Last sequence</dt><dd>{attempt.lastSequence}</dd></div>{attempt.providerThreadId && <div><dt>Provider thread</dt><dd>{attempt.providerThreadId}</dd></div>}{attempt.logReference && <div><dt>Log reference</dt><dd>{attempt.logReference}</dd></div>}</dl></DiagnosticsDetails></div><StatusPill status={attempt.status} /></article>;
 }
 
-function EventTimeline({ view }: { view: RunView }) {
+function EventTimeline({ view, diagnostics = false }: { view: RunView; diagnostics?: boolean }) {
   return <section className="detail-section">
     <SectionHeader eyebrow="Bounded audit window" title="Latest durable events" meta={<span className="section-count">{view.timeline.length}</span>} />
     {view.timelinePageInfo.hasEarlier && <p className="bounded-note">Earlier events are not included in this 200-event dashboard window. Use a run export for complete evidence.</p>}
-    {view.timeline.length === 0 ? <EmptyDetail title="No correlated events" message="No durable run events are currently available in the dashboard window." /> : <ol className="event-timeline">{view.timeline.map((event) => <li key={event.id}><time dateTime={event.occurredAt}>{formatDate(event.occurredAt)}</time><span className={`event-category event-category--${eventCategory(event.kind)}`}>{eventCategory(event.kind)}</span><div><strong>{humanize(event.kind)}</strong><span>{event.aggregateType} · {shortIdentifier(event.aggregateId)} · revision {event.aggregateRevision} · {event.actorType}</span></div><code>#{event.globalPosition}</code></li>)}</ol>}
+    {view.timeline.length === 0 ? <EmptyDetail title="No correlated events" message="No durable run events are currently available in the dashboard window." /> : <ol className="event-timeline">{view.timeline.map((event) => <li key={event.id}><time dateTime={event.occurredAt}>{formatDate(event.occurredAt)}</time><span className={`event-category event-category--${eventCategory(event.kind)}`}>{eventCategory(event.kind)}</span><div><strong>{humanize(event.kind)}</strong>{diagnostics && <span>{event.id} · {event.aggregateType} · {event.aggregateId} · revision {event.aggregateRevision} · {event.actorType}</span>}</div>{diagnostics && <code>#{event.globalPosition}</code>}</li>)}</ol>}
   </section>;
 }
 
@@ -162,11 +184,14 @@ function EvidenceCoverage({ view }: { view: RunView }) {
 
 function Coverage({ label, present }: { label: string; present: boolean }) { return <div><dt>{label}</dt><dd data-present={present}>{present ? "Recorded" : "Not recorded"}</dd></div>; }
 
-function runControls(status: Schemas["Run"]["status"]): Array<"pause" | "resume" | "retry"> {
-  if (status === "queued" || status === "running") return ["pause"];
-  if (status === "waiting" || status === "blocked") return ["resume"];
-  if (status === "failed") return ["retry"];
-  return [];
+function lifecycleHint(status: Schemas["Run"]["status"]): Schemas["WorkLifecycleState"] {
+  if (status === "ready" || status === "draft" || status === "pending") return "ready";
+  if (status === "queued" || status === "running") return "running";
+  if (status === "waiting") return "waiting";
+  if (status === "blocked" || status === "reconcile_required") return "blocked";
+  if (status === "failed") return "failed";
+  if (status === "completed" || status === "cancelled") return "done";
+  return "backlog";
 }
 
 function safeActionError(cause: unknown) {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 
-import { AppLink, RouteView, useRouter } from "../app/router";
+import { AppLink, RouteView, useRouter, type AppRoute } from "../app/router";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { Icon, type IconName } from "./Icon";
 
@@ -13,10 +13,29 @@ const primaryNavigation: NavItem[] = [
   { label: "Settings", to: "/settings", icon: "settings", routeIds: ["settings"] },
 ];
 
-const contextualNavigation: NavItem[] = [
-  { label: "Agents", to: "/agents", icon: "agents", routeIds: ["agents"] },
-  { label: "Artifacts", to: "/artifacts", icon: "artifact", routeIds: ["artifacts", "artifact"] },
-];
+function contextualDestinations(route: AppRoute): NavItem[] {
+  if (route.id === "work") {
+    const base = `/work/${encodeURIComponent(route.params.workId)}`;
+    return [
+      { label: "Work overview", to: base, icon: "board", routeIds: ["work"] },
+      { label: "Work runs", to: `${base}?tab=runs`, icon: "workflow", routeIds: ["work"] },
+      { label: "Work evidence", to: `${base}?tab=evidence`, icon: "artifact", routeIds: ["work"] },
+      { label: "Work diagnostics", to: `${base}?tab=diagnostics`, icon: "activity", routeIds: ["work"] },
+    ];
+  }
+  if (route.id === "run") {
+    const base = `/work/${encodeURIComponent(route.params.workId)}/run/${encodeURIComponent(route.params.runId)}`;
+    return [
+      { label: "Run overview", to: base, icon: "board", routeIds: ["run"] },
+      { label: "Run execution", to: `${base}?tab=execution`, icon: "workflow", routeIds: ["run"] },
+      { label: "Run agents", to: `${base}?tab=agents`, icon: "agents", routeIds: ["run"] },
+      { label: "Run evidence", to: `${base}?tab=evidence`, icon: "artifact", routeIds: ["run"] },
+      { label: "Run activity", to: `${base}?tab=activity`, icon: "activity", routeIds: ["run"] },
+      { label: "Run diagnostics", to: `${base}?tab=diagnostics`, icon: "settings", routeIds: ["run"] },
+    ];
+  }
+  return [];
+}
 
 export function AppShell() {
   const { route } = useRouter();
@@ -135,7 +154,7 @@ export function AppShell() {
         <main ref={mainRef} id="main-content" className="main-content" tabIndex={-1}><RouteView /></main>
       </section>
 
-      <CommandPalette dialogRef={paletteRef} />
+      <CommandPalette dialogRef={paletteRef} route={route} />
     </div>
   );
 }
@@ -149,10 +168,10 @@ function connectionLabel(connection: string, hydration: string) {
   return "Connecting to event stream";
 }
 
-function CommandPalette({ dialogRef }: { dialogRef: RefObject<HTMLDialogElement | null> }) {
+function CommandPalette({ dialogRef, route }: { dialogRef: RefObject<HTMLDialogElement | null>; route: AppRoute }) {
   const [query, setQuery] = useState("");
   const resultRefs = useRef<Array<HTMLAnchorElement | null>>([]);
-  const links = [...primaryNavigation, ...contextualNavigation]
+  const links = [...primaryNavigation, ...contextualDestinations(route)]
     .filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()));
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDialogElement>) {

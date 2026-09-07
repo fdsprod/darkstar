@@ -76,6 +76,24 @@ newest run, and recent event buffer. It links to work, run, readiness, and
 evidence pages for full context rather than duplicating those workflows on the
 board.
 
+## Full work context
+
+Board cards and checkpoint deep links open a focused work view. Work and run
+tabs are encoded in the URL, so reload, back, and forward restore Overview,
+Execution, Agents and permissions, Evidence, Activity, or Diagnostics without
+copying domain state into the browser. The run-scoped agent workspace reuses the
+same server-authorized cancellation and provider-permission controls as the
+global diagnostic route, including bounded live-log cursors and resource-version
+refresh after conflicts.
+
+Artifacts are read through their exact work, story, implementation-point, run,
+and node bindings. The context view shows immutable revisions, recorded
+provenance, and freshness impact beside the owner; the global artifact and agent
+routes remain supported for deep links and diagnostics but are not primary
+navigation destinations. Human-readable activity stays compact while raw event
+positions, aggregate identifiers, resource versions, and route digests remain in
+Diagnostics.
+
 Run `npm run api:generate --workspace @darkstar/dashboard` after updating the
 OpenAPI document. Build and check commands run `api:check`, which fails when the
 committed generated surface is stale.
