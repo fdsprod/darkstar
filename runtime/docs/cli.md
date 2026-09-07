@@ -244,13 +244,25 @@ Iterative checkpoint review has direct API parity:
 darkstar review show <approval-id>
 darkstar review history <checkpoint-id>
 darkstar review feedback <approval-id> --message <text>
+darkstar review feedback-set create <approval-id> --representation <representation-id> --representation-digest <sha256> --disclosure <raw|redacted> [--idempotency-key <key>]
+darkstar review feedback-set submit <approval-id> --file <feedback-set.json> [--idempotency-key <key>]
 darkstar review resume <approval-id> --attempt <attempt-id>
 darkstar review respond <approval-id> --attempt <attempt-id> --outcome <revised|failed|cancelled> [--artifact <artifact-id> --version <n> --next-approval <approval-id>]
 darkstar review approve|reject <approval-id> [--comment <text>]
 ```
 
+`feedback-set create` prints a client-owned draft in JSON mode. Save that JSON,
+add an overall instruction and zero or more annotations, then submit the same
+file. Each annotation uses half-open UTF-8 byte offsets and retains the quoted
+text and SHA-256 quote digest. The CLI never deletes or rewrites the file, so a
+stale submission can be rebased or copied after the conflict is resolved.
+The submitted set receives a digest, and the next resumed agent iteration
+reports that set ID and digest so operators can verify which frozen instruction
+reached the attempt. Legacy iterations omit that binding.
+
 Before each mutation the CLI fetches the session and submits its exact candidate
-digest, scope digest, policy digest where applicable, and resource version.
+artifact and version, candidate digest, scope digest, policy digest where applicable,
+safe representation ID and digest, and resource version.
 Thus a stale terminal tab cannot approve a superseded artifact. Stable
 `--idempotency-key` values make feedback, resume, response, and final decisions
 safe to repeat after reconnects.

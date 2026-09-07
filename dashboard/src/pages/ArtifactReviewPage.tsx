@@ -8,17 +8,20 @@ import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { decodeArtifactViews, revisionsForArtifact, type DecodedArtifactView } from "./artifactModel";
 import {
-  buildReviewDecision, buildReviewFeedback, chooseSafeTextRepresentation, iterationActivity, nextReviewSession,
+  buildReviewDecision, chooseSafeTextRepresentation, exactFeedbackSetForRepresentation, iterationActivity, nextReviewSession,
   mergeDiffPages, orderedReviewSessions, parseReviewView, previousReviewedVersion, representationContentDigestMatches, reviewSessionChanged, splitDiffRows, validateArtifactDiff, verifyCandidateArtifact,
-  type CandidateState, type DiffExpectation, type DiffState, type ReviewAction, type ReviewView, type SafeTextState,
+  validateAnnotationComment, type CandidateState, type DiffExpectation, type DiffState, type ReviewAction, type ReviewView, type SafeTextState,
 } from "./artifactReviewModel";
 import { DetailFailure, DetailLoading, formatDate, StatusPill } from "./WorkDetailPage";
 import { humanize, shortIdentifier } from "./runDetailModel";
+import { ArtifactAnnotations } from "./ArtifactAnnotations";
+import type { FeedbackAnnotationDraft } from "./artifactReviewModel";
 
 type Schemas = components["schemas"];
 type ReviewSession = Schemas["CheckpointReviewSession"];
 type PriorSelection = { kind: "reviewed" | "artifact_history"; version: number };
 type AgentLogState = { kind: "idle" } | { kind: "loading"; attemptId: string } | { kind: "available"; attemptId: string; chunk: AgentLogChunk } | { kind: "error"; attemptId: string; message: string };
+type FeedbackSetView = { id: string; state: "draft" | "submitted"; candidate: Schemas["ArtifactVersionRef"]; candidateDigest: string; representation: { representationId: string; digest: string; disclosure: "raw" | "redacted" }; overallInstruction?: string; annotations: FeedbackAnnotationDraft[]; submittedAt?: string };
 
 export function ArtifactReviewPage() {
   const { route } = useRouter();
@@ -42,6 +45,9 @@ function ArtifactReviewWorkspace({ approvalId }: { approvalId: string }) {
   const [agent, setAgent] = useState<Schemas["Agent"]>();
   const [candidateState, setCandidateState] = useState<CandidateState>({ kind: "current" });
   const [feedback, setFeedback] = useState("");
+  const [annotations, setAnnotations] = useState<FeedbackAnnotationDraft[]>([]);
+  const [draftBinding, setDraftBinding] = useState<{ representationId: string; digest: string }>();
+  const [submittedSets, setSubmittedSets] = useState<FeedbackSetView[]>([]);
   const [busy, setBusy] = useState<ReviewAction>();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -71,6 +77,7 @@ function ArtifactReviewWorkspace({ approvalId }: { approvalId: string }) {
       else if (!acknowledge && previous && reviewSessionChanged(previous, exact)) setCandidateState({ kind: "stale", reason: "resource_changed" });
       else if (acknowledge || !previous) setCandidateState({ kind: "current" });
       currentRef.current = exact; setSession(exact); setHistory(reviewHistory); setRevisions(all); setPrior(nextPrior); setError("");
+      setSubmittedSets([...new Map(reviewHistory.sessions.flatMap(readFeedbackSets).filter((item) => item.state === "submitted").map((item) => [item.id, item])).values()]);
       if (exact.activeIteration) {
         const attemptId = exact.activeIteration.attemptId;
         agentAttemptRef.current = attemptId;
@@ -145,6 +152,18 @@ function ArtifactReviewWorkspace({ approvalId }: { approvalId: string }) {
   const displayedDiff: DiffState = diffStateBound ? diff : priorVersion ? { kind: "loading", from: priorVersion, to: session.candidate.version } : { kind: "not_applicable", reason: "no_prior" };
   const readingExactCandidate = (view === "current" && shownVersion === session.candidate.version && currentText?.kind === "available" && currentText.version === session.candidate.version && currentText.artifactDigest === session.candidateDigest) || ((view === "inline" || view === "split") && exactComparisonReady);
   const mutationAllowed = candidateState.kind === "current" && readingExactCandidate && session.state === "awaiting_human" && !busy;
+  const draftBindingMatches = !draftBinding || (displayedCurrent?.kind === "available" && displayedCurrent.representationId === draftBinding.representationId && displayedCurrent.representationDigest === draftBinding.digest);
+  const annotationEditingAllowed = mutationAllowed && draftBindingMatches;
+  const feedbackSetAllowed = annotationEditingAllowed && annotations.every((item) => { try { validateAnnotationComment(item.comment); return true; } catch { return false; } });
+  const exactSubmittedSet = displayedCurrent?.kind === "available" && shownArtifact ? exactFeedbackSetForRepresentation(submittedSets, shownArtifact.artifact, shownArtifact.artifact.blobDigest, displayedCurrent.representationId, displayedCurrent.representationDigest) : undefined;
+  const editingCurrentDraft = shownVersion === session.candidate.version && session.state === "awaiting_human";
+  const inlineAnnotations = editingCurrentDraft ? annotations : exactSubmittedSet?.annotations ?? [];
+
+  function changeAnnotations(next: FeedbackAnnotationDraft[]) {
+    if (next.length && !draftBinding && displayedCurrent?.kind === "available") setDraftBinding({ representationId: displayedCurrent.representationId, digest: displayedCurrent.representationDigest });
+    if (!next.length) setDraftBinding(undefined);
+    setAnnotations(next);
+  }
 
   function setView(nextView: ReviewView) { const next = new URLSearchParams(params); next.set("view", nextView); next.delete("revision"); navigate(`/checkpoints/${encodeURIComponent(approvalId)}/review?${next}`); }
   function selectRevision(version: number) { const next = new URLSearchParams(params); next.set("view", "current"); next.set("revision", String(version)); navigate(`/checkpoints/${encodeURIComponent(approvalId)}/review?${next}`); }
@@ -154,11 +173,16 @@ function ArtifactReviewWorkspace({ approvalId }: { approvalId: string }) {
     if (!exactSession || exactSession.id !== approvalId || lifetimeAbortRef.current.signal.aborted || !mutationAllowed) return;
     setBusy(action); setError("");
     try {
-      const result = action === "request_revisions"
-        ? await apiClient.submitCheckpointFeedback(exactSession.id, exactSession.resourceVersion, `dashboard-review-feedback-${crypto.randomUUID()}`, buildReviewFeedback(exactSession, feedback), lifetimeAbortRef.current.signal)
-        : await apiClient.decideCheckpointReviewSession(exactSession.id, exactSession.resourceVersion, `dashboard-review-decision-${crypto.randomUUID()}`, buildReviewDecision(exactSession, action, feedback), lifetimeAbortRef.current.signal);
+      if (action === "request_revisions") {
+        if (!feedbackSetAllowed) throw new Error("The local annotations are bound to a different safe representation. Keep them for reference, then remove and re-anchor them before submitting.");
+        const submitted = await submitAnnotationFeedbackSet(exactSession, displayedCurrent?.kind === "available" ? displayedCurrent : undefined, feedback, annotations, lifetimeAbortRef.current.signal);
+        currentRef.current = submitted.session; setSession(submitted.session); setSubmittedSets((sets) => [...sets.filter((item) => item.id !== submitted.set.id), submitted.set]); setFeedback(""); setAnnotations([]); setDraftBinding(undefined); setCandidateState({ kind: "current" });
+        setNotice("The complete feedback set was submitted. Progress appears only when authoritative state advances.");
+        await load(lifetimeAbortRef.current.signal, true); return;
+      }
+      const result = await apiClient.decideCheckpointReviewSession(exactSession.id, exactSession.resourceVersion, `dashboard-review-decision-${crypto.randomUUID()}`, buildReviewDecision(exactSession, action, feedback), lifetimeAbortRef.current.signal);
       currentRef.current = result; setSession(result); setFeedback(""); setCandidateState({ kind: "current" });
-      setNotice(action === "request_revisions" ? "Revision feedback was durably recorded. Progress appears only when authoritative state advances." : `${humanize(action)} was durably recorded for the exact candidate.`);
+      setNotice(`${humanize(action)} was durably recorded for the exact candidate.`);
       await load(lifetimeAbortRef.current.signal, true);
     } catch (cause) {
       if (cause instanceof ApiRequestError && (cause.status === 409 || cause.status === 412)) {
@@ -199,13 +223,16 @@ function ArtifactReviewWorkspace({ approvalId }: { approvalId: string }) {
     {notice && <AsyncPanel compact state={newer ? "success" : candidateState.kind === "stale" ? "stale" : "success"} title={newer ? "New candidate ready" : candidateState.kind === "stale" ? "Candidate changed" : "Review updated"} message={<>{notice}{newer && <button ref={readyRef} className="button button--compact" type="button" onClick={openNewCandidate}>Review revision {newer.revision}</button>}</>} />}
     {error && <AsyncPanel compact state="error" title="Review action unavailable" message={error} />}
     {candidateState.kind === "stale" && <section className="review-stale" role="alert"><strong>{candidateState.reason === "candidate_superseded" ? "Candidate superseded." : "Displayed decision binding is stale."}</strong><span>Your local feedback remains below. Mutations are disabled {candidateState.reason === "candidate_superseded" ? "for this superseded candidate; open the newer recorded candidate when available." : "until you acknowledge the refetched exact session."}</span>{candidateState.reason === "resource_changed" && <button className="button button--compact" type="button" onClick={() => void load(lifetimeAbortRef.current.signal, true)}>Review refreshed state</button>}</section>}
+    {annotations.length > 0 && !draftBindingMatches && <section className="review-stale" role="alert"><strong>Range draft uses an earlier representation.</strong><span>The draft is preserved for reference. Discard its range comments before selecting and anchoring replacement comments.</span><button className="button button--compact button--danger" type="button" onClick={() => { setAnnotations([]); setDraftBinding(undefined); }}>Discard range draft</button></section>}
     {!readingExactCandidate && <section className="review-stale" role="status"><strong>{view === "prior" ? "Prior-only view selected." : view === "current" && shownVersion !== session.candidate.version ? "Historical revision selected." : "Exact review evidence is not ready."}</strong><span>Decision controls are disabled until candidate v{session.candidate.version} safe content or its exact verified comparison is displayed.</span>{(view === "prior" || shownVersion !== session.candidate.version) && <button className="button button--compact" type="button" onClick={() => selectRevision(session.candidate.version)}>Return to current candidate</button>}</section>}
     <div className="review-workspace">
       <RevisionRail revisions={revisions} selected={shownVersion ?? session.candidate.version} reviewed={new Set(orderedReviewSessions(history.sessions).map((item) => item.candidate.version))} onSelect={selectRevision} />
       <section className="review-reader" tabIndex={-1} aria-label="Artifact review reader">
         <nav className="review-view-tabs" aria-label="Reader view">{(["current", "prior", "inline", "split"] as ReviewView[]).map((item) => <button type="button" key={item} aria-current={view === item ? "page" : undefined} disabled={(item === "prior" || item === "inline" || item === "split") && !priorVersion} onClick={() => setView(item)}>{item === "inline" ? "Inline diff" : item === "split" ? "Side-by-side" : humanize(item)}</button>)}</nav>
         {selectedArtifact && <ArtifactProvenance value={selectedArtifact} prefix={view === "prior" && prior?.kind === "artifact_history" ? "Prior artifact-history" : view === "prior" ? "Prior reviewed" : "Selected"} />}
-        <Reader view={view} current={displayedCurrent} prior={displayedPrior} priorKind={prior?.kind} diff={displayedDiff} currentVersion={session.candidate.version} priorVersion={priorVersion} diffBusy={diffBusy} onLoadMore={() => void loadMoreDiff()} onRetry={() => setDiffRetry((value) => value + 1)} />
+        {view === "current" && displayedCurrent?.kind === "available"
+          ? <ArtifactAnnotations text={displayedCurrent.text} annotations={inlineAnnotations} readOnly={!editingCurrentDraft || !annotationEditingAllowed} onChange={changeAnnotations} />
+          : <Reader view={view} current={displayedCurrent} prior={displayedPrior} priorKind={prior?.kind} diff={displayedDiff} currentVersion={session.candidate.version} priorVersion={priorVersion} diffBusy={diffBusy} onLoadMore={() => void loadMoreDiff()} onRetry={() => setDiffRetry((value) => value + 1)} />}
       </section>
       <aside className="review-context" aria-label="Feedback and agent iteration">
         <section><p className="eyebrow">Exact decision binding</p><h2>Round {session.revision}</h2><dl><dt>Approval</dt><dd><code>{shortIdentifier(session.id)}</code></dd><dt>Candidate</dt><dd>v{session.candidate.version}</dd><dt>Digest</dt><dd><code title={session.candidateDigest}>{shortIdentifier(session.candidateDigest)}</code></dd><dt>Resource</dt><dd>{session.resourceVersion}</dd></dl></section>
@@ -214,7 +241,7 @@ function ArtifactReviewWorkspace({ approvalId }: { approvalId: string }) {
         <section className="review-separate-context"><h2>Separate attention</h2><p>Provider permission and required-input decisions do not approve this artifact.</p>{session.activeIteration && <><AppLink to={`/agents?tab=permissions&permissionAttemptId=${encodeURIComponent(session.activeIteration.attemptId)}`}>Provider permissions</AppLink><AppLink to={`/checkpoints?tab=inputs&attemptId=${encodeURIComponent(session.activeIteration.attemptId)}`}>Required input</AppLink></>}</section>
       </aside>
     </div>
-    <section className="review-decision-bar" aria-label="Exact candidate decision"><label><span>Overall feedback for candidate v{session.candidate.version}</span><textarea rows={2} maxLength={16384} value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Optional for approval; required for revisions or rejection" /></label><div><button className="button button--primary" type="button" disabled={!mutationAllowed || !session.allowedActions.includes("approve")} onClick={() => void mutate("approve")}>{busy === "approve" ? "Recording…" : "Approve"}</button><button className="button" type="button" disabled={!mutationAllowed || !session.allowedActions.includes("request_changes") || !feedback.trim()} onClick={() => void mutate("request_revisions")}>{busy === "request_revisions" ? "Recording…" : "Request revisions"}</button><button className="button button--danger" type="button" disabled={!mutationAllowed || !session.allowedActions.includes("reject") || !feedback.trim()} onClick={() => void mutate("reject")}>{busy === "reject" ? "Recording…" : "Reject"}</button></div><small>Bound to approval {shortIdentifier(session.id)}, revision {session.revision}, artifact v{session.candidate.version}, candidate {shortIdentifier(session.candidateDigest)}, resource {session.resourceVersion}.</small></section>
+    <section className="review-decision-bar" aria-label="Exact candidate decision"><label><span>Overall instruction for candidate v{session.candidate.version}</span><textarea rows={2} maxLength={16384} value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Summarize requested changes; range comments are submitted with this instruction" /></label><div><button className="button button--primary" type="button" disabled={!mutationAllowed || !session.allowedActions.includes("approve")} onClick={() => void mutate("approve")}>{busy === "approve" ? "Recording…" : "Approve"}</button><button className="button" type="button" disabled={!feedbackSetAllowed || !session.allowedActions.includes("request_changes") || !feedback.trim()} onClick={() => void mutate("request_revisions")}>{busy === "request_revisions" ? "Submitting set…" : `Submit feedback set${annotations.length ? ` · ${annotations.length}` : ""}`}</button><button className="button button--danger" type="button" disabled={!mutationAllowed || !session.allowedActions.includes("reject") || !feedback.trim()} onClick={() => void mutate("reject")}>{busy === "reject" ? "Recording…" : "Reject"}</button></div><small>{!draftBindingMatches ? "The safe representation changed; the local range draft is preserved but must be re-anchored. " : ""}Bound to approval {shortIdentifier(session.id)}, revision {session.revision}, artifact v{session.candidate.version}, candidate {shortIdentifier(session.candidateDigest)}, resource {session.resourceVersion}. Local drafts remain available when this binding becomes stale.</small></section>
   </div>;
 }
 
@@ -244,7 +271,7 @@ function ArtifactProvenance({ value, prefix }: { value: DecodedArtifactView; pre
 
 function ReviewTurns({ history }: { history: Schemas["CheckpointReviewHistory"] }) {
   const sessions = orderedReviewSessions(history.sessions);
-  return <section><h2>Recorded revision evidence</h2><ol className="review-turns">{sessions.map((session) => <li key={session.id}><strong>Revision {session.revision} · candidate v{session.candidate.version}</strong>{session.decision ? <><p><b>{humanize(session.decision.action)}</b> by {session.decision.actor.type} · {session.decision.actor.id}</p><p>{session.decision.comment ?? "No decision comment recorded."}</p><small>{formatDate(session.decision.decidedAt)}</small></> : <p>No final decision recorded for this revision.</p>}{session.turns.map((turn) => <div className="review-recorded-turn" key={`${session.id}:${turn.sequence}`}><strong>{turn.kind === "human_feedback" ? "Human feedback" : `Agent ${humanize(turn.outcome)}`}</strong><p>{turn.message ?? (turn.kind === "agent_response" && turn.outcome === "revised" ? `Produced artifact v${turn.resultingCandidate.version}.` : "No message recorded.")}</p><small>{turn.actor.type} · {turn.actor.id} · {formatDate(turn.occurredAt)} · <AppLink to={`/agents?tab=agents&attemptId=${encodeURIComponent(turn.attemptId)}`}>attempt {shortIdentifier(turn.attemptId)}</AppLink></small></div>)}{session.affectedArtifacts.length ? <details><summary>Affected artifact lineage · {session.affectedArtifacts.length}</summary><ul>{session.affectedArtifacts.map((effect) => <li key={`${effect.trigger.artifactId}:${effect.trigger.version}:${effect.descendant.artifactId}:${effect.descendant.version}`}><code>{shortIdentifier(effect.trigger.artifactId)} v{effect.trigger.version}</code> → <code>{shortIdentifier(effect.descendant.artifactId)} v{effect.descendant.version}</code><small>{humanize(effect.freshness)} · {formatDate(effect.createdAt)}</small></li>)}</ul></details> : <small>No affected artifact lineage recorded.</small>}</li>)}</ol></section>;
+  return <section><h2>Recorded revision evidence</h2><ol className="review-turns">{sessions.map((session) => <li key={session.id}><strong>Revision {session.revision} · candidate v{session.candidate.version}</strong>{session.decision ? <><p><b>{humanize(session.decision.action)}</b> by {session.decision.actor.type} · {session.decision.actor.id}</p><p>{session.decision.comment ?? "No decision comment recorded."}</p><small>{formatDate(session.decision.decidedAt)}</small></> : <p>No final decision recorded for this revision.</p>}{session.turns.map((turn) => <div className="review-recorded-turn" key={`${session.id}:${turn.sequence}`}><strong>{turn.kind === "human_feedback" ? "Human feedback" : `Agent ${humanize(turn.outcome)}`}</strong><p>{turn.kind === "human_feedback" && turn.feedbackSet ? turn.feedbackSet.overallInstruction : turn.message ?? (turn.kind === "agent_response" && turn.outcome === "revised" ? `Produced artifact v${turn.resultingCandidate.version}.` : "No message recorded.")}</p>{turn.kind === "human_feedback" && turn.feedbackSet && <ol className="recorded-annotation-list" aria-label="Submitted annotation comments">{turn.feedbackSet.annotations.map((annotation) => <li key={annotation.id}><q>{annotation.anchor.quotedText}</q><p>{annotation.comment}</p></li>)}</ol>}<small>{turn.actor.type} · {turn.actor.id} · {formatDate(turn.occurredAt)} · <AppLink to={`/agents?tab=agents&attemptId=${encodeURIComponent(turn.attemptId)}`}>attempt {shortIdentifier(turn.attemptId)}</AppLink></small></div>)}{session.affectedArtifacts.length ? <details><summary>Affected artifact lineage · {session.affectedArtifacts.length}</summary><ul>{session.affectedArtifacts.map((effect) => <li key={`${effect.trigger.artifactId}:${effect.trigger.version}:${effect.descendant.artifactId}:${effect.descendant.version}`}><code>{shortIdentifier(effect.trigger.artifactId)} v{effect.trigger.version}</code> → <code>{shortIdentifier(effect.descendant.artifactId)} v{effect.descendant.version}</code><small>{humanize(effect.freshness)} · {formatDate(effect.createdAt)}</small></li>)}</ul></details> : <small>No affected artifact lineage recorded.</small>}</li>)}</ol></section>;
 }
 
 function SafeTextReader({ state, label }: { state?: SafeTextState; label: string }) {
@@ -254,6 +281,39 @@ function SafeTextReader({ state, label }: { state?: SafeTextState; label: string
   return <article className="safe-text-reader"><header><strong>{label}</strong><span>{humanize(state.disclosure)} · {state.mediaType}{state.truncated ? " · truncated" : ""}</span></header>{state.truncated && <p className="review-reader-warning">This safe representation is truncated. The decision remains bound to the full candidate digest shown beside the reader.</p>}<pre tabIndex={0}>{state.text}</pre></article>;
 }
 function ReaderUnavailable({ reason, version }: { reason: "withheld" | "unsupported" | "too_large" | "missing"; version: number }) { return <div className="review-reader-unavailable"><h2>Safe preview unavailable</h2><p>{reason === "withheld" ? `Revision ${version} content is withheld by inspection policy.` : reason === "unsupported" ? `Revision ${version} has no supported plain-text or escaped-markdown representation.` : reason === "too_large" ? "The exact safe content or comparison exceeds the bounded review policy." : "No safe derived representation is recorded for this exact revision."}</p><strong>Raw HTML and original-content fallback are disabled.</strong></div>; }
+
+function readFeedbackSets(session: ReviewSession): FeedbackSetView[] {
+  const turns = (session as unknown as { turns?: unknown }).turns;
+  if (!Array.isArray(turns)) return [];
+  const values = turns.flatMap((turn) => turn && typeof turn === "object" && "feedbackSet" in turn ? [(turn as { feedbackSet: unknown }).feedbackSet] : []);
+  return values.flatMap((value): FeedbackSetView[] => {
+    if (!value || typeof value !== "object") return [];
+    const item = value as Record<string, unknown>;
+    const candidate = item.candidate as Schemas["ArtifactVersionRef"] | undefined;
+    const representation = item.representation as FeedbackSetView["representation"] | undefined;
+    if (typeof item.id !== "string" || (item.state !== "draft" && item.state !== "submitted") || !Array.isArray(item.annotations) || !candidate || typeof candidate.artifactId !== "string" || !representation || typeof representation.representationId !== "string" || typeof representation.digest !== "string" || typeof item.candidateDigest !== "string") return [];
+    return [{ id: item.id, state: item.state, candidate, candidateDigest: item.candidateDigest, representation, overallInstruction: typeof item.overallInstruction === "string" ? item.overallInstruction : undefined, annotations: item.annotations as FeedbackAnnotationDraft[], submittedAt: typeof item.submittedAt === "string" ? item.submittedAt : undefined }];
+  });
+}
+
+async function submitAnnotationFeedbackSet(session: ReviewSession, representation: Extract<SafeTextState, { kind: "available" }> | undefined, overallInstruction: string, annotations: readonly FeedbackAnnotationDraft[], signal: AbortSignal): Promise<{ session: ReviewSession; set: FeedbackSetView }> {
+  if (!representation || representation.version !== session.candidate.version || representation.artifactDigest !== session.candidateDigest) throw new Error("The exact safe representation is unavailable for annotation submission.");
+  const instruction = overallInstruction.trim();
+  if (!instruction) throw new Error("Add an overall instruction before submitting this feedback set.");
+  if (new TextEncoder().encode(instruction).length > 16_384) throw new Error("The overall instruction must contain at most 16384 UTF-8 bytes.");
+  if (annotations.length > 256) throw new Error("A feedback set can contain at most 256 annotations.");
+  const normalizedAnnotations = annotations.map((item) => ({ ...item, comment: validateAnnotationComment(item.comment) }));
+  const created = await apiClient.createCheckpointFeedbackSet(session.id, session.resourceVersion, `dashboard-feedback-set-create-${crypto.randomUUID()}`, {
+    candidate: session.candidate, candidateDigest: session.candidateDigest, scopeDigest: session.scopeDigest, policyDigest: session.policyDigest,
+    representation: { representationId: representation.representationId, digest: representation.representationDigest, disclosure: representation.disclosure },
+  }, signal);
+  if (typeof created.id !== "string" || created.state !== "draft") throw new Error("The server did not return the exact draft feedback set.");
+  const binding = { representationId: representation.representationId, digest: representation.representationDigest, disclosure: representation.disclosure };
+  const result = await apiClient.submitCheckpointFeedbackSet(session.id, created.id, session.resourceVersion, `dashboard-feedback-set-submit-${crypto.randomUUID()}`, { feedbackSetId: created.id, candidate: session.candidate, candidateDigest: session.candidateDigest, scopeDigest: session.scopeDigest, policyDigest: session.policyDigest, representation: binding, overallInstruction: instruction, annotations: normalizedAnnotations }, signal);
+  const submitted = readFeedbackSets(result).at(-1);
+  if (!submitted || submitted.id !== created.id || submitted.state !== "submitted") throw new Error("The server did not return the submitted feedback set receipt.");
+  return { session: result, set: submitted };
+}
 
 function diffExpectation(from: DecodedArtifactView, to: DecodedArtifactView): DiffExpectation {
   return {
@@ -286,6 +346,6 @@ async function loadSafeText(value: DecodedArtifactView, signal: AbortSignal): Pr
     if (!representationContentDigestMatches(content.digest, choice.representation.digest)) return { kind: "error", version, message: "The safe representation response omitted or changed its exact digest." };
     if (content.blob.size > 2_097_152) return { kind: "unavailable", version, reason: "too_large" };
     if (content.blob.size !== choice.representation.size) return { kind: "error", version, message: "The safe representation size changed during review." };
-    return { kind: "available", version, artifactDigest: artifact.blobDigest, text: await content.blob.text(), disclosure: choice.representation.disclosure as "raw" | "redacted", truncated: choice.representation.truncated, mediaType: choice.representation.mediaType };
+    return { kind: "available", version, artifactDigest: artifact.blobDigest, representationId: choice.representation.representationId, representationDigest: choice.representation.digest, text: await content.blob.text(), disclosure: choice.representation.disclosure as "raw" | "redacted", truncated: choice.representation.truncated, mediaType: choice.representation.mediaType };
   } catch { return { kind: "error", version, message: "The exact safe representation could not be loaded." }; }
 }

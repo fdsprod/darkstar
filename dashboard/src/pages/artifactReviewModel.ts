@@ -6,7 +6,7 @@ export type ReviewAction = "approve" | "request_revisions" | "reject";
 export type CandidateState = { kind: "current" } | { kind: "stale"; reason: "resource_changed" | "candidate_superseded" };
 export type SafeTextState =
   | { kind: "loading"; version: number }
-  | { kind: "available"; version: number; artifactDigest: string; text: string; disclosure: "raw" | "redacted"; truncated: boolean; mediaType: string }
+  | { kind: "available"; version: number; artifactDigest: string; representationId: string; representationDigest: string; text: string; disclosure: "raw" | "redacted"; truncated: boolean; mediaType: string }
   | { kind: "unavailable"; version: number; reason: "withheld" | "unsupported" | "too_large" | "missing" }
   | { kind: "error"; version: number; message: string };
 export type DiffState =
@@ -23,6 +23,63 @@ export interface DiffExpectation {
 }
 export type IterationStage = "feedback_recorded" | "awaiting_dispatch" | "queued" | "iteration_recorded" | "running" | "validating" | "new_candidate_ready" | "failed" | "cancelled";
 export interface IterationActivity { stage: IterationStage; occurredAt?: string; attemptId?: string; message: string }
+
+export interface TextRangeAnchorDraft { startOffset: number; endOffset: number; quotedText: string; quoteDigest: string }
+export interface FeedbackAnnotationDraft { id: string; anchor: TextRangeAnchorDraft; comment: string }
+
+/** Convert a browser string index to an offset in the UTF-8 representation. */
+export function utf8OffsetAt(text: string, codeUnitOffset: number): number {
+  if (!Number.isSafeInteger(codeUnitOffset) || codeUnitOffset < 0 || codeUnitOffset > text.length) throw new Error("Selection offset is outside the representation.");
+  if (codeUnitOffset > 0 && codeUnitOffset < text.length && isHighSurrogate(text.charCodeAt(codeUnitOffset - 1)) && isLowSurrogate(text.charCodeAt(codeUnitOffset))) throw new Error("Selection offset splits a Unicode character.");
+  return new TextEncoder().encode(text.slice(0, codeUnitOffset)).length;
+}
+
+/** Convert a UTF-8 byte offset back to a browser string index without accepting split code points. */
+export function codeUnitOffsetAt(text: string, byteOffset: number): number {
+  const bytes = new TextEncoder().encode(text);
+  if (!Number.isSafeInteger(byteOffset) || byteOffset < 0 || byteOffset > bytes.length) throw new Error("Annotation offset is outside the representation.");
+  const prefix = bytes.slice(0, byteOffset);
+  const decoded = new TextDecoder("utf-8", { fatal: true }).decode(prefix);
+  return decoded.length;
+}
+
+export async function createTextRangeAnchor(text: string, startCodeUnit: number, endCodeUnit: number): Promise<TextRangeAnchorDraft> {
+  if (startCodeUnit >= endCodeUnit) throw new Error("Select text before adding a comment.");
+  const quotedText = text.slice(startCodeUnit, endCodeUnit);
+  if (new TextEncoder().encode(quotedText).length > 16_384) throw new Error("Selected text must contain at most 16384 UTF-8 bytes.");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(quotedText));
+  return { startOffset: utf8OffsetAt(text, startCodeUnit), endOffset: utf8OffsetAt(text, endCodeUnit), quotedText, quoteDigest: [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("") };
+}
+
+export function validateAnnotationComment(comment: string): string {
+  const normalized = comment.trim();
+  if (!normalized) throw new Error("Annotation comments cannot be blank.");
+  if (new TextEncoder().encode(normalized).length > 4096) throw new Error("Annotation comments must contain at most 4096 UTF-8 bytes.");
+  return normalized;
+}
+
+export function validateTextRangeAnchor(text: string, anchor: TextRangeAnchorDraft): boolean {
+  try { return text.slice(codeUnitOffsetAt(text, anchor.startOffset), codeUnitOffsetAt(text, anchor.endOffset)) === anchor.quotedText; }
+  catch { return false; }
+}
+
+export function displayLineRange(text: string, anchor: Pick<TextRangeAnchorDraft, "startOffset" | "endOffset">): { start: number; end: number } {
+  const start = codeUnitOffsetAt(text, anchor.startOffset);
+  const end = codeUnitOffsetAt(text, anchor.endOffset);
+  return { start: 1 + countNewlines(text.slice(0, start)), end: 1 + countNewlines(text.slice(0, Math.max(start, end - 1))) };
+}
+
+export function orderedFeedbackAnnotations<T extends { id: string; anchor: { startOffset: number; endOffset: number } }>(annotations: readonly T[]): T[] {
+  return [...annotations].sort((left, right) => left.anchor.startOffset - right.anchor.startOffset || left.anchor.endOffset - right.anchor.endOffset || left.id.localeCompare(right.id));
+}
+
+export function exactFeedbackSetForRepresentation<T extends { id: string; candidate: { artifactId: string; version: number }; candidateDigest: string; representation: { representationId: string; digest: string } }>(sets: readonly T[], candidate: { artifactId: string; version: number }, candidateDigest: string, representationId: string, representationDigest: string): T | undefined {
+  return [...new Map(sets.map((item) => [item.id, item])).values()].reverse().find((item) => item.candidate.artifactId === candidate.artifactId && item.candidate.version === candidate.version && item.candidateDigest === candidateDigest && item.representation.representationId === representationId && item.representation.digest === representationDigest);
+}
+
+function countNewlines(value: string) { return value.split("\n").length - 1; }
+function isHighSurrogate(value: number) { return value >= 0xd800 && value <= 0xdbff; }
+function isLowSurrogate(value: number) { return value >= 0xdc00 && value <= 0xdfff; }
 
 export function parseReviewView(value: string | null): ReviewView {
   return value === "prior" || value === "inline" || value === "split" ? value : "current";

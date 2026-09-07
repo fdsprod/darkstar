@@ -583,14 +583,19 @@ func ReduceApproval(current *statestore.ApprovalProjection, event statestore.Eve
 			return statestore.ApprovalProjection{}, true, invalidTransition("approval", current.ApprovalID, string(current.Status), event.Kind)
 		}
 		var data struct {
-			CandidateDigest string `json:"candidateDigest"`
-			ScopeDigest     string `json:"scopeDigest"`
-			Message         string `json:"message"`
+			FeedbackSetID      string `json:"feedbackSetId"`
+			CandidateDigest    string `json:"candidateDigest"`
+			ScopeDigest        string `json:"scopeDigest"`
+			PolicyDigest       string `json:"policyDigest"`
+			Message            string `json:"message"`
+			OverallInstruction string `json:"overallInstruction"`
 		}
 		if err := decodeData(event, &data); err != nil {
 			return statestore.ApprovalProjection{}, true, err
 		}
-		if data.CandidateDigest != current.CandidateDigest || data.ScopeDigest != current.ScopeDigest || data.Message == "" {
+		legacy := data.FeedbackSetID == "" && data.Message != ""
+		anchored := data.FeedbackSetID != "" && data.OverallInstruction != "" && data.PolicyDigest == current.PolicyDigest
+		if data.CandidateDigest != current.CandidateDigest || data.ScopeDigest != current.ScopeDigest || (!legacy && !anchored) {
 			return statestore.ApprovalProjection{}, true, errors.New("approval.feedback_submitted must match the current candidate and contain feedback")
 		}
 	case "approval.revision_resumed":

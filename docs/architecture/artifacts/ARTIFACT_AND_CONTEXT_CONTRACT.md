@@ -153,6 +153,23 @@ The attempt manifest is immutable after `attempt.prepared`. New evidence emits
 `artifact.arrived` and `context.replan_required` where policy requires it. It
 never mutates a running provider turn.
 
+Checkpoint review feedback uses the same immutable binding rule. A mutable
+client draft names one approval, artifact version and digest, scope and policy
+digest, plus one untruncated safe text representation and digest. Submission
+freezes the complete set as one attributable event; each range is a half-open
+UTF-8 byte interval with the exact quoted text and its SHA-256 digest. The
+service reads the bound representation and verifies the range bytes before it
+accepts the set. Line numbers remain a display projection, and revised
+candidates create new feedback sets rather than changing prior rounds.
+The submitted event supplies the set digest recorded on the one revision
+attempt that consumes it; prior feedback rounds remain immutable audit facts.
+
+Only public or internal raw text and policy-redacted text may supply quote
+context. Withheld, truncated, stale, non-text, and raw sensitive
+representations fail closed. Submitted quote context consequently inherits the
+representation disclosure decision and receives the run export's default
+redaction pass with the rest of the review event.
+
 A late-evidence impact assessment is read-only and returns a closed proposal
 set: `continue`, `refresh`, `revise`, `insert`, or `invalidate`. It evaluates an
 exact actively bound artifact version, revision-driven descendant freshness,

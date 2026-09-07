@@ -163,20 +163,29 @@ Checkpoint iteration is exposed as a candidate-scoped review session:
 |---|---|
 | `GET /api/v1/review-sessions?checkpointId=...` | Read every candidate session and turn in revision order. |
 | `GET /api/v1/review-sessions/{approvalId}` | Read one exact candidate, its state, allowed actions, and ordered turns. |
-| `POST /api/v1/review-sessions/{approvalId}/feedback` | Record human feedback against the displayed candidate digest. |
+| `POST /api/v1/review-sessions/{approvalId}/feedback` | Record legacy single-message feedback against the displayed candidate digest. |
+| `POST /api/v1/review-sessions/{approvalId}/feedback-sets` | Create a non-durable, client-owned draft bound to the exact approval, candidate, scope, policy, and safe text representation. |
+| `POST /api/v1/review-sessions/{approvalId}/feedback-sets/{feedbackSetId}/submit` | Atomically record the complete feedback set, including its overall instruction and anchored comments. |
 | `POST /api/v1/review-sessions/{approvalId}/resume` | Correlate an agent revision attempt without granting provider permission. |
 | `POST /api/v1/review-sessions/{approvalId}/agent-responses` | Record a revised, failed, or cancelled agent attempt. |
 | `POST /api/v1/review-sessions/{approvalId}/decisions` | Approve or reject only the exact current candidate. |
 
 Every mutation requires `Idempotency-Key`, quoted `If-Match`, `scopeDigest`, and
-`candidateDigest`. A successful revision atomically supersedes the old session
+`candidateDigest`. Feedback sets also carry the exact artifact ID and version,
+policy digest, safe representation ID and digest, and its `raw` or `redacted`
+disclosure. Annotation ranges are half-open UTF-8 byte offsets and include the
+quoted text plus its digest; submission validates them against the stored exact
+representation. Draft creation does not persist feedback. A stale candidate,
+representation, policy, or resource version returns a conflict and leaves the
+browser or CLI draft unchanged. A successful revision atomically supersedes the old session
 and opens the next artifact version; failure or cancellation returns the
 unchanged candidate to human review. The closed states are `awaiting_human`,
 `awaiting_agent`, `approved`, `rejected`, and `superseded`. Turn and decision
 events use the run correlation ID, so they appear in the existing SSE stream
 and redacted run export without a second audit channel. Revision limits come
 from the frozen checkpoint policy and fail before a replacement session is
-created.
+created. A resumed agent iteration identifies the exact submitted feedback set
+and its digest. Legacy iterations omit those fields.
 
 `GET /api/v1/runs/{runId}/export` returns a finite `application/zip` support
 bundle. It contains `run.json`, correlated `events.jsonl`, `commands.json`, an

@@ -2,8 +2,12 @@ package artifactcheckpoint_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"testing"
@@ -14,6 +18,9 @@ import (
 	checkpointport "darkstar/src/ports/artifactcheckpoint"
 	"darkstar/src/ports/artifactlineage"
 	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactstore"
+	"darkstar/src/ports/contentprocessor"
+	"darkstar/src/ports/representationregistry"
 	"darkstar/src/ports/statestore"
 )
 
@@ -32,7 +39,7 @@ func TestRevisionLoopPreservesDraftsFeedbackAndScopedEffects(t *testing.T) {
 		Trigger: secondRef, Descendant: artifactregistry.VersionRef{ArtifactID: "artifact_story", Version: 1},
 		Freshness: artifactlineage.FreshnessInvalidated, CreatedAt: time.Date(2026, 9, 2, 20, 0, 0, 0, time.UTC),
 	}}
-	service, err := checkpoint.New(store, artifacts, lineage)
+	service, err := checkpoint.New(store, artifacts, artifacts, artifacts, lineage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +107,7 @@ func TestDecisionIdempotencyIsBoundToExactPayload(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, artifacts, lineage := checkpointFixture()
-	service, _ := checkpoint.New(store, artifacts, lineage)
+	service, _ := checkpoint.New(store, artifacts, artifacts, artifacts, lineage)
 	round, err := service.Open(ctx, openRequest("approval_one", "attempt_one", artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 1}, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +158,7 @@ func TestRevisionRequiresRequestChangesNextVersionAndBudget(t *testing.T) {
 	thirdRef := artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 3}
 	artifacts.values[secondRef] = artifactregistry.ArtifactVersion{ArtifactID: secondRef.ArtifactID, Version: 2, BlobDigest: strings.Repeat("b", 64)}
 	artifacts.values[thirdRef] = artifactregistry.ArtifactVersion{ArtifactID: thirdRef.ArtifactID, Version: 3, BlobDigest: strings.Repeat("c", 64)}
-	service, _ := checkpoint.New(store, artifacts, lineage)
+	service, _ := checkpoint.New(store, artifacts, artifacts, artifacts, lineage)
 	limit := uint64(1)
 	first, err := service.Open(ctx, openRequest("approval_one", "attempt_one", artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 1}, &limit))
 	if err != nil {
@@ -181,25 +188,48 @@ func TestReviewSessionPreservesTurnsRejectsStaleCandidateAndReconstructsHistory(
 	store, artifacts, lineage := checkpointFixture()
 	secondRef := artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 2}
 	artifacts.values[secondRef] = artifactregistry.ArtifactVersion{ArtifactID: secondRef.ArtifactID, Version: 2, BlobDigest: strings.Repeat("b", 64)}
-	service, _ := checkpoint.New(store, artifacts, lineage)
+	service, _ := checkpoint.New(store, artifacts, artifacts, artifacts, lineage)
 	first, err := service.Open(ctx, openRequest("approval_one", "attempt_one", artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 1}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	feedbackRequest := checkpoint.FeedbackRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: first.ResourceVersion,
-		CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, Message: "Add a restart-safe recovery section.",
-		IdempotencyKey: "feedback-one", Actor: userActor()}
+	feedbackRequest := roundFeedbackRequest(first, "Add a restart-safe recovery section.", "feedback-one")
+	draft := checkpoint.FeedbackDraftRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: first.ResourceVersion, Candidate: first.Candidate,
+		CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, PolicyDigest: first.PolicyDigest, Representation: feedbackRequest.Representation}
+	if err := service.ValidateFeedbackSetDraft(ctx, draft); err != nil {
+		t.Fatalf("valid draft binding = %v", err)
+	}
+	draft.Representation.Digest = strings.Repeat("f", 64)
+	if err := service.ValidateFeedbackSetDraft(ctx, draft); !errors.Is(err, checkpoint.ErrCandidateConflict) {
+		t.Fatalf("changed representation draft error = %v", err)
+	}
+	feedbackRequest.Annotations = []checkpointport.FeedbackAnnotation{{ID: "annotation_recovery", Anchor: checkpointport.TextRangeAnchor{
+		StartOffset: 6, EndOffset: 11, QuotedText: "café", QuoteDigest: sha256Text("café")}, Comment: "Explain the multibyte case."}}
+	wrongAnchor := feedbackRequest
+	wrongAnchor.IdempotencyKey = "feedback-wrong-anchor"
+	wrongAnchor.Annotations = append([]checkpointport.FeedbackAnnotation(nil), feedbackRequest.Annotations...)
+	wrongAnchor.Annotations[0].Anchor.StartOffset = 7
+	wrongAnchor.Annotations[0].Anchor.EndOffset = 12
+	if _, err := service.SubmitFeedback(ctx, wrongAnchor); !errors.Is(err, checkpoint.ErrCandidateConflict) {
+		t.Fatalf("wrong offset with self-consistent quote digest error = %v", err)
+	}
 	afterFeedback, err := service.SubmitFeedback(ctx, feedbackRequest)
 	if err != nil || afterFeedback.State != checkpointport.ReviewAwaitingAgent || len(afterFeedback.Turns) != 1 {
 		t.Fatalf("feedback = %#v, %v", afterFeedback, err)
+	}
+	human := afterFeedback.Turns[0].(checkpointport.HumanFeedbackTurn)
+	if human.FeedbackSet == nil || len(human.FeedbackSet.Digest) != 64 || human.FeedbackSet.ScopeDigest != first.ScopeDigest || human.FeedbackSet.PolicyDigest != first.PolicyDigest ||
+		human.FeedbackSet.Receipt.EventID == "" || human.FeedbackSet.Receipt.AggregateRevision != 2 || human.FeedbackSet.Author.ID != "reviewer" ||
+		len(human.FeedbackSet.Annotations) != 1 || human.FeedbackSet.Annotations[0].Anchor.QuotedText != "café" {
+		t.Fatalf("submitted feedback set = %#v", human.FeedbackSet)
 	}
 	replayed, err := service.SubmitFeedback(ctx, feedbackRequest)
 	if err != nil || replayed.ResourceVersion != afterFeedback.ResourceVersion || len(store.events) != 2 {
 		t.Fatalf("feedback replay = %#v, %v; events=%d", replayed, err, len(store.events))
 	}
 	conflictingFeedback := feedbackRequest
-	conflictingFeedback.Message = "Different feedback under the same key."
+	conflictingFeedback.OverallInstruction = "Different feedback under the same key."
 	if _, err := service.SubmitFeedback(ctx, conflictingFeedback); !errors.Is(err, checkpointport.ErrIdempotencyConflict) {
 		t.Fatalf("conflicting feedback replay error = %v", err)
 	}
@@ -212,6 +242,9 @@ func TestReviewSessionPreservesTurnsRejectsStaleCandidateAndReconstructsHistory(
 	}
 	if resumed.ActiveIteration == nil || resumed.ActiveIteration.AttemptID != "attempt_revision_one" || resumed.ActiveIteration.RunID != "run_one" {
 		t.Fatalf("active iteration = %#v", resumed.ActiveIteration)
+	}
+	if resumed.ActiveIteration.FeedbackSetID != human.FeedbackSet.ID || resumed.ActiveIteration.FeedbackSetDigest != human.FeedbackSet.Digest {
+		t.Fatalf("revision attempt feedback binding = %#v", resumed.ActiveIteration)
 	}
 	next, err := service.RecordAgentResponse(ctx, checkpoint.AgentResponseRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: resumed.ResourceVersion,
 		CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_revision_one", Outcome: checkpointport.AgentRevised,
@@ -234,6 +267,31 @@ func TestReviewSessionPreservesTurnsRejectsStaleCandidateAndReconstructsHistory(
 	}
 }
 
+func TestLegacyFeedbackMessageRemainsReplayable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, artifacts, lineage := checkpointFixture()
+	service, _ := checkpoint.New(store, artifacts, artifacts, artifacts, lineage)
+	first, err := service.Open(ctx, openRequest("approval_legacy", "attempt_legacy", artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 1}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := checkpoint.FeedbackRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: first.ResourceVersion,
+		CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, Message: "Preserve the original endpoint.", IdempotencyKey: "legacy-feedback", Actor: userActor()}
+	result, err := service.SubmitFeedback(ctx, request)
+	if err != nil || len(result.Turns) != 1 {
+		t.Fatalf("legacy feedback = %#v, %v", result, err)
+	}
+	turn := result.Turns[0].(checkpointport.HumanFeedbackTurn)
+	if turn.Message != request.Message || turn.FeedbackSet != nil {
+		t.Fatalf("legacy turn = %#v", turn)
+	}
+	replayed, err := service.SubmitFeedback(ctx, request)
+	if err != nil || replayed.ResourceVersion != result.ResourceVersion || len(store.events) != 2 {
+		t.Fatalf("legacy replay = %#v, %v", replayed, err)
+	}
+}
+
 func TestReviewSessionAgentFailureAndCancellationReturnCandidateToHuman(t *testing.T) {
 	t.Parallel()
 	for _, outcome := range []checkpointport.AgentOutcome{checkpointport.AgentFailed, checkpointport.AgentCancelled} {
@@ -241,10 +299,9 @@ func TestReviewSessionAgentFailureAndCancellationReturnCandidateToHuman(t *testi
 		t.Run(string(outcome), func(t *testing.T) {
 			ctx := context.Background()
 			store, artifacts, lineage := checkpointFixture()
-			service, _ := checkpoint.New(store, artifacts, lineage)
+			service, _ := checkpoint.New(store, artifacts, artifacts, artifacts, lineage)
 			first, _ := service.Open(ctx, openRequest("approval_one", "attempt_one", artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 1}, nil))
-			feedback, _ := service.SubmitFeedback(ctx, checkpoint.FeedbackRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: first.ResourceVersion,
-				CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, Message: "Revise.", IdempotencyKey: "feedback", Actor: userActor()})
+			feedback, _ := service.SubmitFeedback(ctx, roundFeedbackRequest(first, "Revise.", "feedback"))
 			resumed, _ := service.ResumeRevision(ctx, checkpoint.ResumeRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: feedback.ResourceVersion,
 				CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_retry", IdempotencyKey: "resume", Actor: userActor()})
 			result, err := service.RecordAgentResponse(ctx, checkpoint.AgentResponseRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: resumed.ResourceVersion,
@@ -263,10 +320,10 @@ func TestReviewSessionSurfacesRevisionLimitBeforeReplacingCandidate(t *testing.T
 	store, artifacts, lineage := checkpointFixture()
 	secondRef := artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 2}
 	artifacts.values[secondRef] = artifactregistry.ArtifactVersion{ArtifactID: secondRef.ArtifactID, Version: 2, BlobDigest: strings.Repeat("b", 64)}
-	service, _ := checkpoint.New(store, artifacts, lineage)
+	service, _ := checkpoint.New(store, artifacts, artifacts, artifacts, lineage)
 	limit := uint64(1)
 	first, _ := service.Open(ctx, openRequest("approval_one", "attempt_one", artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: 1}, &limit))
-	feedback, _ := service.SubmitFeedback(ctx, checkpoint.FeedbackRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: first.ResourceVersion, CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, Message: "one", IdempotencyKey: "f1", Actor: userActor()})
+	feedback, _ := service.SubmitFeedback(ctx, roundFeedbackRequest(first, "one", "f1"))
 	resumed, _ := service.ResumeRevision(ctx, checkpoint.ResumeRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: feedback.ResourceVersion, CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_two", IdempotencyKey: "r1", Actor: userActor()})
 	second, err := service.RecordAgentResponse(ctx, checkpoint.AgentResponseRequest{ApprovalID: first.ApprovalID, ExpectedResourceVersion: resumed.ResourceVersion, CandidateDigest: first.CandidateDigest, ScopeDigest: first.ScopeDigest, AttemptID: "attempt_two", Outcome: checkpointport.AgentRevised, Candidate: secondRef, NextApprovalID: "approval_two", IdempotencyKey: "a1", Actor: userActor()})
 	if err != nil {
@@ -280,7 +337,7 @@ func TestReviewSessionSurfacesRevisionLimitBeforeReplacingCandidate(t *testing.T
 			t.Fatalf("exhausted session allows request_changes: %#v", second.AllowedActions)
 		}
 	}
-	_, err = service.SubmitFeedback(ctx, checkpoint.FeedbackRequest{ApprovalID: second.ID, ExpectedResourceVersion: second.ResourceVersion, CandidateDigest: second.CandidateDigest, ScopeDigest: second.ScopeDigest, Message: "two", IdempotencyKey: "f2", Actor: userActor()})
+	_, err = service.SubmitFeedback(ctx, feedbackRequest(second, "two", "f2"))
 	if !errors.Is(err, checkpointport.ErrRevisionLimit) {
 		t.Fatalf("revision limit error = %v", err)
 	}
@@ -319,6 +376,23 @@ func userActor() statestore.Actor {
 	return statestore.Actor{Type: statestore.ActorUser, ID: "reviewer"}
 }
 
+func sha256Text(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
+}
+
+func roundFeedbackRequest(session checkpointport.Round, instruction, key string) checkpoint.FeedbackRequest {
+	return checkpoint.FeedbackRequest{ApprovalID: session.ApprovalID, ExpectedResourceVersion: session.ResourceVersion,
+		FeedbackSetID: "feedbackset_" + key, Candidate: session.Candidate, CandidateDigest: session.CandidateDigest, ScopeDigest: session.ScopeDigest, PolicyDigest: session.PolicyDigest,
+		Representation:     checkpointport.TextRepresentationBinding{RepresentationID: fmt.Sprintf("representation_text_%d", session.Candidate.Version), Digest: strings.Repeat("e", 64), Disclosure: representationregistry.DisclosureRaw},
+		OverallInstruction: instruction, Annotations: []checkpointport.FeedbackAnnotation{}, IdempotencyKey: key, Actor: userActor()}
+}
+
+func feedbackRequest(session checkpointport.ReviewSession, instruction, key string) checkpoint.FeedbackRequest {
+	return roundFeedbackRequest(checkpointport.Round{ApprovalID: session.ID, Candidate: session.Candidate, CandidateDigest: session.CandidateDigest,
+		ScopeDigest: session.ScopeDigest, PolicyDigest: session.PolicyDigest, ResourceVersion: session.ResourceVersion}, instruction, key)
+}
+
 type memoryArtifacts struct {
 	values map[artifactregistry.VersionRef]artifactregistry.ArtifactVersion
 }
@@ -328,7 +402,27 @@ func (store memoryArtifacts) ArtifactVersion(_ context.Context, ref artifactregi
 	if !ok {
 		return artifactregistry.ArtifactVersion{}, artifactregistry.ErrNotFound
 	}
+	if value.Sensitivity == "" {
+		value.Sensitivity = artifactregistry.SensitivityPublic
+	}
 	return value, nil
+}
+
+func (store memoryArtifacts) Representation(_ context.Context, id string) (representationregistry.Representation, error) {
+	var version uint64
+	if _, err := fmt.Sscanf(id, "representation_text_%d", &version); err != nil {
+		return representationregistry.Representation{}, representationregistry.ErrNotFound
+	}
+	ref := artifactregistry.VersionRef{ArtifactID: "artifact_design", Version: version}
+	if _, ok := store.values[ref]; !ok {
+		return representationregistry.Representation{}, representationregistry.ErrNotFound
+	}
+	return representationregistry.Representation{RepresentationID: id, Artifact: ref, Kind: contentprocessor.RepresentationText,
+		MediaType: "text/plain", Locator: artifactstore.Locator("memory:text"), Digest: strings.Repeat("e", 64), Disclosure: representationregistry.DisclosureRaw}, nil
+}
+
+func (store memoryArtifacts) Open(_ context.Context, _ artifactstore.OpenRequest) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("alpha café omega")), nil
 }
 
 type memoryLineage struct {

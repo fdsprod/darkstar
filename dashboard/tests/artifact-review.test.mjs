@@ -4,7 +4,7 @@ import test from "node:test";
 
 import {
   buildReviewDecision, buildReviewFeedback, chooseSafeTextRepresentation, iterationActivity, nextReviewSession,
-  mergeDiffPages, orderedReviewSessions, parseReviewView, previousReviewedVersion, representationContentDigestMatches, reviewSessionChanged, splitDiffRows, validateArtifactDiff, verifyCandidateArtifact,
+  codeUnitOffsetAt, createTextRangeAnchor, displayLineRange, exactFeedbackSetForRepresentation, mergeDiffPages, orderedFeedbackAnnotations, orderedReviewSessions, parseReviewView, previousReviewedVersion, representationContentDigestMatches, reviewSessionChanged, splitDiffRows, utf8OffsetAt, validateAnnotationComment, validateArtifactDiff, validateTextRangeAnchor, verifyCandidateArtifact,
 } from "../src/pages/artifactReviewModel.ts";
 
 const digest = (letter) => letter.repeat(64);
@@ -142,4 +142,37 @@ test("review workspace is routed, reconnect-safe, escaped, and keeps separate au
 
 test("reader view vocabulary defaults closed", () => {
   assert.equal(parseReviewView("split"), "split"); assert.equal(parseReviewView("html"), "current"); assert.equal(parseReviewView(null), "current");
+});
+
+test("annotation anchors use half-open UTF-8 byte offsets and display-only lines", async () => {
+  const text = "one\n😀 café\n三";
+  const start = text.indexOf("😀"); const end = text.indexOf("\n三");
+  const anchor = await createTextRangeAnchor(text, start, end);
+  assert.deepEqual({ startOffset: anchor.startOffset, endOffset: anchor.endOffset, quotedText: anchor.quotedText }, { startOffset: 4, endOffset: 14, quotedText: "😀 café" });
+  assert.match(anchor.quoteDigest, /^[0-9a-f]{64}$/);
+  assert.equal(codeUnitOffsetAt(text, anchor.startOffset), start); assert.equal(utf8OffsetAt(text, end), anchor.endOffset);
+  assert.equal(validateTextRangeAnchor(text, anchor), true);
+  assert.equal(validateTextRangeAnchor(text.replace("café", "cafe"), anchor), false);
+  assert.deepEqual(displayLineRange(text, anchor), { start: 2, end: 2 });
+  assert.throws(() => utf8OffsetAt(text, start + 1), /splits a Unicode character/);
+  assert.throws(() => codeUnitOffsetAt(text, anchor.startOffset + 1), /encoded data was not valid|encoded data/i);
+});
+
+test("annotation drafts validate server bounds and have stable navigation order", async () => {
+  assert.equal(validateAnnotationComment("  explain this  "), "explain this");
+  assert.throws(() => validateAnnotationComment(" "), /cannot be blank/);
+  assert.throws(() => validateAnnotationComment("😀".repeat(1025)), /4096 UTF-8 bytes/);
+  await assert.rejects(() => createTextRangeAnchor("x".repeat(16_385), 0, 16_385), /16384 UTF-8 bytes/);
+  const values = [{ id: "annotation_b", anchor: { startOffset: 8, endOffset: 9 } }, { id: "annotation_a", anchor: { startOffset: 1, endOffset: 3 } }];
+  assert.deepEqual(orderedFeedbackAnnotations(values).map((item) => item.id), ["annotation_a", "annotation_b"]);
+});
+
+test("submitted feedback overlays require the exact candidate and representation binding", () => {
+  const base = { id: "feedbackset_one", candidate: { artifactId: "artifact_design", version: 3 }, candidateDigest: digest("c"), representation: { representationId: "representation_one", digest: digest("r") } };
+  assert.equal(exactFeedbackSetForRepresentation([base], base.candidate, digest("c"), "representation_one", digest("r")), base);
+  assert.equal(exactFeedbackSetForRepresentation([base], { ...base.candidate, version: 2 }, digest("c"), "representation_one", digest("r")), undefined);
+  assert.equal(exactFeedbackSetForRepresentation([base], base.candidate, digest("x"), "representation_one", digest("r")), undefined);
+  assert.equal(exactFeedbackSetForRepresentation([base], base.candidate, digest("c"), "representation_other", digest("r")), undefined);
+  const replacement = structuredClone(base); replacement.candidateDigest = digest("x");
+  assert.equal(exactFeedbackSetForRepresentation([base, replacement], base.candidate, digest("c"), "representation_one", digest("r")), undefined, "duplicate ids resolve to the latest authoritative projection");
 });

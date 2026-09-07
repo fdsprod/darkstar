@@ -8,14 +8,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"darkstar/src/core/identity"
 	checkpointport "darkstar/src/ports/artifactcheckpoint"
 	"darkstar/src/ports/artifactlineage"
 	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/artifactstore"
+	"darkstar/src/ports/contentprocessor"
+	"darkstar/src/ports/representationregistry"
 	"darkstar/src/ports/statestore"
 )
 
@@ -60,11 +65,28 @@ type DecisionRequest struct {
 type FeedbackRequest struct {
 	ApprovalID              string
 	ExpectedResourceVersion uint64
+	FeedbackSetID           string
+	Candidate               artifactregistry.VersionRef
 	CandidateDigest         string
 	ScopeDigest             string
-	Message                 string
-	IdempotencyKey          string
-	Actor                   statestore.Actor
+	PolicyDigest            string
+	Representation          checkpointport.TextRepresentationBinding
+	OverallInstruction      string
+	Annotations             []checkpointport.FeedbackAnnotation
+	// Message retains compatibility with the original unanchored endpoint.
+	Message        string
+	IdempotencyKey string
+	Actor          statestore.Actor
+}
+
+type FeedbackDraftRequest struct {
+	ApprovalID              string
+	ExpectedResourceVersion uint64
+	Candidate               artifactregistry.VersionRef
+	CandidateDigest         string
+	ScopeDigest             string
+	PolicyDigest            string
+	Representation          checkpointport.TextRepresentationBinding
 }
 
 type ResumeRequest struct {
@@ -99,10 +121,12 @@ type ListRequest struct {
 // Service composes immutable artifact metadata, revision invalidations, and
 // durable approval events without making workflow transitions itself.
 type Service struct {
-	store     checkpointport.Store
-	artifacts ArtifactReader
-	lineage   LineageReader
-	now       func() time.Time
+	store           checkpointport.Store
+	artifacts       ArtifactReader
+	representations RepresentationReader
+	content         RepresentationContentReader
+	lineage         LineageReader
+	now             func() time.Time
 }
 
 // ArtifactReader resolves immutable candidate metadata.
@@ -110,16 +134,24 @@ type ArtifactReader interface {
 	ArtifactVersion(context.Context, artifactregistry.VersionRef) (artifactregistry.ArtifactVersion, error)
 }
 
+type RepresentationReader interface {
+	Representation(context.Context, string) (representationregistry.Representation, error)
+}
+
+type RepresentationContentReader interface {
+	Open(context.Context, artifactstore.OpenRequest) (io.ReadCloser, error)
+}
+
 // LineageReader resolves already-persisted effects created by an artifact revision.
 type LineageReader interface {
 	AffectedBy(context.Context, artifactregistry.VersionRef) ([]artifactlineage.Invalidation, error)
 }
 
-func New(store checkpointport.Store, artifacts ArtifactReader, lineage LineageReader) (*Service, error) {
-	if store == nil || artifacts == nil || lineage == nil {
+func New(store checkpointport.Store, artifacts ArtifactReader, representations RepresentationReader, content RepresentationContentReader, lineage LineageReader) (*Service, error) {
+	if store == nil || artifacts == nil || representations == nil || content == nil || lineage == nil {
 		return nil, errors.New("artifact checkpoint requires state, artifact, and lineage stores")
 	}
-	return &Service{store: store, artifacts: artifacts, lineage: lineage, now: time.Now}, nil
+	return &Service{store: store, artifacts: artifacts, representations: representations, content: content, lineage: lineage, now: time.Now}, nil
 }
 
 // Open records one immutable draft review. A revision is accepted only after
@@ -267,7 +299,7 @@ func (service *Service) Decide(ctx context.Context, request DecisionRequest) (ch
 	return service.round(ctx, request.ApprovalID)
 }
 
-// SubmitFeedback records exactly one human turn against the displayed
+// SubmitFeedback records exactly one immutable feedback set against the displayed
 // candidate. The candidate remains current until an agent response commits a
 // replacement, so failed or cancelled attempts can safely return to review.
 func (service *Service) SubmitFeedback(ctx context.Context, request FeedbackRequest) (checkpointport.ReviewSession, error) {
@@ -275,8 +307,13 @@ func (service *Service) SubmitFeedback(ctx context.Context, request FeedbackRequ
 		request.ScopeDigest, request.IdempotencyKey, request.Actor); err != nil {
 		return checkpointport.ReviewSession{}, err
 	}
-	if strings.TrimSpace(request.Message) == "" || strings.TrimSpace(request.Message) != request.Message || len(request.Message) > 16384 {
-		return checkpointport.ReviewSession{}, fmt.Errorf("%w: feedback must contain at most 16384 bytes", ErrInvalidRequest)
+	legacy := request.FeedbackSetID == "" && request.Message != ""
+	if legacy {
+		if strings.TrimSpace(request.Message) == "" || strings.TrimSpace(request.Message) != request.Message || len(request.Message) > 16384 {
+			return checkpointport.ReviewSession{}, fmt.Errorf("%w: feedback must contain at most 16384 bytes", ErrInvalidRequest)
+		}
+	} else if err := validateFeedbackSet(request); err != nil {
+		return checkpointport.ReviewSession{}, err
 	}
 	approval, state, err := service.reviewForMutation(ctx, request.ApprovalID, request.ExpectedResourceVersion,
 		request.CandidateDigest, request.ScopeDigest, checkpointport.ReviewAwaitingHuman)
@@ -287,6 +324,28 @@ func (service *Service) SubmitFeedback(ctx context.Context, request FeedbackRequ
 		return checkpointport.ReviewSession{}, err
 	}
 	_ = state
+	if legacy {
+		request.Candidate = artifactregistry.VersionRef{ArtifactID: approval.CandidateArtifactID, Version: approval.CandidateArtifactVersion}
+		request.OverallInstruction = request.Message
+		request.PolicyDigest = approval.PolicyDigest
+	} else if request.Candidate.ArtifactID != approval.CandidateArtifactID || request.Candidate.Version != approval.CandidateArtifactVersion {
+		return checkpointport.ReviewSession{}, ErrCandidateConflict
+	}
+	if request.PolicyDigest != approval.PolicyDigest {
+		return checkpointport.ReviewSession{}, ErrCandidateConflict
+	}
+	if !legacy {
+		content, readErr := service.safeFeedbackRepresentation(ctx, request.Candidate, request.CandidateDigest, request.Representation)
+		if readErr != nil {
+			return checkpointport.ReviewSession{}, ErrCandidateConflict
+		}
+		for _, annotation := range request.Annotations {
+			if annotation.Anchor.EndOffset > uint64(len(content)) || !utf8.Valid(content[annotation.Anchor.StartOffset:annotation.Anchor.EndOffset]) ||
+				string(content[annotation.Anchor.StartOffset:annotation.Anchor.EndOffset]) != annotation.Anchor.QuotedText {
+				return checkpointport.ReviewSession{}, ErrCandidateConflict
+			}
+		}
+	}
 	if approval.MaxRevisions != nil && approval.CheckpointRevision > *approval.MaxRevisions {
 		return checkpointport.ReviewSession{}, checkpointport.ErrRevisionLimit
 	}
@@ -298,6 +357,41 @@ func (service *Service) SubmitFeedback(ctx context.Context, request FeedbackRequ
 		return checkpointport.ReviewSession{}, fmt.Errorf("submit checkpoint feedback: %w", err)
 	}
 	return service.ReviewSession(ctx, request.ApprovalID)
+}
+
+// ValidateFeedbackSetDraft verifies a non-durable draft binding without
+// accepting its mutable instruction or annotations.
+func (service *Service) ValidateFeedbackSetDraft(ctx context.Context, request FeedbackDraftRequest) error {
+	approval, _, err := service.reviewForMutation(ctx, request.ApprovalID, request.ExpectedResourceVersion,
+		request.CandidateDigest, request.ScopeDigest, checkpointport.ReviewAwaitingHuman)
+	if err != nil {
+		return err
+	}
+	if request.Candidate.ArtifactID != approval.CandidateArtifactID || request.Candidate.Version != approval.CandidateArtifactVersion || request.PolicyDigest != approval.PolicyDigest {
+		return ErrCandidateConflict
+	}
+	_, err = service.safeFeedbackRepresentation(ctx, request.Candidate, request.CandidateDigest, request.Representation)
+	return err
+}
+
+func (service *Service) safeFeedbackRepresentation(ctx context.Context, candidateRef artifactregistry.VersionRef, candidateDigest string, binding checkpointport.TextRepresentationBinding) ([]byte, error) {
+	artifact, err := service.artifacts.ArtifactVersion(ctx, candidateRef)
+	if err != nil || artifact.BlobDigest != candidateDigest {
+		return nil, ErrCandidateConflict
+	}
+	representation, err := service.representations.Representation(ctx, binding.RepresentationID)
+	safeTextKind := representation.Kind == contentprocessor.RepresentationText || representation.Kind == contentprocessor.RepresentationPreview
+	if err != nil || representation.Artifact != candidateRef || representation.Digest != binding.Digest || representation.Disclosure != binding.Disclosure ||
+		!safeTextKind || !strings.HasPrefix(representation.MediaType, "text/") || representation.Truncated ||
+		representation.Disclosure == representationregistry.DisclosureWithheld ||
+		(representation.Disclosure == representationregistry.DisclosureRaw && artifact.Sensitivity != artifactregistry.SensitivityPublic && artifact.Sensitivity != artifactregistry.SensitivityInternal) {
+		return nil, ErrCandidateConflict
+	}
+	content, err := readRepresentation(ctx, service.content, representation)
+	if err != nil {
+		return nil, ErrCandidateConflict
+	}
+	return content, nil
 }
 
 // ResumeRevision records the agent attempt selected to handle the latest
@@ -541,17 +635,47 @@ func (service *Service) reviewConversation(ctx context.Context, approval statest
 	state := checkpointport.ReviewAwaitingHuman
 	turns := make(checkpointport.Turns, 0)
 	var active *checkpointport.ActiveAgentIteration
+	var latestFeedbackSetID, latestFeedbackSetDigest string
 	for _, event := range events {
 		switch event.Kind {
 		case "approval.feedback_submitted":
-			var data struct{ CandidateDigest, Message string }
+			var data struct {
+				FeedbackSetID, CandidateDigest, ScopeDigest, PolicyDigest, OverallInstruction string
+				Candidate                                                                     artifactregistry.VersionRef
+				Representation                                                                checkpointport.TextRepresentationBinding
+				Annotations                                                                   []checkpointport.FeedbackAnnotation
+			}
 			if err := json.Unmarshal(event.Data, &data); err != nil {
 				return "", nil, nil, err
+			}
+			var set *checkpointport.SubmittedFeedbackSet
+			if data.FeedbackSetID != "" {
+				set = &checkpointport.SubmittedFeedbackSet{SchemaVersion: 1, State: "submitted", ID: data.FeedbackSetID,
+					Digest:     sha256Hex(event.Data),
+					ApprovalID: approval.ApprovalID, Candidate: data.Candidate, CandidateDigest: data.CandidateDigest,
+					ScopeDigest: data.ScopeDigest, PolicyDigest: data.PolicyDigest,
+					Representation: data.Representation, OverallInstruction: data.OverallInstruction, Annotations: data.Annotations,
+					Author: event.Actor, SubmittedAt: event.RecordedAt,
+					Receipt: checkpointport.FeedbackReceipt{EventID: event.ID, AggregateRevision: event.AggregateRevision, CommandID: event.CommandID},
+					Lineage: checkpointport.FeedbackRevisionLineage{CheckpointID: approval.CheckpointID, CheckpointRevision: approval.CheckpointRevision, RunID: approval.RunID, AttemptID: approval.AttemptID}}
+			}
+			latestFeedbackSetID = data.FeedbackSetID
+			latestFeedbackSetDigest = ""
+			if data.FeedbackSetID != "" {
+				latestFeedbackSetDigest = sha256Hex(event.Data)
+			}
+			message := data.OverallInstruction
+			if message == "" {
+				var legacy struct {
+					Message string `json:"message"`
+				}
+				_ = json.Unmarshal(event.Data, &legacy)
+				message = legacy.Message
 			}
 			turns = append(turns, checkpointport.HumanFeedbackTurn{Kind: "human_feedback", Sequence: uint64(len(turns) + 1),
 				Actor: event.Actor, OccurredAt: event.RecordedAt, RunID: approval.RunID, AttemptID: approval.AttemptID,
 				Candidate:       artifactregistry.VersionRef{ArtifactID: approval.CandidateArtifactID, Version: approval.CandidateArtifactVersion},
-				CandidateDigest: data.CandidateDigest, Message: data.Message})
+				CandidateDigest: data.CandidateDigest, Message: message, FeedbackSet: set})
 			state = checkpointport.ReviewAwaitingAgent
 		case "approval.revision_resumed":
 			var data struct {
@@ -560,7 +684,8 @@ func (service *Service) reviewConversation(ctx context.Context, approval statest
 			if err := json.Unmarshal(event.Data, &data); err != nil {
 				return "", nil, nil, err
 			}
-			active = &checkpointport.ActiveAgentIteration{AttemptID: data.AttemptID, RunID: approval.RunID, ResumedBy: event.Actor, ResumedAt: event.RecordedAt}
+			active = &checkpointport.ActiveAgentIteration{AttemptID: data.AttemptID, RunID: approval.RunID, FeedbackSetID: latestFeedbackSetID,
+				FeedbackSetDigest: latestFeedbackSetDigest, ResumedBy: event.Actor, ResumedAt: event.RecordedAt}
 		case "approval.agent_responded":
 			var data struct {
 				Outcome                             checkpointport.AgentOutcome `json:"outcome"`
@@ -643,13 +768,69 @@ func validReviewActor(actor statestore.Actor) bool {
 }
 
 func feedbackPayload(request FeedbackRequest) json.RawMessage {
+	if request.FeedbackSetID == "" {
+		value, _ := json.Marshal(struct {
+			CandidateDigest string `json:"candidateDigest"`
+			ScopeDigest     string `json:"scopeDigest"`
+			Message         string `json:"message"`
+		}{request.CandidateDigest, request.ScopeDigest, request.Message})
+		return value
+	}
 	value, _ := json.Marshal(struct {
-		CandidateDigest string `json:"candidateDigest"`
-		ScopeDigest     string `json:"scopeDigest"`
-		Message         string `json:"message"`
+		FeedbackSetID      string                                   `json:"feedbackSetId"`
+		Candidate          artifactregistry.VersionRef              `json:"candidate"`
+		CandidateDigest    string                                   `json:"candidateDigest"`
+		ScopeDigest        string                                   `json:"scopeDigest"`
+		PolicyDigest       string                                   `json:"policyDigest"`
+		Representation     checkpointport.TextRepresentationBinding `json:"representation"`
+		OverallInstruction string                                   `json:"overallInstruction"`
+		Annotations        []checkpointport.FeedbackAnnotation      `json:"annotations"`
 	}{
-		request.CandidateDigest, request.ScopeDigest, request.Message})
+		request.FeedbackSetID, request.Candidate, request.CandidateDigest, request.ScopeDigest, request.PolicyDigest,
+		request.Representation, request.OverallInstruction, request.Annotations})
 	return value
+}
+
+func validateFeedbackSet(request FeedbackRequest) error {
+	if !strings.HasPrefix(request.FeedbackSetID, "feedbackset_") || request.Candidate.ArtifactID == "" || request.Candidate.Version == 0 || !digestPattern.MatchString(request.PolicyDigest) ||
+		!strings.HasPrefix(request.Representation.RepresentationID, "representation_") || !digestPattern.MatchString(request.Representation.Digest) ||
+		(request.Representation.Disclosure != representationregistry.DisclosureRaw && request.Representation.Disclosure != representationregistry.DisclosureRedacted) ||
+		strings.TrimSpace(request.OverallInstruction) == "" || strings.TrimSpace(request.OverallInstruction) != request.OverallInstruction || len(request.OverallInstruction) > 16384 ||
+		len(request.Annotations) > 256 {
+		return fmt.Errorf("%w: invalid feedback set", ErrInvalidRequest)
+	}
+	seen := make(map[string]struct{}, len(request.Annotations))
+	for _, annotation := range request.Annotations {
+		if !strings.HasPrefix(annotation.ID, "annotation_") || annotation.Anchor.StartOffset >= annotation.Anchor.EndOffset ||
+			!digestPattern.MatchString(annotation.Anchor.QuoteDigest) || strings.TrimSpace(annotation.Anchor.QuotedText) == "" || len(annotation.Anchor.QuotedText) > 16384 ||
+			strings.TrimSpace(annotation.Comment) == "" || strings.TrimSpace(annotation.Comment) != annotation.Comment || len(annotation.Comment) > 4096 ||
+			sha256Hex([]byte(annotation.Anchor.QuotedText)) != annotation.Anchor.QuoteDigest {
+			return fmt.Errorf("%w: invalid feedback annotation", ErrInvalidRequest)
+		}
+		if _, exists := seen[annotation.ID]; exists {
+			return fmt.Errorf("%w: duplicate feedback annotation", ErrInvalidRequest)
+		}
+		seen[annotation.ID] = struct{}{}
+	}
+	return nil
+}
+
+func sha256Hex(value []byte) string {
+	digest := sha256.Sum256(value)
+	return hex.EncodeToString(digest[:])
+}
+
+func readRepresentation(ctx context.Context, reader RepresentationContentReader, representation representationregistry.Representation) ([]byte, error) {
+	stream, err := reader.Open(ctx, artifactstore.OpenRequest{Locator: representation.Locator, ExpectedDigest: representation.Digest})
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	content, err := io.ReadAll(io.LimitReader(stream, (4<<20)+1))
+	if err != nil || len(content) > 4<<20 || !utf8.Valid(content) {
+		return nil, ErrCandidateConflict
+	}
+	return content, nil
 }
 
 func resumePayload(request ResumeRequest) json.RawMessage {

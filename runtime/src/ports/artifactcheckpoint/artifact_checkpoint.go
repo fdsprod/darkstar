@@ -10,6 +10,7 @@ import (
 
 	"darkstar/src/ports/artifactlineage"
 	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/representationregistry"
 	"darkstar/src/ports/statestore"
 )
 
@@ -93,9 +94,67 @@ type HumanFeedbackTurn struct {
 	Candidate       artifactregistry.VersionRef `json:"candidate"`
 	CandidateDigest string                      `json:"candidateDigest"`
 	Message         string                      `json:"message"`
+	FeedbackSet     *SubmittedFeedbackSet       `json:"feedbackSet,omitempty"`
 }
 
 func (HumanFeedbackTurn) reviewTurn() {}
+
+// TextRepresentationBinding identifies the exact safe text that the reviewer
+// saw. Disclosure is retained so quote context follows the same export policy.
+type TextRepresentationBinding struct {
+	RepresentationID string                            `json:"representationId"`
+	Digest           string                            `json:"digest"`
+	Disclosure       representationregistry.Disclosure `json:"disclosure"`
+}
+
+// TextRangeAnchor uses half-open UTF-8 byte offsets. Line numbers are a UI
+// projection and are intentionally absent from the durable anchor.
+type TextRangeAnchor struct {
+	StartOffset uint64 `json:"startOffset"`
+	EndOffset   uint64 `json:"endOffset"`
+	QuoteDigest string `json:"quoteDigest"`
+	QuotedText  string `json:"quotedText"`
+}
+
+type FeedbackAnnotation struct {
+	ID      string          `json:"id"`
+	Anchor  TextRangeAnchor `json:"anchor"`
+	Comment string          `json:"comment"`
+}
+
+type FeedbackReceipt struct {
+	EventID           string `json:"eventId"`
+	AggregateRevision uint64 `json:"aggregateRevision"`
+	CommandID         string `json:"commandId"`
+}
+
+type FeedbackRevisionLineage struct {
+	CheckpointID       string `json:"checkpointId"`
+	CheckpointRevision uint64 `json:"checkpointRevision"`
+	RunID              string `json:"runId"`
+	AttemptID          string `json:"attemptId"`
+}
+
+// SubmittedFeedbackSet is an immutable, attributable snapshot. Draft editing
+// remains client-owned; only the complete set crosses the durable boundary.
+type SubmittedFeedbackSet struct {
+	SchemaVersion      int                         `json:"schemaVersion"`
+	State              string                      `json:"state"`
+	ID                 string                      `json:"id"`
+	Digest             string                      `json:"digest"`
+	ApprovalID         string                      `json:"approvalId"`
+	Candidate          artifactregistry.VersionRef `json:"candidate"`
+	CandidateDigest    string                      `json:"candidateDigest"`
+	ScopeDigest        string                      `json:"scopeDigest"`
+	PolicyDigest       string                      `json:"policyDigest"`
+	Representation     TextRepresentationBinding   `json:"representation"`
+	OverallInstruction string                      `json:"overallInstruction"`
+	Annotations        []FeedbackAnnotation        `json:"annotations"`
+	Author             statestore.Actor            `json:"author"`
+	SubmittedAt        time.Time                   `json:"submittedAt"`
+	Receipt            FeedbackReceipt             `json:"receipt"`
+	Lineage            FeedbackRevisionLineage     `json:"lineage"`
+}
 
 type AgentResponseTurn struct {
 	Kind               string                       `json:"kind"`
@@ -115,10 +174,12 @@ func (AgentResponseTurn) reviewTurn() {}
 // ActiveAgentIteration links review state to the authoritative attempt
 // lifecycle without duplicating its queued/running/validating phase.
 type ActiveAgentIteration struct {
-	AttemptID string           `json:"attemptId"`
-	RunID     string           `json:"runId"`
-	ResumedBy statestore.Actor `json:"resumedBy"`
-	ResumedAt time.Time        `json:"resumedAt"`
+	AttemptID         string           `json:"attemptId"`
+	RunID             string           `json:"runId"`
+	FeedbackSetID     string           `json:"feedbackSetId,omitempty"`
+	FeedbackSetDigest string           `json:"feedbackSetDigest,omitempty"`
+	ResumedBy         statestore.Actor `json:"resumedBy"`
+	ResumedAt         time.Time        `json:"resumedAt"`
 }
 
 // ReviewSession is one immutable candidate and its ordered conversation. A

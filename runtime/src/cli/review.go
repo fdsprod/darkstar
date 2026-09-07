@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -16,12 +17,33 @@ import (
 	"darkstar/src/core/attention"
 	"darkstar/src/core/runexecution"
 	checkpointport "darkstar/src/ports/artifactcheckpoint"
+	"darkstar/src/ports/artifactregistry"
+	"darkstar/src/ports/representationregistry"
 )
+
+var feedbackSetIdentityPattern = regexp.MustCompile(`^feedbackset_[0-9A-HJKMNP-TV-Z]{26}$`)
+
+type feedbackSetDraft struct {
+	SchemaVersion      int                                      `json:"schemaVersion"`
+	State              string                                   `json:"state"`
+	ID                 string                                   `json:"id"`
+	ApprovalID         string                                   `json:"approvalId"`
+	Candidate          artifactregistry.VersionRef              `json:"candidate"`
+	CandidateDigest    string                                   `json:"candidateDigest"`
+	ScopeDigest        string                                   `json:"scopeDigest"`
+	PolicyDigest       string                                   `json:"policyDigest"`
+	Representation     checkpointport.TextRepresentationBinding `json:"representation"`
+	OverallInstruction string                                   `json:"overallInstruction"`
+	Annotations        []checkpointport.FeedbackAnnotation      `json:"annotations"`
+}
 
 func runReview(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	command := "darkstar review"
+	if len(args) > 0 && args[0] == "feedback-set" {
+		return runReviewFeedbackSet(args[1:], jsonOutput, stdout, stderr)
+	}
 	if len(args) < 2 {
-		return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected review show|history|feedback|resume|respond|approve|reject <id>"))
+		return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected review show|history|feedback-set|resume|respond|approve|reject <id>"))
 	}
 	session, code := connectRunSession(command+" "+args[0], jsonOutput, stdout, stderr)
 	if session == nil {
@@ -95,6 +117,109 @@ func runReview(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		return writeClientError(stdout, stderr, jsonOutput, command, err)
 	}
 	return writeReviewResult(current, fmt.Sprintf("Review session %s is %s.", current.ID, current.State), jsonOutput, stdout, stderr, command)
+}
+
+func runReviewFeedbackSet(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
+	command := "darkstar review feedback-set"
+	if len(args) < 2 || (args[0] != "create" && args[0] != "submit") || !strings.HasPrefix(args[1], "approval_") {
+		return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected review feedback-set create|submit <approval-id>"))
+	}
+	approvalID := args[1]
+	allowed := map[string]string{"--idempotency-key": "key"}
+	if args[0] == "create" {
+		allowed["--representation"] = "representation"
+		allowed["--representation-digest"] = "digest"
+		allowed["--disclosure"] = "disclosure"
+	} else {
+		allowed["--file"] = "file"
+	}
+	flags, err := parseReviewFilters(args[2:], allowed)
+	if err != nil {
+		return reviewArgumentError(stdout, stderr, jsonOutput, command, err)
+	}
+	key := flags.Get("key")
+	if key == "" {
+		key = newIdempotencyKey()
+	}
+	var submitDraft feedbackSetDraft
+	if args[0] == "submit" {
+		submitDraft, err = readFeedbackSetDraft(flags.Get("file"), approvalID)
+		if err != nil {
+			return reviewArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+	}
+	session, code := connectRunSession(command+" "+args[0], jsonOutput, stdout, stderr)
+	if session == nil {
+		return code
+	}
+	var current checkpointport.ReviewSession
+	if err := session.DoJSON(context.Background(), http.MethodGet, "review-sessions/"+url.PathEscape(approvalID), nil, &current); err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	if args[0] == "create" {
+		disclosure := representationregistry.Disclosure(flags.Get("disclosure"))
+		binding := checkpointport.TextRepresentationBinding{RepresentationID: flags.Get("representation"), Digest: flags.Get("digest"), Disclosure: disclosure}
+		if !validFeedbackDraftBinding(binding) {
+			return reviewArgumentError(stdout, stderr, jsonOutput, command, errors.New("create requires --representation, --representation-digest, and --disclosure raw|redacted"))
+		}
+		body := map[string]any{"candidate": current.Candidate, "candidateDigest": current.CandidateDigest, "scopeDigest": current.ScopeDigest, "policyDigest": current.PolicyDigest, "representation": binding}
+		var draft feedbackSetDraft
+		if err := session.DoJSON(context.Background(), http.MethodPost, "review-sessions/"+url.PathEscape(approvalID)+"/feedback-sets", body, &draft,
+			clientapi.WithHeader("Idempotency-Key", key), clientapi.WithHeader("If-Match", fmt.Sprintf(`"%d"`, current.ResourceVersion))); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeReviewResult(draft, "Created feedback-set draft "+draft.ID+".", jsonOutput, stdout, stderr, command)
+	}
+	draft := submitDraft
+	body := map[string]any{"feedbackSetId": draft.ID, "candidate": draft.Candidate, "candidateDigest": draft.CandidateDigest,
+		"scopeDigest": draft.ScopeDigest, "policyDigest": draft.PolicyDigest, "representation": draft.Representation, "overallInstruction": draft.OverallInstruction, "annotations": draft.Annotations}
+	if err := session.DoJSON(context.Background(), http.MethodPost, "review-sessions/"+url.PathEscape(approvalID)+"/feedback-sets/"+url.PathEscape(draft.ID)+"/submit", body, &current,
+		clientapi.WithHeader("Idempotency-Key", key), clientapi.WithHeader("If-Match", fmt.Sprintf(`"%d"`, current.ResourceVersion))); err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	return writeReviewResult(current, "Submitted feedback set "+draft.ID+".", jsonOutput, stdout, stderr, command)
+}
+
+func validFeedbackDraftBinding(value checkpointport.TextRepresentationBinding) bool {
+	return strings.HasPrefix(value.RepresentationID, "representation_") && validFeedbackSetDigest(value.Digest) &&
+		(value.Disclosure == representationregistry.DisclosureRaw || value.Disclosure == representationregistry.DisclosureRedacted)
+}
+
+func validFeedbackSetDigest(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func readFeedbackSetDraft(name, approvalID string) (feedbackSetDraft, error) {
+	var draft feedbackSetDraft
+	if strings.TrimSpace(name) == "" {
+		return draft, errors.New("submit requires --file <feedback-set.json>")
+	}
+	content, err := os.ReadFile(name)
+	if err != nil {
+		return draft, fmt.Errorf("read feedback set: %w", err)
+	}
+	if len(content) > 8<<20 {
+		return draft, errors.New("feedback-set file exceeds 8 MiB")
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(content)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&draft); err != nil || decoder.Decode(new(any)) != io.EOF {
+		return draft, errors.New("feedback-set file must contain one valid draft JSON object")
+	}
+	if draft.SchemaVersion != 1 || draft.State != "draft" || !feedbackSetIdentityPattern.MatchString(draft.ID) || draft.ApprovalID != approvalID ||
+		!strings.HasPrefix(draft.Candidate.ArtifactID, "artifact_") || draft.Candidate.Version == 0 || !validFeedbackSetDigest(draft.CandidateDigest) || !validFeedbackSetDigest(draft.ScopeDigest) || !validFeedbackSetDigest(draft.PolicyDigest) ||
+		!validFeedbackDraftBinding(draft.Representation) || strings.TrimSpace(draft.OverallInstruction) == "" {
+		return draft, errors.New("feedback-set draft must preserve its exact approval, candidate, scope, and representation binding and include an overall instruction")
+	}
+	return draft, nil
 }
 
 func runCheckpoint(args []string, jsonOutput bool, stdout, stderr io.Writer) int {

@@ -18,6 +18,7 @@ import (
 )
 
 var approvalIDPattern = regexp.MustCompile(`^approval_[0-9A-HJKMNP-TV-Z]{26}$`)
+var feedbackSetIDPattern = regexp.MustCompile(`^feedbackset_[0-9A-HJKMNP-TV-Z]{26}$`)
 
 // ApprovalService is the artifact checkpoint decision boundary published by the API.
 type ApprovalService interface {
@@ -236,6 +237,8 @@ func writeApprovalError(response http.ResponseWriter, requestID string, err erro
 		code = "APPROVAL_ALREADY_RESOLVED"
 	case errors.Is(err, checkpoint.ErrCandidateConflict):
 		code = "APPROVAL_STALE_CANDIDATE"
+	case errors.Is(err, checkpoint.ErrCheckpointConflict):
+		code = "APPROVAL_VERSION_CONFLICT"
 	case errors.Is(err, checkpointport.ErrRevisionLimit):
 		code = "APPROVAL_REVISION_LIMIT"
 	case errors.Is(err, checkpointport.ErrInvalidReviewState):

@@ -129,6 +129,8 @@ Review-session commands:
   review show <approval-id> [--json]
   review history <checkpoint-id> [--json]
   review feedback <approval-id> --message <text> [--idempotency-key <key>] [--json]
+  review feedback-set create <approval-id> --representation <representation-id> --representation-digest <sha256> --disclosure <raw|redacted> [--idempotency-key <key>] [--json]
+  review feedback-set submit <approval-id> --file <feedback-set.json> [--idempotency-key <key>] [--json]
   review resume <approval-id> --attempt <attempt-id> [--idempotency-key <key>] [--json]
   review respond <approval-id> --attempt <attempt-id> --outcome <revised|failed|cancelled> [--artifact <artifact-id>] [--version <n>] [--next-approval <approval-id>] [--message <text>] [--idempotency-key <key>] [--json]
   review approve|reject <approval-id> [--comment <text>] [--idempotency-key <key>] [--json]
@@ -600,7 +602,7 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	if err := service.server.SetArtifacts(artifacts); err != nil {
 		return closeArtifactSetup(err)
 	}
-	checkpoints, err := artifactcheckpoint.New(database, database, database)
+	checkpoints, err := artifactcheckpoint.New(database, database, database, artifactStore, database)
 	if err != nil {
 		return closeArtifactSetup(err)
 	}
