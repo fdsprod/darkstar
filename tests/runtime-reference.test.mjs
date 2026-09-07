@@ -41,7 +41,26 @@ test("initial OpenAPI surface is versioned and references shared errors", () => 
   assert.equal(api.components.schemas.ApiError.$ref, "./api-error-v1alpha1.schema.json");
   assert.ok(api.paths["/api/v1/events"].get.responses["410"]);
   assert.equal(api.components.schemas.RunPage.properties.pageInfo.properties.hasNextPage, undefined);
-  assert.ok(api.paths["/api/v1/approvals/{approvalId}/decisions"].post.requestBody.content["application/json"].schema.properties.action.enum.includes("allow_once"));
+  const checkpointRequest = api.paths["/api/v1/approvals/{approvalId}/decisions"].post.requestBody.content["application/json"].schema;
+  assert.equal(checkpointRequest.$ref, "#/components/schemas/ArtifactCheckpointDecisionRequest");
+  const checkpointVariants = api.components.schemas.ArtifactCheckpointDecisionRequest.oneOf;
+  assert.equal(checkpointVariants.length, 2);
+  assert.deepEqual(checkpointVariants.map((variant) => variant.properties.action), [
+    { const: "approve" }, { enum: ["request_changes", "reject"] },
+  ]);
+  for (const variant of checkpointVariants) {
+    assert.equal(variant.additionalProperties, false);
+    for (const required of ["action", "scopeDigest", "policyDigest"]) assert.ok(variant.required.includes(required));
+  }
+  assert.equal(checkpointVariants[0].required.includes("comment"), false);
+  assert.ok(checkpointVariants[1].required.includes("comment"));
+  assert.equal(checkpointVariants[1].properties.comment.minLength, 1);
+  const permissionRequest = api.paths["/api/v1/agents/permissions/{permissionRequestId}/decisions"].post.requestBody.content["application/json"].schema;
+  assert.equal(permissionRequest.$ref, "#/components/schemas/ProviderPermissionDecisionRequest");
+  const permissionDecision = api.components.schemas.ProviderPermissionDecisionRequest;
+  assert.equal(permissionDecision.additionalProperties, false);
+  assert.deepEqual(permissionDecision.required, ["decision", "scopeDigest"]);
+  assert.deepEqual(permissionDecision.properties.decision.enum, ["allow_once", "deny", "cancel"]);
   assert.equal(api.components.schemas.Health.properties.recovery.$ref, "#/components/schemas/RecoveryStatus");
   assert.equal(api.components.schemas.Health.required.includes("recovery"), false);
   assert.deepEqual(api.components.schemas.RecoveryStatus.required, ["reconciled", "reconcileRequired"]);
