@@ -258,8 +258,12 @@ decision against an already-resolved round returns a stable approval conflict.
 Each requested revision receives a new approval ID while retaining the stable
 checkpoint ID, prior draft, feedback, and revision-driven descendant effects.
 
-`GET /api/v1/checkpoints` is the authoritative attention queue and defaults to
-pending `workflow_checkpoint` rounds; it accepts optional `runId` and `status`
+`GET /api/v1/attention` is the derived unified Checkpoints projection for
+unresolved workflow checkpoints, input requests, provider permissions, workflow
+controls, and external deliveries. It accepts repeatable `kind`, project, work,
+run, limit, and opaque cursor filters; source events invalidate this projection
+without creating a second attention lifecycle. `GET /api/v1/checkpoints` remains
+the authoritative artifact-checkpoint queue with optional `runId` and `status`
 filters and returns full actionable rounds. `GET /api/v1/approvals/{approvalId}`
 returns one round, while `GET /api/v1/checkpoints/{checkpointId}` returns every
 revision round in order. Allowed actions are always derived by the server.

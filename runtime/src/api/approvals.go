@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	checkpoint "darkstar/src/core/artifactcheckpoint"
+	"darkstar/src/core/attention"
 	checkpointport "darkstar/src/ports/artifactcheckpoint"
 	"darkstar/src/ports/statestore"
 )
@@ -112,6 +113,12 @@ func (s *Server) serveApprovals(response http.ResponseWriter, request *http.Requ
 }
 
 func (s *Server) serveCheckpoints(response http.ResponseWriter, request *http.Request, requestID string) {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		response.Header().Set("Allow", "GET, HEAD")
+		writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
+		return
+	}
+	clean := path.Clean(request.URL.Path)
 	s.mu.RLock()
 	service := s.approvals
 	s.mu.RUnlock()
@@ -119,12 +126,6 @@ func (s *Server) serveCheckpoints(response http.ResponseWriter, request *http.Re
 		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "APPROVAL_SERVICE_UNAVAILABLE", Message: "Artifact checkpoint queries are not configured.", RequestID: requestID, Retryable: true})
 		return
 	}
-	if request.Method != http.MethodGet && request.Method != http.MethodHead {
-		response.Header().Set("Allow", "GET, HEAD")
-		writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
-		return
-	}
-	clean := path.Clean(request.URL.Path)
 	if clean == "/api/v1/checkpoints" {
 		query := request.URL.Query()
 		unknown := false
@@ -165,6 +166,47 @@ func (s *Server) serveCheckpoints(response http.ResponseWriter, request *http.Re
 		return
 	}
 	writeJSON(response, http.StatusOK, history)
+}
+
+func (s *Server) serveAttentionCheckpoints(response http.ResponseWriter, request *http.Request, requestID string, service AttentionService) {
+	query := request.URL.Query()
+	for key, values := range query {
+		if key != "kind" && key != "projectId" && key != "workItemId" && key != "runId" && key != "limit" && key != "cursor" {
+			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Checkpoint filters contain an unknown field.", RequestID: requestID})
+			return
+		}
+		if key != "kind" && len(values) > 1 {
+			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Checkpoint context and pagination filters must be singular.", RequestID: requestID})
+			return
+		}
+	}
+	limit := 0
+	var err error
+	if raw := query.Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil {
+			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Checkpoint limit must be an integer from 1 through 200.", RequestID: requestID})
+			return
+		}
+	}
+	kinds := make([]attention.Kind, 0, len(query["kind"]))
+	for _, raw := range query["kind"] {
+		if raw == "" {
+			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Checkpoint kind cannot be empty.", RequestID: requestID})
+			return
+		}
+		kinds = append(kinds, attention.Kind(raw))
+	}
+	page, err := service.List(request.Context(), attention.ListRequest{Kinds: kinds, ProjectID: query.Get("projectId"), WorkItemID: query.Get("workItemId"), RunID: query.Get("runId"), Limit: limit, Cursor: query.Get("cursor")})
+	if err != nil {
+		if errors.Is(err, attention.ErrInvalidRequest) || errors.Is(err, attention.ErrInvalidCursor) {
+			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: err.Error(), RequestID: requestID})
+			return
+		}
+		writeAPIError(response, http.StatusInternalServerError, apiError{SchemaVersion: 1, Code: "CHECKPOINT_QUERY_FAILED", Message: "The Checkpoints projection could not be read.", RequestID: requestID, Retryable: true})
+		return
+	}
+	writeJSON(response, http.StatusOK, page)
 }
 
 func parseIfMatch(value string) (uint64, error) {

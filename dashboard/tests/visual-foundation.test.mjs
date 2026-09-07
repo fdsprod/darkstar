@@ -45,8 +45,8 @@ test("meaningful dashboard selections are encoded in shareable URLs", async () =
   assert.match(workflows, /setParams\(\{ item: itemKey\(item\)/);
   assert.match(workflows, /params\.get\("selection"\)/);
   assert.match(workflows, /params\.get\("view"\)/);
-  assert.match(checkpoints, /next\.set\("approvalId", item\.approvalId\)/);
-  assert.match(checkpoints, /next\.set\("inputId", id\)/);
+  assert.match(checkpoints, /next\.set\("itemId", item\.id\)/);
+  assert.match(checkpoints, /next\.set\("kind", nextKind\)/);
   assert.match(agents, /next\.set\("attemptId", agent\.attemptId\)/);
   assert.match(agents, /next\.set\("permissionId", value\.id\)/);
   assert.match(artifact, /next\.set\("revision", String\(version\)\)/);

@@ -30,21 +30,19 @@ test("dashboard pages keep one shell-owned main landmark", async () => {
 });
 
 test("every dashboard tabset has roving focus and persistent controlled panels", async () => {
-  const [agents, checkpoints, workflows, artifacts, settings] = await Promise.all([
+  const [agents, workflows, artifacts, settings] = await Promise.all([
     read("../src/pages/AgentsPage.tsx"),
-    read("../src/pages/CheckpointsPage.tsx"),
     read("../src/pages/WorkflowsPage.tsx"),
     read("../src/pages/ArtifactsPage.tsx"),
     read("../src/pages/SettingsPage.tsx"),
   ]);
-  for (const source of [agents, checkpoints, workflows, artifacts, settings]) {
+  for (const source of [agents, workflows, artifacts, settings]) {
     assert.match(source, /tabKeyTarget/);
     assert.match(source, /role="tab"[^>]*tabIndex=/);
     assert.match(source, /onKeyDown=/);
   }
   for (const [source, ids] of [
     [agents, ["agent-panel-executions", "agent-panel-permissions"]],
-    [checkpoints, ["checkpoint-panel-reviews", "checkpoint-panel-inputs"]],
     [workflows, ["workflow-editor-panel-canvas", "workflow-editor-panel-structure"]],
     [artifacts, ["evidence-source-panel-file", "evidence-source-panel-paste"]],
     [settings, ["settings-panel-health", "settings-panel-provider", "settings-panel-projects", "settings-panel-configuration"]],

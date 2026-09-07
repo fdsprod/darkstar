@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"darkstar/src/core/attention"
 	"darkstar/src/core/health"
 	"darkstar/src/core/readinesscontrol"
 	"darkstar/src/core/workflow"
@@ -58,12 +59,32 @@ type Server struct {
 	workLifecycle  WorkLifecycleService
 	artifacts      ArtifactService
 	approvals      ApprovalService
+	attention      AttentionService
 	readiness      ReadinessService
 	workflows      WorkflowService
 	dashboard      fs.FS
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
+}
+
+// AttentionService exposes the derived, unified operator Checkpoints queue.
+type AttentionService interface {
+	List(context.Context, attention.ListRequest) (attention.Page, error)
+}
+
+// SetAttention installs the unified Checkpoints projection before Start.
+func (s *Server) SetAttention(service AttentionService) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != serverNew {
+		return errors.New("API attention service can only be set before start")
+	}
+	if service == nil {
+		return errors.New("API attention service is required")
+	}
+	s.attention = service
+	return nil
 }
 
 // WorkLifecycleService is the sole public planning and apply authority for
@@ -532,6 +553,22 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/approvals/") {
 		s.serveApprovals(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/attention" {
+		s.mu.RLock()
+		service := s.attention
+		s.mu.RUnlock()
+		if service == nil {
+			writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "ATTENTION_SERVICE_UNAVAILABLE", Message: "The unified Checkpoints projection is not configured.", RequestID: requestID, Retryable: true})
+			return
+		}
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			response.Header().Set("Allow", "GET, HEAD")
+			writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
+			return
+		}
+		s.serveAttentionCheckpoints(response, request, requestID, service)
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/review-sessions" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/review-sessions/") {

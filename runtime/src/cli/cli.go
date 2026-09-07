@@ -28,6 +28,7 @@ import (
 	"darkstar/src/core/artifactderive"
 	"darkstar/src/core/artifactingest"
 	"darkstar/src/core/artifactops"
+	"darkstar/src/core/attention"
 	"darkstar/src/core/configmutation"
 	"darkstar/src/core/health"
 	"darkstar/src/core/lateevidence"
@@ -114,7 +115,7 @@ Agent commands:
 Approval and checkpoint commands:
   approval show <approval-id> [--json]
   approval decide <approval-id> <approve|request_changes|reject> [--comment <text>] [--idempotency-key <key>] [--json]
-  checkpoint list [--run <run-id>] [--status <pending|approved|changes_requested|rejected>] [--json]
+  checkpoint list [--kind <kind>] [--project <project-id>] [--work <work-id>] [--run <run-id>] [--limit <n>] [--cursor <cursor>] [--json]
   checkpoint show <checkpoint-id> [--json]
   checkpoint approve <approval-id> [--message <text>] [--json]
   checkpoint request-changes|reject <approval-id> --message <text> [--json]
@@ -578,6 +579,13 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return closeArtifactSetup(err)
 	}
 	if err := service.server.SetApprovals(checkpoints); err != nil {
+		return closeArtifactSetup(err)
+	}
+	attentionProjection, err := attention.New(database)
+	if err != nil {
+		return closeArtifactSetup(err)
+	}
+	if err := service.server.SetAttention(attentionProjection); err != nil {
 		return closeArtifactSetup(err)
 	}
 	exporter, err := runexport.New(database, logs)

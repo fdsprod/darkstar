@@ -138,6 +138,7 @@ export class DarkstarApiClient {
   readArtifactContent(artifactId: string, version: number, signal?: AbortSignal) { return this.readArtifactBlob(`/api/v1/artifacts/${encodeURIComponent(artifactId)}/content?version=${version}`, signal); }
   readRepresentationContent(representationId: string, signal?: AbortSignal) { return this.readArtifactBlob(`/api/v1/representations/${encodeURIComponent(representationId)}/content`, signal); }
   listCheckpoints(query: { class?: "workflow_checkpoint"; runId?: string; status?: "pending" | "approved" | "changes_requested" | "rejected" | "denied" | "cancelled" | "expired" } = {}, signal?: AbortSignal) { return this.operation("listCheckpoints", { query, signal }); }
+  listAttention(query: { kind?: Schemas["AttentionKind"]; projectId?: string; workItemId?: string; runId?: string; limit?: number; cursor?: string } = {}, signal?: AbortSignal) { return this.operation("listAttention", { query, signal }); }
   getCheckpointHistory(checkpointId: string, signal?: AbortSignal) { return this.operation("getCheckpointHistory", { path: { checkpointId }, signal }); }
   getApproval(approvalId: string, signal?: AbortSignal) { return this.operation("getApproval", { path: { approvalId }, signal }); }
   decideApproval(approvalId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["ArtifactCheckpointDecisionRequest"], signal?: AbortSignal) { return this.operation("decideApproval", { path: { approvalId }, body, resourceVersion, idempotencyKey, signal }); }

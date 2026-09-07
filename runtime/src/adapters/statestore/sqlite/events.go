@@ -499,6 +499,26 @@ func (d *Database) CheckpointApprovals(ctx context.Context, runID string, status
 	return values, rows.Err()
 }
 
+// Approvals returns approval projections in stable source order. Attention and
+// other read models still apply their own cross-source ordering after joining
+// the result with related aggregates.
+func (d *Database) Approvals(ctx context.Context, status statestore.ApprovalStatus) ([]statestore.ApprovalProjection, error) {
+	rows, err := d.sql.QueryContext(ctx, approvalSelect+` WHERE status = ? ORDER BY created_at, approval_id`, status)
+	if err != nil {
+		return nil, fmt.Errorf("query approvals: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	values := make([]statestore.ApprovalProjection, 0)
+	for rows.Next() {
+		value, scanErr := scanApprovalProjection(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan approval: %w", scanErr)
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
 // EventByCommand returns the immutable event owned by one aggregate-scoped
 // command identity. It supports exact decision replay after a request resolves.
 func (d *Database) EventByCommand(ctx context.Context, aggregateID, commandID string) (statestore.Event, error) {

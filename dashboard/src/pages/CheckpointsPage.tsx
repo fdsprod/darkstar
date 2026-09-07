@@ -1,106 +1,179 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { ApiRequestError, apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
-import { tabKeyTarget } from "../accessibility/keyboard";
 import { AppLink, useRouter } from "../app/router";
 import { AsyncPanel, EmptyState } from "../components/InteractionPatterns";
 import { PageHeader } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { DetailFailure, DetailLoading, formatDate, StatusPill, SummaryFact } from "./WorkDetailPage";
 import { humanize, shortIdentifier } from "./runDetailModel";
-import { buildCheckpointDecisionRequest, buildInputAnswerRequest, checkpointActionPresentation, checkpointRoundChanged, inputActionPresentation, inputRequestChanged, orderedCheckpointHistory, selectedCheckpointRound, type CheckpointAction } from "./checkpointModel";
 
 type Schemas = components["schemas"];
-type ArtifactCheckpointRound = Schemas["ArtifactCheckpointRound"];
-type ArtifactCheckpointHistory = Schemas["ArtifactCheckpointHistory"];
-type InputRequest = Schemas["InputRequest"];
-type CheckpointStatus = "pending" | "approved" | "changes_requested" | "rejected" | "denied" | "cancelled" | "expired";
+type AttentionItem = Schemas["AttentionCheckpoint"];
+type AttentionKind = Schemas["AttentionKind"];
+
+const attentionKinds: readonly AttentionKind[] = ["workflow_checkpoint", "input_required", "provider_permission", "workflow_control", "external_delivery"];
 
 export function CheckpointsPage() {
+  const { state } = useDashboardState();
   const { search, navigate } = useRouter();
   const params = useMemo(() => new URLSearchParams(search), [search]);
-  const tab = params.get("tab") === "inputs" ? "inputs" : "checkpoints";
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const tabs = ["checkpoints", "inputs"] as const;
-  function setTab(next: "checkpoints" | "inputs") { const nextParams = new URLSearchParams(params); nextParams.set("tab", next); navigate(`/checkpoints?${nextParams}`); }
-  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) { const target = tabKeyTarget(index, event.key, tabs.length); if (target === undefined) return; event.preventDefault(); tabRefs.current[target]?.focus(); setTab(tabs[target]); }
-  return <div className="page checkpoints-page"><PageHeader className="checkpoints-header" eyebrow="Durable attention queue" title="Checkpoints & input" description="Review exact artifact candidates and answer provider questions through version-fenced, attributable commands." breadcrumbs={[{ label: "Board", to: "/board" }, { label: "Checkpoints" }]} readOnly="Authoritative state" /><div className="checkpoint-tabs" role="tablist" aria-label="Attention type"><button ref={(value) => { tabRefs.current[0] = value; }} id="checkpoint-tab-reviews" type="button" role="tab" tabIndex={tab === "checkpoints" ? 0 : -1} aria-controls="checkpoint-panel-reviews" aria-selected={tab === "checkpoints"} onKeyDown={(event) => onTabKeyDown(event, 0)} onClick={() => setTab("checkpoints")}>Artifact checkpoints</button><button ref={(value) => { tabRefs.current[1] = value; }} id="checkpoint-tab-inputs" type="button" role="tab" tabIndex={tab === "inputs" ? 0 : -1} aria-controls="checkpoint-panel-inputs" aria-selected={tab === "inputs"} onKeyDown={(event) => onTabKeyDown(event, 1)} onClick={() => setTab("inputs")}>Required input</button></div><div id="checkpoint-panel-reviews" role="tabpanel" tabIndex={tab === "checkpoints" ? 0 : -1} aria-labelledby="checkpoint-tab-reviews" hidden={tab !== "checkpoints"}><CheckpointQueue params={params} navigate={navigate} /></div><div id="checkpoint-panel-inputs" role="tabpanel" tabIndex={tab === "inputs" ? 0 : -1} aria-labelledby="checkpoint-tab-inputs" hidden={tab !== "inputs"}><InputQueue params={params} navigate={navigate} /></div></div>;
-}
-
-function CheckpointQueue({ params, navigate }: { params: URLSearchParams; navigate(to: string): void }) {
-  const { state } = useDashboardState();
-  const status = checkpointStatus(params.get("status"));
+  const kind = parseKind(params.get("kind"));
   const runId = params.get("runId")?.trim() ?? "";
-  const deepApproval = params.get("approvalId")?.trim() ?? "";
-  const [items, setItems] = useState<ArtifactCheckpointRound[]>();
+  const cursor = params.get("cursor")?.trim() ?? "";
+  const deepItem = params.get("itemId")?.trim() ?? "";
   const [draftRun, setDraftRun] = useState(runId);
-  const [selectedId, setSelectedId] = useState(deepApproval);
-  const [selected, setSelected] = useState<ArtifactCheckpointRound>();
-  const [history, setHistory] = useState<ArtifactCheckpointHistory>();
+  const [page, setPage] = useState<Schemas["AttentionPage"]>();
+  const [selectedId, setSelectedId] = useState(deepItem);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [action, setAction] = useState<CheckpointAction>();
-  const dialog = useRef<HTMLDialogElement>(null);
-  const selectedRef = useRef<ArtifactCheckpointRound | undefined>(undefined);
-  const signatureRef = useRef("");
+  const signature = useRef("");
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const queue = await apiClient.listCheckpoints({ class: "workflow_checkpoint", ...(runId ? { runId } : {}), status }, signal);
-      const signature = queue.items.map((item) => `${item.approvalId}:${item.resourceVersion}:${item.state}`).join("|");
-      if (signatureRef.current && signatureRef.current !== signature) setNotice("Checkpoint queue refreshed from durable events.");
-      signatureRef.current = signature;
-      setItems(queue.items);
-      let next = selectedCheckpointRound(queue.items, selectedId || deepApproval);
-      if (!next && (selectedId || deepApproval)) next = await apiClient.getApproval(selectedId || deepApproval, signal);
-      if (!next) { setSelected(undefined); setHistory(undefined); setError(""); return; }
-      if (selectedRef.current && checkpointRoundChanged(selectedRef.current, next) && dialog.current?.open) { dialog.current.close(); setAction(undefined); setNotice("This checkpoint round changed. Review the refreshed evidence before deciding."); }
-      selectedRef.current = next; setSelected(next); setSelectedId(next.approvalId);
-      setHistory(await apiClient.getCheckpointHistory(next.checkpointId, signal)); setError("");
-    } catch (cause) { if (!signal?.aborted) setError(attentionError(cause, "checkpoint")); }
-  }, [deepApproval, runId, selectedId, status]);
+      const next = await apiClient.listAttention({ ...(kind ? { kind } : {}), ...(runId ? { runId } : {}), ...(cursor ? { cursor } : {}), limit: 50 }, signal);
+      const nextSignature = next.items.map((item) => `${item.kind}:${item.id}:${item.resourceVersion}`).join("|");
+      if (signature.current && signature.current !== nextSignature) setNotice("Checkpoints refreshed from authoritative events.");
+      signature.current = nextSignature;
+      setPage(next);
+      setSelectedId((current) => next.items.some((item) => item.id === current) ? current : next.items[0]?.id ?? "");
+      setError("");
+    } catch (cause) {
+      if (!signal?.aborted) setError(attentionError(cause));
+    }
+  }, [cursor, kind, runId]);
 
   useEffect(() => { const abort = new AbortController(); void load(abort.signal); return () => abort.abort(); }, [load, state.cursor]);
   useEffect(() => setDraftRun(runId), [runId]);
-  function updateFilter(name: string, value: string) { const next = new URLSearchParams(params); next.set("tab", "checkpoints"); value ? next.set(name, value) : next.delete(name); next.delete("approvalId"); navigate(`/checkpoints?${next}`); setSelectedId(""); }
-  function choose(item: ArtifactCheckpointRound) { setSelectedId(item.approvalId); setSelected(item); const next = new URLSearchParams(params); next.set("tab", "checkpoints"); next.set("approvalId", item.approvalId); navigate(`/checkpoints?${next}`); }
-  if (!items && error) return <DetailFailure title="Checkpoint queue unavailable" message={error} />;
-  if (!items) return <DetailLoading label="Loading checkpoint queue" />;
-  const rounds = history ? orderedCheckpointHistory(history.rounds) : [];
-  return <section className="checkpoint-workspace" aria-label="Artifact checkpoint queue"><form className="checkpoint-filters" onSubmit={(event) => { event.preventDefault(); updateFilter("runId", draftRun.trim()); }}><label><span>Status</span><select value={status} onChange={(event) => updateFilter("status", event.target.value)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="changes_requested">Changes requested</option><option value="rejected">Rejected</option><option value="cancelled">Cancelled</option><option value="expired">Expired</option></select></label><label><span>Run ID</span><input value={draftRun} placeholder="All runs" onChange={(event) => setDraftRun(event.target.value)} /></label><button className="button" type="submit">Apply run filter</button><strong>{items.length} rounds</strong></form>{notice && <AsyncPanel compact state={notice.includes("changed") ? "stale" : "success"} title={notice.includes("changed") ? "State changed" : "Operation complete"} message={notice} />}{error && <AsyncPanel compact state="error" title="Operation failed" message={error} />}<div className="checkpoint-layout"><aside className="checkpoint-list" aria-label="Checkpoint rounds">{items.length ? <ol>{items.map((item) => <li key={item.approvalId}><button type="button" aria-current={selected?.approvalId === item.approvalId ? "true" : undefined} onClick={() => choose(item)}><span className={`timeline-marker timeline-marker--${item.state === "pending" ? "waiting" : item.state === "approved" ? "success" : "danger"}`} aria-hidden="true" /><span><strong>{item.nodeId}</strong><code>{shortIdentifier(item.checkpointId)} · round {item.revision}</code><small>{shortIdentifier(item.runId)} · {formatDate(item.updatedAt)}</small></span><StatusPill status={item.state} /></button></li>)}</ol> : <EmptyAttention title="No matching checkpoint rounds" message="No authoritative checkpoint projection matches this status and run filter." />}</aside><section className="checkpoint-detail">{selected ? <><CheckpointHeader round={selected} /><section className="detail-summary" aria-label="Checkpoint summary"><SummaryFact label="Round" value={String(selected.revision)} /><SummaryFact label="Candidate" value={`${shortIdentifier(selected.candidate.artifactId)} · v${selected.candidate.version}`} /><SummaryFact label="Resource version" value={String(selected.resourceVersion)} /><SummaryFact label="Updated" value={formatDate(selected.updatedAt)} /></section><CandidatePanel round={selected} /><CheckpointHistoryPanel rounds={rounds} /><CheckpointActions round={selected} onChoose={(nextAction) => { setAction(nextAction); dialog.current?.showModal(); }} /></> : <EmptyAttention title="Choose a checkpoint" message="Select a durable review round to inspect its candidate, history, and server-authorized actions." />}</section></div>{selected && <CheckpointDecisionDialog refValue={dialog} round={selected} action={action} onClose={() => setAction(undefined)} onAccepted={async () => { setNotice("Checkpoint decision recorded. Downstream revision or visit effects remain intent until durable events appear."); await load(); }} onStale={async () => { setNotice("Checkpoint state changed before the decision completed. Review the refreshed round before trying again."); await load(); }} />}</section>;
+
+  function setFilters(event: FormEvent) {
+    event.preventDefault();
+    const next = new URLSearchParams();
+    if (kind) next.set("kind", kind);
+    if (draftRun.trim()) next.set("runId", draftRun.trim());
+    navigate(`/checkpoints${next.size ? `?${next}` : ""}`);
+  }
+
+  function setKind(nextKind: string) {
+    const next = new URLSearchParams(params);
+    nextKind ? next.set("kind", nextKind) : next.delete("kind");
+    next.delete("cursor"); next.delete("itemId");
+    navigate(`/checkpoints${next.size ? `?${next}` : ""}`);
+  }
+
+  function choose(item: AttentionItem) {
+    setSelectedId(item.id);
+    const next = new URLSearchParams(params); next.set("itemId", item.id);
+    navigate(`/checkpoints?${next}`);
+  }
+
+  function nextPage() {
+    if (!page?.nextCursor) return;
+    const next = new URLSearchParams(params); next.set("cursor", page.nextCursor); next.delete("itemId");
+    navigate(`/checkpoints?${next}`);
+  }
+
+  const selected = page?.items.find((item) => item.id === selectedId) ?? page?.items[0];
+  return <div className="page checkpoints-page">
+    <PageHeader className="checkpoints-header" eyebrow="Derived operator projection" title="Checkpoints" description="One server-authored queue for workflow decisions, required input, provider authority, controls, and delivery." breadcrumbs={[{ label: "Board", to: "/board" }, { label: "Checkpoints" }]} readOnly="Authoritative sources" />
+    <form className="checkpoint-filters" onSubmit={setFilters}>
+      <label><span>Kind</span><select value={kind ?? ""} onChange={(event) => setKind(event.target.value)}><option value="">All unresolved</option>{attentionKinds.map((value) => <option key={value} value={value}>{humanize(value)}</option>)}</select></label>
+      <label><span>Run ID</span><input value={draftRun} placeholder="All runs" onChange={(event) => setDraftRun(event.target.value)} /></label>
+      <button className="button" type="submit">Apply run filter</button>
+      <strong>{page?.items.length ?? 0} items</strong>
+    </form>
+    {notice && <AsyncPanel compact state="success" title="Queue updated" message={notice} />}
+    {error && page && <AsyncPanel compact state="error" title="Refresh failed" message={error} />}
+    {!page && error ? <DetailFailure title="Checkpoints unavailable" message={error} /> : !page ? <DetailLoading label="Loading Checkpoints" /> : <section className="checkpoint-workspace" aria-label="Unified Checkpoints queue">
+      <div className="checkpoint-layout">
+        <aside className="checkpoint-list" aria-label="Unresolved operator attention">
+          {page.items.length ? <ol>{page.items.map((item) => { const presentation = attentionPresentation(item); return <li key={`${item.kind}:${item.id}`}><button type="button" aria-current={selected?.id === item.id ? "true" : undefined} onClick={() => choose(item)}><span className="timeline-marker timeline-marker--waiting" aria-hidden="true" /><span><strong>{presentation.label}</strong><code>{shortIdentifier(item.id)}</code><small>{item.context.workTitle} · priority {item.urgency}</small></span><StatusPill status="pending" /></button></li>; })}</ol> : <EmptyState kind="filtered" title="No unresolved attention" message="No authoritative source matches these filters." compact />}
+          {page.nextCursor && <button className="button checkpoint-next" type="button" onClick={nextPage}>Next page</button>}
+        </aside>
+        <section className="checkpoint-detail">{selected ? <AttentionDetail item={selected} refresh={() => load()} /> : <EmptyState kind="empty" title="Choose a checkpoint" message="Select an unresolved item to inspect its exact subject and legal actions." compact />}</section>
+      </div>
+    </section>}
+  </div>;
 }
 
-function CheckpointHeader({ round }: { round: ArtifactCheckpointRound }) { return <header className="checkpoint-detail-header"><div><p className="eyebrow">Artifact checkpoint · {shortIdentifier(round.approvalId)}</p><h2>{round.nodeId}</h2><p>{round.mode === "approve_on_change" ? "Approval required because the candidate changed." : "Explicit candidate approval required."}</p></div><StatusPill status={round.state} /></header>; }
-function CandidatePanel({ round }: { round: ArtifactCheckpointRound }) { return <section className="detail-section checkpoint-candidate"><div className="section-heading"><div><p className="eyebrow">Immutable review subject</p><h2>Candidate artifact</h2></div><div className="candidate-actions"><AppLink className="navigation-action" to={`/checkpoints/${encodeURIComponent(round.approvalId)}/review?view=current`}>Open review workspace</AppLink><AppLink className="navigation-action" to={`/artifacts?targetKind=checkpoint&targetId=${encodeURIComponent(round.checkpointId)}&ingest=1`}>Add evidence</AppLink><AppLink className="navigation-action" to={`/artifacts/${encodeURIComponent(round.candidate.artifactId)}`}>Open artifact</AppLink></div></div><dl><Fact label="Artifact" value={round.candidate.artifactId} /><Fact label="Version" value={String(round.candidate.version)} /><Fact label="Candidate digest" value={round.candidateDigest} /><Fact label="Scope digest" value={round.scopeDigest} /><Fact label="Policy digest" value={round.policyDigest} /><Fact label="Attempt" value={round.attemptId} /></dl><p className="checkpoint-limit">Revision {round.revision}{round.maxRevisions ? ` of at most ${round.maxRevisions}` : " · no authored maximum recorded"}</p></section>; }
-function CheckpointHistoryPanel({ rounds }: { rounds: ArtifactCheckpointRound[] }) { return <section className="detail-section"><div className="section-heading"><div><p className="eyebrow">Complete recorded loop</p><h2>Revision rounds</h2></div><span className="section-count">{rounds.length}</span></div><ol className="checkpoint-history">{rounds.map((round) => <li key={round.approvalId}><span>{round.revision}</span><div><header><strong><AppLink to={`/artifacts/${encodeURIComponent(round.candidate.artifactId)}`}>{shortIdentifier(round.candidate.artifactId)} · v{round.candidate.version}</AppLink></strong><StatusPill status={round.state} /></header><p>{round.decision ? `${humanize(round.decision.action)} recorded by ${round.decision.actor.type} · ${round.decision.actor.id}. Effect: ${humanize(round.decision.effect)} intent.` : "Awaiting an attributable decision."}</p>{round.decision?.comment && <blockquote>{round.decision.comment}</blockquote>}<AffectedArtifacts values={round.affectedArtifacts} /></div></li>)}</ol></section>; }
-function AffectedArtifacts({ values }: { values: ArtifactCheckpointRound["affectedArtifacts"] }) { return <details className="checkpoint-affected"><summary>Affected lineage <span>{values.length}</span></summary>{values.length ? <ul>{values.map((item, index) => <li key={`${item.descendant.artifactId}:${item.descendant.version}:${index}`}><AppLink to={`/artifacts/${encodeURIComponent(item.descendant.artifactId)}`}>{shortIdentifier(item.descendant.artifactId)} · v{item.descendant.version}</AppLink><span>{humanize(item.freshness)}</span><small>triggered by {shortIdentifier(item.trigger.artifactId)} · v{item.trigger.version}</small></li>)}</ul> : <p>No descendant invalidations were recorded for this round.</p>}</details>; }
-function CheckpointActions({ round, onChoose }: { round: ArtifactCheckpointRound; onChoose(action: CheckpointAction): void }) { return <section className="detail-section checkpoint-actions"><div className="section-heading"><div><p className="eyebrow">Version-fenced command</p><h2>Decision</h2></div></div>{round.allowedActions.length ? <div>{round.allowedActions.map((action) => { const copy = checkpointActionPresentation(action); return <button type="button" key={action} className={`readiness-action readiness-action--${copy.tone}`} onClick={() => onChoose(action)}><strong>{copy.label}</strong><span>{copy.description}</span></button>; })}</div> : <p className="readiness-empty-copy">This round has no server-authorized actions.</p>}</section>; }
-
-function CheckpointDecisionDialog({ refValue, round, action, onClose, onAccepted, onStale }: { refValue: React.RefObject<HTMLDialogElement | null>; round: ArtifactCheckpointRound; action?: CheckpointAction; onClose(): void; onAccepted(): Promise<void>; onStale(): Promise<void> }) {
-  const [comment, setComment] = useState(""); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState(""); const copy = action ? checkpointActionPresentation(action) : undefined;
-  function close() { if (!submitting) { refValue.current?.close(); setComment(""); setError(""); onClose(); } }
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!action) return; let body: Schemas["ArtifactCheckpointDecisionRequest"]; try { body = buildCheckpointDecisionRequest(round, action, comment); } catch (cause) { setError(cause instanceof Error ? cause.message : "Decision is invalid."); return; } setSubmitting(true); setError(""); try { await apiClient.decideApproval(round.approvalId, round.resourceVersion, `dashboard-checkpoint-${crypto.randomUUID()}`, body); refValue.current?.close(); setComment(""); onClose(); await onAccepted(); } catch (cause) { if (cause instanceof ApiRequestError && (cause.status === 409 || cause.status === 412)) { refValue.current?.close(); onClose(); await onStale(); } else setError("The checkpoint decision could not be recorded. Check daemon health and try again."); } finally { setSubmitting(false); } }
-  return <dialog ref={refValue} className="work-dialog checkpoint-decision-dialog" aria-labelledby="checkpoint-decision-title" onCancel={(event) => { if (submitting) event.preventDefault(); }} onClose={() => { if (!submitting) { setComment(""); setError(""); onClose(); } }}><form aria-busy={submitting} onSubmit={(event) => void submit(event)}><header className="work-dialog__header"><div><p className="eyebrow">Round {round.revision} · candidate v{round.candidate.version}</p><h2 id="checkpoint-decision-title">{copy?.label ?? "Checkpoint decision"}</h2></div><button type="button" className="icon-button" aria-label="Close checkpoint decision" onClick={close}>×</button></header><p className="work-dialog__intro">{copy?.description}</p>{copy?.destructive && <p className="decision-warning"><strong>Confirm rejection.</strong> This records reject intent for the exact candidate and may reject the owning visit downstream.</p>}<label className="field"><span>{action === "approve" ? "Comment (optional)" : "Explanation"}</span><textarea autoFocus required={action !== "approve"} maxLength={4096} rows={5} value={comment} onChange={(event) => setComment(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button type="button" className="button" disabled={submitting} onClick={close}>Cancel</button><button type="submit" className={`button ${copy?.destructive ? "button--danger" : "button--primary"}`} disabled={submitting || !action}>{submitting ? "Recording…" : copy?.destructive ? "Confirm rejection" : "Record decision"}</button></footer></form></dialog>;
+function AttentionDetail({ item, refresh }: { item: AttentionItem; refresh(): Promise<void> }) {
+  const presentation = attentionPresentation(item);
+  return <>
+    <header className="checkpoint-detail-header"><div><p className="eyebrow">{presentation.label} · {shortIdentifier(item.id)}</p><h2>{item.summary}</h2><p>{presentation.description}</p></div><StatusPill status="pending" /></header>
+    <section className="detail-summary"><SummaryFact label="Project" value={item.context.projectName} /><SummaryFact label="Work" value={item.context.workTitle} /><SummaryFact label="Run" value={shortIdentifier(item.context.runId)} mono /><SummaryFact label="Created" value={formatDate(item.createdAt)} /></section>
+    <section className="detail-section"><div className="section-heading"><div><p className="eyebrow">Class-specific subject</p><h2>Authority boundary</h2></div></div><dl>{subjectFacts(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={value}>{value}</dd></div>)}</dl></section>
+    <section className="detail-section checkpoint-actions"><div className="section-heading"><div><p className="eyebrow">Server-derived legal actions</p><h2>Available now</h2></div></div><AttentionActions item={item} refresh={refresh} />{item.kind === "workflow_checkpoint" && <div className="candidate-actions"><AppLink className="navigation-action" to={`/checkpoints/${encodeURIComponent(item.id)}/review?view=current`}>Open review workspace</AppLink><AppLink className="navigation-action" to={`/artifacts?targetKind=checkpoint&targetId=${encodeURIComponent(item.subject.checkpointId)}&ingest=1`}>Add evidence</AppLink></div>}</section>
+  </>;
 }
 
-function InputQueue({ params, navigate }: { params: URLSearchParams; navigate(to: string): void }) {
-  const { state } = useDashboardState(); const runId = params.get("runId")?.trim() ?? ""; const attemptId = params.get("attemptId")?.trim() ?? ""; const deepInput = params.get("inputId")?.trim() ?? ""; const status = inputStatus(params.get("inputStatus"));
-  const [draftRun, setDraftRun] = useState(runId); const [draftAttempt, setDraftAttempt] = useState(attemptId); const [items, setItems] = useState<InputRequest[]>(); const [selectedId, setSelectedId] = useState(deepInput); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [submitting, setSubmitting] = useState(false); const answerDialog = useRef<HTMLDialogElement>(null); const selectedRef = useRef<InputRequest | undefined>(undefined); const signatureRef = useRef("");
-  const load = useCallback(async (signal?: AbortSignal) => { try { let nextItems: InputRequest[]; if (deepInput && !runId && !attemptId) nextItems = [await apiClient.getInputRequest(deepInput, signal)]; else nextItems = (await apiClient.listInputRequests({ ...(runId ? { runId } : {}), ...(attemptId ? { attemptId } : {}), status }, signal)).items; const signature = nextItems.map((item) => `${item.id}:${item.resourceVersion}:${item.status}`).join("|"); if (signatureRef.current && signatureRef.current !== signature) setNotice("Input requests refreshed from durable events."); signatureRef.current = signature; const nextSelected = nextItems.find((item) => item.id === (selectedId || deepInput)) ?? nextItems[0]; if (selectedRef.current && nextSelected && inputRequestChanged(selectedRef.current, nextSelected) && answerDialog.current?.open) { answerDialog.current.close(); setNotice("This input request changed. Review the refreshed request before answering."); } selectedRef.current = nextSelected; setSelectedId(nextSelected?.id ?? ""); setItems(nextItems); setError(""); } catch (cause) { if (!signal?.aborted) setError(attentionError(cause, "input request")); } }, [attemptId, deepInput, runId, selectedId, status]);
-  useEffect(() => { const abort = new AbortController(); void load(abort.signal); return () => abort.abort(); }, [load, state.cursor]);
-  function filter(event: FormEvent) { event.preventDefault(); const next = new URLSearchParams(); next.set("tab", "inputs"); next.set("inputStatus", status); if (draftRun.trim()) next.set("runId", draftRun.trim()); else if (draftAttempt.trim()) next.set("attemptId", draftAttempt.trim()); navigate(`/checkpoints?${next}`); }
-  function chooseInput(id: string) { setSelectedId(id); const next = new URLSearchParams(params); next.set("tab", "inputs"); next.set("inputId", id); navigate(`/checkpoints?${next}`); }
-  const selected = items?.find((item) => item.id === selectedId) ?? items?.[0];
-  async function retryDelivery() { if (!selected || !selected.allowedActions.includes("retry_delivery")) return; setSubmitting(true); setError(""); try { await apiClient.retryInputDelivery(selected.id, selected.resourceVersion); setNotice("Delivery retry completed. The response below reflects authoritative provider receipt state."); await load(); } catch (cause) { if (cause instanceof ApiRequestError && (cause.status === 409 || cause.status === 412)) { setNotice("Input request changed before retry. Review the refreshed state."); await load(); } else if (cause instanceof ApiRequestError && cause.code === "INPUT_DELIVERY_UNAVAILABLE") { setNotice("The answer remains durable, but provider delivery is still unavailable."); await load(); } else setError("The delivery retry could not be requested."); } finally { setSubmitting(false); } }
-  return <section className="checkpoint-workspace input-workspace"><form className="input-filter" onSubmit={filter}><label><span>Status</span><select value={status} onChange={(event) => { const next = new URLSearchParams(params); next.set("tab", "inputs"); next.set("inputStatus", event.target.value); navigate(`/checkpoints?${next}`); }}><option value="pending">Pending</option><option value="answer_recorded">Delivery pending</option><option value="answered">Answered</option></select></label><label><span>Run ID</span><input value={draftRun} onChange={(event) => { setDraftRun(event.target.value); if (event.target.value) setDraftAttempt(""); }} placeholder="run_…" /></label><span>or</span><label><span>Attempt ID</span><input value={draftAttempt} onChange={(event) => { setDraftAttempt(event.target.value); if (event.target.value) setDraftRun(""); }} placeholder="attempt_…" /></label><button type="submit" className="button button--primary">Apply filters</button></form>{notice && <AsyncPanel compact state={notice.includes("changed") ? "stale" : "success"} title={notice.includes("changed") ? "State changed" : "Operation complete"} message={notice} />}{error && <AsyncPanel compact state="error" title="Operation failed" message={error} />}{!items ? <DetailLoading label="Loading input requests" /> : <div className="checkpoint-layout"><aside className="checkpoint-list" aria-label="Input requests">{items.length ? <ol>{items.map((item) => <li key={item.id}><button type="button" aria-current={selected?.id === item.id ? "true" : undefined} onClick={() => chooseInput(item.id)}><span className={`timeline-marker timeline-marker--${item.status === "answered" ? "success" : "waiting"}`} aria-hidden="true" /><span><strong>{item.nodeId}</strong><code>{shortIdentifier(item.id)}</code><small>{formatDate(item.updatedAt)}</small></span><StatusPill status={item.status} /></button></li>)}</ol> : <EmptyAttention title="No input requests" message="No provider questions match this authoritative status and execution scope." />}</aside><section className="checkpoint-detail">{selected ? <><header className="checkpoint-detail-header"><div><p className="eyebrow">Provider input · {shortIdentifier(selected.id)}</p><h2>{selected.nodeId}</h2><p>Answers do not grant permissions or resolve approvals.</p></div><StatusPill status={selected.status} /></header><section className="detail-summary"><SummaryFact label="Attempt" value={shortIdentifier(selected.attemptId)} mono /><SummaryFact label="Resource version" value={String(selected.resourceVersion)} /><SummaryFact label="Provider request" value={shortIdentifier(selected.providerRequestId)} mono /><SummaryFact label="Updated" value={formatDate(selected.updatedAt)} /></section><section className="detail-section input-request-body"><div className="section-heading"><div><p className="eyebrow">Untrusted provider payload</p><h2>Request</h2></div></div><pre>{safeJSON(selected.request)}</pre></section>{selected.answer && <section className="detail-section input-answer-receipt"><div className="section-heading"><div><p className="eyebrow">Durable answer</p><h2>Recorded response</h2></div></div><pre>{safeJSON(selected.answer.answer)}</pre><p>{selected.answer.actor.type} · {selected.answer.actor.id} · {formatDate(selected.answer.recordedAt)}</p>{selected.receipt ? <p className="artifact-valid-note">Delivered to {selected.receipt.providerRequestId} at {formatDate(selected.receipt.deliveredAt)}.</p> : <p className="bounded-note">Answer recorded; provider delivery is not yet durably confirmed.</p>}</section>}<section className="detail-section checkpoint-actions"><div className="section-heading"><div><p className="eyebrow">Server-authorized actions</p><h2>Respond</h2></div></div>{selected.allowedActions.length ? <div>{selected.allowedActions.map((action) => { const copy = inputActionPresentation(action); return <button type="button" className="readiness-action" key={action} disabled={submitting} onClick={() => action === "answer" ? answerDialog.current?.showModal() : void retryDelivery()}><strong>{copy.label}</strong><span>{copy.description}</span></button>; })}</div> : <p className="readiness-empty-copy">No action is currently allowed for this input request.</p>}</section></> : <EmptyAttention title="Choose an input request" message="Select a durable provider question to inspect its exact payload and response state." />}</section></div>}{selected && <AnswerDialog refValue={answerDialog} input={selected} onAccepted={async () => { setNotice("Answer recorded. Delivery is reported separately by authoritative state."); await load(); }} onStale={async () => { setNotice("Input request changed before the answer completed. Review the refreshed request."); await load(); }} />}</section>;
+function AttentionActions({ item, refresh }: { item: AttentionItem; refresh(): Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function perform(action: string) {
+    setBusy(true); setError("");
+    try {
+      switch (item.kind) {
+        case "workflow_checkpoint": {
+          if (!item.allowedActions.includes(action as never)) throw new Error("Action is no longer available.");
+          const comment = action === "approve" ? window.prompt("Optional approval comment", "") ?? "" : window.prompt("Explain this decision", "") ?? "";
+          if (action !== "approve" && !comment.trim()) throw new Error("This decision requires an explanation.");
+          await apiClient.decideApproval(item.id, item.resourceVersion, `dashboard-checkpoint-${crypto.randomUUID()}`, { action: action as "approve" | "request_changes" | "reject", scopeDigest: item.subject.scopeDigest, policyDigest: item.subject.policyDigest, ...(comment.trim() ? { comment: comment.trim() } : {}) } as Schemas["ArtifactCheckpointDecisionRequest"]);
+          break;
+        }
+        case "input_required": {
+          if (!item.allowedActions.includes(action as never)) throw new Error("Action is no longer available.");
+          if (action === "retry_delivery") await apiClient.retryInputDelivery(item.id, item.resourceVersion);
+          else {
+            const raw = window.prompt("Enter the complete JSON answer", "{\"answers\":{}}") ?? "";
+            if (!raw) throw new Error("An answer is required.");
+            await apiClient.answerInputRequest(item.id, item.resourceVersion, `dashboard-input-${crypto.randomUUID()}`, { scopeDigest: item.subject.scopeDigest, answer: JSON.parse(raw) });
+          }
+          break;
+        }
+        case "provider_permission": {
+          if (!item.allowedActions.includes(action as never)) throw new Error("Action is no longer available.");
+          if (action === "retry_delivery") await apiClient.retryProviderPermissionDelivery(item.id, item.resourceVersion);
+          else await apiClient.decideProviderPermission(item.id, item.resourceVersion, `dashboard-provider-permission-${crypto.randomUUID()}`, { decision: action as "allow_once" | "deny" | "cancel", scopeDigest: item.subject.scopeDigest });
+          break;
+        }
+        case "workflow_control":
+        case "external_delivery":
+          throw new Error("This authority action is not yet exposed by the public command API.");
+        default:
+          assertNever(item);
+      }
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof SyntaxError ? "The answer must be valid JSON." : cause instanceof Error ? cause.message : "The action could not be recorded.");
+    } finally { setBusy(false); }
+  }
+  const commandUnavailable = item.kind === "workflow_control" || item.kind === "external_delivery";
+  return <><div>{item.allowedActions.map((action) => <button className="readiness-action" type="button" disabled={busy || commandUnavailable} key={action} onClick={() => void perform(action)}><strong>{humanize(action)}</strong><span>Valid only for this {humanize(item.kind)} source at resource version {item.resourceVersion}.</span></button>)}</div>{error && <p className="form-error" role="alert">{error}</p>}</>;
 }
 
-function AnswerDialog({ refValue, input, onAccepted, onStale }: { refValue: React.RefObject<HTMLDialogElement | null>; input: InputRequest; onAccepted(): Promise<void>; onStale(): Promise<void> }) { const [answer, setAnswer] = useState("{}"); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState(""); function close() { if (!submitting) { refValue.current?.close(); setError(""); } } async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); let body: Schemas["InputRequestAnswerRequest"]; try { body = buildInputAnswerRequest(input, answer); } catch (cause) { setError(cause instanceof Error ? cause.message : "Answer is invalid."); return; } setSubmitting(true); setError(""); try { await apiClient.answerInputRequest(input.id, input.resourceVersion, `dashboard-input-answer-${crypto.randomUUID()}`, body); refValue.current?.close(); await onAccepted(); } catch (cause) { if (cause instanceof ApiRequestError && (cause.status === 409 || cause.status === 412)) { refValue.current?.close(); await onStale(); } else if (cause instanceof ApiRequestError && cause.code === "INPUT_DELIVERY_UNAVAILABLE") { refValue.current?.close(); await onAccepted(); } else setError("The answer could not be recorded. Check daemon health and try again."); } finally { setSubmitting(false); } } return <dialog ref={refValue} className="work-dialog answer-dialog" aria-labelledby="answer-dialog-title" onCancel={(event) => { if (submitting) event.preventDefault(); }} onClose={() => { if (!submitting) setError(""); }}><form aria-busy={submitting} onSubmit={(event) => void submit(event)}><header className="work-dialog__header"><div><p className="eyebrow">Attributable provider response</p><h2 id="answer-dialog-title">Answer input request</h2></div><button type="button" className="icon-button" aria-label="Close input answer" onClick={close}>×</button></header><p className="work-dialog__intro">Enter one valid JSON value. This answer does not approve permissions or any artifact checkpoint.</p><label className="field"><span>JSON answer</span><textarea required autoFocus rows={9} value={answer} onChange={(event) => setAnswer(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button type="button" className="button" disabled={submitting} onClick={close}>Cancel</button><button type="submit" className="button button--primary" disabled={submitting}>{submitting ? "Recording…" : "Record answer"}</button></footer></form></dialog>; }
+function attentionPresentation(item: AttentionItem): { label: string; description: string } {
+  switch (item.kind) {
+    case "workflow_checkpoint": return { label: "Workflow checkpoint", description: "Review one immutable workflow candidate." };
+    case "input_required": return { label: "Input required", description: "Answer a provider question without granting authority." };
+    case "provider_permission": return { label: "Provider permission", description: "Authorize only the recorded provider interaction scope." };
+    case "workflow_control": return { label: "Workflow control", description: "Decide one exact proposed workflow control operation." };
+    case "external_delivery": return { label: "External delivery", description: "Authorize one exact external delivery operation." };
+    default: return assertNever(item);
+  }
+}
 
-function EmptyAttention({ title, message }: { title: string; message: string }) { return <EmptyState kind={title.startsWith("No matching") ? "filtered" : "empty"} title={title} message={message} compact />; }
-function Fact({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd title={value}>{value}</dd></div>; }
-function checkpointStatus(value: string | null): CheckpointStatus { return value === "approved" || value === "changes_requested" || value === "rejected" || value === "denied" || value === "cancelled" || value === "expired" ? value : "pending"; }
-function inputStatus(value: string | null): InputRequest["status"] { return value === "answer_recorded" || value === "answered" ? value : "pending"; }
-function safeJSON(value: unknown) { try { return JSON.stringify(value, null, 2); } catch { return "[unavailable]"; } }
-function attentionError(cause: unknown, resource: string) { if (cause instanceof ApiRequestError && cause.status === 404) return `The requested ${resource} does not exist.`; if (cause instanceof ApiRequestError && (cause.status === 409 || cause.status === 412)) return `The ${resource} changed. Review the refreshed authoritative state.`; return `The ${resource} could not be loaded. Check daemon health and try again.`; }
+function subjectFacts(item: AttentionItem): Array<[string, string]> {
+  switch (item.kind) {
+    case "workflow_checkpoint": return [["Checkpoint", item.subject.checkpointId], ["Node", item.subject.nodeId], ["Attempt", item.subject.attemptId], ["Candidate", `${item.subject.candidateArtifactId} · v${item.subject.candidateVersion}`], ["Scope digest", item.subject.scopeDigest], ["Policy digest", item.subject.policyDigest]];
+    case "input_required": return [["Node", item.subject.nodeId], ["Attempt", item.subject.attemptId], ["Provider request", item.subject.providerRequestId], ["Delivery state", item.subject.status], ["Scope digest", item.subject.scopeDigest]];
+    case "provider_permission": return [["Attempt", item.subject.attemptId], ["Node", item.subject.nodeId], ["Interaction", humanize(item.subject.interactionKind)], ["Provider request", item.subject.providerRequestId], ["Delivery state", item.subject.status], ["Scope digest", item.subject.scopeDigest], ["Policy digest", item.subject.policyDigest]];
+    case "workflow_control": return [["Node", item.subject.nodeId ?? "Run scope"], ["Scope digest", item.subject.scopeDigest], ["Policy digest", item.subject.policyDigest]];
+    case "external_delivery": return [["Attempt", item.subject.attemptId ?? "Run scope"], ["Scope digest", item.subject.scopeDigest], ["Policy digest", item.subject.policyDigest]];
+    default: return assertNever(item);
+  }
+}
+
+function parseKind(value: string | null): AttentionKind | undefined { return attentionKinds.includes(value as AttentionKind) ? value as AttentionKind : undefined; }
+function assertNever(value: never): never { throw new Error(`Unknown attention variant: ${JSON.stringify(value)}`); }
+function attentionError(cause: unknown) { if (cause instanceof ApiRequestError && cause.status === 400) return "The Checkpoints filter or cursor is no longer valid."; return "The Checkpoints projection could not be loaded. Check daemon health and try again."; }

@@ -221,7 +221,7 @@ the `result` value is the same resource returned by the HTTP operation.
 ## Checkpoint and input commands
 
 ```text
-darkstar checkpoint list [--run <run-id>] [--status <status>]
+darkstar checkpoint list [--kind <kind>] [--project <project-id>] [--work <work-id>] [--run <run-id>] [--limit <1..200>] [--cursor <cursor>]
 darkstar checkpoint show <checkpoint-id>
 darkstar approval show <approval-id>
 darkstar approval decide <approval-id> <approve|request_changes|reject> [--comment <text>]
@@ -231,7 +231,10 @@ darkstar input answer <input-id> --answer <json>
 darkstar input retry <input-id>
 ```
 
-Checkpoint and input lists are authoritative attention queues. Approval decisions
+`checkpoint list` reads the unified derived Checkpoints projection and returns
+only unresolved source approvals and input requests, plus an opaque continuation
+cursor when another stable page exists. Input detail commands remain source
+queries. Approval decisions
 bind the current server-supplied scope, policy, and resource version. Input
 answers are not approvals; delivery retry reuses the hidden durable provider key.
 

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	clientapi "darkstar/src/api/client"
+	"darkstar/src/core/attention"
 	"darkstar/src/core/runexecution"
 	checkpointport "darkstar/src/ports/artifactcheckpoint"
 )
@@ -147,16 +148,15 @@ func runCheckpoint(args []string, jsonOutput bool, stdout, stderr io.Writer) int
 		}
 		return writeReviewResult(history, fmt.Sprintf("%s: %d review round(s).", history.CheckpointID, len(history.Rounds)), jsonOutput, stdout, stderr, command)
 	case "list":
-		query, err := parseReviewFilters(args[1:], map[string]string{"--run": "runId", "--status": "status"})
+		query, err := parseReviewFilters(args[1:], map[string]string{"--run": "runId", "--project": "projectId", "--work": "workItemId", "--kind": "kind", "--limit": "limit", "--cursor": "cursor"})
 		if err != nil {
 			return reviewArgumentError(stdout, stderr, jsonOutput, command, err)
 		}
-		query.Set("class", "workflow_checkpoint")
-		var queue checkpointport.Queue
-		if err := session.DoJSON(context.Background(), http.MethodGet, "checkpoints?"+query.Encode(), nil, &queue); err != nil {
+		var queue attention.Page
+		if err := session.DoJSON(context.Background(), http.MethodGet, "attention?"+query.Encode(), nil, &queue); err != nil {
 			return writeClientError(stdout, stderr, jsonOutput, command, err)
 		}
-		return writeReviewResult(queue, fmt.Sprintf("%d checkpoint round(s) require attention.", len(queue.Items)), jsonOutput, stdout, stderr, command)
+		return writeReviewResult(queue, fmt.Sprintf("%d item(s) require attention.", len(queue.Items)), jsonOutput, stdout, stderr, command)
 	default:
 		return reviewArgumentError(stdout, stderr, jsonOutput, command, fmt.Errorf("unknown checkpoint command %q", args[0]))
 	}

@@ -68,17 +68,29 @@ test("generated checkpoint and input contracts are typed, closed, and version fe
   assert.doesNotMatch(client, /retryInputDelivery\(inputRequestId: string, resourceVersion: number, idempotencyKey/);
 });
 
-test("checkpoint page renders only server actions and refreshes stale dialogs from SSE state", async () => {
+test("checkpoint page consumes one exhaustive server projection and refreshes from SSE state", async () => {
   const [page, router] = await Promise.all([
     readFile(new URL("../src/pages/CheckpointsPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/app/router.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(page, /round\.allowedActions\.map/);
-  assert.match(page, /selected\.allowedActions\.map/);
+  assert.match(page, /apiClient\.listAttention/);
+  assert.doesNotMatch(page, /apiClient\.listCheckpoints/);
+  assert.doesNotMatch(page, /apiClient\.listInputRequests/);
+  for (const kind of ["workflow_checkpoint", "input_required", "provider_permission", "workflow_control", "external_delivery"]) assert.match(page, new RegExp(`case "${kind}"`));
+  assert.match(page, /item\.allowedActions\.map/);
+  assert.match(page, /apiClient\.decideProviderPermission/);
+  assert.match(page, /apiClient\.retryProviderPermissionDelivery/);
   assert.match(page, /state\.cursor/);
-  assert.match(page, /cause\.status === 409 \|\| cause\.status === 412/);
-  assert.match(page, /Confirm rejection/);
-  assert.match(page, /does not approve permissions or any artifact checkpoint/);
-  assert.doesNotMatch(page, /setSelected\([^)]*state:/);
+  assert.match(page, /assertNever\(item\)/);
   assert.match(router, /case "checkpoints": return <CheckpointsPage/);
+});
+
+test("unified attention schema is a closed five-member discriminated union", async () => {
+  const [generated, client] = await Promise.all([
+    readFile(new URL("../src/api/schema.generated.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/api/client.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(generated, /"AttentionCheckpoint": components\["schemas"\]\["WorkflowCheckpointAttention"\] \| components\["schemas"\]\["InputRequiredAttention"\] \| components\["schemas"\]\["ProviderPermissionAttention"\] \| components\["schemas"\]\["WorkflowControlAttention"\] \| components\["schemas"\]\["ExternalDeliveryAttention"\]/);
+  assert.match(generated, /"listAttention": \{ method: "GET"; path: "\/api\/v1\/attention"/);
+  assert.match(client, /listAttention\([^\n]*this\.operation\("listAttention"/);
 });
