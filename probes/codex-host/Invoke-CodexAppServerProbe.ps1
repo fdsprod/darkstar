@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('handshake', 'read-only', 'resume', 'write-approval', 'interrupt', 'process-kill', 'image-skill', 'user-input')]
+    [ValidateSet('handshake', 'read-only', 'resume', 'write-approval', 'write-only', 'interrupt', 'process-kill', 'image-skill', 'user-input')]
     [string]$Scenario = 'handshake',
 
     [string]$CodexExe,
@@ -199,7 +199,7 @@ function Handle-ServerRequest {
 
     switch ($method) {
         'item/commandExecution/requestApproval' {
-            if ($Scenario -ne 'write-approval') {
+            if ($Scenario -notin @('write-approval', 'write-only')) {
                 throw "Refusing unexpected command approval during '$Scenario'."
             }
             $command = [string](Get-OptionalPropertyValue $Message.params 'command')
@@ -218,7 +218,7 @@ function Handle-ServerRequest {
             return $true
         }
         'item/fileChange/requestApproval' {
-            if ($Scenario -ne 'write-approval') {
+            if ($Scenario -notin @('write-approval', 'write-only')) {
                 throw "Refusing unexpected file-change approval during '$Scenario'."
             }
             if ($resolvedWorkspace -notmatch '(?i)codex-host[\\/]workspaces[\\/]write-probe$') {
@@ -230,7 +230,7 @@ function Handle-ServerRequest {
             return $true
         }
         'item/permissions/requestApproval' {
-            if ($Scenario -ne 'write-approval') {
+            if ($Scenario -notin @('write-approval', 'write-only')) {
                 throw "Refusing unexpected permission request during '$Scenario'."
             }
             $requestedNetwork = Get-OptionalPropertyValue $Message.params.permissions 'network'
@@ -457,7 +457,7 @@ try {
                 throw "Resumed turn ended with status '$($turnCompleted.params.turn.status)'."
             }
         }
-        'write-approval' {
+        { $_ -in @('write-approval', 'write-only') } {
             if ($resolvedWorkspace -notmatch '(?i)codex-host[\\/]workspaces[\\/]write-probe$') {
                 throw "The write-approval scenario must run in the disposable write-probe workspace, not '$resolvedWorkspace'."
             }
@@ -513,7 +513,7 @@ try {
             if ($approvalRequestCount -lt 1) {
                 throw 'No provider approval request was observed during the write-capable attempt.'
             }
-            if ($networkApprovalRequestCount -lt 1) {
+            if ($Scenario -eq 'write-approval' -and $networkApprovalRequestCount -lt 1) {
                 throw 'No network approval request was observed.'
             }
         }

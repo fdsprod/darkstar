@@ -24,6 +24,7 @@ const (
 var supportedAppServerVersions = []string{
 	"0.151.0-alpha.7.1",
 	"0.151.0-alpha.7.2",
+	"0.153.4",
 }
 
 // ClientInfo identifies DARKSTAR during the App Server initialize handshake.

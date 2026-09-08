@@ -1,0 +1,27 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "write-approval",
+  "status": "failed-as-expected",
+  "failure": "No network approval request was observed.",
+  "startedAt": "2026-09-08T18:08:10.7051911+00:00",
+  "completedAt": "2026-09-08T18:08:40.3489450+00:00",
+  "platform": "windows",
+  "codexVersion": "0.153.4",
+  "codexExecutable": "C:\\Users\\<user>\\AppData\\Local\\OpenAI\\Codex\\bin\\8e5b6932251c2c1c\\codex.exe",
+  "workspace": "C:\\Users\\<user>\\source\\repos\\Software Factory\\probes\\codex-host\\workspaces\\write-probe",
+  "transport": "stdio-jsonrpc-jsonl",
+  "threadId": "01a08234-c21d-73a3-a6df-5deffa43d54e",
+  "turnId": "01a08234-c2b2-7463-b62c-c6022dc971f0",
+  "resumedFromThreadId": null,
+  "approvalRequestCount": 1,
+  "networkApprovalRequestCount": 0,
+  "userInputRequestCount": 0,
+  "handledServerRequestMethods": [
+    "item/commandExecution/requestApproval"
+  ],
+  "unsubscribeStatus": null,
+  "processKilled": false,
+  "fixture": "app-server-write-approval.jsonl",
+  "stderr": "app-server-write-approval.stderr.log",
+  "failureClass": "network-approval-not-requested"
+}

@@ -1,0 +1,26 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenario": "write-only",
+  "status": "passed",
+  "failure": null,
+  "startedAt": "2026-09-08T18:15:09.4689645+00:00",
+  "completedAt": "2026-09-08T18:15:37.4685314+00:00",
+  "platform": "windows",
+  "codexVersion": "0.153.4",
+  "codexExecutable": "C:\\Users\\<user>\\AppData\\Local\\OpenAI\\Codex\\bin\\8e5b6932251c2c1c\\codex.exe",
+  "workspace": "C:\\Users\\<user>\\source\\repos\\Software Factory\\probes\\codex-host\\workspaces\\write-probe",
+  "transport": "stdio-jsonrpc-jsonl",
+  "threadId": "01a0823b-2605-7361-a179-10c0bff4561e",
+  "turnId": "01a0823b-268a-7570-bd67-551a0e998c69",
+  "resumedFromThreadId": null,
+  "approvalRequestCount": 1,
+  "networkApprovalRequestCount": 0,
+  "userInputRequestCount": 0,
+  "handledServerRequestMethods": [
+    "item/commandExecution/requestApproval"
+  ],
+  "unsubscribeStatus": "unsubscribed",
+  "processKilled": false,
+  "fixture": "app-server-write-only.jsonl",
+  "stderr": "app-server-write-only.stderr.log"
+}

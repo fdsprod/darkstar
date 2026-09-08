@@ -47,3 +47,7 @@ write outcome.
   `generated/0.151.0-alpha.7.1/schema/` and
   `generated/0.151.0-alpha.7.2/schema/`
 - conformance validator: `Test-CodexHostFixtures.ps1`
+
+## Codex 0.153.4 — September 8, 2026
+
+App Server captures cover read-only structured output, resume, interruption, process termination, image/skill input, user input, and guarded file-write approval. The combined write/network probe is retained as an expected failure: the network request was denied by socket policy without a network approval callback. The write-only scenario checks the approved marker file and command approval without requiring a network callback. Exec fallback remains pinned to its previously verified version.

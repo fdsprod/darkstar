@@ -41,6 +41,7 @@ func TestSupportedCodexVersionsHaveRequiredCompatibilityFixtures(t *testing.T) {
 	}
 
 	appServerRequirements := map[string][]string{
+		"0.153.4":           {"read-only", "resume", "write-only", "interrupt", "process-kill", "image-skill", "user-input"},
 		"0.151.0-alpha.7.1": {"handshake", "read-only"},
 		"0.151.0-alpha.7.2": {"read-only", "resume", "write-approval", "interrupt", "process-kill", "image-skill", "user-input"},
 	}

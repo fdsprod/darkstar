@@ -1,0 +1,7 @@
+{"timestamp":"2026-09-08T18:15:09.620438Z","level":"WARN","fields":{"message":"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/"},"target":"codex_skills::interface"}
+{"timestamp":"2026-09-08T18:15:09.620480Z","level":"WARN","fields":{"message":"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/"},"target":"codex_skills::interface"}
+{"timestamp":"2026-09-08T18:15:09.635778Z","level":"WARN","fields":{"message":"Failed to create shell snapshot for powershell: Shell snapshot not supported yet for PowerShell"},"target":"codex_core::shell_snapshot"}
+{"timestamp":"2026-09-08T18:15:13.880536Z","level":"WARN","fields":{"message":"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/"},"target":"codex_skills::interface"}
+{"timestamp":"2026-09-08T18:15:13.880573Z","level":"WARN","fields":{"message":"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/"},"target":"codex_skills::interface"}
+{"timestamp":"2026-09-08T18:15:14.555942Z","level":"ERROR","fields":{"message":"failed to refresh available models: timeout waiting for child process to exit"},"target":"codex_models_manager::manager"}
+
