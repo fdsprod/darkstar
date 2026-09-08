@@ -1,4 +1,4 @@
-import { addResource, addArtifactOutput, record, type ResourceKind } from "./workflowResourceModel";
+import { compareWorkflowVersions, addResource, addArtifactOutput, record, type ResourceKind } from "./workflowResourceModel";
 import { WorkflowResourceInspector } from "./WorkflowResourceInspector";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
@@ -85,7 +85,7 @@ export function WorkflowsPage() {
 
   const items = useMemo<LibraryItem[]>(() => [
     ...library.drafts.map((value) => ({ kind: "draft" as const, draft: value })),
-    ...library.versions.map((value) => ({ kind: "installed" as const, version: value })),
+    ...library.versions.slice().sort((left,right)=>left.name.localeCompare(right.name)||compareWorkflowVersions(right.version,left.version)).map((value) => ({ kind: "installed" as const, version: value })),
     ...library.archives.map((value) => ({ kind: "archived" as const, archive: value })),
   ], [library]);
   const selected = items.find((item) => itemKey(item) === itemParam) ?? items.find((item) => item.kind === "draft") ?? items[0];
@@ -324,3 +324,4 @@ function itemScope(item: LibraryItem) { return item.kind === "draft" ? item.draf
 function itemSearch(item: LibraryItem) { return `${itemName(item)} ${itemVersion(item)} ${itemScope(item)} ${item.kind}`.toLowerCase(); }
 function suggestedVersion(draft: Schemas["WorkflowDraft"], versions: readonly Schemas["WorkflowVersionSummary"][]) { const candidates = versions.filter((version) => version.name === draft.name).map((version) => /^([0-9]+)\.([0-9]+)\.([0-9]+)$/.exec(version.version)).filter((value): value is RegExpExecArray => Boolean(value)).sort((left, right) => Number(right[1]) - Number(left[1]) || Number(right[2]) - Number(left[2]) || Number(right[3]) - Number(left[3])); const latest = candidates[0]; return latest ? `${latest[1]}.${latest[2]}.${Number(latest[3]) + 1}` : "1.0.0"; }
 function nextPatch(version: string) { const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version); return match ? `${match[1]}.${match[2]}.${Number(match[3]) + 1}` : "1.0.0"; }
+

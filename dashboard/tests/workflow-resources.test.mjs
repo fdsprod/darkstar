@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createStarterDocument, deriveEditorGraph, normalizeLayout} from '../src/pages/workflowEditorModel.ts';
-import {addResource, addArtifactOutput} from '../src/pages/workflowResourceModel.ts';
+import {addResource, addArtifactOutput, compareWorkflowVersions} from '../src/pages/workflowResourceModel.ts';
 import {autoLayoutGraph,derivePortGraph,bindPorts} from '../src/pages/workflowPortModel.ts';
 test('resources have independent positions and remain upstream of their consumers',()=>{
  let doc=createStarterDocument('test/resources');for(const kind of ['task','template','repository'])doc=addResource(doc,kind).document;
@@ -22,3 +22,5 @@ test('wiring an artifact producer rewrites consumers to the typed output',()=>{
  assert.equal(result.document.spec.nodes.start.outputs.document.artifact.filename,'document.md');
  assert.equal(result.document.spec.nodes.start.inputs.previous.from,'node.start.output.document');
 });
+
+test('version picker puts the current semantic version first',()=>{assert.deepEqual(['1.9.0','2.0.0-beta.1','2.0.0','1.10.0'].sort((a,b)=>compareWorkflowVersions(b,a)),['2.0.0','2.0.0-beta.1','1.10.0','1.9.0']);});

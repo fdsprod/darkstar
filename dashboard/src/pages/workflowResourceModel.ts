@@ -54,3 +54,12 @@ export function addArtifactOutput(document: JsonObject, node: string) {
   let id = "document"; for (let i = 2; Object.hasOwn(outputs, id); i++) id = `document_${i}`;
   return { document: setOutputContract(document, node, id, { type: "string" satisfies ValueType, artifact: { filename: `${id}.md` } }), id: outputNodeId(node, id) };
 }
+
+/** Semantic ordering for the version picker; build metadata has no precedence. */
+export function compareWorkflowVersions(left:string,right:string):number {
+ const parts=(value:string)=>value.split("+")[0].split(/-(.*)/s);
+ const [a,ap]=parts(left),[b,bp]=parts(right);const an=a.split(".").map(Number),bn=b.split(".").map(Number);
+ for(let i=0;i<3;i++){const difference=an[i]-bn[i];if(difference)return difference;}
+ if(ap===undefined||bp===undefined)return ap===bp?0:ap===undefined?1:-1;
+ const ax=ap.split("."),bx=bp.split(".");for(let i=0;i<Math.max(ax.length,bx.length);i++){if(ax[i]===undefined)return -1;if(bx[i]===undefined)return 1;if(ax[i]===bx[i])continue;const ad=/^\d+$/.test(ax[i]),bd=/^\d+$/.test(bx[i]);if(ad&&bd)return Number(ax[i])-Number(bx[i]);if(ad!==bd)return ad?-1:1;return ax[i]<bx[i]?-1:1;}return 0;
+}
