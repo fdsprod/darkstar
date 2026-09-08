@@ -46,7 +46,7 @@ func resolveNodeInputs(node workflow.Node, runInputs map[workflow.Identifier]jso
 				return nil, fmt.Errorf("required source %q is unavailable", binding.Source())
 			}
 		}
-		if valueType(raw) != binding.ValueType() {
+		if !preparationInputType(raw, binding.ValueType()) {
 			return nil, fmt.Errorf("source %q has type %q, want %q", binding.Source(), valueType(raw), binding.ValueType())
 		}
 		resolved[inputID] = raw
@@ -135,8 +135,8 @@ func decodeNodeOutputs(node workflow.Node, raw json.RawMessage) (map[workflow.Id
 			}
 			continue
 		}
-		if got := valueType(value); got != declaration.Type {
-			return nil, fmt.Errorf("workflow output %q has type %q, want %q", id, got, declaration.Type)
+		if !preparationInputType(value, declaration.Type) {
+			return nil, fmt.Errorf("workflow output %q has type %q, want %q", id, valueType(value), declaration.Type)
 		}
 		result[id] = append(json.RawMessage(nil), value...)
 	}

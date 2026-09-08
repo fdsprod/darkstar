@@ -27,6 +27,34 @@ func TestResolveNodeInputsUsesRunAndAcceptedOutputBindings(t *testing.T) {
 	}
 }
 
+func TestNamedWorkflowValuesValidateTheirStorageShapeAtExecution(t *testing.T) {
+	for _, kind := range []workflow.ValueType{workflow.ValueMarkdown, workflow.ValueTask, workflow.ValueRepository, workflow.ValueTemplate, workflow.ValueOpenItems, workflow.ValueDecisionLog, "schema:review_evidence", workflow.ValueNumber} {
+		t.Run(string(kind), func(t *testing.T) {
+			raw := json.RawMessage(`{}`)
+			if kind == workflow.ValueMarkdown {
+				raw = json.RawMessage(`"# Design"`)
+			}
+			if kind == workflow.ValueNumber {
+				raw = json.RawMessage(`3`)
+			}
+			node := workflow.ReasoningNode{Common: workflow.NodeFields{Inputs: map[workflow.Identifier]workflow.Binding{"value": workflow.RequiredBinding{From: "run.input.value", Type: kind}}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"value": {Type: kind}}}}
+			if _, err := resolveNodeInputs(node, map[workflow.Identifier]json.RawMessage{"value": raw}, nil); err != nil {
+				t.Fatal(err)
+			}
+			encoded, _ := json.Marshal(map[string]json.RawMessage{"value": raw})
+			if _, err := decodeNodeOutputs(node, encoded); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := resolveNodeInputs(node, map[workflow.Identifier]json.RawMessage{"value": json.RawMessage(`true`)}, nil); err == nil {
+				t.Fatal("wrong storage shape accepted")
+			}
+			if _, err := decodeNodeOutputs(node, json.RawMessage(`{"value":true}`)); err == nil {
+				t.Fatal("wrong output storage shape accepted")
+			}
+		})
+	}
+}
+
 func TestPrepareWorkflowAdvancePersistsOutputAndReplaysCommittedTransition(t *testing.T) {
 	transition := workflow.NormalTransition{Common: workflow.TransitionFields{TransitionID: "implementation_to_gate", To: "gate"}}
 	node := workflow.PointExecutionNode{Common: workflow.NodeFields{
