@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -45,8 +46,11 @@ func (s *Session) ValidateFinal(raw json.RawMessage) error {
 		if err != nil {
 			return fmt.Errorf("output %s must be submitted with submit_output before completion", id)
 		}
-		var left, right bytes.Buffer
-		if json.Compact(&left, value) != nil || json.Compact(&right, []byte(staged)) != nil || !bytes.Equal(left.Bytes(), right.Bytes()) {
+		var left, right any
+		leftDecoder, rightDecoder := json.NewDecoder(bytes.NewReader(value)), json.NewDecoder(strings.NewReader(staged))
+		leftDecoder.UseNumber()
+		rightDecoder.UseNumber()
+		if leftDecoder.Decode(&left) != nil || rightDecoder.Decode(&right) != nil || !reflect.DeepEqual(left, right) {
 			return fmt.Errorf("final output %s differs from its submitted value", id)
 		}
 	}

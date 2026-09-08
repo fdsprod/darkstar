@@ -14,6 +14,13 @@ import (
 // input/output declarations; canvas resource cards are projections of them.
 type Resource struct{ Source ResourceSource }
 type ResourceSource interface{ resourceSource() }
+type ArtifactResource struct {
+	Filename string `json:"filename"`
+	Content  string `json:"content"`
+}
+
+func (ArtifactResource) resourceSource() {}
+
 type TaskResource struct{}
 type RepositoryResource struct{}
 type TemplateResource struct {
@@ -41,6 +48,8 @@ func (DecisionLogResource) resourceSource() {}
 func (r Resource) MarshalJSON() ([]byte, error) {
 	kind := ""
 	switch r.Source.(type) {
+	case ArtifactResource:
+		kind = "artifact"
 	case TaskResource:
 		kind = "task"
 	case RepositoryResource:
@@ -81,6 +90,15 @@ func (r *Resource) UnmarshalJSON(b []byte) error {
 	body, _ := json.Marshal(fields)
 	var source ResourceSource
 	switch kind {
+	case "artifact":
+		var value ArtifactResource
+		if err := strictDecode(body, &value); err != nil {
+			return err
+		}
+		if err := ValidateArtifact(ArtifactContract{Filename: value.Filename}, "placeholder", nil); err != nil {
+			return err
+		}
+		source = value
 	case "task":
 		var value TaskResource
 		if err := strictDecode(body, &value); err != nil {
@@ -237,6 +255,8 @@ func (state *validationState) validateResources() {
 		switch source := declaration.Resource.Source.(type) {
 		case TaskResource, RepositoryResource, TemplateResource, OpenItemsResource, DecisionLogResource:
 			want = ValueObject
+		case ArtifactResource:
+			want = ValueString
 		case ConstantResource:
 			if !literalMatchesType(source.Value, declaration.Type) {
 				state.add(ValidationBindingIncompatible, "constant does not match declared type", location, nil)

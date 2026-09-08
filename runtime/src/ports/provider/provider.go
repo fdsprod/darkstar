@@ -245,6 +245,8 @@ type AttemptHandle struct {
 }
 
 type ResumeRequest struct {
+	DynamicTools     []ToolDefinition
+	ToolHandler      ToolHandler `json:"-"`
 	AttemptID        string
 	IdempotencyKey   string
 	ProviderThreadID string

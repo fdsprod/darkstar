@@ -1727,6 +1727,27 @@
               "minLength": 1
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "filename",
+            "content"
+          ],
+          "properties": {
+            "kind": {
+              "const": "artifact"
+            },
+            "filename": {
+              "type": "string",
+              "pattern": "^[^/\\\\:]+$"
+            },
+            "content": {
+              "type": "string"
+            }
+          }
         }
       ]
     }

@@ -20,6 +20,7 @@ import (
 )
 
 type appServerScript struct {
+	dynamic      bool
 	output       string
 	write        bool
 	threadParams chan json.RawMessage
@@ -178,6 +179,15 @@ func (script *appServerScript) run(reader *io.PipeReader, writer *io.PipeWriter)
 	}
 	if err := send(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "thread-1", "turn": map[string]string{"id": "turn-1", "status": "inProgress"}}, "emittedAtMs": 2000}); err != nil {
 		return err
+	}
+	if script.dynamic {
+		if err := send(map[string]any{"id": 99, "method": "item/tool/call", "params": map[string]any{"threadId": "thread-1", "turnId": "turn-1", "callId": "tool-1", "tool": "submit_output", "arguments": map[string]string{"id": "answer", "value": "ok"}}}); err != nil {
+			return err
+		}
+		response, err := receive()
+		if err != nil || string(response.ID) != "99" || !strings.Contains(string(response.Result), "\"success\":true") {
+			return fmt.Errorf("expected successful dynamic tool response: %s (%v)", response.Result, err)
+		}
 	}
 	if script.write {
 		if err := send(map[string]any{
@@ -1153,4 +1163,45 @@ func assertEvidenceFiles(t *testing.T, evidence []providerport.Evidence) {
 			t.Errorf("read evidence %s: bytes=%d error=%v", item.Ref, len(payload), err)
 		}
 	}
+}
+
+type workflowToolStub struct{ calls atomic.Int32 }
+
+func (h *workflowToolStub) Call(_ context.Context, callID, name string, args json.RawMessage) (json.RawMessage, error) {
+	if callID != "tool-1" || name != "submit_output" || !strings.Contains(string(args), "answer") {
+		return nil, errors.New("unexpected tool call")
+	}
+	h.calls.Add(1)
+	return json.RawMessage(`{"accepted":true}`), nil
+}
+func TestAdapterDispatchesWorkflowToolsWithoutApproval(t *testing.T) {
+	script := newAppServerScript(`{"answer":"ok"}`, false)
+	script.dynamic = true
+	adapter := newTestAdapter(t, script)
+	request := testAttemptRequest(t.TempDir())
+	handler := &workflowToolStub{}
+	request.ToolHandler = handler
+	request.DynamicTools = []providerport.ToolDefinition{{Type: "function", Name: "submit_output", Description: "Submit answer", InputSchema: json.RawMessage(`{"type":"object"}`)}}
+	handle, err := adapter.StartAttempt(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if params := <-script.threadParams; !strings.Contains(string(params), "dynamicTools") {
+		t.Fatalf("missing tools: %s", params)
+	}
+	collectEvents(t, adapter, handle, nil)
+	if result := getResult(t, adapter, handle); !isSuccessfulWorkflowResult(result) {
+		t.Fatalf("result: %#v", result)
+	}
+	if handler.calls.Load() != 1 {
+		t.Fatal("tool not called exactly once")
+	}
+	if err := <-script.done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func isSuccessfulWorkflowResult(result providerport.AttemptResult) bool {
+	_, ok := result.(providerport.SucceededResult)
+	return ok
 }

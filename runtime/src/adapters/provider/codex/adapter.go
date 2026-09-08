@@ -579,6 +579,11 @@ func (adapter *Adapter) ResumeAttempt(ctx context.Context, request providerport.
 	adapter.attempts[request.AttemptID] = state
 	adapter.mu.Unlock()
 
+	state.toolHandler = request.ToolHandler
+	state.toolNames = map[string]bool{}
+	for _, tool := range request.DynamicTools {
+		state.toolNames[tool.Name] = true
+	}
 	handle, resumeErr := adapter.resumeAttempt(ctx, state, request)
 	state.mu.Lock()
 	state.handle = handle
