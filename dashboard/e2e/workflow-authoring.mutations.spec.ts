@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 import { installEmptyControlPlane } from "./acceptance.fixtures";
+import { deriveEditorGraph } from "../src/pages/workflowEditorModel";
+import { derivePortGraph, portLabel } from "../src/pages/workflowPortModel";
 
 const digest = (value: string) => value.repeat(64).slice(0, 64);
 
@@ -85,24 +88,65 @@ test("Canvas and Structure authoring persist through the public draft API and re
 
 test("React Flow uses the available editor height and keeps node content inside measured bounds", async ({ page }, testInfo) => {
   await installEmptyControlPlane(page);
-  const document = { apiVersion: "darkstar.local/v1alpha2", kind: "Workflow", metadata: { name: "software-delivery-copy", version: "0.1.0", displayName: "Software delivery copy" }, spec: { inputs: Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`input_${index + 1}_with_a_long_name`, { type: "string" }])), routeDefaults: { entry: "assess", terminals: ["publish"] }, nodes: { assess: { type: "command", displayName: "Assess the software delivery request and constraints", entry: true, command: { argv: ["assess"] }, inputs: Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`input_${index + 1}_with_a_long_name`, { from: `run.input.input_${index + 1}_with_a_long_name`, type: "string", required: true }])), outputs: { "assessment_result_with_a_long_name": { type: "object", required: true } }, transitions: [{ id: "to_publish", to: "publish" }] }, publish: { type: "command", displayName: "Publish verified software delivery artifacts", terminal: true, command: { argv: ["publish"] }, inputs: { "assessment_result_with_a_long_name": { from: "node.assess.output.assessment_result_with_a_long_name", type: "object", required: true } }, outputs: {}, transitions: [] } } } };
-  const draft = { id: "draft_layout", name: "software-delivery-copy", scope: "user", scopeReference: "local-user", revision: 1, document, layout: { version: 1, nodes: { assess: { x: 40, y: 40 }, publish: { x: 900, y: 40 } } }, documentDigest: digest("9"), updatedAt: "2026-09-07T12:00:00Z" };
+  const document = JSON.parse(readFileSync(new URL("../../examples/workflows/software-delivery.json", import.meta.url), "utf8"));
+  document.metadata.name = "software-delivery-copy"; document.metadata.displayName = "Software delivery copy";
+  let draft = { id: "draft_layout", name: "software-delivery-copy", scope: "user", scopeReference: "local-user", revision: 1, document, layout: { version: 1, nodes: {} }, documentDigest: digest("9"), updatedAt: "2026-09-07T12:00:00Z" };
+  const saves: any[] = [];
   await page.route("**/api/v1/workflows/library", route => route.fulfill({ json: { versions: [], drafts: [draft], archives: [] } }));
+  await page.route("**/api/v1/workflows/drafts/update", async route => {
+    const body = route.request().postDataJSON(); saves.push(body);
+    draft = { ...draft, revision: draft.revision + 1, document: body.document, layout: body.layout, updatedAt: "2026-09-07T12:01:00Z" };
+    await route.fulfill({ json: draft });
+  });
   await page.setViewportSize({ width: 1690, height: 1275 });
   await page.goto("/workflows?item=draft:draft_layout&view=canvas");
   const canvas = page.locator(".react-flow");
   await expect(canvas).toBeVisible();
   await expect.poll(() => canvas.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(800);
-  const nodes = page.locator(".workflow-flow-node");
-  await expect(nodes).toHaveCount(3);
-  await expect(page.locator(".canvas-edge--execution")).toHaveCount(1);
-  await expect(page.locator(".canvas-edge--data")).toHaveCount(0);
-  const dataToggle = page.getByRole("button", { name: /Show data bindings/ });
-  await expect(dataToggle).toHaveAttribute("aria-pressed", "false");
-  await dataToggle.click();
-  await expect(page.locator(".canvas-edge--data")).toHaveCount(9);
-  await page.getByRole("button", { name: "Hide data bindings" }).click();
-  await expect(page.locator(".canvas-edge--data")).toHaveCount(0);
+  const graph = deriveEditorGraph(document, {}), projection = derivePortGraph(document, graph);
+  const workflowNodes = page.locator(".react-flow__node-workflow"), nodes = page.locator(".workflow-flow-node");
+  await expect(workflowNodes).toHaveCount(graph.nodes.length);
+  await expect(page.locator(".workflow-flow-run-inputs")).toHaveCount(1);
+  await expect(page.locator(".canvas-edge--execution")).toHaveCount(24);
+  await expect(page.locator(".canvas-edge--data")).toHaveCount(43);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(67);
+  await expect(page.locator(".workflow-flow-handle--execution.react-flow__handle-top, .workflow-flow-handle--execution.react-flow__handle-bottom")).toHaveCount(0);
+  for (const endpoint of [
+    { node: "p0_intake", handle: ".workflow-flow-handle--execution.react-flow__handle-right", port: /output p0_intake\.complete/ },
+    { node: "p1_route_assessment", handle: ".workflow-flow-handle--execution.react-flow__handle-left", port: /input p1_route_assessment\.execute/ },
+  ]) {
+    const card = page.locator(`.react-flow__node[data-id="${endpoint.node}"]`), handle = card.locator(endpoint.handle), port = card.getByRole("button", { name: endpoint.port });
+    const [handleBox, portBox] = await Promise.all([handle.boundingBox(), port.boundingBox()]);
+    expect(handleBox && portBox && Math.abs(handleBox.y + handleBox.height / 2 - (portBox.y + portBox.height / 2)) <= 1, `${endpoint.node} execution handle must align with its displayed port row`).toBeTruthy();
+  }
+  const expectedLabels = projection.edges.map(edge => `${edge.kind}: ${portLabel(edge.source)} to ${portLabel(edge.target)}`).toSorted();
+  await expect.poll(() => page.locator(".react-flow__edge").evaluateAll(elements => elements.map(element => element.getAttribute("aria-label")).toSorted())).toEqual(expectedLabels);
+  const extent = await workflowNodes.evaluateAll(elements => { const boxes = elements.map(element => element.getBoundingClientRect()); const left = Math.min(...boxes.map(box => box.left)), right = Math.max(...boxes.map(box => box.right)), top = Math.min(...boxes.map(box => box.top)), bottom = Math.max(...boxes.map(box => box.bottom)); return { width: right - left, height: bottom - top, ranks: new Set(boxes.map(box => Math.round(box.top))).size }; });
+  expect(extent.height).toBeGreaterThan(extent.width * 4);
+  expect(extent.width).toBeLessThan(1600);
+  expect(extent.ranks).toBeGreaterThan(10);
+  const canvasBox = await canvas.boundingBox();
+  for (const id of ["p0_intake", "p1_route_assessment"]) {
+    const box = await page.locator(`.react-flow__node[data-id="${id}"]`).boundingBox();
+    expect(box && canvasBox && box.y >= canvasBox.y && box.y + box.height <= canvasBox.y + canvasBox.height && box.x >= canvasBox.x && box.x + box.width <= canvasBox.x + canvasBox.width, `${id}: ${JSON.stringify({ box, canvasBox })}`).toBeTruthy();
+  }
+  await expect(page.locator(".canvas-edge--execution").first()).toBeVisible();
+  await expect(page.locator(".editor-save-state")).toHaveText("Saved");
+  await page.getByRole("button", { name: "Zoom in" }).click(); await page.getByRole("button", { name: "Zoom out" }).click();
+  await page.getByRole("group", { name: "Visible connections" }).getByRole("button", { name: /Execution/ }).click();
+  await expect(page.locator(".canvas-edge--execution")).toHaveCount(24); await expect(page.locator(".canvas-edge--data")).toHaveCount(0); await expect(page.locator(".workflow-flow-run-inputs")).toHaveCount(0);
+  await page.getByRole("group", { name: "Visible connections" }).getByRole("button", { name: /Data/ }).click();
+  await expect(page.locator(".canvas-edge--execution")).toHaveCount(0); await expect(page.locator(".canvas-edge--data")).toHaveCount(43); await expect(page.locator(".workflow-flow-run-inputs")).toHaveCount(1);
+  await page.getByRole("group", { name: "Visible connections" }).getByRole("button", { name: /All/ }).click();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(67);
+  await page.getByRole("button", { name: "Zoom to fit" }).click();
+  await expect.poll(async () => {
+    const outer = await canvas.boundingBox(); const boxes = await nodes.evaluateAll(elements => elements.map(element => { const box = element.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }; }));
+    return Boolean(outer && boxes.every(box => box.left >= outer.x - 2 && box.right <= outer.x + outer.width + 2 && box.top >= outer.y - 2 && box.bottom <= outer.y + outer.height + 2));
+  }).toBeTruthy();
+  await page.waitForTimeout(650);
+  expect(saves).toHaveLength(0); expect(draft.revision).toBe(1); expect(draft.document).toEqual(document);
+  await expect(page.locator(".editor-save-state")).toHaveText("Saved");
   for (const node of await nodes.all()) {
     const dimensions = await node.evaluate(element => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight }));
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 8); // React Flow handles intentionally protrude by half their width.
@@ -111,15 +155,17 @@ test("React Flow uses the available editor height and keeps node content inside 
   await expect(page.locator(".workflow-flow-node--command")).toHaveCount(2);
   const cardBodyStyle = await page.locator(".workflow-flow-node__body").first().evaluate(element => ({ padding: getComputedStyle(element).padding, whiteSpace: getComputedStyle(element.querySelector("strong")!).whiteSpace }));
   expect(cardBodyStyle).toEqual({ padding: "12px 20px", whiteSpace: "nowrap" });
-  const longestPort = page.getByRole("button", { name: /assessment_result_with_a_long_name/ }).first();
-  await expect(longestPort).toContainText("assessment_result_with_a_long_name");
-  await expect(longestPort).toHaveAttribute("title", /assessment_result_with_a_long_name/);
+  const longestPort = page.getByRole("button", { name: /route_readiness_threshold/ }).first();
+  await expect(longestPort).toContainText("route_readiness_threshold");
+  await expect(longestPort).toHaveAttribute("title", /route_readiness_threshold/);
   const flowLeft = await canvas.evaluate(element => element.getBoundingClientRect().left);
   const runInputsLeft = await page.locator(".workflow-flow-run-inputs").evaluate(element => element.getBoundingClientRect().left);
   expect(runInputsLeft).toBeGreaterThanOrEqual(flowLeft + 60);
+  await page.screenshot({ path: testInfo.outputPath("software-delivery-copy-desktop-overview.png"), fullPage: true });
   await page.getByRole("button", { name: "Auto-layout" }).click();
   await expect.poll(() => page.locator(".react-flow__viewport").evaluate(element => getComputedStyle(element).transform)).toContain("0.85");
-  await page.screenshot({ path: testInfo.outputPath("software-delivery-copy-desktop.png"), fullPage: true });
+  await expect.poll(() => saves.length).toBeGreaterThan(0);
+  await page.screenshot({ path: testInfo.outputPath("software-delivery-copy-desktop-normal.png"), fullPage: true });
 
   await page.setViewportSize({ width: 900, height: 900 });
   await expect(canvas).toBeVisible();

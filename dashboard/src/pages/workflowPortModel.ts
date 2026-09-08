@@ -1,3 +1,4 @@
+import dagre from "@dagrejs/dagre";
 import type { EditorGraph, JsonObject, ValueType, WorkflowLayout } from "./workflowEditorModel";
 
 export type Port =
@@ -74,8 +75,8 @@ export function bindPorts(document: JsonObject, source: Port, target: Port, avai
 export const GRAPH_NODE_WIDTH = 340;
 export const GRAPH_NODE_HEADER_HEIGHT = 136;
 export const GRAPH_PORT_ROW_HEIGHT = 34;
-export const PORT_LAYOUT_VERSION = 5;
-export const READABLE_GRAPH_VIEWPORT = { x: 24, y: 48, zoom: 0.85 } as const;
+export const PORT_LAYOUT_VERSION = 6;
+export const READABLE_GRAPH_VIEWPORT = { x: -24, y: 48, zoom: 0.85 } as const;
 
 export function graphNodeWidth(ports: readonly Port[], node: Pick<EditorGraph["nodes"][number], "id" | "displayName" | "type">) {
   const labels = ports.filter((port) => port.kind !== "run_input" && port.nodeId === node.id).map((port) => `${port.portId} ${"valueType" in port ? port.valueType : "execution"}${"required" in port && port.required ? " *" : ""}`);
@@ -92,51 +93,21 @@ export function graphBounds(graph: EditorGraph, ports: readonly Port[]) {
   return { x: minX, y: minY, width: Math.max(720, ...graph.nodes.map((node) => node.position.x + graphNodeWidth(ports, node) + 80), hasInputs ? 80 + graphRunInputWidth(ports) + 80 : 0) - minX, height: Math.max(440, ports.filter((port) => port.kind === "run_input").length * 38 + 170, ...graph.nodes.map((node) => node.position.y + graphNodeHeight(ports, node.id) + 80)) - minY };
 }
 export function autoLayoutGraph(layout: WorkflowLayout, graph: EditorGraph, ports: readonly Port[]): WorkflowLayout {
-  // Rank only forward control flow. A bounded repair edge is deliberately a back edge:
-  // rendering it must not turn the workflow into a cycle for layout purposes.
+  // Dagre owns presentation geometry. Bounded repair transitions are deliberately
+  // excluded from ranking, then rendered over the resulting forward topology.
   const nodeOrder = new Map(graph.nodes.map((node, index) => [node.id, index]));
   const nodeIds = new Set(nodeOrder.keys());
   const forwardEdges = graph.edges.filter((edge) => edge.kind !== "bounded_repair" && nodeIds.has(edge.from) && nodeIds.has(edge.to));
-  const outgoing = new Map(graph.nodes.map((node) => [node.id, [] as typeof forwardEdges]));
-  const indegree = new Map(graph.nodes.map((node) => [node.id, 0]));
-  for (const edge of forwardEdges) {
-    outgoing.get(edge.from)!.push(edge);
-    indegree.set(edge.to, indegree.get(edge.to)! + 1);
-  }
-  const ranks = new Map(graph.nodes.map((node) => [node.id, 0]));
-  const ready = graph.nodes.filter((node) => indegree.get(node.id) === 0).map((node) => node.id);
-  const processed = new Set<string>();
-  const topologyOrder = new Map<string, number>();
-  while (ready.length) {
-    const id = ready.shift()!;
-    if (processed.has(id)) continue;
-    processed.add(id);
-    topologyOrder.set(id, topologyOrder.size);
-    for (const edge of outgoing.get(id)!) {
-      ranks.set(edge.to, Math.max(ranks.get(edge.to)!, ranks.get(id)! + 1));
-      const nextIndegree = indegree.get(edge.to)! - 1;
-      indegree.set(edge.to, nextIndegree);
-      if (nextIndegree === 0) ready.push(edge.to);
-    }
-  }
-  // Malformed non-repair cycles cannot be topologically ranked. Keep their members
-  // deterministic and to the right of any already-ranked forward parent.
-  for (const node of graph.nodes) if (!processed.has(node.id)) {
-    const parentRanks = forwardEdges.filter((edge) => edge.to === node.id && processed.has(edge.from)).map((edge) => ranks.get(edge.from)! + 1);
-    ranks.set(node.id, parentRanks.length ? Math.max(...parentRanks) : 0);
-    topologyOrder.set(node.id, topologyOrder.size);
-  }
-  const ordered = graph.nodes.map((node) => node.id).sort((left, right) => (ranks.get(left)! - ranks.get(right)!) || (topologyOrder.get(left)! - topologyOrder.get(right)!) || (nodeOrder.get(left)! - nodeOrder.get(right)!));
-  const layerOffsets = new Map<number, number>();
-  const layerWidths = new Map<number, number>();
-  for (const id of ordered) { const node = graph.nodes.find((item) => item.id === id)!; const rank = ranks.get(id) ?? 0; layerWidths.set(rank, Math.max(layerWidths.get(rank) ?? 0, graphNodeWidth(ports, node))); }
-  const layerX = new Map<number, number>();
-  let nextX = ports.some((port) => port.kind === "run_input") ? 80 + graphRunInputWidth(ports) + 120 : 80;
-  for (const rank of [...layerWidths.keys()].sort((left, right) => left - right)) { layerX.set(rank, nextX); nextX += layerWidths.get(rank)! + 120; }
-  return { ...layout, portLayoutVersion: PORT_LAYOUT_VERSION, viewport: { ...READABLE_GRAPH_VIEWPORT }, nodes: Object.fromEntries(ordered.map((id) => {
-    const rank = ranks.get(id) ?? 0, y = layerOffsets.get(rank) ?? 80;
-    layerOffsets.set(rank, y + graphNodeHeight(ports, id) + 72);
-    return [id, { x: layerX.get(rank) ?? 80, y }];
+  const ranked = new dagre.graphlib.Graph({ directed: true, multigraph: true, compound: false });
+  ranked.setGraph({ rankdir: "TB", ranker: "network-simplex", align: "UL", ranksep: 112, nodesep: 96, edgesep: 42, marginx: 80, marginy: 80 });
+  ranked.setDefaultEdgeLabel(() => ({}));
+  for (const node of graph.nodes) ranked.setNode(node.id, { width: graphNodeWidth(ports, node), height: graphNodeHeight(ports, node.id), order: nodeOrder.get(node.id) });
+  for (const [index, edge] of forwardEdges.entries()) ranked.setEdge(edge.from, edge.to, { weight: edge.kind === "normal" || edge.kind === "subworkflow" ? 3 : 2, minlen: 1, order: index }, edge.id);
+  dagre.layout(ranked);
+  const inputOffset = ports.some((port) => port.kind === "run_input") ? graphRunInputWidth(ports) + 120 : 0;
+  return { ...layout, portLayoutVersion: PORT_LAYOUT_VERSION, viewport: { ...READABLE_GRAPH_VIEWPORT }, nodes: Object.fromEntries(graph.nodes.map((node) => {
+    const placed = ranked.node(node.id) as { x: number; y: number };
+    return [node.id, { x: Math.round(placed.x - graphNodeWidth(ports, node) / 2 + inputOffset), y: Math.round(placed.y - graphNodeHeight(ports, node.id) / 2) }];
   })) };
 }
 

@@ -85,12 +85,12 @@ test("auto-layout handles cycles and disconnected nodes without touching executi
   assert.ok(bounds.x < 0, "run inputs have room to the left of nodes");
   assert.ok(bounds.width >= 720 && bounds.height >= 440, "canvas bounds reserve usable graph extents");
   const start = next.nodes.start, finish = next.nodes.finish, isolated = next.nodes.isolated;
-  assert.ok(Math.abs(start.x - finish.x) >= 460, "connected layers have enough horizontal clearance for nodes and edges");
-  assert.ok(Math.abs(start.y - isolated.y) >= 110, "nodes sharing a layer receive content-aware vertical clearance");
-  assert.equal(next.portLayoutVersion, 5);
+  assert.ok(finish.y - start.y >= 300, "connected layers have enough vertical clearance for nodes and edges");
+  assert.ok(Math.abs(start.x - isolated.x) >= 400, "nodes sharing a layer receive content-aware horizontal clearance");
+  assert.equal(next.portLayoutVersion, 6);
   assert.equal(next.viewport.zoom, 0.85, "ordinary auto-layout keeps labels readable instead of fitting the whole graph");
   assert.deepEqual(preparePortLayout(next, graph, ports), next, "current layout coordinates remain authoritative");
-  assert.equal(preparePortLayout({ ...next, portLayoutVersion: 4 }, graph, ports).portLayoutVersion, 5, "legacy card coordinates migrate deterministically");
+  assert.equal(preparePortLayout({ ...next, portLayoutVersion: 5 }, graph, ports).portLayoutVersion, 6, "legacy card coordinates migrate deterministically");
 });
 
 test("software-delivery ranks forward control flow monotonically and leaves bounded repair pointing backward", () => {
@@ -98,13 +98,16 @@ test("software-delivery ranks forward control flow monotonically and leaves boun
   const { graph, ports } = project(document);
   const next = autoLayoutGraph(normalizeLayout({}), graph, ports);
   const forward = graph.edges.filter((edge) => edge.kind !== "bounded_repair");
-  for (const edge of forward) assert.ok(next.nodes[edge.to].x > next.nodes[edge.from].x, `${edge.id} must advance left to right`);
+  for (const edge of forward) assert.ok(next.nodes[edge.to].y > next.nodes[edge.from].y, `${edge.id} must advance top to bottom`);
   const repair = graph.edges.find((edge) => edge.kind === "bounded_repair");
   assert.equal(repair.from, "p12_integrated_validation");
   assert.equal(repair.to, "p11_story_execution");
-  assert.ok(next.nodes[repair.to].x < next.nodes[repair.from].x, "bounded repair returns to its prior stage without affecting rank");
+  assert.ok(next.nodes[repair.to].y < next.nodes[repair.from].y, "bounded repair returns to its prior stage without affecting rank");
   const mainSequence = ["p0_intake", "p1_route_assessment", "p1_route_gate", "p1_route_review", "p2_product_discovery", "p3_poc", "p4_requirements", "p5_experience_design", "p6_product_readiness", "p7_technical_research", "p8_technical_design", "p9_decomposition", "p10_delivery_readiness", "p11_story_execution", "p12_integrated_validation", "p13_pull_request", "p14_review_ci", "p15_release_readiness", "p16_release", "p17_verification"];
-  assert.deepEqual(mainSequence.map((id) => next.nodes[id].x), mainSequence.map((id) => next.nodes[id].x).toSorted((left, right) => left - right));
+  assert.deepEqual(mainSequence.map((id) => next.nodes[id].y), mainSequence.map((id) => next.nodes[id].y).toSorted((top, bottom) => top - bottom));
+  const bounds = graphBounds(deriveEditorGraph(document, next), ports);
+  assert.ok(bounds.height > bounds.width * 4, `expected a tall route, got ${bounds.width}×${bounds.height}`);
+  assert.ok(bounds.width < 1600, "branch alternatives stay near their decision instead of producing a horizontal strip");
   assert.deepEqual(next, autoLayoutGraph(normalizeLayout({}), graph, ports), "branch placement is deterministic");
 });
 
@@ -117,8 +120,8 @@ test("same-rank conditional branches follow authored transition order", () => {
   ];
   const { graph, ports } = project(document);
   const next = autoLayoutGraph(normalizeLayout({}), graph, ports);
-  assert.equal(next.nodes.beta.x, next.nodes.alpha.x);
-  assert.ok(next.nodes.beta.y < next.nodes.alpha.y, "first authored branch stays nearest the top of its shared rank");
+  assert.equal(next.nodes.beta.y, next.nodes.alpha.y);
+  assert.ok(next.nodes.beta.x > next.nodes.alpha.x, "authored branch order remains stable within its shared rank");
 });
 
 test("authoritative node rename rewrites bindings and therefore both graph views", () => {
