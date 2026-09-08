@@ -74,7 +74,7 @@ export function bindPorts(document: JsonObject, source: Port, target: Port, avai
 export const GRAPH_NODE_WIDTH = 340;
 export const GRAPH_NODE_HEADER_HEIGHT = 136;
 export const GRAPH_PORT_ROW_HEIGHT = 34;
-export const PORT_LAYOUT_VERSION = 4;
+export const PORT_LAYOUT_VERSION = 5;
 export const READABLE_GRAPH_VIEWPORT = { x: 24, y: 48, zoom: 0.85 } as const;
 
 export function graphNodeWidth(ports: readonly Port[], node: Pick<EditorGraph["nodes"][number], "id" | "displayName" | "type">) {
@@ -92,16 +92,41 @@ export function graphBounds(graph: EditorGraph, ports: readonly Port[]) {
   return { x: minX, y: minY, width: Math.max(720, ...graph.nodes.map((node) => node.position.x + graphNodeWidth(ports, node) + 80), hasInputs ? 80 + graphRunInputWidth(ports) + 80 : 0) - minX, height: Math.max(440, ports.filter((port) => port.kind === "run_input").length * 38 + 170, ...graph.nodes.map((node) => node.position.y + graphNodeHeight(ports, node.id) + 80)) - minY };
 }
 export function autoLayoutGraph(layout: WorkflowLayout, graph: EditorGraph, ports: readonly Port[]): WorkflowLayout {
-  // Stable breadth-first ranks; cycles/disconnected nodes are placed once, never chased.
-  const remaining = new Set(graph.nodes.map((node) => node.id)), ordered: string[] = [], ranks = new Map<string, number>();
-  const queue = graph.nodes.filter((node) => node.entry || !graph.edges.some((edge) => edge.to === node.id)).map((node) => node.id);
-  while (remaining.size) {
-    const id = queue.shift() ?? remaining.values().next().value!;
-    if (!remaining.delete(id)) continue;
-    const parentRanks = graph.edges.filter((edge) => edge.to === id).map((edge) => ranks.get(edge.from)).filter((rank): rank is number => rank !== undefined);
-    ranks.set(id, parentRanks.length ? Math.max(...parentRanks) + 1 : 0);
-    ordered.push(id); queue.push(...graph.edges.filter((edge) => edge.from === id).map((edge) => edge.to));
+  // Rank only forward control flow. A bounded repair edge is deliberately a back edge:
+  // rendering it must not turn the workflow into a cycle for layout purposes.
+  const nodeOrder = new Map(graph.nodes.map((node, index) => [node.id, index]));
+  const nodeIds = new Set(nodeOrder.keys());
+  const forwardEdges = graph.edges.filter((edge) => edge.kind !== "bounded_repair" && nodeIds.has(edge.from) && nodeIds.has(edge.to));
+  const outgoing = new Map(graph.nodes.map((node) => [node.id, [] as typeof forwardEdges]));
+  const indegree = new Map(graph.nodes.map((node) => [node.id, 0]));
+  for (const edge of forwardEdges) {
+    outgoing.get(edge.from)!.push(edge);
+    indegree.set(edge.to, indegree.get(edge.to)! + 1);
   }
+  const ranks = new Map(graph.nodes.map((node) => [node.id, 0]));
+  const ready = graph.nodes.filter((node) => indegree.get(node.id) === 0).map((node) => node.id);
+  const processed = new Set<string>();
+  const topologyOrder = new Map<string, number>();
+  while (ready.length) {
+    const id = ready.shift()!;
+    if (processed.has(id)) continue;
+    processed.add(id);
+    topologyOrder.set(id, topologyOrder.size);
+    for (const edge of outgoing.get(id)!) {
+      ranks.set(edge.to, Math.max(ranks.get(edge.to)!, ranks.get(id)! + 1));
+      const nextIndegree = indegree.get(edge.to)! - 1;
+      indegree.set(edge.to, nextIndegree);
+      if (nextIndegree === 0) ready.push(edge.to);
+    }
+  }
+  // Malformed non-repair cycles cannot be topologically ranked. Keep their members
+  // deterministic and to the right of any already-ranked forward parent.
+  for (const node of graph.nodes) if (!processed.has(node.id)) {
+    const parentRanks = forwardEdges.filter((edge) => edge.to === node.id && processed.has(edge.from)).map((edge) => ranks.get(edge.from)! + 1);
+    ranks.set(node.id, parentRanks.length ? Math.max(...parentRanks) : 0);
+    topologyOrder.set(node.id, topologyOrder.size);
+  }
+  const ordered = graph.nodes.map((node) => node.id).sort((left, right) => (ranks.get(left)! - ranks.get(right)!) || (topologyOrder.get(left)! - topologyOrder.get(right)!) || (nodeOrder.get(left)! - nodeOrder.get(right)!));
   const layerOffsets = new Map<number, number>();
   const layerWidths = new Map<number, number>();
   for (const id of ordered) { const node = graph.nodes.find((item) => item.id === id)!; const rank = ranks.get(id) ?? 0; layerWidths.set(rank, Math.max(layerWidths.get(rank) ?? 0, graphNodeWidth(ports, node))); }

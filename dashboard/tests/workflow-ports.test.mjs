@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { addNode, connectNodes, createStarterDocument, deriveEditorGraph, normalizeLayout, renameNode } from "../src/pages/workflowEditorModel.ts";
 import { autoLayoutGraph, bindPorts, connectionError, derivePortGraph, graphBounds, portKey, preparePortLayout } from "../src/pages/workflowPortModel.ts";
@@ -86,10 +87,38 @@ test("auto-layout handles cycles and disconnected nodes without touching executi
   const start = next.nodes.start, finish = next.nodes.finish, isolated = next.nodes.isolated;
   assert.ok(Math.abs(start.x - finish.x) >= 460, "connected layers have enough horizontal clearance for nodes and edges");
   assert.ok(Math.abs(start.y - isolated.y) >= 110, "nodes sharing a layer receive content-aware vertical clearance");
-  assert.equal(next.portLayoutVersion, 4);
+  assert.equal(next.portLayoutVersion, 5);
   assert.equal(next.viewport.zoom, 0.85, "ordinary auto-layout keeps labels readable instead of fitting the whole graph");
   assert.deepEqual(preparePortLayout(next, graph, ports), next, "current layout coordinates remain authoritative");
-  assert.equal(preparePortLayout({ ...next, portLayoutVersion: 3 }, graph, ports).portLayoutVersion, 4, "legacy card coordinates migrate deterministically");
+  assert.equal(preparePortLayout({ ...next, portLayoutVersion: 4 }, graph, ports).portLayoutVersion, 5, "legacy card coordinates migrate deterministically");
+});
+
+test("software-delivery ranks forward control flow monotonically and leaves bounded repair pointing backward", () => {
+  const document = JSON.parse(readFileSync(new URL("../../examples/workflows/software-delivery.json", import.meta.url), "utf8"));
+  const { graph, ports } = project(document);
+  const next = autoLayoutGraph(normalizeLayout({}), graph, ports);
+  const forward = graph.edges.filter((edge) => edge.kind !== "bounded_repair");
+  for (const edge of forward) assert.ok(next.nodes[edge.to].x > next.nodes[edge.from].x, `${edge.id} must advance left to right`);
+  const repair = graph.edges.find((edge) => edge.kind === "bounded_repair");
+  assert.equal(repair.from, "p12_integrated_validation");
+  assert.equal(repair.to, "p11_story_execution");
+  assert.ok(next.nodes[repair.to].x < next.nodes[repair.from].x, "bounded repair returns to its prior stage without affecting rank");
+  const mainSequence = ["p0_intake", "p1_route_assessment", "p1_route_gate", "p1_route_review", "p2_product_discovery", "p3_poc", "p4_requirements", "p5_experience_design", "p6_product_readiness", "p7_technical_research", "p8_technical_design", "p9_decomposition", "p10_delivery_readiness", "p11_story_execution", "p12_integrated_validation", "p13_pull_request", "p14_review_ci", "p15_release_readiness", "p16_release", "p17_verification"];
+  assert.deepEqual(mainSequence.map((id) => next.nodes[id].x), mainSequence.map((id) => next.nodes[id].x).toSorted((left, right) => left - right));
+  assert.deepEqual(next, autoLayoutGraph(normalizeLayout({}), graph, ports), "branch placement is deterministic");
+});
+
+test("same-rank conditional branches follow authored transition order", () => {
+  let document = addNode(createStarterDocument("example/branches"), "command", "alpha").document;
+  document = addNode(document, "command", "beta").document;
+  document.spec.nodes.start.transitions = [
+    { id: "to_beta", to: "beta", when: { const: true } },
+    { id: "to_alpha", to: "alpha", when: { const: false } },
+  ];
+  const { graph, ports } = project(document);
+  const next = autoLayoutGraph(normalizeLayout({}), graph, ports);
+  assert.equal(next.nodes.beta.x, next.nodes.alpha.x);
+  assert.ok(next.nodes.beta.y < next.nodes.alpha.y, "first authored branch stays nearest the top of its shared rank");
 });
 
 test("authoritative node rename rewrites bindings and therefore both graph views", () => {
