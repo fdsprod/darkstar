@@ -20,7 +20,7 @@ function deliveryRun(flags) {
   fixture.checkpoints.p3_poc = ["approve"];
   fixture.checkpoints.p5_experience_design = ["approve"];
   fixture.checkpoints.p7_technical_research = ["approve"];
-  for (const id of ["p3_poc","p5_experience_design","p7_technical_research"]) fixture.results[id][0].document = "# Overview\nFixture evidence";
+  for (const id of ["p3_poc","p5_experience_design","p7_technical_research"]) fixture.results[id] = [Object.fromEntries(Object.entries(document.spec.nodes[id].outputs).map(([key])=>[key,"# Overview\nFixture evidence"]))];
   return new Runner(document, path, fixture, document.spec.routeDefaults.entry, document.spec.routeDefaults.terminals).run();
 }
 

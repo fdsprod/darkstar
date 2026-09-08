@@ -17,51 +17,39 @@
   "results": {
     "s0_readiness": [
       {
-        "readiness": {
-          "level": "recommendation"
-        },
-        "document": "# Questions and readiness\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "questions": "# Questions and readiness\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "s1_clarification": [
       {
-        "answers": {
-          "scope": "organization"
-        }
+        "answers": "# answers.md\n\n{\n  \"scope\": \"organization\"\n}"
       }
     ],
     "s2_research": [
       {
-        "research": {
-          "pattern": "token-bucket"
-        },
-        "document": "# Focused developer research\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "research": "# Focused developer research\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "s3_design": [
       {
-        "design": {
-          "artifactId": "artifact:story-design:1"
-        },
-        "document": "# Story-level design\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "design": "# Story-level design\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "s4_plan": [
       {
-        "implementation_plan": {
-          "points": [
-            "storage",
-            "api"
-          ]
-        },
-        "document": "# Implementation plan\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "plan": "# Implementation plan\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "s5_implementation": [
       {
         "changeset": {
-          "point": "storage",
-          "commit": "1111111"
+          "summary": "storage",
+          "files": [
+            "storage.ts"
+          ],
+          "validation": [
+            "Fixture validation passed"
+          ]
         },
         "progress": {
           "completed_points": 1,
@@ -70,8 +58,13 @@
       },
       {
         "changeset": {
-          "point": "api",
-          "commit": "2222222"
+          "summary": "api",
+          "files": [
+            "api.ts"
+          ],
+          "validation": [
+            "Fixture validation passed"
+          ]
         },
         "progress": {
           "completed_points": 2,
@@ -83,7 +76,13 @@
       {
         "validation": {
           "passed": true,
-          "acceptanceCovered": true
+          "acceptanceCovered": true,
+          "checks": [
+            {
+              "command": "fixture validation",
+              "passed": true
+            }
+          ]
         }
       }
     ]

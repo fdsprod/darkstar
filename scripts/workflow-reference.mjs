@@ -80,7 +80,7 @@ function jsonType(value) {
 }
 
 function matchesType(value, declared) {
-  declared = declared === "markdown" ? "string" : ["template","repository","task","open_items","decision_log"].includes(declared) ? "object" : declared;
+  declared = declared.startsWith("schema:") ? "object" : declared === "markdown" ? "string" : ["template","repository","task","open_items","decision_log"].includes(declared) ? "object" : declared;
   const actual = jsonType(value);
   return actual === declared || (declared === "number" && actual === "integer");
 }
@@ -236,7 +236,7 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
     defaults = {};
   }
   for (const [name, declaration] of Object.entries(runInputs)) {
-    if (!ID_RE.test(name) || !declaration || !VALUE_TYPES.has(declaration.type)) errors.push(fail("WF_SCHEMA_INVALID", `invalid run input '${name}'`, `/spec/inputs/${name}`));
+    if (!ID_RE.test(name) || !declaration || !(VALUE_TYPES.has(declaration.type)||/^schema:[a-z][a-z0-9_]*$/.test(declaration.type))) errors.push(fail("WF_SCHEMA_INVALID", `invalid run input '${name}'`, `/spec/inputs/${name}`));
   }
 
   const transitionIds = new Map();
@@ -270,7 +270,7 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
       continue;
     }
     for (const [outputName, declaration] of Object.entries(node.outputs)) {
-      if (!ID_RE.test(outputName) || !declaration || !VALUE_TYPES.has(declaration.type)) errors.push(fail("WF_SCHEMA_INVALID", `invalid output '${outputName}'`, `${location}/outputs/${outputName}`));
+      if (!ID_RE.test(outputName) || !declaration || !(VALUE_TYPES.has(declaration.type) || /^schema:[a-z][a-z0-9_]{0,63}$/.test(declaration.type))) errors.push(fail("WF_SCHEMA_INVALID", `invalid output '${outputName}'`, `${location}/outputs/${outputName}`));
     }
     if (node.readiness !== undefined) {
       const readiness = node.readiness;
@@ -325,7 +325,7 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
       }
     });
     if (node.type === "gate") {
-      if (node.outputs.passed?.type !== "boolean" || node.outputs.gate_evidence?.type !== "object") {
+      if (node.outputs.passed?.type !== "boolean" || !(["object","schema:gate_evidence"].includes(node.outputs.gate_evidence?.type))) {
         errors.push(fail("WF_GATE_INVALID", `gate '${nodeId}' must declare passed and gate_evidence outputs`, `${location}/outputs`));
       }
       if (!node.gate || typeof node.gate.policy !== "string" || !node.gate.condition) {
@@ -347,13 +347,13 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
       if (isExternal && hasEvidenceOutput) {
         const declaration = node.outputs?.[node.approval.evidenceOutput];
         if (!declaration) errors.push(fail("WF_REFERENCE_MISSING", `external evidence references unknown output '${node.approval.evidenceOutput}'`, `${location}/approval/evidenceOutput`));
-        else if (declaration.type !== "object" || typeof declaration.schema !== "string") errors.push(fail("WF_BINDING_INCOMPATIBLE", "external evidence output must be an object with a schema", `${location}/approval/evidenceOutput`));
+        else if (!(["object"].includes(declaration.type)||declaration.type.startsWith("schema:")) || typeof declaration.schema !== "string") errors.push(fail("WF_BINDING_INCOMPATIBLE", "external evidence output must be an object with a schema", `${location}/approval/evidenceOutput`));
       }
     }
     if (node.type === "point_execution" && node.points && typeof node.points === "object") {
       const plan = node.inputs?.[node.points.planInput];
       if (!plan) errors.push(fail("WF_REFERENCE_MISSING", `point executor references unknown input '${node.points.planInput}'`, `${location}/points/planInput`));
-      else if (plan.type !== "object") errors.push(fail("WF_BINDING_INCOMPATIBLE", "point execution plan input must be an object", `${location}/points/planInput`));
+      else if (plan.type !== "object" && plan.type !== "markdown") errors.push(fail("WF_BINDING_INCOMPATIBLE", "point execution plan input must be an object", `${location}/points/planInput`));
       const approval = node.points.approval;
       const riskTags = node.points.riskTags;
       if (!["none", "every", "risk", "combined"].includes(approval) || !Array.isArray(riskTags) || (approval === "risk") !== (riskTags.length > 0)) {
@@ -396,7 +396,7 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
       }
       const source = binding.from;
       const targetType = binding.type;
-      if (typeof source !== "string" || !VALUE_TYPES.has(targetType)) {
+      if (typeof source !== "string" || !(VALUE_TYPES.has(targetType)||/^schema:[a-z][a-z0-9_]*$/.test(targetType))) {
         errors.push(fail("WF_SCHEMA_INVALID", "binding needs source and type", location));
         continue;
       }

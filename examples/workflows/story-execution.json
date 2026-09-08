@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/story-execution",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "displayName": "Story execution"
   },
   "spec": {
@@ -182,10 +182,7 @@
           }
         },
         "outputs": {
-          "readiness": {
-            "type": "object"
-          },
-          "document": {
+          "questions": {
             "type": "markdown",
             "artifact": {
               "filename": "questions.md",
@@ -224,7 +221,7 @@
           "skills": [
             "darkstar:readiness"
           ],
-          "instructions": "Story intake and readiness. Produce questions.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce questions.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "transitions": [
           {
@@ -244,14 +241,17 @@
             "type": "task"
           },
           "questions": {
-            "from": "node.s0_readiness.output.document",
+            "from": "node.s0_readiness.output.questions",
             "type": "markdown",
             "required": false
           }
         },
         "outputs": {
           "answers": {
-            "type": "object"
+            "type": "markdown",
+            "artifact": {
+              "filename": "answers.md"
+            }
           }
         },
         "readiness": {
@@ -306,7 +306,7 @@
           },
           "answers": {
             "from": "node.s1_clarification.output.answers",
-            "type": "object",
+            "type": "markdown",
             "required": false
           },
           "template": {
@@ -322,16 +322,13 @@
             "type": "decision_log"
           },
           "questions": {
-            "from": "node.s0_readiness.output.document",
+            "from": "node.s0_readiness.output.questions",
             "type": "markdown",
             "required": false
           }
         },
         "outputs": {
           "research": {
-            "type": "object"
-          },
-          "document": {
             "type": "markdown",
             "artifact": {
               "filename": "research.md",
@@ -339,12 +336,6 @@
             }
           }
         },
-        "validators": [
-          {
-            "output": "research",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -376,7 +367,7 @@
           "skills": [
             "darkstar:evidence-research"
           ],
-          "instructions": "Focused developer research. Produce research.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce research.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -402,7 +393,7 @@
           },
           "research": {
             "from": "node.s2_research.output.research",
-            "type": "object",
+            "type": "markdown",
             "required": false
           },
           "template": {
@@ -418,26 +409,18 @@
             "type": "decision_log"
           },
           "questions": {
-            "from": "node.s0_readiness.output.document",
+            "from": "node.s0_readiness.output.questions",
             "type": "markdown",
             "required": false
           },
           "answers": {
             "from": "node.s1_clarification.output.answers",
-            "type": "object",
-            "required": false
-          },
-          "research_document": {
-            "from": "node.s2_research.output.document",
             "type": "markdown",
             "required": false
           }
         },
         "outputs": {
           "design": {
-            "type": "object"
-          },
-          "document": {
             "type": "markdown",
             "artifact": {
               "filename": "design.md",
@@ -445,12 +428,6 @@
             }
           }
         },
-        "validators": [
-          {
-            "output": "design",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -482,7 +459,7 @@
           "skills": [
             "darkstar:technical-design"
           ],
-          "instructions": "Story-level design. Produce design.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce design.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -508,7 +485,7 @@
           },
           "design": {
             "from": "node.s3_design.output.design",
-            "type": "object",
+            "type": "markdown",
             "required": false
           },
           "template": {
@@ -524,31 +501,23 @@
             "type": "decision_log"
           },
           "questions": {
-            "from": "node.s0_readiness.output.document",
+            "from": "node.s0_readiness.output.questions",
             "type": "markdown",
             "required": false
           },
           "answers": {
             "from": "node.s1_clarification.output.answers",
-            "type": "object",
-            "required": false
-          },
-          "research_document": {
-            "from": "node.s2_research.output.document",
             "type": "markdown",
             "required": false
           },
-          "design_document": {
-            "from": "node.s3_design.output.document",
+          "research_document": {
+            "from": "node.s2_research.output.research",
             "type": "markdown",
             "required": false
           }
         },
         "outputs": {
-          "implementation_plan": {
-            "type": "object"
-          },
-          "document": {
+          "plan": {
             "type": "markdown",
             "artifact": {
               "filename": "plan.md",
@@ -556,12 +525,6 @@
             }
           }
         },
-        "validators": [
-          {
-            "output": "implementation_plan",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -593,7 +556,7 @@
           "skills": [
             "darkstar:tracer-bullets"
           ],
-          "instructions": "Implementation plan. Produce plan.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce plan.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -632,18 +595,13 @@
             "type": "repository"
           },
           "implementation_plan": {
-            "from": "node.s4_plan.output.implementation_plan",
-            "type": "object",
+            "from": "node.s4_plan.output.plan",
+            "type": "markdown",
             "required": false
           },
           "prior_changeset": {
             "from": "node.s5_implementation.output.changeset",
-            "type": "object",
-            "required": false
-          },
-          "plan_document": {
-            "from": "node.s4_plan.output.document",
-            "type": "markdown",
+            "type": "schema:changeset",
             "required": false
           },
           "open_items": {
@@ -657,10 +615,52 @@
         },
         "outputs": {
           "changeset": {
-            "type": "object"
+            "type": "schema:changeset",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "summary": {
+                  "type": "string"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "validation": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "summary",
+                "files",
+                "validation"
+              ],
+              "additionalProperties": false
+            }
           },
           "progress": {
-            "type": "object"
+            "type": "schema:progress",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "completed_points": {
+                  "type": "integer"
+                },
+                "remaining_points": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "completed_points",
+                "remaining_points"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "readiness": {
@@ -715,7 +715,7 @@
         "inputs": {
           "progress": {
             "from": "node.s5_implementation.output.progress",
-            "type": "object"
+            "type": "schema:progress"
           }
         },
         "outputs": {
@@ -723,7 +723,23 @@
             "type": "boolean"
           },
           "gate_evidence": {
-            "type": "object"
+            "type": "schema:gate_evidence",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "policy": {
+                  "type": "string"
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "readiness": {
@@ -817,13 +833,52 @@
           },
           "changeset": {
             "from": "node.s5_implementation.output.changeset",
-            "type": "object",
+            "type": "schema:changeset",
             "required": false
           }
         },
         "outputs": {
           "validation": {
-            "type": "object"
+            "type": "schema:validation",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "acceptanceCovered": {
+                  "type": "boolean"
+                },
+                "checks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "command": {
+                        "type": "string"
+                      },
+                      "passed": {
+                        "type": "boolean"
+                      },
+                      "changedEntries": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "passed"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "passed",
+                "acceptanceCovered",
+                "checks"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "readiness": {
@@ -876,7 +931,23 @@
             "type": "boolean"
           },
           "gate_evidence": {
-            "type": "object"
+            "type": "schema:gate_evidence",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "policy": {
+                  "type": "string"
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "gate": {
@@ -950,7 +1021,23 @@
             "type": "boolean"
           },
           "gate_evidence": {
-            "type": "object"
+            "type": "schema:gate_evidence",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "policy": {
+                  "type": "string"
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "gate": {
@@ -1031,7 +1118,23 @@
             "type": "boolean"
           },
           "gate_evidence": {
-            "type": "object"
+            "type": "schema:gate_evidence",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "policy": {
+                  "type": "string"
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "gate": {

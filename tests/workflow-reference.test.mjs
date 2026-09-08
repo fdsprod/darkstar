@@ -100,7 +100,7 @@ test("post-PR external stages wait for structured evidence", () => {
     const node = document.spec.nodes[nodeId];
     assert.equal(node.type, "approval");
     assert.equal(node.approval.actor, "external");
-    assert.equal(node.outputs[node.approval.evidenceOutput].type, "object");
+    assert.match(node.outputs[node.approval.evidenceOutput].type, /^schema:/);
     assert.match(node.outputs[node.approval.evidenceOutput].schema, /^schemas\/delivery-evidence-v1alpha1\.schema\.json#/);
   }
 });
@@ -109,8 +109,8 @@ test("recorded readiness score is evaluated by a deterministic gate before routi
   const path = workflowPath("software-delivery.json");
   const document = loadJson(path);
   const fixture = loadJson(scenarioPath("software-delivery-full.json"));
-  fixture.results.p1_route_assessment[0].readiness.score = 0.5;
-  fixture.results.p1_route_review = [{ route_decision: { action: "continue_with_waiver" } }];
+  fixture.results.p1_route_assessment[0].readiness_score = 0.5;
+  fixture.results.p1_route_review = [{ route_decision: "# Route decision\nContinue with waiver" }];
   const result = new Runner(document, path, fixture, "p0_intake", ["p17_verification"]).run();
   assert.equal(result.outputs.p1_route_gate.passed, false);
   assert.equal(result.visits.p1_route_review, 1);

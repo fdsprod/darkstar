@@ -288,6 +288,12 @@ func (state *validationState) validateResources() {
 			if err := ValidateSchemaValue(output.SchemaDefinition, nil); err != nil {
 				state.add(ValidationSchemaInvalid, err.Error(), location+"/schemaDefinition", nil)
 			}
+			if output.Type == ValueMarkdown && output.Artifact == nil {
+				state.add(ValidationSchemaInvalid, "Markdown output requires a filename", location, nil)
+			}
+			if strings.HasPrefix(string(output.Type), "schema:") && len(output.SchemaDefinition) == 0 && output.Schema == "" {
+				state.add(ValidationSchemaInvalid, "named schema output requires its schema", location, nil)
+			}
 			if output.Artifact == nil {
 				continue
 			}

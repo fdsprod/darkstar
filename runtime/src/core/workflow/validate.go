@@ -282,8 +282,8 @@ func (state *validationState) validatePointExecution(nodeID Identifier, node Nod
 		state.add(ValidationReferenceMissing, fmt.Sprintf("point executor references unknown input %q", pointNode.Executor.PlanInput), location, nil)
 		return
 	}
-	if binding.ValueType() != ValueObject {
-		state.add(ValidationBindingIncompatible, fmt.Sprintf("point execution plan input %q must be an object", pointNode.Executor.PlanInput), location, nil)
+	if binding.ValueType() != ValueMarkdown && binding.ValueType().StorageType() != ValueObject {
+		state.add(ValidationBindingIncompatible, fmt.Sprintf("point execution plan input %q must be a Markdown plan", pointNode.Executor.PlanInput), location, nil)
 	}
 }
 
@@ -302,7 +302,7 @@ func (state *validationState) validateApproval(nodeID Identifier, node Node, fie
 		state.add(ValidationReferenceMissing, fmt.Sprintf("external evidence references unknown output %q", external.EvidenceOutput), location, nil)
 		return
 	}
-	if declaration.Type != ValueObject || declaration.Schema == "" {
+	if declaration.Type.StorageType() != ValueObject || declaration.Schema == "" {
 		state.add(ValidationBindingIncompatible,
 			fmt.Sprintf("external evidence output %q must be an object with a schema", external.EvidenceOutput), location, nil)
 	}
@@ -398,7 +398,7 @@ func (state *validationState) validatePredicates(nodeID Identifier, node Node, f
 	if gate, ok := node.(GateNode); ok {
 		passed, passedOK := fields.Outputs["passed"]
 		evidence, evidenceOK := fields.Outputs["gate_evidence"]
-		if !passedOK || passed.Type != ValueBoolean || !evidenceOK || evidence.Type != ValueObject {
+		if !passedOK || passed.Type != ValueBoolean || !evidenceOK || evidence.Type.StorageType() != ValueObject {
 			state.add(ValidationGateInvalid,
 				fmt.Sprintf("gate %q must declare passed:boolean and gate_evidence:object outputs", nodeID),
 				fmt.Sprintf("/spec/nodes/%s/outputs", nodeID), nil)

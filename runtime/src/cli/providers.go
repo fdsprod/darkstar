@@ -160,7 +160,7 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 		}
 		agent, access = "implementation-point", providerport.AccessWorkspaceWrite
 		commandPolicy, filePolicy = providerport.InteractionAllow, providerport.InteractionAllow
-		instruction = "Implement the requested work item in the supplied workspace. Make only the necessary repository changes. Do not claim completion unless the requested outcome exists on disk. Return changeset with summary, files, and validation; return progress with completed_points and remaining_points."
+		instruction = "Read the connected Markdown implementation plan and carry out its points. Implement the requested work item in the supplied workspace. Make only the necessary repository changes. Do not claim completion unless the requested outcome exists on disk. Return changeset with summary, files, and validation; return progress with completed_points and remaining_points."
 	default:
 		return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q is %s; it is not a Codex-backed executor", request.Attempt.NodeID, request.Node.Type())
 	}

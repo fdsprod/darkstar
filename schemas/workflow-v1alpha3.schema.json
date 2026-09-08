@@ -30,20 +30,28 @@
       "pattern": "^[a-z][a-z0-9_]{0,63}$"
     },
     "valueType": {
-      "enum": [
-        "null",
-        "boolean",
-        "integer",
-        "number",
-        "string",
-        "array",
-        "object",
-        "task",
-        "repository",
-        "template",
-        "markdown",
-        "open_items",
-        "decision_log"
+      "anyOf": [
+        {
+          "enum": [
+            "null",
+            "boolean",
+            "integer",
+            "number",
+            "string",
+            "array",
+            "object",
+            "task",
+            "repository",
+            "template",
+            "markdown",
+            "open_items",
+            "decision_log"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^schema:[a-z][a-z0-9_]{0,63}$"
+        }
       ]
     },
     "metadata": {

@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/software-delivery",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "displayName": "Software delivery"
   },
   "spec": {
@@ -360,10 +360,7 @@
           }
         },
         "outputs": {
-          "normalized_work_item": {
-            "type": "object"
-          },
-          "document": {
+          "intake": {
             "type": "markdown",
             "artifact": {
               "filename": "intake.md",
@@ -393,7 +390,7 @@
         },
         "reasoning": {
           "agent": "intake-normalizer",
-          "instructions": "Intake and desired outcome. Produce intake.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce intake.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "transitions": [
           {
@@ -413,8 +410,8 @@
             "type": "task"
           },
           "normalized_work_item": {
-            "from": "node.p0_intake.output.normalized_work_item",
-            "type": "object",
+            "from": "node.p0_intake.output.intake",
+            "type": "markdown",
             "required": false
           },
           "template": {
@@ -428,26 +425,19 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
-          },
-          "normalized_work_item_document": {
-            "from": "node.p0_intake.output.document",
-            "type": "markdown",
-            "required": false
           }
         },
         "outputs": {
-          "route_proposal": {
-            "type": "object"
-          },
-          "readiness": {
-            "type": "object"
-          },
-          "document": {
+          "route_assessment": {
             "type": "markdown",
             "artifact": {
               "filename": "route_assessment.md",
               "templateInput": "template"
             }
+          },
+          "readiness_score": {
+            "type": "number",
+            "description": "Readiness score used by the branch."
           }
         },
         "readiness": {
@@ -482,7 +472,7 @@
             "darkstar:route-assessment",
             "darkstar:readiness"
           ],
-          "instructions": "Route and readiness assessment. Produce route_assessment.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce route_assessment.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools. Also return readiness_score as a number from 0 to 1."
         },
         "transitions": [
           {
@@ -498,11 +488,11 @@
         "terminal": false,
         "inputs": {
           "readiness": {
-            "from": "node.p1_route_assessment.output.readiness",
-            "type": "object"
+            "from": "node.p1_route_assessment.output.readiness_score",
+            "type": "number"
           },
           "readiness_document": {
-            "from": "node.p1_route_assessment.output.document",
+            "from": "node.p1_route_assessment.output.route_assessment",
             "type": "markdown",
             "required": false
           }
@@ -512,7 +502,23 @@
             "type": "boolean"
           },
           "gate_evidence": {
-            "type": "object"
+            "type": "schema:gate_evidence",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "policy": {
+                  "type": "string"
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "readiness": {
@@ -547,7 +553,7 @@
             "op": "gte",
             "args": [
               {
-                "ref": "input.readiness.score"
+                "ref": "input.readiness"
               },
               {
                 "ref": "run.input.route_readiness_threshold"
@@ -595,22 +601,25 @@
         "terminal": true,
         "inputs": {
           "readiness": {
-            "from": "node.p1_route_assessment.output.readiness",
-            "type": "object"
+            "from": "node.p1_route_assessment.output.readiness_score",
+            "type": "number"
           },
           "gate_evidence": {
             "from": "node.p1_route_gate.output.gate_evidence",
-            "type": "object"
+            "type": "schema:gate_evidence"
           },
           "readiness_document": {
-            "from": "node.p1_route_assessment.output.document",
+            "from": "node.p1_route_assessment.output.route_assessment",
             "type": "markdown",
             "required": false
           }
         },
         "outputs": {
           "route_decision": {
-            "type": "object"
+            "type": "markdown",
+            "artifact": {
+              "filename": "route_decision.md"
+            }
           }
         },
         "readiness": {
@@ -680,10 +689,7 @@
           }
         },
         "outputs": {
-          "product_brief": {
-            "type": "object"
-          },
-          "document": {
+          "product_discovery": {
             "type": "markdown",
             "artifact": {
               "filename": "product_discovery.md",
@@ -691,12 +697,6 @@
             }
           }
         },
-        "validators": [
-          {
-            "output": "product_brief",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -728,7 +728,7 @@
           "skills": [
             "darkstar:product-discovery"
           ],
-          "instructions": "Product discovery and shaping. Produce product_discovery.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce product_discovery.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -779,8 +779,8 @@
             "type": "repository"
           },
           "product_brief": {
-            "from": "node.p2_product_discovery.output.product_brief",
-            "type": "object",
+            "from": "node.p2_product_discovery.output.product_discovery",
+            "type": "markdown",
             "required": false
           },
           "template": {
@@ -794,18 +794,10 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
-          },
-          "product_brief_document": {
-            "from": "node.p2_product_discovery.output.document",
-            "type": "markdown",
-            "required": false
           }
         },
         "outputs": {
-          "poc_findings": {
-            "type": "object"
-          },
-          "document": {
+          "poc": {
             "type": "markdown",
             "artifact": {
               "filename": "poc.md",
@@ -813,12 +805,6 @@
             }
           }
         },
-        "validators": [
-          {
-            "output": "poc_findings",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -850,7 +836,7 @@
           "skills": [
             "darkstar:learning-tests"
           ],
-          "instructions": "Feasibility / proof of concept. Produce poc.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce poc.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -878,13 +864,13 @@
             "type": "task"
           },
           "product_brief": {
-            "from": "node.p2_product_discovery.output.product_brief",
-            "type": "object",
+            "from": "node.p2_product_discovery.output.product_discovery",
+            "type": "markdown",
             "required": false
           },
           "poc_findings": {
-            "from": "node.p3_poc.output.poc_findings",
-            "type": "object",
+            "from": "node.p3_poc.output.poc",
+            "type": "markdown",
             "required": false
           },
           "template": {
@@ -898,23 +884,10 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
-          },
-          "product_brief_document": {
-            "from": "node.p2_product_discovery.output.document",
-            "type": "markdown",
-            "required": false
-          },
-          "poc_findings_document": {
-            "from": "node.p3_poc.output.document",
-            "type": "markdown",
-            "required": false
           }
         },
         "outputs": {
-          "prd": {
-            "type": "object"
-          },
-          "document": {
+          "requirements": {
             "type": "markdown",
             "artifact": {
               "filename": "requirements.md",
@@ -922,12 +895,6 @@
             }
           }
         },
-        "validators": [
-          {
-            "output": "prd",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -959,7 +926,7 @@
           "skills": [
             "darkstar:prd"
           ],
-          "instructions": "Product requirements. Produce requirements.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce requirements.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -1006,8 +973,8 @@
             "type": "task"
           },
           "prd": {
-            "from": "node.p4_requirements.output.prd",
-            "type": "object",
+            "from": "node.p4_requirements.output.requirements",
+            "type": "markdown",
             "required": false
           },
           "template": {
@@ -1021,18 +988,10 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
-          },
-          "prd_document": {
-            "from": "node.p4_requirements.output.document",
-            "type": "markdown",
-            "required": false
           }
         },
         "outputs": {
           "experience_design": {
-            "type": "object"
-          },
-          "document": {
             "type": "markdown",
             "artifact": {
               "filename": "experience_design.md",
@@ -1040,12 +999,6 @@
             }
           }
         },
-        "validators": [
-          {
-            "output": "experience_design",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -1074,7 +1027,7 @@
         },
         "reasoning": {
           "agent": "experience-designer",
-          "instructions": "Experience design. Produce experience_design.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce experience_design.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -1102,29 +1055,22 @@
             "type": "task"
           },
           "prd": {
-            "from": "node.p4_requirements.output.prd",
-            "type": "object",
+            "from": "node.p4_requirements.output.requirements",
+            "type": "markdown",
             "required": false
           },
           "experience_design": {
             "from": "node.p5_experience_design.output.experience_design",
-            "type": "object",
-            "required": false
-          },
-          "prd_document": {
-            "from": "node.p4_requirements.output.document",
-            "type": "markdown",
-            "required": false
-          },
-          "experience_design_document": {
-            "from": "node.p5_experience_design.output.document",
             "type": "markdown",
             "required": false
           }
         },
         "outputs": {
           "product_readiness": {
-            "type": "object"
+            "type": "markdown",
+            "artifact": {
+              "filename": "product_readiness.md"
+            }
           }
         },
         "readiness": {
@@ -1218,9 +1164,6 @@
         },
         "outputs": {
           "technical_research": {
-            "type": "object"
-          },
-          "document": {
             "type": "markdown",
             "artifact": {
               "filename": "technical_research.md",
@@ -1228,12 +1171,6 @@
             }
           }
         },
-        "validators": [
-          {
-            "output": "technical_research",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -1265,7 +1202,7 @@
           "skills": [
             "darkstar:evidence-research"
           ],
-          "instructions": "Technical discovery. Produce technical_research.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce technical_research.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -1298,7 +1235,7 @@
           },
           "technical_research": {
             "from": "node.p7_technical_research.output.technical_research",
-            "type": "object",
+            "type": "markdown",
             "required": false
           },
           "template": {
@@ -1312,18 +1249,10 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
-          },
-          "technical_research_document": {
-            "from": "node.p7_technical_research.output.document",
-            "type": "markdown",
-            "required": false
           }
         },
         "outputs": {
           "technical_design": {
-            "type": "object"
-          },
-          "document": {
             "type": "markdown",
             "artifact": {
               "filename": "technical_design.md",
@@ -1331,12 +1260,6 @@
             }
           }
         },
-        "validators": [
-          {
-            "output": "technical_design",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -1368,7 +1291,7 @@
           "skills": [
             "darkstar:technical-design"
           ],
-          "instructions": "Technical design. Produce technical_design.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce technical_design.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -1390,7 +1313,7 @@
           },
           "technical_design": {
             "from": "node.p8_technical_design.output.technical_design",
-            "type": "object",
+            "type": "markdown",
             "required": false
           },
           "template": {
@@ -1404,34 +1327,39 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
-          },
-          "technical_design_document": {
-            "from": "node.p8_technical_design.output.document",
-            "type": "markdown",
-            "required": false
           }
         },
         "outputs": {
-          "delivery_plan": {
-            "type": "object"
-          },
-          "story_set": {
-            "type": "array"
-          },
-          "document": {
+          "decomposition": {
             "type": "markdown",
             "artifact": {
               "filename": "decomposition.md",
               "templateInput": "template"
             }
+          },
+          "story_set": {
+            "type": "array",
+            "schemaDefinition": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "title"
+                ],
+                "additionalProperties": false
+              }
+            }
           }
         },
-        "validators": [
-          {
-            "output": "delivery_plan",
-            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
-          }
-        ],
         "readiness": {
           "recommendedEvidence": [
             {
@@ -1463,7 +1391,7 @@
           "skills": [
             "darkstar:story-decomposition"
           ],
-          "instructions": "Delivery decomposition. Produce decomposition.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce decomposition.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools. Also return story_set for child task execution."
         },
         "checkpoint": "approve",
         "transitions": [
@@ -1489,14 +1417,17 @@
             "required": false
           },
           "story_set_document": {
-            "from": "node.p9_decomposition.output.document",
+            "from": "node.p9_decomposition.output.decomposition",
             "type": "markdown",
             "required": false
           }
         },
         "outputs": {
           "delivery_readiness": {
-            "type": "object"
+            "type": "markdown",
+            "artifact": {
+              "filename": "delivery_readiness.md"
+            }
           }
         },
         "readiness": {
@@ -1594,14 +1525,53 @@
             "type": "template"
           },
           "story_document": {
-            "from": "node.p9_decomposition.output.document",
+            "from": "node.p9_decomposition.output.decomposition",
             "type": "markdown",
             "required": false
           }
         },
         "outputs": {
           "story_validation": {
-            "type": "object"
+            "type": "schema:validation",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "acceptanceCovered": {
+                  "type": "boolean"
+                },
+                "checks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "command": {
+                        "type": "string"
+                      },
+                      "passed": {
+                        "type": "boolean"
+                      },
+                      "changedEntries": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "passed"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "passed",
+                "acceptanceCovered",
+                "checks"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "readiness": {
@@ -1633,7 +1603,7 @@
         "call": {
           "workflow": {
             "name": "darkstar/story-execution",
-            "version": "2.0.1",
+            "version": "2.0.2",
             "path": "story-execution.json"
           },
           "entry": "s0_readiness",
@@ -1676,7 +1646,7 @@
           },
           "story_validation": {
             "from": "node.p11_story_execution.output.story_validation",
-            "type": "object",
+            "type": "schema:validation",
             "required": false
           }
         },
@@ -1685,7 +1655,19 @@
             "type": "boolean"
           },
           "validation_report": {
-            "type": "object"
+            "type": "schema:validation_report",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "checks": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "checks"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "readiness": {
@@ -1773,13 +1755,25 @@
           },
           "validation_report": {
             "from": "node.p12_integrated_validation.output.validation_report",
-            "type": "object",
+            "type": "schema:validation_report",
             "required": false
           }
         },
         "outputs": {
           "pull_request": {
-            "type": "object"
+            "type": "schema:pull_request",
+            "schemaDefinition": {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "number"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "readiness": {
@@ -1831,13 +1825,13 @@
         "inputs": {
           "pull_request": {
             "from": "node.p13_pull_request.output.pull_request",
-            "type": "object",
+            "type": "schema:pull_request",
             "required": false
           }
         },
         "outputs": {
           "review_ci": {
-            "type": "object",
+            "type": "schema:review_ci",
             "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/reviewCi"
           }
         },
@@ -1914,10 +1908,6 @@
         },
         "outputs": {
           "release_readiness": {
-            "type": "object",
-            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/releaseReadiness"
-          },
-          "document": {
             "type": "markdown",
             "artifact": {
               "filename": "release_readiness.md",
@@ -1956,14 +1946,8 @@
           "skills": [
             "darkstar:release-readiness"
           ],
-          "instructions": "Release readiness. Produce release_readiness.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+          "instructions": "Produce release_readiness.md as the single document deliverable, following the connected template. Read connected upstream Markdown documents. Record open items and decisions with their tools."
         },
-        "validators": [
-          {
-            "output": "release_readiness",
-            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/releaseReadiness"
-          }
-        ],
         "checkpoint": "approve",
         "transitions": [
           {
@@ -1980,18 +1964,13 @@
         "inputs": {
           "release_readiness": {
             "from": "node.p15_release_readiness.output.release_readiness",
-            "type": "object",
-            "required": false
-          },
-          "release_readiness_document": {
-            "from": "node.p15_release_readiness.output.document",
             "type": "markdown",
             "required": false
           }
         },
         "outputs": {
           "deployment": {
-            "type": "object",
+            "type": "schema:deployment",
             "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/release"
           }
         },
@@ -2051,13 +2030,13 @@
           },
           "deployment": {
             "from": "node.p16_release.output.deployment",
-            "type": "object",
+            "type": "schema:deployment",
             "required": false
           }
         },
         "outputs": {
           "production_verification": {
-            "type": "object",
+            "type": "schema:production_verification",
             "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/productionVerification"
           }
         },

@@ -17,76 +17,49 @@
   "results": {
     "p0_intake": [
       {
-        "normalized_work_item": {
-          "kind": "feature"
-        },
-        "document": "# Intake and desired outcome\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "intake": "# Intake and desired outcome\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "p1_route_assessment": [
       {
-        "route_proposal": {
-          "profile": "idea-to-production"
-        },
-        "readiness": {
-          "score": 0.92,
-          "level": "information",
-          "evidence": [
-            "work item has an explicit outcome"
-          ]
-        },
-        "document": "# Route and readiness assessment\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "route_assessment": "# Route and readiness assessment\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context.",
+        "readiness_score": 0.92
       }
     ],
     "p2_product_discovery": [
       {
-        "product_brief": {
-          "artifactId": "artifact:brief:1"
-        },
-        "document": "# Product discovery and shaping\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "product_discovery": "# Product discovery and shaping\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "p4_requirements": [
       {
-        "prd": {
-          "artifactId": "artifact:prd:1"
-        },
-        "document": "# Product requirements\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "requirements": "# Product requirements\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "p6_product_readiness": [
       {
-        "product_readiness": {
-          "approved": true
-        }
+        "product_readiness": "# product_readiness.md\n\n{\n  \"approved\": true\n}"
       }
     ],
     "p8_technical_design": [
       {
-        "technical_design": {
-          "artifactId": "artifact:tdd:1"
-        },
-        "document": "# Technical design\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "technical_design": "# Technical design\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "p9_decomposition": [
       {
-        "delivery_plan": {
-          "artifactId": "artifact:plan:1"
-        },
         "story_set": [
           {
-            "id": "story-1"
+            "id": "story-1",
+            "title": "Implement the accepted design"
           }
         ],
-        "document": "# Delivery decomposition\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "decomposition": "# Delivery decomposition\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "p10_delivery_readiness": [
       {
-        "delivery_readiness": {
-          "approved": true
-        }
+        "delivery_readiness": "# delivery_readiness.md\n\n{\n  \"approved\": true\n}"
       }
     ],
     "p12_integrated_validation": [
@@ -133,21 +106,7 @@
     ],
     "p15_release_readiness": [
       {
-        "release_readiness": {
-          "evidenceType": "release_readiness",
-          "schemaVersion": 1,
-          "decision": "approved",
-          "rolloutPlan": "Deploy to the production environment.",
-          "rollbackPlan": "Restore the prior release.",
-          "checks": [
-            {
-              "name": "operations",
-              "status": "passed"
-            }
-          ],
-          "decidedBy": "release-owner"
-        },
-        "document": "# Release readiness\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+        "release_readiness": "# Release readiness\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
       }
     ],
     "p16_release": [
@@ -212,26 +171,24 @@
       "results": {
         "s0_readiness": [
           {
-            "readiness": {
-              "level": "information"
-            },
-            "document": "# Questions and readiness\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+            "questions": "# Questions and readiness\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
           }
         ],
         "s4_plan": [
           {
-            "implementation_plan": {
-              "points": [
-                "point-1"
-              ]
-            },
-            "document": "# Implementation plan\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+            "plan": "# Implementation plan\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
           }
         ],
         "s5_implementation": [
           {
             "changeset": {
-              "commit": "abcdef1"
+              "summary": "Implementation completed",
+              "files": [
+                "implementation.ts"
+              ],
+              "validation": [
+                "Fixture validation passed"
+              ]
             },
             "progress": {
               "completed_points": 1,
@@ -243,7 +200,13 @@
           {
             "validation": {
               "passed": true,
-              "acceptanceCovered": true
+              "acceptanceCovered": true,
+              "checks": [
+                {
+                  "command": "fixture validation",
+                  "passed": true
+                }
+              ]
             }
           }
         ]

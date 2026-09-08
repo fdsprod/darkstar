@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"darkstar/src/adapters/statestore/sqlite"
+	valueschemaadapter "darkstar/src/adapters/valueschema/jsonschema"
 	workflowfilesystem "darkstar/src/adapters/workflowstore/filesystem"
 	"darkstar/src/core/workflow"
 	platformport "darkstar/src/ports/platform"
@@ -54,6 +55,7 @@ func TestConfiguredWorkflowsIncludeAndInstallShippedDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalog.WithValueSchemaValidator(valueschemaadapter.Validator{})
 	results, err := catalog.InstallConfigured(context.Background())
 	if err != nil {
 		t.Fatal(err)

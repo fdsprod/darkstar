@@ -3,7 +3,10 @@
 // state belong to separate workflow services.
 package workflow
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 const (
 	APIVersionV1Alpha1 = "darkstar.local/v1alpha1"
@@ -62,6 +65,9 @@ const (
 
 // StorageType describes serialization, never connection compatibility.
 func (value ValueType) StorageType() ValueType {
+	if strings.HasPrefix(string(value), "schema:") {
+		return ValueObject
+	}
 	switch value {
 	case ValueMarkdown:
 		return ValueString

@@ -1292,6 +1292,9 @@ func validateIdentifierList(values []Identifier, unique bool) error {
 }
 
 func validateValueType(value ValueType) error {
+	if strings.HasPrefix(string(value), "schema:") {
+		return validateIdentifier(Identifier(strings.TrimPrefix(string(value), "schema:")))
+	}
 	switch value {
 	case ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject, ValueTask, ValueRepository, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog:
 		return nil

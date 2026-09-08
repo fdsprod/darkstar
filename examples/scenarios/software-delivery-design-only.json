@@ -10,10 +10,7 @@
   "results": {
     "p8_technical_design": [
       {
-        "technical_design": {
-          "artifactId": "artifact:tdd:1"
-        },
-        "document": "# Overview\nFixture evidence\n## Approach\nFixture design\n## Validation\nFixture checks"
+        "technical_design": "# Overview\nFixture evidence\n## Approach\nFixture design\n## Validation\nFixture checks"
       }
     ]
   },

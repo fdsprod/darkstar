@@ -247,7 +247,7 @@ func TestPostPRNodesUseStructuredExternalEvidence(t *testing.T) {
 			t.Fatalf("%s executor has type %T", nodeID, node.Executor)
 		}
 		output := node.Common.Outputs[external.EvidenceOutput]
-		if output.Type != workflow.ValueObject || !strings.HasPrefix(output.Schema, "schemas/delivery-evidence-v1alpha1.schema.json#/") {
+		if output.Type.StorageType() != workflow.ValueObject || !strings.HasPrefix(output.Schema, "schemas/delivery-evidence-v1alpha1.schema.json#/") {
 			t.Errorf("%s evidence output = %#v", nodeID, output)
 		}
 		foundValidator := false
