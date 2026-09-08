@@ -755,6 +755,8 @@ func derivedRouteContext(ctx context.Context, planner WorkflowPlanner, request C
 			value = map[string]any{"id": work.WorkItemID, "projectId": work.ProjectID, "title": work.Title, "details": work.Details, "evidence": work.Evidence}
 		case workflow.RepositoryResource:
 			value = map[string]any{"projectId": project.ProjectID, "name": project.Name, "sourceHash": project.SourceHash}
+		case workflow.ArtifactResource:
+			value = source.Content
 		case workflow.TemplateResource:
 			value = source
 		case workflow.ConstantResource:
@@ -1376,7 +1378,7 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 			}
 			return
 		}
-		if !resume {
+		{
 			startRequest, err = requestBuilder.BuildAttemptRequest(ctx, dispatchContext)
 			if err != nil {
 				if ctx.Err() == nil {
@@ -1433,6 +1435,7 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 	var handle provider.AttemptHandle
 	if resume {
 		handle, err = adapter.ResumeAttempt(ctx, provider.ResumeRequest{
+			DynamicTools: startRequest.DynamicTools, ToolHandler: startRequest.ToolHandler,
 			AttemptID: attempt.AttemptID, IdempotencyKey: "resume:" + attempt.AttemptID,
 			ProviderThreadID: attempt.ProviderThreadID, ProviderTurnID: attempt.ProviderTurnID, LastSequence: attempt.LastSequence,
 		})

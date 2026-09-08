@@ -219,7 +219,7 @@ function predicateReferences(predicate, prefix) {
 export function validateWorkflow(document, sourcePath = null, callStack = []) {
   const errors = [];
   if (!document || typeof document !== "object" || Array.isArray(document)) return [fail("WF_SCHEMA_INVALID", "workflow must be an object")];
-  if (!["darkstar.local/v1alpha1", "darkstar.local/v1alpha2"].includes(document.apiVersion) || document.kind !== "Workflow") errors.push(fail("WF_SCHEMA_INVALID", "unsupported apiVersion or kind"));
+  if (!["darkstar.local/v1alpha1", "darkstar.local/v1alpha2", "darkstar.local/v1alpha3"].includes(document.apiVersion) || document.kind !== "Workflow") errors.push(fail("WF_SCHEMA_INVALID", "unsupported apiVersion or kind"));
   const metadata = document.metadata;
   const spec = document.spec;
   if (!metadata || !spec || typeof metadata !== "object" || typeof spec !== "object") return [...errors, fail("WF_SCHEMA_INVALID", "metadata and spec must be objects")];
@@ -578,7 +578,14 @@ export class Runner {
     this.document = document;
     this.sourcePath = resolve(sourcePath);
     this.fixture = fixture ?? {};
-    this.runInputs = this.fixture.runInputs ?? {};
+    const resources = Object.fromEntries(Object.entries(document.spec.inputs ?? {}).flatMap(([id, value]) => {
+      const source=value.resource;
+      if(source?.kind === "constant")return [[id,source.value]];
+      if(source?.kind === "template") { const {kind,...template}=source; return [[id,template]]; }
+      if(source?.kind === "open_items" || source?.kind === "decision_log")return [[id,{kind:source.kind,resourceId:id}]];
+      return [];
+    }));
+    this.runInputs = {...resources,...(this.fixture.runInputs ?? {})};
     this.route = freezeRoute(document, entry, terminals, overrides);
     this.outputs = {};
     this.visitCounts = new Map();

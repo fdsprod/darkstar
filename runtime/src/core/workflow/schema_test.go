@@ -424,7 +424,7 @@ func assertConcreteNodeType(t *testing.T, id workflow.Identifier, node workflow.
 
 func decodeExample(t *testing.T, name string) workflow.Document {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "examples", "workflows", name))
+	data, err := os.ReadFile(workflowExamplePath(t, name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func decodeExample(t *testing.T, name string) workflow.Document {
 
 func exampleObject(t *testing.T, name string) map[string]any {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "examples", "workflows", name))
+	data, err := os.ReadFile(workflowExamplePath(t, name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,4 +519,11 @@ func repositoryRoot(t *testing.T) string {
 		t.Fatal("resolve test filename")
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "..", "..", ".."))
+}
+
+func workflowExamplePath(t *testing.T, name string) string {
+	if name == "mvp-walking-skeleton.json" || name == "split-design.json" {
+		return filepath.Join(repositoryRoot(t), "tests", "fixtures", "workflows", name)
+	}
+	return filepath.Join(repositoryRoot(t), "examples", "workflows", name)
 }

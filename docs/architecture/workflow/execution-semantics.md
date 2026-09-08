@@ -568,7 +568,7 @@ Run:
 
 ```text
 node scripts/workflow-reference.mjs validate examples/workflows/*.json
-node scripts/workflow-reference.mjs run examples/workflows/mvp-walking-skeleton.json --fixture examples/scenarios/mvp-walking-skeleton.json
+node scripts/workflow-reference.mjs run tests/fixtures/workflows/mvp-walking-skeleton.json --fixture examples/scenarios/mvp-walking-skeleton.json
 node --test tests/workflow-reference.test.mjs
 ```
 

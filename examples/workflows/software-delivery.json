@@ -1,375 +1,2103 @@
 {
-  "apiVersion": "darkstar.local/v1alpha2",
+  "apiVersion": "darkstar.local/v1alpha3",
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/software-delivery",
-    "version": "1.5.0",
-    "displayName": "DARKSTAR default software delivery workflow"
+    "version": "2.0.0",
+    "displayName": "Software delivery"
   },
   "spec": {
     "inputs": {
-      "work_item": {"type": "object"},
-      "repository": {"type": "string"},
-      "needs_poc": {"type": "boolean"},
-      "needs_experience_design": {"type": "boolean"},
-      "needs_technical_research": {"type": "boolean"},
-      "needs_clarification": {"type": "boolean"},
-      "needs_story_research": {"type": "boolean"},
-      "needs_story_design": {"type": "boolean"},
-      "route_readiness_threshold": {"type": "number"}
+      "work_item": {
+        "type": "object",
+        "resource": {
+          "kind": "task"
+        }
+      },
+      "repository": {
+        "type": "object",
+        "resource": {
+          "kind": "repository"
+        }
+      },
+      "needs_poc": {
+        "type": "boolean",
+        "resource": {
+          "kind": "constant",
+          "value": false
+        }
+      },
+      "needs_experience_design": {
+        "type": "boolean",
+        "resource": {
+          "kind": "constant",
+          "value": false
+        }
+      },
+      "needs_technical_research": {
+        "type": "boolean",
+        "resource": {
+          "kind": "constant",
+          "value": false
+        }
+      },
+      "needs_clarification": {
+        "type": "boolean",
+        "resource": {
+          "kind": "constant",
+          "value": false
+        }
+      },
+      "needs_story_research": {
+        "type": "boolean",
+        "resource": {
+          "kind": "constant",
+          "value": false
+        }
+      },
+      "needs_story_design": {
+        "type": "boolean",
+        "resource": {
+          "kind": "constant",
+          "value": false
+        }
+      },
+      "route_readiness_threshold": {
+        "type": "number"
+      },
+      "open_items": {
+        "type": "object",
+        "resource": {
+          "kind": "open_items"
+        }
+      },
+      "decision_log": {
+        "type": "object",
+        "resource": {
+          "kind": "decision_log"
+        }
+      },
+      "p0_intake_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Intake and desired outcome\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "p1_route_assessment_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Route and readiness assessment\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "p2_product_discovery_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Product discovery and shaping\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "p3_poc_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Feasibility / proof of concept\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "p4_requirements_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Product requirements\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "p5_experience_design_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Experience design\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "p7_technical_research_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Technical discovery\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "p8_technical_design_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Technical design\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "p9_decomposition_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Delivery decomposition\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "p15_release_readiness_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Release readiness\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "story_open_items": {
+        "type": "object",
+        "resource": {
+          "kind": "open_items"
+        }
+      },
+      "story_decision_log": {
+        "type": "object",
+        "resource": {
+          "kind": "decision_log"
+        }
+      },
+      "story_s0_readiness_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Story intake and readiness\n\n## Questions\n\nDescribe questions using the supplied task and evidence.\n\n## Known context\n\nDescribe known context using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Questions",
+            "Known context"
+          ]
+        }
+      },
+      "story_s2_research_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Focused developer research\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "story_s3_design_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Story-level design\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "story_s4_plan_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Implementation plan\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      }
     },
-    "routeDefaults": {"entry": "p0_intake", "terminals": ["p17_verification"]},
+    "routeDefaults": {
+      "entry": "p0_intake",
+      "terminals": [
+        "p17_verification"
+      ]
+    },
     "profiles": {
-      "idea_to_production": {"description": "Start with an idea and continue through production verification.", "entry": "p0_intake", "terminals": ["p17_verification"], "inputDefaults": {"needs_poc": false, "needs_experience_design": false, "needs_technical_research": false, "needs_clarification": false, "needs_story_research": false, "needs_story_design": false, "route_readiness_threshold": 0.75}},
-      "poc": {"description": "Run a focused proof of concept and stop with findings.", "entry": "p3_poc", "terminals": ["p3_poc"], "inputDefaults": {}},
-      "prd_only": {"description": "Author or revise product requirements and stop.", "entry": "p4_requirements", "terminals": ["p4_requirements"], "inputDefaults": {}},
-      "design_only": {"description": "Author or revise technical design and stop.", "entry": "p8_technical_design", "terminals": ["p8_technical_design"], "inputDefaults": {}},
-      "pr": {"description": "Create or finalize a pull request and stop.", "entry": "p13_pull_request", "terminals": ["p13_pull_request"], "inputDefaults": {}},
-      "release": {"description": "Assess release readiness and continue through production verification.", "entry": "p15_release_readiness", "terminals": ["p17_verification"], "inputDefaults": {}}
+      "idea_to_production": {
+        "description": "Start with an idea and continue through production verification.",
+        "entry": "p0_intake",
+        "terminals": [
+          "p17_verification"
+        ],
+        "inputDefaults": {
+          "needs_poc": false,
+          "needs_experience_design": false,
+          "needs_technical_research": false,
+          "needs_clarification": false,
+          "needs_story_research": false,
+          "needs_story_design": false,
+          "route_readiness_threshold": 0.75
+        }
+      },
+      "poc": {
+        "description": "Run a focused proof of concept and stop with findings.",
+        "entry": "p3_poc",
+        "terminals": [
+          "p3_poc"
+        ],
+        "inputDefaults": {}
+      },
+      "prd_only": {
+        "description": "Author or revise product requirements and stop.",
+        "entry": "p4_requirements",
+        "terminals": [
+          "p4_requirements"
+        ],
+        "inputDefaults": {}
+      },
+      "design_only": {
+        "description": "Author or revise technical design and stop.",
+        "entry": "p8_technical_design",
+        "terminals": [
+          "p8_technical_design"
+        ],
+        "inputDefaults": {}
+      },
+      "pr": {
+        "description": "Create or finalize a pull request and stop.",
+        "entry": "p13_pull_request",
+        "terminals": [
+          "p13_pull_request"
+        ],
+        "inputDefaults": {}
+      },
+      "release": {
+        "description": "Assess release readiness and continue through production verification.",
+        "entry": "p15_release_readiness",
+        "terminals": [
+          "p17_verification"
+        ],
+        "inputDefaults": {}
+      }
     },
     "nodes": {
       "p0_intake": {
-        "displayName": "P0 — Intake and desired outcome",
-        "type": "reasoning",
-        "entry": true,
-        "terminal": true,
-        "inputs": {"work_item": {"from": "run.input.work_item", "type": "object"}},
-        "outputs": {"normalized_work_item": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "desired_outcome", "description": "A concise statement of the result the requester wants."}], "policyGates": [], "invariants": ["Explicit human scope and terminal instructions remain authoritative."], "remedies": [{"code": "missing_work_item", "target": "p0_intake", "action": "supply_input", "description": "Supply the request, source references, constraints, and known acceptance criteria."}]},
-        "reasoning": {"agent": "intake-normalizer"},
-        "transitions": [{"id": "p0_to_p1", "to": "p1_route_assessment"}]
-      },
-      "p1_route_assessment": {
-        "displayName": "P1 — Route and readiness assessment",
+        "displayName": "Intake and desired outcome",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "normalized_work_item": {"from": "node.p0_intake.output.normalized_work_item", "type": "object", "required": false}
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "template": {
+            "from": "run.input.p0_intake_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          }
         },
-        "outputs": {"route_proposal": {"type": "object"}, "readiness": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "risk_context", "description": "Known delivery, security, data, and operational risks."}], "policyGates": [{"policy": "route_readiness", "enforcement": "advisory", "description": "Recommend the smallest safe route without overriding explicit boundaries."}], "invariants": ["Reasoning output records evidence but never directly selects an edge."], "remedies": [{"code": "insufficient_intake", "target": "p0_intake", "action": "supply_input", "description": "Clarify the desired outcome, constraints, or terminal boundary."}]},
-        "reasoning": {"agent": "route-assessor", "skills": ["darkstar:route-assessment", "darkstar:readiness"]},
-        "transitions": [{"id": "p1_to_gate", "to": "p1_route_gate"}]
+        "outputs": {
+          "normalized_work_item": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "intake.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "desired_outcome",
+              "description": "A concise statement of the result the requester wants."
+            }
+          ],
+          "policyGates": [],
+          "invariants": [
+            "Explicit human scope and terminal instructions remain authoritative."
+          ],
+          "remedies": [
+            {
+              "code": "missing_work_item",
+              "target": "p0_intake",
+              "action": "supply_input",
+              "description": "Supply the request, source references, constraints, and known acceptance criteria."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "intake-normalizer",
+          "instructions": "Intake and desired outcome. Produce intake.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
+        "transitions": [
+          {
+            "id": "p0_to_p1",
+            "to": "p1_route_assessment"
+          }
+        ]
+      },
+      "p1_route_assessment": {
+        "displayName": "Route and readiness assessment",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "inputs": {
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "normalized_work_item": {
+            "from": "node.p0_intake.output.normalized_work_item",
+            "type": "object",
+            "required": false
+          },
+          "template": {
+            "from": "run.input.p1_route_assessment_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          },
+          "normalized_work_item_document": {
+            "from": "node.p0_intake.output.document",
+            "type": "string",
+            "required": false
+          }
+        },
+        "outputs": {
+          "route_proposal": {
+            "type": "object"
+          },
+          "readiness": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "route_assessment.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "risk_context",
+              "description": "Known delivery, security, data, and operational risks."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "route_readiness",
+              "enforcement": "advisory",
+              "description": "Recommend the smallest safe route without overriding explicit boundaries."
+            }
+          ],
+          "invariants": [
+            "Reasoning output records evidence but never directly selects an edge."
+          ],
+          "remedies": [
+            {
+              "code": "insufficient_intake",
+              "target": "p0_intake",
+              "action": "supply_input",
+              "description": "Clarify the desired outcome, constraints, or terminal boundary."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "route-assessor",
+          "skills": [
+            "darkstar:route-assessment",
+            "darkstar:readiness"
+          ],
+          "instructions": "Route and readiness assessment. Produce route_assessment.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
+        "transitions": [
+          {
+            "id": "p1_to_gate",
+            "to": "p1_route_gate"
+          }
+        ]
       },
       "p1_route_gate": {
-        "displayName": "P1 — Deterministic route-readiness gate",
+        "displayName": "Deterministic route-readiness gate",
         "type": "gate",
         "entry": false,
         "terminal": false,
         "inputs": {
-          "readiness": {"from": "node.p1_route_assessment.output.readiness", "type": "object"}
+          "readiness": {
+            "from": "node.p1_route_assessment.output.readiness",
+            "type": "object"
+          },
+          "readiness_document": {
+            "from": "node.p1_route_assessment.output.document",
+            "type": "string",
+            "required": false
+          }
         },
         "outputs": {
-          "passed": {"type": "boolean"},
-          "gate_evidence": {"type": "object"}
+          "passed": {
+            "type": "boolean"
+          },
+          "gate_evidence": {
+            "type": "object"
+          }
         },
-        "readiness": {"recommendedEvidence": [{"role": "readiness_assessment", "description": "A scored assessment with evidence for every configured dimension."}], "policyGates": [{"policy": "route_readiness", "enforcement": "blocking", "description": "Apply the versioned readiness threshold deterministically."}], "invariants": ["Only the deterministic gate decides whether the threshold passed."], "remedies": [{"code": "low_route_readiness", "target": "p1_route_assessment", "action": "revise_artifact", "description": "Revise the evidence-backed readiness assessment or request an owner waiver."}]},
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "readiness_assessment",
+              "description": "A scored assessment with evidence for every configured dimension."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "route_readiness",
+              "enforcement": "blocking",
+              "description": "Apply the versioned readiness threshold deterministically."
+            }
+          ],
+          "invariants": [
+            "Only the deterministic gate decides whether the threshold passed."
+          ],
+          "remedies": [
+            {
+              "code": "low_route_readiness",
+              "target": "p1_route_assessment",
+              "action": "revise_artifact",
+              "description": "Revise the evidence-backed readiness assessment or request an owner waiver."
+            }
+          ]
+        },
         "gate": {
           "policy": "darkstar/route-readiness-v1",
           "condition": {
             "op": "gte",
             "args": [
-              {"ref": "input.readiness.score"},
-              {"ref": "run.input.route_readiness_threshold"}
+              {
+                "ref": "input.readiness.score"
+              },
+              {
+                "ref": "run.input.route_readiness_threshold"
+              }
             ]
           }
         },
         "transitions": [
-          {"id": "p1_gate_to_p2", "to": "p2_product_discovery", "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": true}]}},
-          {"id": "p1_gate_to_review", "to": "p1_route_review", "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": false}]}}
+          {
+            "id": "p1_gate_to_p2",
+            "to": "p2_product_discovery",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "p1_gate_to_review",
+            "to": "p1_route_review",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ]
+            }
+          }
         ]
       },
       "p1_route_review": {
-        "displayName": "P1 — Route-readiness exception review",
+        "displayName": "Route-readiness exception review",
         "type": "approval",
         "entry": false,
         "terminal": true,
         "inputs": {
-          "readiness": {"from": "node.p1_route_assessment.output.readiness", "type": "object"},
-          "gate_evidence": {"from": "node.p1_route_gate.output.gate_evidence", "type": "object"}
+          "readiness": {
+            "from": "node.p1_route_assessment.output.readiness",
+            "type": "object"
+          },
+          "gate_evidence": {
+            "from": "node.p1_route_gate.output.gate_evidence",
+            "type": "object"
+          },
+          "readiness_document": {
+            "from": "node.p1_route_assessment.output.document",
+            "type": "string",
+            "required": false
+          }
         },
-        "outputs": {"route_decision": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "gate_evidence", "description": "The failed gate result, assumptions, risks, and proposed route."}], "policyGates": [{"policy": "owner_waiver", "enforcement": "blocking", "description": "The work-item owner must accept or redirect the readiness exception."}], "invariants": ["A waiver is explicit and does not rewrite the underlying evidence."], "remedies": [{"code": "waiver_not_justified", "target": "p1_route_assessment", "action": "clarify_decision", "description": "Resolve the specific assumption or route decision that prevents approval."}]},
-        "approval": {"actor": "work-item-owner"},
-        "transitions": [{"id": "p1_review_to_p2", "to": "p2_product_discovery"}]
+        "outputs": {
+          "route_decision": {
+            "type": "object"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "gate_evidence",
+              "description": "The failed gate result, assumptions, risks, and proposed route."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "owner_waiver",
+              "enforcement": "blocking",
+              "description": "The work-item owner must accept or redirect the readiness exception."
+            }
+          ],
+          "invariants": [
+            "A waiver is explicit and does not rewrite the underlying evidence."
+          ],
+          "remedies": [
+            {
+              "code": "waiver_not_justified",
+              "target": "p1_route_assessment",
+              "action": "clarify_decision",
+              "description": "Resolve the specific assumption or route decision that prevents approval."
+            }
+          ]
+        },
+        "approval": {
+          "actor": "work-item-owner"
+        },
+        "transitions": [
+          {
+            "id": "p1_review_to_p2",
+            "to": "p2_product_discovery"
+          }
+        ]
       },
       "p2_product_discovery": {
-        "displayName": "P2 — Product discovery and shaping",
+        "displayName": "Product discovery and shaping",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
-        "join": {"mode": "one", "from": ["p1_gate_to_p2", "p1_review_to_p2"]},
-        "inputs": {"work_item": {"from": "run.input.work_item", "type": "object"}},
-        "outputs": {"product_brief": {"type": "object"}},
-        "validators": [{"output": "product_brief", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "customer_evidence", "description": "Observed user, stakeholder, or current-state evidence."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "The product brief is accepted before dependent requirements are authored."}], "invariants": ["The brief describes the problem and outcome without prescribing implementation."], "remedies": [{"code": "product_context_missing", "target": "p0_intake", "action": "supply_input", "description": "Supply the missing user, outcome, constraint, or success evidence."}]},
-        "reasoning": {"agent": "product-designer", "skills": ["darkstar:product-discovery"]},
+        "join": {
+          "mode": "one",
+          "from": [
+            "p1_gate_to_p2",
+            "p1_review_to_p2"
+          ]
+        },
+        "inputs": {
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "template": {
+            "from": "run.input.p2_product_discovery_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          }
+        },
+        "outputs": {
+          "product_brief": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "product_discovery.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "validators": [
+          {
+            "output": "product_brief",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "customer_evidence",
+              "description": "Observed user, stakeholder, or current-state evidence."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "artifact_approval",
+              "enforcement": "blocking",
+              "description": "The product brief is accepted before dependent requirements are authored."
+            }
+          ],
+          "invariants": [
+            "The brief describes the problem and outcome without prescribing implementation."
+          ],
+          "remedies": [
+            {
+              "code": "product_context_missing",
+              "target": "p0_intake",
+              "action": "supply_input",
+              "description": "Supply the missing user, outcome, constraint, or success evidence."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "product-designer",
+          "skills": [
+            "darkstar:product-discovery"
+          ],
+          "instructions": "Product discovery and shaping. Produce product_discovery.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "checkpoint": "approve",
         "transitions": [
-          {"id": "p2_to_p3", "to": "p3_poc", "when": {"op": "eq", "args": [{"ref": "run.input.needs_poc"}, {"literal": true}]}},
-          {"id": "p2_to_p4", "to": "p4_requirements", "when": {"op": "eq", "args": [{"ref": "run.input.needs_poc"}, {"literal": false}]}}
+          {
+            "id": "p2_to_p3",
+            "to": "p3_poc",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "run.input.needs_poc"
+                },
+                {
+                  "literal": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "p2_to_p4",
+            "to": "p4_requirements",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "run.input.needs_poc"
+                },
+                {
+                  "literal": false
+                }
+              ]
+            }
+          }
         ]
       },
       "p3_poc": {
-        "displayName": "P3 — Feasibility / proof of concept",
+        "displayName": "Feasibility / proof of concept",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "product_brief": {"from": "node.p2_product_discovery.output.product_brief", "type": "object", "required": false}
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "product_brief": {
+            "from": "node.p2_product_discovery.output.product_brief",
+            "type": "object",
+            "required": false
+          },
+          "template": {
+            "from": "run.input.p3_poc_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          },
+          "product_brief_document": {
+            "from": "node.p2_product_discovery.output.document",
+            "type": "string",
+            "required": false
+          }
         },
-        "outputs": {"poc_findings": {"type": "object"}},
-        "validators": [{"output": "poc_findings", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "feasibility_question", "description": "A named uncertainty with success and failure criteria."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "POC findings are accepted before they influence requirements."}], "invariants": ["Prototype code is not production-ready without an explicit promotion decision."], "remedies": [{"code": "poc_question_unclear", "target": "p2_product_discovery", "action": "clarify_decision", "description": "Name the product or technical uncertainty the POC must resolve."}]},
-        "reasoning": {"agent": "feasibility-researcher", "skills": ["darkstar:learning-tests"]},
-        "checkpoint": "approve",
-        "transitions": [{"id": "p3_to_p4", "to": "p4_requirements"}]
-      },
-      "p4_requirements": {
-        "displayName": "P4 — Product requirements",
-        "type": "reasoning",
-        "entry": true,
-        "terminal": true,
-        "join": {"mode": "one", "from": ["p2_to_p4", "p3_to_p4"]},
-        "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "product_brief": {"from": "node.p2_product_discovery.output.product_brief", "type": "object", "required": false},
-          "poc_findings": {"from": "node.p3_poc.output.poc_findings", "type": "object", "required": false}
+        "outputs": {
+          "poc_findings": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "poc.md",
+              "templateInput": "template"
+            }
+          }
         },
-        "outputs": {"prd": {"type": "object"}},
-        "validators": [{"output": "prd", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "accepted_product_brief", "description": "Accepted product context or equivalent source evidence."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "Requirements are approved before downstream design."}], "invariants": ["Requirements state observable behavior and keep technical prescriptions explicit as constraints or assumptions."], "remedies": [{"code": "requirements_context_missing", "target": "p2_product_discovery", "action": "revise_artifact", "description": "Revise the product brief or POC findings that leave requirements unsupported."}]},
-        "reasoning": {"agent": "product-requirements", "skills": ["darkstar:prd"]},
+        "validators": [
+          {
+            "output": "poc_findings",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "feasibility_question",
+              "description": "A named uncertainty with success and failure criteria."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "artifact_approval",
+              "enforcement": "blocking",
+              "description": "POC findings are accepted before they influence requirements."
+            }
+          ],
+          "invariants": [
+            "Prototype code is not production-ready without an explicit promotion decision."
+          ],
+          "remedies": [
+            {
+              "code": "poc_question_unclear",
+              "target": "p2_product_discovery",
+              "action": "clarify_decision",
+              "description": "Name the product or technical uncertainty the POC must resolve."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "feasibility-researcher",
+          "skills": [
+            "darkstar:learning-tests"
+          ],
+          "instructions": "Feasibility / proof of concept. Produce poc.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "checkpoint": "approve",
         "transitions": [
-          {"id": "p4_to_p5", "to": "p5_experience_design", "when": {"op": "eq", "args": [{"ref": "run.input.needs_experience_design"}, {"literal": true}]}},
-          {"id": "p4_to_p6", "to": "p6_product_readiness", "when": {"op": "eq", "args": [{"ref": "run.input.needs_experience_design"}, {"literal": false}]}}
+          {
+            "id": "p3_to_p4",
+            "to": "p4_requirements"
+          }
+        ]
+      },
+      "p4_requirements": {
+        "displayName": "Product requirements",
+        "type": "reasoning",
+        "entry": true,
+        "terminal": true,
+        "join": {
+          "mode": "one",
+          "from": [
+            "p2_to_p4",
+            "p3_to_p4"
+          ]
+        },
+        "inputs": {
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "product_brief": {
+            "from": "node.p2_product_discovery.output.product_brief",
+            "type": "object",
+            "required": false
+          },
+          "poc_findings": {
+            "from": "node.p3_poc.output.poc_findings",
+            "type": "object",
+            "required": false
+          },
+          "template": {
+            "from": "run.input.p4_requirements_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          },
+          "product_brief_document": {
+            "from": "node.p2_product_discovery.output.document",
+            "type": "string",
+            "required": false
+          },
+          "poc_findings_document": {
+            "from": "node.p3_poc.output.document",
+            "type": "string",
+            "required": false
+          }
+        },
+        "outputs": {
+          "prd": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "requirements.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "validators": [
+          {
+            "output": "prd",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "accepted_product_brief",
+              "description": "Accepted product context or equivalent source evidence."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "artifact_approval",
+              "enforcement": "blocking",
+              "description": "Requirements are approved before downstream design."
+            }
+          ],
+          "invariants": [
+            "Requirements state observable behavior and keep technical prescriptions explicit as constraints or assumptions."
+          ],
+          "remedies": [
+            {
+              "code": "requirements_context_missing",
+              "target": "p2_product_discovery",
+              "action": "revise_artifact",
+              "description": "Revise the product brief or POC findings that leave requirements unsupported."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "product-requirements",
+          "skills": [
+            "darkstar:prd"
+          ],
+          "instructions": "Product requirements. Produce requirements.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
+        "checkpoint": "approve",
+        "transitions": [
+          {
+            "id": "p4_to_p5",
+            "to": "p5_experience_design",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "run.input.needs_experience_design"
+                },
+                {
+                  "literal": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "p4_to_p6",
+            "to": "p6_product_readiness",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "run.input.needs_experience_design"
+                },
+                {
+                  "literal": false
+                }
+              ]
+            }
+          }
         ]
       },
       "p5_experience_design": {
-        "displayName": "P5 — Experience design",
+        "displayName": "Experience design",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "prd": {"from": "node.p4_requirements.output.prd", "type": "object", "required": false}
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "prd": {
+            "from": "node.p4_requirements.output.prd",
+            "type": "object",
+            "required": false
+          },
+          "template": {
+            "from": "run.input.p5_experience_design_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          },
+          "prd_document": {
+            "from": "node.p4_requirements.output.document",
+            "type": "string",
+            "required": false
+          }
         },
-        "outputs": {"experience_design": {"type": "object"}},
-        "validators": [{"output": "experience_design", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "accepted_requirements", "description": "Accepted journeys, behaviors, and accessibility expectations."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "Experience behavior is accepted by configured stakeholders."}], "invariants": ["Every relevant empty, error, loading, responsive, and accessible state remains visible."], "remedies": [{"code": "experience_scope_unclear", "target": "p4_requirements", "action": "clarify_decision", "description": "Clarify the affected journey or user-visible acceptance criteria."}]},
-        "reasoning": {"agent": "experience-designer"},
+        "outputs": {
+          "experience_design": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "experience_design.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "validators": [
+          {
+            "output": "experience_design",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "accepted_requirements",
+              "description": "Accepted journeys, behaviors, and accessibility expectations."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "artifact_approval",
+              "enforcement": "blocking",
+              "description": "Experience behavior is accepted by configured stakeholders."
+            }
+          ],
+          "invariants": [
+            "Every relevant empty, error, loading, responsive, and accessible state remains visible."
+          ],
+          "remedies": [
+            {
+              "code": "experience_scope_unclear",
+              "target": "p4_requirements",
+              "action": "clarify_decision",
+              "description": "Clarify the affected journey or user-visible acceptance criteria."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "experience-designer",
+          "instructions": "Experience design. Produce experience_design.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "checkpoint": "approve",
-        "transitions": [{"id": "p5_to_p6", "to": "p6_product_readiness"}]
+        "transitions": [
+          {
+            "id": "p5_to_p6",
+            "to": "p6_product_readiness"
+          }
+        ]
       },
       "p6_product_readiness": {
-        "displayName": "P6 — Product alignment and readiness",
+        "displayName": "Product alignment and readiness",
         "type": "approval",
         "entry": false,
         "terminal": false,
-        "join": {"mode": "one", "from": ["p4_to_p6", "p5_to_p6"]},
-        "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "prd": {"from": "node.p4_requirements.output.prd", "type": "object", "required": false},
-          "experience_design": {"from": "node.p5_experience_design.output.experience_design", "type": "object", "required": false}
+        "join": {
+          "mode": "one",
+          "from": [
+            "p4_to_p6",
+            "p5_to_p6"
+          ]
         },
-        "outputs": {"product_readiness": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "accepted_product_artifacts", "description": "The selected product, POC, requirements, and experience artifacts."}], "policyGates": [{"policy": "product_readiness", "enforcement": "blocking", "description": "Product intent, contradictions, and approvals are reviewed together."}], "invariants": ["Failures route to the closest affected artifact rather than restarting discovery."], "remedies": [{"code": "product_alignment_failed", "target": "p4_requirements", "action": "revise_artifact", "description": "Revise the requirement or decision named by the readiness finding."}]},
-        "approval": {"actor": "product-owner"},
+        "inputs": {
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "prd": {
+            "from": "node.p4_requirements.output.prd",
+            "type": "object",
+            "required": false
+          },
+          "experience_design": {
+            "from": "node.p5_experience_design.output.experience_design",
+            "type": "object",
+            "required": false
+          },
+          "prd_document": {
+            "from": "node.p4_requirements.output.document",
+            "type": "string",
+            "required": false
+          },
+          "experience_design_document": {
+            "from": "node.p5_experience_design.output.document",
+            "type": "string",
+            "required": false
+          }
+        },
+        "outputs": {
+          "product_readiness": {
+            "type": "object"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "accepted_product_artifacts",
+              "description": "The selected product, POC, requirements, and experience artifacts."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "product_readiness",
+              "enforcement": "blocking",
+              "description": "Product intent, contradictions, and approvals are reviewed together."
+            }
+          ],
+          "invariants": [
+            "Failures route to the closest affected artifact rather than restarting discovery."
+          ],
+          "remedies": [
+            {
+              "code": "product_alignment_failed",
+              "target": "p4_requirements",
+              "action": "revise_artifact",
+              "description": "Revise the requirement or decision named by the readiness finding."
+            }
+          ]
+        },
+        "approval": {
+          "actor": "product-owner"
+        },
         "transitions": [
-          {"id": "p6_to_p7", "to": "p7_technical_research", "when": {"op": "eq", "args": [{"ref": "run.input.needs_technical_research"}, {"literal": true}]}},
-          {"id": "p6_to_p8", "to": "p8_technical_design", "when": {"op": "eq", "args": [{"ref": "run.input.needs_technical_research"}, {"literal": false}]}}
+          {
+            "id": "p6_to_p7",
+            "to": "p7_technical_research",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "run.input.needs_technical_research"
+                },
+                {
+                  "literal": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "p6_to_p8",
+            "to": "p8_technical_design",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "run.input.needs_technical_research"
+                },
+                {
+                  "literal": false
+                }
+              ]
+            }
+          }
         ]
       },
       "p7_technical_research": {
-        "displayName": "P7 — Technical discovery",
+        "displayName": "Technical discovery",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"}
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "template": {
+            "from": "run.input.p7_technical_research_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          }
         },
-        "outputs": {"technical_research": {"type": "object"}},
-        "validators": [{"output": "technical_research", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "repository_evidence", "description": "Relevant code paths, established patterns, constraints, and learning-test results."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "Research findings are accepted before design decisions rely on them."}], "invariants": ["Findings distinguish observation from inference and cite their sources."], "remedies": [{"code": "technical_evidence_missing", "target": "p7_technical_research", "action": "supply_input", "description": "Gather the specific repository or dependency evidence needed for the decision."}]},
-        "reasoning": {"agent": "technical-researcher", "skills": ["darkstar:evidence-research"]},
+        "outputs": {
+          "technical_research": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "technical_research.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "validators": [
+          {
+            "output": "technical_research",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "repository_evidence",
+              "description": "Relevant code paths, established patterns, constraints, and learning-test results."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "artifact_approval",
+              "enforcement": "blocking",
+              "description": "Research findings are accepted before design decisions rely on them."
+            }
+          ],
+          "invariants": [
+            "Findings distinguish observation from inference and cite their sources."
+          ],
+          "remedies": [
+            {
+              "code": "technical_evidence_missing",
+              "target": "p7_technical_research",
+              "action": "supply_input",
+              "description": "Gather the specific repository or dependency evidence needed for the decision."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "technical-researcher",
+          "skills": [
+            "darkstar:evidence-research"
+          ],
+          "instructions": "Technical discovery. Produce technical_research.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "checkpoint": "approve",
-        "transitions": [{"id": "p7_to_p8", "to": "p8_technical_design"}]
+        "transitions": [
+          {
+            "id": "p7_to_p8",
+            "to": "p8_technical_design"
+          }
+        ]
       },
       "p8_technical_design": {
-        "displayName": "P8 — Technical design",
+        "displayName": "Technical design",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
-        "join": {"mode": "one", "from": ["p6_to_p8", "p7_to_p8"]},
-        "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "technical_research": {"from": "node.p7_technical_research.output.technical_research", "type": "object", "required": false}
+        "join": {
+          "mode": "one",
+          "from": [
+            "p6_to_p8",
+            "p7_to_p8"
+          ]
         },
-        "outputs": {"technical_design": {"type": "object"}},
-        "validators": [{"output": "technical_design", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "accepted_requirements", "description": "Accepted product intent plus relevant research and repository constraints."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "The technical design is accepted before decomposition."}], "invariants": ["The design names boundaries, failure behavior, compatibility, validation, and rollback."], "remedies": [{"code": "design_evidence_missing", "target": "p7_technical_research", "action": "revise_artifact", "description": "Research the named uncertainty that prevents a safe design decision."}]},
-        "reasoning": {"agent": "technical-designer", "skills": ["darkstar:technical-design"]},
+        "inputs": {
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "technical_research": {
+            "from": "node.p7_technical_research.output.technical_research",
+            "type": "object",
+            "required": false
+          },
+          "template": {
+            "from": "run.input.p8_technical_design_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          },
+          "technical_research_document": {
+            "from": "node.p7_technical_research.output.document",
+            "type": "string",
+            "required": false
+          }
+        },
+        "outputs": {
+          "technical_design": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "technical_design.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "validators": [
+          {
+            "output": "technical_design",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "accepted_requirements",
+              "description": "Accepted product intent plus relevant research and repository constraints."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "artifact_approval",
+              "enforcement": "blocking",
+              "description": "The technical design is accepted before decomposition."
+            }
+          ],
+          "invariants": [
+            "The design names boundaries, failure behavior, compatibility, validation, and rollback."
+          ],
+          "remedies": [
+            {
+              "code": "design_evidence_missing",
+              "target": "p7_technical_research",
+              "action": "revise_artifact",
+              "description": "Research the named uncertainty that prevents a safe design decision."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "technical-designer",
+          "skills": [
+            "darkstar:technical-design"
+          ],
+          "instructions": "Technical design. Produce technical_design.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "checkpoint": "approve",
-        "transitions": [{"id": "p8_to_p9", "to": "p9_decomposition"}]
+        "transitions": [
+          {
+            "id": "p8_to_p9",
+            "to": "p9_decomposition"
+          }
+        ]
       },
       "p9_decomposition": {
-        "displayName": "P9 — Delivery decomposition",
+        "displayName": "Delivery decomposition",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "technical_design": {"from": "node.p8_technical_design.output.technical_design", "type": "object", "required": false}
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "technical_design": {
+            "from": "node.p8_technical_design.output.technical_design",
+            "type": "object",
+            "required": false
+          },
+          "template": {
+            "from": "run.input.p9_decomposition_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          },
+          "technical_design_document": {
+            "from": "node.p8_technical_design.output.document",
+            "type": "string",
+            "required": false
+          }
         },
-        "outputs": {"delivery_plan": {"type": "object"}, "story_set": {"type": "array"}},
-        "validators": [{"output": "delivery_plan", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "accepted_design", "description": "Accepted requirements and technical decisions with traceable acceptance criteria."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "The delivery and story plan is approved before scheduling."}], "invariants": ["Stories express observable outcomes and explicit dependencies rather than file-by-file phases."], "remedies": [{"code": "decomposition_not_traceable", "target": "p8_technical_design", "action": "revise_artifact", "description": "Resolve the requirement or design decision that cannot be traced to a story."}]},
-        "reasoning": {"agent": "delivery-planner", "skills": ["darkstar:story-decomposition"]},
+        "outputs": {
+          "delivery_plan": {
+            "type": "object"
+          },
+          "story_set": {
+            "type": "array"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "decomposition.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "validators": [
+          {
+            "output": "delivery_plan",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "accepted_design",
+              "description": "Accepted requirements and technical decisions with traceable acceptance criteria."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "artifact_approval",
+              "enforcement": "blocking",
+              "description": "The delivery and story plan is approved before scheduling."
+            }
+          ],
+          "invariants": [
+            "Stories express observable outcomes and explicit dependencies rather than file-by-file phases."
+          ],
+          "remedies": [
+            {
+              "code": "decomposition_not_traceable",
+              "target": "p8_technical_design",
+              "action": "revise_artifact",
+              "description": "Resolve the requirement or design decision that cannot be traced to a story."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "delivery-planner",
+          "skills": [
+            "darkstar:story-decomposition"
+          ],
+          "instructions": "Delivery decomposition. Produce decomposition.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "checkpoint": "approve",
-        "transitions": [{"id": "p9_to_p10", "to": "p10_delivery_readiness"}]
+        "transitions": [
+          {
+            "id": "p9_to_p10",
+            "to": "p10_delivery_readiness"
+          }
+        ]
       },
       "p10_delivery_readiness": {
-        "displayName": "P10 — Delivery readiness",
+        "displayName": "Delivery readiness",
         "type": "approval",
         "entry": false,
         "terminal": false,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "story_set": {"from": "node.p9_decomposition.output.story_set", "type": "array", "required": false}
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "story_set": {
+            "from": "node.p9_decomposition.output.story_set",
+            "type": "array",
+            "required": false
+          },
+          "story_set_document": {
+            "from": "node.p9_decomposition.output.document",
+            "type": "string",
+            "required": false
+          }
         },
-        "outputs": {"delivery_readiness": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "story_graph", "description": "Stories with outcomes, acceptance criteria, dependencies, and validation evidence."}], "policyGates": [{"policy": "delivery_readiness", "enforcement": "blocking", "description": "Multi-story work requires delivery-owner approval before execution."}], "invariants": ["Only dependency-ready stories are schedulable."], "remedies": [{"code": "story_not_ready", "target": "p9_decomposition", "action": "revise_artifact", "description": "Revise the specific underspecified or incorrectly ordered story."}]},
-        "approval": {"actor": "delivery-owner"},
-        "transitions": [{"id": "p10_to_p11", "to": "p11_story_execution"}]
+        "outputs": {
+          "delivery_readiness": {
+            "type": "object"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "story_graph",
+              "description": "Stories with outcomes, acceptance criteria, dependencies, and validation evidence."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "delivery_readiness",
+              "enforcement": "blocking",
+              "description": "Multi-story work requires delivery-owner approval before execution."
+            }
+          ],
+          "invariants": [
+            "Only dependency-ready stories are schedulable."
+          ],
+          "remedies": [
+            {
+              "code": "story_not_ready",
+              "target": "p9_decomposition",
+              "action": "revise_artifact",
+              "description": "Revise the specific underspecified or incorrectly ordered story."
+            }
+          ]
+        },
+        "approval": {
+          "actor": "delivery-owner"
+        },
+        "transitions": [
+          {
+            "id": "p10_to_p11",
+            "to": "p11_story_execution"
+          }
+        ]
       },
       "p11_story_execution": {
-        "displayName": "P11 — Story execution",
+        "displayName": "Story execution",
         "type": "subworkflow",
         "entry": true,
         "terminal": false,
-        "join": {"mode": "one", "from": ["p10_to_p11", "p12_repair_story"]},
-        "inputs": {
-          "story": {"from": "node.p9_decomposition.output.story_set", "pointer": "/0", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "needs_clarification": {"from": "run.input.needs_clarification", "type": "boolean"},
-          "needs_research": {"from": "run.input.needs_story_research", "type": "boolean"},
-          "needs_design": {"from": "run.input.needs_story_design", "type": "boolean"}
+        "join": {
+          "mode": "one",
+          "from": [
+            "p10_to_p11",
+            "p12_repair_story"
+          ]
         },
-        "outputs": {"story_validation": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "ready_story", "description": "A dependency-ready story with accepted context and repository access."}], "policyGates": [{"policy": "story_readiness", "enforcement": "blocking", "description": "The child workflow applies its own story readiness and approval boundaries."}], "invariants": ["Each story executes against its pinned child workflow version."], "remedies": [{"code": "story_execution_blocked", "target": "p10_delivery_readiness", "action": "revise_artifact", "description": "Resolve the story dependency or readiness finding before scheduling it."}]},
+        "inputs": {
+          "story": {
+            "from": "node.p9_decomposition.output.story_set",
+            "pointer": "/0",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "needs_clarification": {
+            "from": "run.input.needs_clarification",
+            "type": "boolean"
+          },
+          "needs_research": {
+            "from": "run.input.needs_story_research",
+            "type": "boolean"
+          },
+          "needs_design": {
+            "from": "run.input.needs_story_design",
+            "type": "boolean"
+          },
+          "story_open_items": {
+            "from": "run.input.story_open_items",
+            "type": "object"
+          },
+          "story_decision_log": {
+            "from": "run.input.story_decision_log",
+            "type": "object"
+          },
+          "story_s0_readiness_template": {
+            "from": "run.input.story_s0_readiness_template",
+            "type": "object"
+          },
+          "story_s2_research_template": {
+            "from": "run.input.story_s2_research_template",
+            "type": "object"
+          },
+          "story_s3_design_template": {
+            "from": "run.input.story_s3_design_template",
+            "type": "object"
+          },
+          "story_s4_plan_template": {
+            "from": "run.input.story_s4_plan_template",
+            "type": "object"
+          },
+          "story_document": {
+            "from": "node.p9_decomposition.output.document",
+            "type": "string",
+            "required": false
+          }
+        },
+        "outputs": {
+          "story_validation": {
+            "type": "object"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "ready_story",
+              "description": "A dependency-ready story with accepted context and repository access."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "story_readiness",
+              "enforcement": "blocking",
+              "description": "The child workflow applies its own story readiness and approval boundaries."
+            }
+          ],
+          "invariants": [
+            "Each story executes against its pinned child workflow version."
+          ],
+          "remedies": [
+            {
+              "code": "story_execution_blocked",
+              "target": "p10_delivery_readiness",
+              "action": "revise_artifact",
+              "description": "Resolve the story dependency or readiness finding before scheduling it."
+            }
+          ]
+        },
         "call": {
-          "workflow": {"name": "darkstar/story-execution", "version": "1.4.0", "path": "story-execution.json"},
+          "workflow": {
+            "name": "darkstar/story-execution",
+            "version": "2.0.0",
+            "path": "story-execution.json"
+          },
           "entry": "s0_readiness",
-          "terminals": ["s6_validation"],
+          "terminals": [
+            "s6_validation"
+          ],
           "inputs": {
             "story": "story",
             "repository": "repository",
             "needs_clarification": "needs_clarification",
             "needs_research": "needs_research",
-            "needs_design": "needs_design"
+            "needs_design": "needs_design",
+            "open_items": "story_open_items",
+            "decision_log": "story_decision_log",
+            "s0_readiness_template": "story_s0_readiness_template",
+            "s2_research_template": "story_s2_research_template",
+            "s3_design_template": "story_s3_design_template",
+            "s4_plan_template": "story_s4_plan_template"
           },
-          "outputs": {"story_validation": "node.s6_validation.output.validation"}
+          "outputs": {
+            "story_validation": "node.s6_validation.output.validation"
+          }
         },
-        "transitions": [{"id": "p11_to_p12", "to": "p12_integrated_validation"}]
+        "transitions": [
+          {
+            "id": "p11_to_p12",
+            "to": "p12_integrated_validation"
+          }
+        ]
       },
       "p12_integrated_validation": {
-        "displayName": "P12 — Integrated validation",
+        "displayName": "Integrated validation",
         "type": "command",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "story_validation": {"from": "node.p11_story_execution.output.story_validation", "type": "object", "required": false}
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "story_validation": {
+            "from": "node.p11_story_execution.output.story_validation",
+            "type": "object",
+            "required": false
+          }
         },
-        "outputs": {"passed": {"type": "boolean"}, "validation_report": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "story_validation", "description": "Validated story changesets and acceptance coverage."}], "policyGates": [{"policy": "integrated_validation", "enforcement": "blocking", "description": "All configured checks must pass before pull-request creation."}], "invariants": ["Failed checks follow only the bounded targeted repair route."], "remedies": [{"code": "integrated_validation_failed", "target": "p11_story_execution", "action": "rerun_validation", "description": "Repair the failing story or implementation point and rerun the failed checks."}]},
-        "command": {"argv": ["darkstar-project", "validate", "--json"], "timeoutSeconds": 3600},
+        "outputs": {
+          "passed": {
+            "type": "boolean"
+          },
+          "validation_report": {
+            "type": "object"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "story_validation",
+              "description": "Validated story changesets and acceptance coverage."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "integrated_validation",
+              "enforcement": "blocking",
+              "description": "All configured checks must pass before pull-request creation."
+            }
+          ],
+          "invariants": [
+            "Failed checks follow only the bounded targeted repair route."
+          ],
+          "remedies": [
+            {
+              "code": "integrated_validation_failed",
+              "target": "p11_story_execution",
+              "action": "rerun_validation",
+              "description": "Repair the failing story or implementation point and rerun the failed checks."
+            }
+          ]
+        },
+        "command": {
+          "argv": [
+            "darkstar-project",
+            "validate",
+            "--json"
+          ],
+          "timeoutSeconds": 3600
+        },
         "transitions": [
           {
             "id": "p12_repair_story",
             "to": "p11_story_execution",
             "kind": "bounded",
             "maxTraversals": 2,
-            "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": false}]}
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ]
+            }
           },
-          {"id": "p12_to_p13", "to": "p13_pull_request", "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": true}]}}
+          {
+            "id": "p12_to_p13",
+            "to": "p13_pull_request",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ]
+            }
+          }
         ]
       },
       "p13_pull_request": {
-        "displayName": "P13 — Pull request creation or finalization",
+        "displayName": "Pull request creation or finalization",
         "type": "command",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "validation_report": {"from": "node.p12_integrated_validation.output.validation_report", "type": "object", "required": false}
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "validation_report": {
+            "from": "node.p12_integrated_validation.output.validation_report",
+            "type": "object",
+            "required": false
+          }
         },
-        "outputs": {"pull_request": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "validation_report", "description": "Passing integrated validation, acceptance coverage, and rollback notes."}], "policyGates": [{"policy": "pull_request_publish", "enforcement": "blocking", "description": "Repository permissions and project policy authorize publication."}], "invariants": ["The pull request describes the actual changes and observed validation."], "remedies": [{"code": "pull_request_not_ready", "target": "p12_integrated_validation", "action": "rerun_validation", "description": "Resolve missing or failed validation evidence before publication."}]},
-        "command": {"argv": ["darkstar-delivery", "pull-request", "create", "--json"]},
-        "transitions": [{"id": "p13_to_p14", "to": "p14_review_ci"}]
+        "outputs": {
+          "pull_request": {
+            "type": "object"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "validation_report",
+              "description": "Passing integrated validation, acceptance coverage, and rollback notes."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "pull_request_publish",
+              "enforcement": "blocking",
+              "description": "Repository permissions and project policy authorize publication."
+            }
+          ],
+          "invariants": [
+            "The pull request describes the actual changes and observed validation."
+          ],
+          "remedies": [
+            {
+              "code": "pull_request_not_ready",
+              "target": "p12_integrated_validation",
+              "action": "rerun_validation",
+              "description": "Resolve missing or failed validation evidence before publication."
+            }
+          ]
+        },
+        "command": {
+          "argv": [
+            "darkstar-delivery",
+            "pull-request",
+            "create",
+            "--json"
+          ]
+        },
+        "transitions": [
+          {
+            "id": "p13_to_p14",
+            "to": "p14_review_ci"
+          }
+        ]
       },
       "p14_review_ci": {
-        "displayName": "P14 — Review and CI",
+        "displayName": "Review and CI",
         "type": "approval",
         "entry": false,
         "terminal": false,
-        "inputs": {"pull_request": {"from": "node.p13_pull_request.output.pull_request", "type": "object", "required": false}},
-        "outputs": {"review_ci": {"type": "object", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/reviewCi"}},
-        "readiness": {"recommendedEvidence": [{"role": "repository_checks", "description": "Required reviews, status checks, policy scans, and merge requirements."}], "policyGates": [{"policy": "review_and_ci", "enforcement": "external", "description": "The authoritative repository reports all required conditions satisfied."}], "invariants": ["External evidence is observed and recorded without fabricating connector results."], "remedies": [{"code": "review_or_ci_failed", "target": "p13_pull_request", "action": "revise_artifact", "description": "Address the specific review finding or failed repository check."}]},
-        "approval": {"actor": "external", "externalCondition": "required reviews and checks pass", "evidenceOutput": "review_ci"},
-        "validators": [{"output": "review_ci", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/reviewCi"}],
-        "transitions": [{"id": "p14_to_p15", "to": "p15_release_readiness"}]
+        "inputs": {
+          "pull_request": {
+            "from": "node.p13_pull_request.output.pull_request",
+            "type": "object",
+            "required": false
+          }
+        },
+        "outputs": {
+          "review_ci": {
+            "type": "object",
+            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/reviewCi"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "repository_checks",
+              "description": "Required reviews, status checks, policy scans, and merge requirements."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "review_and_ci",
+              "enforcement": "external",
+              "description": "The authoritative repository reports all required conditions satisfied."
+            }
+          ],
+          "invariants": [
+            "External evidence is observed and recorded without fabricating connector results."
+          ],
+          "remedies": [
+            {
+              "code": "review_or_ci_failed",
+              "target": "p13_pull_request",
+              "action": "revise_artifact",
+              "description": "Address the specific review finding or failed repository check."
+            }
+          ]
+        },
+        "approval": {
+          "actor": "external",
+          "externalCondition": "required reviews and checks pass",
+          "evidenceOutput": "review_ci"
+        },
+        "validators": [
+          {
+            "output": "review_ci",
+            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/reviewCi"
+          }
+        ],
+        "transitions": [
+          {
+            "id": "p14_to_p15",
+            "to": "p15_release_readiness"
+          }
+        ]
       },
       "p15_release_readiness": {
-        "displayName": "P15 — Release readiness",
+        "displayName": "Release readiness",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"}
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "template": {
+            "from": "run.input.p15_release_readiness_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          }
         },
-        "outputs": {"release_readiness": {"type": "object", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/releaseReadiness"}},
-        "readiness": {"recommendedEvidence": [{"role": "release_evidence", "description": "Release notes, rollout, rollback, observability, approvals, and environment health."}], "policyGates": [{"policy": "release_readiness", "enforcement": "blocking", "description": "Production-impacting work requires an authorized release decision."}], "invariants": ["The release decision identifies rollback triggers and the responsible authority."], "remedies": [{"code": "release_evidence_missing", "target": "p14_review_ci", "action": "supply_input", "description": "Supply the missing review, CI, rollout, rollback, or operational evidence."}]},
-        "reasoning": {"agent": "release-owner", "skills": ["darkstar:release-readiness"]},
-        "validators": [{"output": "release_readiness", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/releaseReadiness"}],
+        "outputs": {
+          "release_readiness": {
+            "type": "object",
+            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/releaseReadiness"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "release_readiness.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "release_evidence",
+              "description": "Release notes, rollout, rollback, observability, approvals, and environment health."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "release_readiness",
+              "enforcement": "blocking",
+              "description": "Production-impacting work requires an authorized release decision."
+            }
+          ],
+          "invariants": [
+            "The release decision identifies rollback triggers and the responsible authority."
+          ],
+          "remedies": [
+            {
+              "code": "release_evidence_missing",
+              "target": "p14_review_ci",
+              "action": "supply_input",
+              "description": "Supply the missing review, CI, rollout, rollback, or operational evidence."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "release-owner",
+          "skills": [
+            "darkstar:release-readiness"
+          ],
+          "instructions": "Release readiness. Produce release_readiness.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
+        "validators": [
+          {
+            "output": "release_readiness",
+            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/releaseReadiness"
+          }
+        ],
         "checkpoint": "approve",
-        "transitions": [{"id": "p15_to_p16", "to": "p16_release"}]
+        "transitions": [
+          {
+            "id": "p15_to_p16",
+            "to": "p16_release"
+          }
+        ]
       },
       "p16_release": {
-        "displayName": "P16 — Merge, release, and deploy",
+        "displayName": "Merge, release, and deploy",
         "type": "approval",
         "entry": false,
         "terminal": false,
-        "inputs": {"release_readiness": {"from": "node.p15_release_readiness.output.release_readiness", "type": "object", "required": false}},
-        "outputs": {"deployment": {"type": "object", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/release"}},
-        "readiness": {"recommendedEvidence": [{"role": "release_authorization", "description": "The accepted release decision and configured external delivery conditions."}], "policyGates": [{"policy": "release_execution", "enforcement": "external", "description": "Merge, release, and deployment follow external authorization and policy."}], "invariants": ["Delivery actions are idempotent, permission-scoped, and recorded."], "remedies": [{"code": "release_not_authorized", "target": "p15_release_readiness", "action": "clarify_decision", "description": "Resolve the missing release authority or readiness decision."}]},
-        "approval": {"actor": "external", "externalCondition": "merge, release, and deployment complete", "evidenceOutput": "deployment"},
-        "validators": [{"output": "deployment", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/release"}],
-        "transitions": [{"id": "p16_to_p17", "to": "p17_verification"}]
+        "inputs": {
+          "release_readiness": {
+            "from": "node.p15_release_readiness.output.release_readiness",
+            "type": "object",
+            "required": false
+          },
+          "release_readiness_document": {
+            "from": "node.p15_release_readiness.output.document",
+            "type": "string",
+            "required": false
+          }
+        },
+        "outputs": {
+          "deployment": {
+            "type": "object",
+            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/release"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "release_authorization",
+              "description": "The accepted release decision and configured external delivery conditions."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "release_execution",
+              "enforcement": "external",
+              "description": "Merge, release, and deployment follow external authorization and policy."
+            }
+          ],
+          "invariants": [
+            "Delivery actions are idempotent, permission-scoped, and recorded."
+          ],
+          "remedies": [
+            {
+              "code": "release_not_authorized",
+              "target": "p15_release_readiness",
+              "action": "clarify_decision",
+              "description": "Resolve the missing release authority or readiness decision."
+            }
+          ]
+        },
+        "approval": {
+          "actor": "external",
+          "externalCondition": "merge, release, and deployment complete",
+          "evidenceOutput": "deployment"
+        },
+        "validators": [
+          {
+            "output": "deployment",
+            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/release"
+          }
+        ],
+        "transitions": [
+          {
+            "id": "p16_to_p17",
+            "to": "p17_verification"
+          }
+        ]
       },
       "p17_verification": {
-        "displayName": "P17 — Production verification and learning",
+        "displayName": "Production verification and learning",
         "type": "approval",
         "entry": false,
         "terminal": true,
         "inputs": {
-          "work_item": {"from": "run.input.work_item", "type": "object"},
-          "deployment": {"from": "node.p16_release.output.deployment", "type": "object", "required": false}
+          "work_item": {
+            "from": "run.input.work_item",
+            "type": "object"
+          },
+          "deployment": {
+            "from": "node.p16_release.output.deployment",
+            "type": "object",
+            "required": false
+          }
         },
-        "outputs": {"production_verification": {"type": "object", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/productionVerification"}},
-        "readiness": {"recommendedEvidence": [{"role": "deployment_evidence", "description": "Deployment identity, environment health, smoke checks, and relevant outcome metrics."}], "policyGates": [{"policy": "production_verification", "enforcement": "blocking", "description": "Configured production checks determine completion or anomaly handling."}], "invariants": ["Verification records observed production state and does not infer deployment success."], "remedies": [{"code": "production_anomaly", "target": "p16_release", "action": "clarify_decision", "description": "Apply the configured rollback or incident decision for the observed anomaly."}]},
-        "approval": {"actor": "external", "externalCondition": "production health and configured outcome checks are observed", "evidenceOutput": "production_verification"},
-        "validators": [{"output": "production_verification", "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/productionVerification"}],
+        "outputs": {
+          "production_verification": {
+            "type": "object",
+            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/productionVerification"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "deployment_evidence",
+              "description": "Deployment identity, environment health, smoke checks, and relevant outcome metrics."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "production_verification",
+              "enforcement": "blocking",
+              "description": "Configured production checks determine completion or anomaly handling."
+            }
+          ],
+          "invariants": [
+            "Verification records observed production state and does not infer deployment success."
+          ],
+          "remedies": [
+            {
+              "code": "production_anomaly",
+              "target": "p16_release",
+              "action": "clarify_decision",
+              "description": "Apply the configured rollback or incident decision for the observed anomaly."
+            }
+          ]
+        },
+        "approval": {
+          "actor": "external",
+          "externalCondition": "production health and configured outcome checks are observed",
+          "evidenceOutput": "production_verification"
+        },
+        "validators": [
+          {
+            "output": "production_verification",
+            "schema": "schemas/delivery-evidence-v1alpha1.schema.json#/$defs/productionVerification"
+          }
+        ],
         "transitions": []
       }
     }

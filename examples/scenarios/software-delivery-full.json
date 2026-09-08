@@ -1,7 +1,11 @@
 {
   "runInputs": {
-    "work_item": {"title": "Deliver a small internal feature"},
-    "repository": "C:/work/darkstar",
+    "work_item": {
+      "title": "Deliver a small internal feature"
+    },
+    "repository": {
+      "projectId": "C:/work/darkstar"
+    },
     "needs_poc": false,
     "needs_experience_design": false,
     "needs_technical_research": false,
@@ -11,38 +15,243 @@
     "route_readiness_threshold": 0.75
   },
   "results": {
-    "p0_intake": [{"normalized_work_item": {"kind": "feature"}}],
-    "p1_route_assessment": [{"route_proposal": {"profile": "idea-to-production"}, "readiness": {"score": 0.92, "level": "information", "evidence": ["work item has an explicit outcome"]}}],
-    "p2_product_discovery": [{"product_brief": {"artifactId": "artifact:brief:1"}}],
-    "p4_requirements": [{"prd": {"artifactId": "artifact:prd:1"}}],
-    "p6_product_readiness": [{"product_readiness": {"approved": true}}],
-    "p8_technical_design": [{"technical_design": {"artifactId": "artifact:tdd:1"}}],
-    "p9_decomposition": [{"delivery_plan": {"artifactId": "artifact:plan:1"}, "story_set": [{"id": "story-1"}]}],
-    "p10_delivery_readiness": [{"delivery_readiness": {"approved": true}}],
-    "p12_integrated_validation": [{"passed": true, "validation_report": {"checks": "passed"}}],
-    "p13_pull_request": [{"pull_request": {"number": 42}}],
-    "p14_review_ci": [{"review_ci": {"evidenceType": "review_ci", "schemaVersion": 1, "status": "satisfied", "reviews": [{"name": "code-owner", "status": "passed"}], "checks": [{"name": "required-ci", "status": "passed"}], "references": [{"label": "pull request checks", "uri": "https://example.invalid/pull/42/checks"}]}}],
-    "p15_release_readiness": [{"release_readiness": {"evidenceType": "release_readiness", "schemaVersion": 1, "decision": "approved", "rolloutPlan": "Deploy to the production environment.", "rollbackPlan": "Restore the prior release.", "checks": [{"name": "operations", "status": "passed"}], "decidedBy": "release-owner"}}],
-    "p16_release": [{"deployment": {"evidenceType": "release", "schemaVersion": 1, "status": "completed", "releaseId": "release-42", "environment": "production", "references": [{"label": "deployment record", "uri": "https://example.invalid/releases/42"}]}}],
-    "p17_verification": [{"production_verification": {"evidenceType": "production_verification", "schemaVersion": 1, "status": "healthy", "observedAt": "2026-09-02T12:00:00Z", "checks": [{"name": "smoke test", "status": "passed"}], "references": [{"label": "health dashboard", "uri": "https://example.invalid/health/42"}]}}]
+    "p0_intake": [
+      {
+        "normalized_work_item": {
+          "kind": "feature"
+        },
+        "document": "# Intake and desired outcome\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "p1_route_assessment": [
+      {
+        "route_proposal": {
+          "profile": "idea-to-production"
+        },
+        "readiness": {
+          "score": 0.92,
+          "level": "information",
+          "evidence": [
+            "work item has an explicit outcome"
+          ]
+        },
+        "document": "# Route and readiness assessment\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "p2_product_discovery": [
+      {
+        "product_brief": {
+          "artifactId": "artifact:brief:1"
+        },
+        "document": "# Product discovery and shaping\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "p4_requirements": [
+      {
+        "prd": {
+          "artifactId": "artifact:prd:1"
+        },
+        "document": "# Product requirements\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "p6_product_readiness": [
+      {
+        "product_readiness": {
+          "approved": true
+        }
+      }
+    ],
+    "p8_technical_design": [
+      {
+        "technical_design": {
+          "artifactId": "artifact:tdd:1"
+        },
+        "document": "# Technical design\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "p9_decomposition": [
+      {
+        "delivery_plan": {
+          "artifactId": "artifact:plan:1"
+        },
+        "story_set": [
+          {
+            "id": "story-1"
+          }
+        ],
+        "document": "# Delivery decomposition\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "p10_delivery_readiness": [
+      {
+        "delivery_readiness": {
+          "approved": true
+        }
+      }
+    ],
+    "p12_integrated_validation": [
+      {
+        "passed": true,
+        "validation_report": {
+          "checks": "passed"
+        }
+      }
+    ],
+    "p13_pull_request": [
+      {
+        "pull_request": {
+          "number": 42
+        }
+      }
+    ],
+    "p14_review_ci": [
+      {
+        "review_ci": {
+          "evidenceType": "review_ci",
+          "schemaVersion": 1,
+          "status": "satisfied",
+          "reviews": [
+            {
+              "name": "code-owner",
+              "status": "passed"
+            }
+          ],
+          "checks": [
+            {
+              "name": "required-ci",
+              "status": "passed"
+            }
+          ],
+          "references": [
+            {
+              "label": "pull request checks",
+              "uri": "https://example.invalid/pull/42/checks"
+            }
+          ]
+        }
+      }
+    ],
+    "p15_release_readiness": [
+      {
+        "release_readiness": {
+          "evidenceType": "release_readiness",
+          "schemaVersion": 1,
+          "decision": "approved",
+          "rolloutPlan": "Deploy to the production environment.",
+          "rollbackPlan": "Restore the prior release.",
+          "checks": [
+            {
+              "name": "operations",
+              "status": "passed"
+            }
+          ],
+          "decidedBy": "release-owner"
+        },
+        "document": "# Release readiness\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "p16_release": [
+      {
+        "deployment": {
+          "evidenceType": "release",
+          "schemaVersion": 1,
+          "status": "completed",
+          "releaseId": "release-42",
+          "environment": "production",
+          "references": [
+            {
+              "label": "deployment record",
+              "uri": "https://example.invalid/releases/42"
+            }
+          ]
+        }
+      }
+    ],
+    "p17_verification": [
+      {
+        "production_verification": {
+          "evidenceType": "production_verification",
+          "schemaVersion": 1,
+          "status": "healthy",
+          "observedAt": "2026-09-02T12:00:00Z",
+          "checks": [
+            {
+              "name": "smoke test",
+              "status": "passed"
+            }
+          ],
+          "references": [
+            {
+              "label": "health dashboard",
+              "uri": "https://example.invalid/health/42"
+            }
+          ]
+        }
+      }
+    ]
   },
   "checkpoints": {
-    "p2_product_discovery": ["approve"],
-    "p4_requirements": ["approve"],
-    "p8_technical_design": ["approve"],
-    "p9_decomposition": ["approve"],
-    "p15_release_readiness": ["approve"]
+    "p2_product_discovery": [
+      "approve"
+    ],
+    "p4_requirements": [
+      "approve"
+    ],
+    "p8_technical_design": [
+      "approve"
+    ],
+    "p9_decomposition": [
+      "approve"
+    ],
+    "p15_release_readiness": [
+      "approve"
+    ]
   },
   "subworkflows": {
     "p11_story_execution": {
       "results": {
-        "s0_readiness": [{"readiness": {"level": "information"}}],
-        "s4_plan": [{"implementation_plan": {"points": ["point-1"]}}],
-        "s5_implementation": [{"changeset": {"commit": "abcdef1"}, "progress": {"completed_points": 1, "remaining_points": 0}}],
-        "s6_validation": [{"validation": {"passed": true, "acceptanceCovered": true}}]
+        "s0_readiness": [
+          {
+            "readiness": {
+              "level": "information"
+            },
+            "document": "# Questions and readiness\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+          }
+        ],
+        "s4_plan": [
+          {
+            "implementation_plan": {
+              "points": [
+                "point-1"
+              ]
+            },
+            "document": "# Implementation plan\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+          }
+        ],
+        "s5_implementation": [
+          {
+            "changeset": {
+              "commit": "abcdef1"
+            },
+            "progress": {
+              "completed_points": 1,
+              "remaining_points": 0
+            }
+          }
+        ],
+        "s6_validation": [
+          {
+            "validation": {
+              "passed": true,
+              "acceptanceCovered": true
+            }
+          }
+        ]
       },
       "checkpoints": {
-        "s4_plan": ["approve"]
+        "s4_plan": [
+          "approve"
+        ]
       }
     }
   }

@@ -1,228 +1,769 @@
 {
-  "apiVersion": "darkstar.local/v1alpha2",
+  "apiVersion": "darkstar.local/v1alpha3",
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/story-execution",
-    "version": "1.4.0",
-    "displayName": "Default story execution sub-workflow"
+    "version": "2.0.0",
+    "displayName": "Story execution"
   },
   "spec": {
     "inputs": {
-      "story": {"type": "object"},
-      "repository": {"type": "string"},
-      "needs_clarification": {"type": "boolean"},
-      "needs_research": {"type": "boolean"},
-      "needs_design": {"type": "boolean"}
+      "story": {
+        "type": "object",
+        "resource": {
+          "kind": "task"
+        }
+      },
+      "repository": {
+        "type": "object",
+        "resource": {
+          "kind": "repository"
+        }
+      },
+      "needs_clarification": {
+        "type": "boolean",
+        "resource": {
+          "kind": "constant",
+          "value": true
+        }
+      },
+      "needs_research": {
+        "type": "boolean",
+        "resource": {
+          "kind": "constant",
+          "value": true
+        }
+      },
+      "needs_design": {
+        "type": "boolean",
+        "resource": {
+          "kind": "constant",
+          "value": true
+        }
+      },
+      "open_items": {
+        "type": "object",
+        "resource": {
+          "kind": "open_items"
+        }
+      },
+      "decision_log": {
+        "type": "object",
+        "resource": {
+          "kind": "decision_log"
+        }
+      },
+      "s0_readiness_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Story intake and readiness\n\n## Questions\n\nDescribe questions using the supplied task and evidence.\n\n## Known context\n\nDescribe known context using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Questions",
+            "Known context"
+          ]
+        }
+      },
+      "s2_research_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Focused developer research\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "s3_design_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Story-level design\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      },
+      "s4_plan_template": {
+        "type": "object",
+        "resource": {
+          "kind": "template",
+          "version": "1.0.0",
+          "content": "# Implementation plan\n\n## Overview\n\nDescribe overview using the supplied task and evidence.\n\n## Approach\n\nDescribe approach using the supplied task and evidence.\n\n## Validation\n\nDescribe validation using the supplied task and evidence.\n",
+          "requiredHeadings": [
+            "Overview",
+            "Approach",
+            "Validation"
+          ]
+        }
+      }
     },
     "routeDefaults": {
       "entry": "s0_readiness",
-      "terminals": ["s6_validation"]
+      "terminals": [
+        "s6_validation"
+      ]
     },
     "profiles": {
-      "accepted_story": {"description": "Execute an accepted story through validation.", "entry": "s0_readiness", "terminals": ["s6_validation"], "inputDefaults": {"needs_clarification": false, "needs_research": false, "needs_design": false}},
-      "implementation_only": {"description": "Execute an accepted implementation plan and validate the story.", "entry": "s5_implementation", "terminals": ["s6_validation"], "inputDefaults": {}},
-      "bug": {"description": "Investigate and implement a focused defect repair.", "entry": "s0_readiness", "terminals": ["s6_validation"], "inputDefaults": {"needs_clarification": false, "needs_research": true, "needs_design": false}},
-      "validation": {"description": "Run story validation only and stop with its report.", "entry": "s6_validation", "terminals": ["s6_validation"], "inputDefaults": {}}
+      "accepted_story": {
+        "description": "Execute an accepted story through validation.",
+        "entry": "s0_readiness",
+        "terminals": [
+          "s6_validation"
+        ],
+        "inputDefaults": {
+          "needs_clarification": true,
+          "needs_research": true,
+          "needs_design": true
+        }
+      },
+      "implementation_only": {
+        "description": "Execute an accepted implementation plan and validate the story.",
+        "entry": "s5_implementation",
+        "terminals": [
+          "s6_validation"
+        ],
+        "inputDefaults": {}
+      },
+      "bug": {
+        "description": "Investigate and implement a focused defect repair.",
+        "entry": "s0_readiness",
+        "terminals": [
+          "s6_validation"
+        ],
+        "inputDefaults": {
+          "needs_clarification": false,
+          "needs_research": true,
+          "needs_design": false
+        }
+      },
+      "validation": {
+        "description": "Run story validation only and stop with its report.",
+        "entry": "s6_validation",
+        "terminals": [
+          "s6_validation"
+        ],
+        "inputDefaults": {}
+      }
     },
     "nodes": {
       "s0_readiness": {
-        "displayName": "S0 — Story intake and readiness",
+        "displayName": "Questions and readiness",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "story": {"from": "run.input.story", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"}
+          "story": {
+            "from": "run.input.story",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "template": {
+            "from": "run.input.s0_readiness_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          }
         },
-        "outputs": {"readiness": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "accepted_story", "description": "Story outcome, acceptance criteria, dependencies, and relevant accepted artifacts."}], "policyGates": [{"policy": "story_readiness", "enforcement": "advisory", "description": "Missing recommended context produces guidance; required policy inputs still block."}], "invariants": ["The story terminal boundary and explicit human instructions remain authoritative."], "remedies": [{"code": "story_context_missing", "target": "s0_readiness", "action": "supply_input", "description": "Supply the missing story, repository, acceptance, or dependency context."}]},
-        "reasoning": {"agent": "story-readiness", "skills": ["darkstar:readiness"]},
+        "outputs": {
+          "readiness": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "questions.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "accepted_story",
+              "description": "Story outcome, acceptance criteria, dependencies, and relevant accepted artifacts."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "story_readiness",
+              "enforcement": "advisory",
+              "description": "Missing recommended context produces guidance; required policy inputs still block."
+            }
+          ],
+          "invariants": [
+            "The story terminal boundary and explicit human instructions remain authoritative."
+          ],
+          "remedies": [
+            {
+              "code": "story_context_missing",
+              "target": "s0_readiness",
+              "action": "supply_input",
+              "description": "Supply the missing story, repository, acceptance, or dependency context."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "story-readiness",
+          "skills": [
+            "darkstar:readiness"
+          ],
+          "instructions": "Story intake and readiness. Produce questions.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "transitions": [
           {
-            "id": "s0_to_s1",
-            "to": "s1_clarification",
-            "when": {"op": "eq", "args": [{"ref": "run.input.needs_clarification"}, {"literal": true}]}
-          },
-          {
-            "id": "s0_to_s2",
-            "to": "s2_research",
-            "when": {
-              "op": "all",
-              "args": [
-                {"op": "eq", "args": [{"ref": "run.input.needs_clarification"}, {"literal": false}]},
-                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": true}]}
-              ]
-            }
-          },
-          {
-            "id": "s0_to_s3",
-            "to": "s3_design",
-            "when": {
-              "op": "all",
-              "args": [
-                {"op": "eq", "args": [{"ref": "run.input.needs_clarification"}, {"literal": false}]},
-                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": false}]},
-                {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": true}]}
-              ]
-            }
-          },
-          {
-            "id": "s0_to_s4",
-            "to": "s4_plan",
-            "when": {
-              "op": "all",
-              "args": [
-                {"op": "eq", "args": [{"ref": "run.input.needs_clarification"}, {"literal": false}]},
-                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": false}]},
-                {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": false}]}
-              ]
-            }
+            "id": "s0_to_clarify_branch",
+            "to": "clarify_branch"
           }
         ]
       },
       "s1_clarification": {
-        "displayName": "S1 — Clarification",
+        "displayName": "Clarification",
         "type": "approval",
         "entry": true,
         "terminal": true,
-        "inputs": {"story": {"from": "run.input.story", "type": "object"}},
-        "outputs": {"answers": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "blocking_questions", "description": "Only questions whose answers can change scope, design, permissions, or acceptance."}], "policyGates": [{"policy": "owner_clarification", "enforcement": "blocking", "description": "The configured owner supplies load-bearing answers."}], "invariants": ["The workflow never invents an answer to continue execution."], "remedies": [{"code": "clarification_unresolved", "target": "s0_readiness", "action": "clarify_decision", "description": "Refine the blocking question and route it to the responsible owner."}]},
-        "approval": {"actor": "work-item-owner"},
+        "inputs": {
+          "story": {
+            "from": "run.input.story",
+            "type": "object"
+          },
+          "questions": {
+            "from": "node.s0_readiness.output.document",
+            "type": "string",
+            "required": false
+          }
+        },
+        "outputs": {
+          "answers": {
+            "type": "object"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "blocking_questions",
+              "description": "Only questions whose answers can change scope, design, permissions, or acceptance."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "owner_clarification",
+              "enforcement": "blocking",
+              "description": "The configured owner supplies load-bearing answers."
+            }
+          ],
+          "invariants": [
+            "The workflow never invents an answer to continue execution."
+          ],
+          "remedies": [
+            {
+              "code": "clarification_unresolved",
+              "target": "s0_readiness",
+              "action": "clarify_decision",
+              "description": "Refine the blocking question and route it to the responsible owner."
+            }
+          ]
+        },
+        "approval": {
+          "actor": "work-item-owner"
+        },
         "transitions": [
           {
-            "id": "s1_to_s2",
-            "to": "s2_research",
-            "when": {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": true}]}
-          },
-          {
-            "id": "s1_to_s3",
-            "to": "s3_design",
-            "when": {
-              "op": "all",
-              "args": [
-                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": false}]},
-                {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": true}]}
-              ]
-            }
-          },
-          {
-            "id": "s1_to_s4",
-            "to": "s4_plan",
-            "when": {
-              "op": "all",
-              "args": [
-                {"op": "eq", "args": [{"ref": "run.input.needs_research"}, {"literal": false}]},
-                {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": false}]}
-              ]
-            }
+            "id": "s1_to_research_branch",
+            "to": "research_branch"
           }
         ]
       },
       "s2_research": {
-        "displayName": "S2 — Focused developer research",
+        "displayName": "Focused developer research",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
-        "join": {"mode": "one", "from": ["s0_to_s2", "s1_to_s2"]},
         "inputs": {
-          "story": {"from": "run.input.story", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "answers": {"from": "node.s1_clarification.output.answers", "type": "object", "required": false}
+          "story": {
+            "from": "run.input.story",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "answers": {
+            "from": "node.s1_clarification.output.answers",
+            "type": "object",
+            "required": false
+          },
+          "template": {
+            "from": "run.input.s2_research_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          },
+          "questions": {
+            "from": "node.s0_readiness.output.document",
+            "type": "string",
+            "required": false
+          }
         },
-        "outputs": {"research": {"type": "object"}},
-        "validators": [{"output": "research", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "focused_uncertainty", "description": "A named uncertainty that can change the implementation plan."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "Activated story research is accepted before local design or planning."}], "invariants": ["Research remains focused, sourced, and read-only."], "remedies": [{"code": "story_evidence_missing", "target": "s2_research", "action": "supply_input", "description": "Gather the specific repository or dependency evidence needed by the plan."}]},
-        "reasoning": {"agent": "story-researcher", "skills": ["darkstar:evidence-research"]},
+        "outputs": {
+          "research": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "research.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "validators": [
+          {
+            "output": "research",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "focused_uncertainty",
+              "description": "A named uncertainty that can change the implementation plan."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "artifact_approval",
+              "enforcement": "blocking",
+              "description": "Activated story research is accepted before local design or planning."
+            }
+          ],
+          "invariants": [
+            "Research remains focused, sourced, and read-only."
+          ],
+          "remedies": [
+            {
+              "code": "story_evidence_missing",
+              "target": "s2_research",
+              "action": "supply_input",
+              "description": "Gather the specific repository or dependency evidence needed by the plan."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "story-researcher",
+          "skills": [
+            "darkstar:evidence-research"
+          ],
+          "instructions": "Focused developer research. Produce research.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "checkpoint": "approve",
         "transitions": [
           {
-            "id": "s2_to_s3",
-            "to": "s3_design",
-            "when": {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": true}]}
-          },
-          {
-            "id": "s2_to_s4",
-            "to": "s4_plan",
-            "when": {"op": "eq", "args": [{"ref": "run.input.needs_design"}, {"literal": false}]}
+            "id": "s2_to_design_branch",
+            "to": "design_branch"
           }
         ]
       },
       "s3_design": {
-        "displayName": "S3 — Story-level design",
+        "displayName": "Story-level design",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
-        "join": {"mode": "one", "from": ["s0_to_s3", "s1_to_s3", "s2_to_s3"]},
         "inputs": {
-          "story": {"from": "run.input.story", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "research": {"from": "node.s2_research.output.research", "type": "object", "required": false}
+          "story": {
+            "from": "run.input.story",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "research": {
+            "from": "node.s2_research.output.research",
+            "type": "object",
+            "required": false
+          },
+          "template": {
+            "from": "run.input.s3_design_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          },
+          "questions": {
+            "from": "node.s0_readiness.output.document",
+            "type": "string",
+            "required": false
+          },
+          "answers": {
+            "from": "node.s1_clarification.output.answers",
+            "type": "object",
+            "required": false
+          },
+          "research_document": {
+            "from": "node.s2_research.output.document",
+            "type": "string",
+            "required": false
+          }
         },
-        "outputs": {"design": {"type": "object"}},
-        "validators": [{"output": "design", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "local_design_context", "description": "Accepted story intent plus the focused research that informs this decision."}], "policyGates": [{"policy": "artifact_approval", "enforcement": "blocking", "description": "Activated story design is accepted before implementation planning."}], "invariants": ["Local design does not contradict accepted product or initiative-level technical decisions."], "remedies": [{"code": "story_design_blocked", "target": "s2_research", "action": "revise_artifact", "description": "Resolve the focused uncertainty that prevents the local design decision."}]},
-        "reasoning": {"agent": "story-designer", "skills": ["darkstar:technical-design"]},
+        "outputs": {
+          "design": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "design.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "validators": [
+          {
+            "output": "design",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "local_design_context",
+              "description": "Accepted story intent plus the focused research that informs this decision."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "artifact_approval",
+              "enforcement": "blocking",
+              "description": "Activated story design is accepted before implementation planning."
+            }
+          ],
+          "invariants": [
+            "Local design does not contradict accepted product or initiative-level technical decisions."
+          ],
+          "remedies": [
+            {
+              "code": "story_design_blocked",
+              "target": "s2_research",
+              "action": "revise_artifact",
+              "description": "Resolve the focused uncertainty that prevents the local design decision."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "story-designer",
+          "skills": [
+            "darkstar:technical-design"
+          ],
+          "instructions": "Story-level design. Produce design.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "checkpoint": "approve",
-        "transitions": [{"id": "s3_to_s4", "to": "s4_plan"}]
+        "transitions": [
+          {
+            "id": "s3_to_s4",
+            "to": "s4_plan"
+          }
+        ]
       },
       "s4_plan": {
-        "displayName": "S4 — Implementation plan",
+        "displayName": "Implementation plan",
         "type": "reasoning",
         "entry": true,
         "terminal": true,
-        "join": {"mode": "one", "from": ["s0_to_s4", "s1_to_s4", "s2_to_s4", "s3_to_s4"]},
         "inputs": {
-          "story": {"from": "run.input.story", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "design": {"from": "node.s3_design.output.design", "type": "object", "required": false}
+          "story": {
+            "from": "run.input.story",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "design": {
+            "from": "node.s3_design.output.design",
+            "type": "object",
+            "required": false
+          },
+          "template": {
+            "from": "run.input.s4_plan_template",
+            "type": "object"
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          },
+          "questions": {
+            "from": "node.s0_readiness.output.document",
+            "type": "string",
+            "required": false
+          },
+          "answers": {
+            "from": "node.s1_clarification.output.answers",
+            "type": "object",
+            "required": false
+          },
+          "research_document": {
+            "from": "node.s2_research.output.document",
+            "type": "string",
+            "required": false
+          },
+          "design_document": {
+            "from": "node.s3_design.output.document",
+            "type": "string",
+            "required": false
+          }
         },
-        "outputs": {"implementation_plan": {"type": "object"}},
-        "validators": [{"output": "implementation_plan", "schema": "schemas/planning-artifact-v1alpha1.schema.json"}],
-        "readiness": {"recommendedEvidence": [{"role": "accepted_story_design", "description": "The accepted story, relevant research, and local design decisions."}], "policyGates": [{"policy": "implementation_plan_approval", "enforcement": "blocking", "description": "The ordered implementation points are approved before repository writes."}], "invariants": ["Each point is an atomic vertical slice with acceptance, tests, rollback, and a commit boundary."], "remedies": [{"code": "implementation_plan_incomplete", "target": "s3_design", "action": "revise_artifact", "description": "Resolve the missing design decision or revise the affected implementation point."}]},
-        "reasoning": {"agent": "implementation-planner", "skills": ["darkstar:tracer-bullets"]},
+        "outputs": {
+          "implementation_plan": {
+            "type": "object"
+          },
+          "document": {
+            "type": "string",
+            "artifact": {
+              "filename": "plan.md",
+              "templateInput": "template"
+            }
+          }
+        },
+        "validators": [
+          {
+            "output": "implementation_plan",
+            "schema": "schemas/planning-artifact-v1alpha1.schema.json"
+          }
+        ],
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "accepted_story_design",
+              "description": "The accepted story, relevant research, and local design decisions."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "implementation_plan_approval",
+              "enforcement": "blocking",
+              "description": "The ordered implementation points are approved before repository writes."
+            }
+          ],
+          "invariants": [
+            "Each point is an atomic vertical slice with acceptance, tests, rollback, and a commit boundary."
+          ],
+          "remedies": [
+            {
+              "code": "implementation_plan_incomplete",
+              "target": "s3_design",
+              "action": "revise_artifact",
+              "description": "Resolve the missing design decision or revise the affected implementation point."
+            }
+          ]
+        },
+        "reasoning": {
+          "agent": "implementation-planner",
+          "skills": [
+            "darkstar:tracer-bullets"
+          ],
+          "instructions": "Implementation plan. Produce plan.md using the connected template and the supplied task and evidence. Submit all declared outputs. Record decisions and unresolved or deferred work through the connected journal tools."
+        },
         "checkpoint": "approve",
-        "transitions": [{"id": "s4_to_s5", "to": "s5_implementation"}]
+        "transitions": [
+          {
+            "id": "s4_to_s5",
+            "to": "s5_implementation"
+          }
+        ],
+        "join": {
+          "mode": "one",
+          "from": [
+            "design_branch_false",
+            "s3_to_s4"
+          ]
+        }
       },
       "s5_implementation": {
-        "displayName": "S5 — Implementation-point loop",
+        "displayName": "Implementation-point loop",
         "type": "point_execution",
         "entry": true,
         "terminal": false,
-        "join": {"mode": "one", "from": ["s4_to_s5", "s5_more_points"]},
+        "join": {
+          "mode": "one",
+          "from": [
+            "s4_to_s5",
+            "s5_more_points"
+          ]
+        },
         "inputs": {
-          "story": {"from": "run.input.story", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "implementation_plan": {"from": "node.s4_plan.output.implementation_plan", "type": "object", "required": false},
-          "prior_changeset": {"from": "node.s5_implementation.output.changeset", "type": "object", "required": false}
+          "story": {
+            "from": "run.input.story",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "implementation_plan": {
+            "from": "node.s4_plan.output.implementation_plan",
+            "type": "object",
+            "required": false
+          },
+          "prior_changeset": {
+            "from": "node.s5_implementation.output.changeset",
+            "type": "object",
+            "required": false
+          },
+          "plan_document": {
+            "from": "node.s4_plan.output.document",
+            "type": "string",
+            "required": false
+          },
+          "open_items": {
+            "from": "run.input.open_items",
+            "type": "object"
+          },
+          "decision_log": {
+            "from": "run.input.decision_log",
+            "type": "object"
+          }
         },
         "outputs": {
-          "changeset": {"type": "object"},
-          "progress": {"type": "object"}
+          "changeset": {
+            "type": "object"
+          },
+          "progress": {
+            "type": "object"
+          }
         },
-        "readiness": {"recommendedEvidence": [{"role": "approved_implementation_plan", "description": "The approved point, clean baseline, required capabilities, and validation commands."}], "policyGates": [{"policy": "implementation_point", "enforcement": "blocking", "description": "Repository write authority and point preconditions must be satisfied."}], "invariants": ["Only the active point changes; validation precedes its atomic commit."], "remedies": [{"code": "implementation_point_failed", "target": "s4_plan", "action": "revise_artifact", "description": "Revise the affected point when its scope or validation plan is unsound."}]},
-        "points": {"planInput": "implementation_plan", "approval": "none", "riskTags": [], "validation": "each_and_combined", "publishing": "after_story_validation"},
-        "permissions": ["workspace.write", "process.run"],
-        "transitions": [{"id": "s5_to_progress_gate", "to": "s5_progress_gate"}]
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "approved_implementation_plan",
+              "description": "The approved point, clean baseline, required capabilities, and validation commands."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "implementation_point",
+              "enforcement": "blocking",
+              "description": "Repository write authority and point preconditions must be satisfied."
+            }
+          ],
+          "invariants": [
+            "Only the active point changes; validation precedes its atomic commit."
+          ],
+          "remedies": [
+            {
+              "code": "implementation_point_failed",
+              "target": "s4_plan",
+              "action": "revise_artifact",
+              "description": "Revise the affected point when its scope or validation plan is unsound."
+            }
+          ]
+        },
+        "points": {
+          "planInput": "implementation_plan",
+          "approval": "none",
+          "riskTags": [],
+          "validation": "each_and_combined",
+          "publishing": "after_story_validation"
+        },
+        "permissions": [
+          "workspace.write",
+          "process.run"
+        ],
+        "transitions": [
+          {
+            "id": "s5_to_progress_gate",
+            "to": "s5_progress_gate"
+          }
+        ]
       },
       "s5_progress_gate": {
-        "displayName": "S5 — Deterministic implementation-progress gate",
+        "displayName": "Deterministic implementation-progress gate",
         "type": "gate",
         "entry": false,
         "terminal": false,
         "inputs": {
-          "progress": {"from": "node.s5_implementation.output.progress", "type": "object"}
+          "progress": {
+            "from": "node.s5_implementation.output.progress",
+            "type": "object"
+          }
         },
         "outputs": {
-          "passed": {"type": "boolean"},
-          "gate_evidence": {"type": "object"}
+          "passed": {
+            "type": "boolean"
+          },
+          "gate_evidence": {
+            "type": "object"
+          }
         },
-        "readiness": {"recommendedEvidence": [{"role": "point_progress", "description": "Committed point evidence and the remaining approved point count."}], "policyGates": [{"policy": "point_progress", "enforcement": "blocking", "description": "The deterministic gate decides whether another bounded point iteration is required."}], "invariants": ["The point loop cannot exceed its authored traversal budget."], "remedies": [{"code": "point_progress_invalid", "target": "s5_implementation", "action": "rerun_validation", "description": "Correct or revalidate the point progress record before continuing."}]},
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "point_progress",
+              "description": "Committed point evidence and the remaining approved point count."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "point_progress",
+              "enforcement": "blocking",
+              "description": "The deterministic gate decides whether another bounded point iteration is required."
+            }
+          ],
+          "invariants": [
+            "The point loop cannot exceed its authored traversal budget."
+          ],
+          "remedies": [
+            {
+              "code": "point_progress_invalid",
+              "target": "s5_implementation",
+              "action": "rerun_validation",
+              "description": "Correct or revalidate the point progress record before continuing."
+            }
+          ]
+        },
         "gate": {
           "policy": "darkstar/implementation-points-complete-v1",
           "condition": {
             "op": "eq",
-            "args": [{"ref": "input.progress.remaining_points"}, {"literal": 0}]
+            "args": [
+              {
+                "ref": "input.progress.remaining_points"
+              },
+              {
+                "literal": 0
+              }
+            ]
           }
         },
         "transitions": [
@@ -231,29 +772,331 @@
             "to": "s5_implementation",
             "kind": "bounded",
             "maxTraversals": 20,
-            "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": false}]}
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ]
+            }
           },
           {
             "id": "s5_to_s6",
             "to": "s6_validation",
-            "when": {"op": "eq", "args": [{"ref": "output.passed"}, {"literal": true}]}
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ]
+            }
           }
         ]
       },
       "s6_validation": {
-        "displayName": "S6 — Story validation and acceptance coverage",
+        "displayName": "Story validation and acceptance coverage",
         "type": "command",
         "entry": true,
         "terminal": true,
         "inputs": {
-          "story": {"from": "run.input.story", "type": "object"},
-          "repository": {"from": "run.input.repository", "type": "string"},
-          "changeset": {"from": "node.s5_implementation.output.changeset", "type": "object", "required": false}
+          "story": {
+            "from": "run.input.story",
+            "type": "object"
+          },
+          "repository": {
+            "from": "run.input.repository",
+            "type": "object"
+          },
+          "changeset": {
+            "from": "node.s5_implementation.output.changeset",
+            "type": "object",
+            "required": false
+          }
         },
-        "outputs": {"validation": {"type": "object"}},
-        "readiness": {"recommendedEvidence": [{"role": "validated_changeset", "description": "All atomic point commits and their focused validation evidence."}], "policyGates": [{"policy": "story_validation", "enforcement": "blocking", "description": "Integrated story checks and acceptance coverage must pass."}], "invariants": ["Completion is based on observed validation and acceptance coverage."], "remedies": [{"code": "story_validation_failed", "target": "s5_implementation", "action": "rerun_validation", "description": "Repair the failing point or acceptance gap and rerun story validation."}]},
-        "command": {"argv": ["darkstar-project", "validate", "--json"], "timeoutSeconds": 1800},
+        "outputs": {
+          "validation": {
+            "type": "object"
+          }
+        },
+        "readiness": {
+          "recommendedEvidence": [
+            {
+              "role": "validated_changeset",
+              "description": "All atomic point commits and their focused validation evidence."
+            }
+          ],
+          "policyGates": [
+            {
+              "policy": "story_validation",
+              "enforcement": "blocking",
+              "description": "Integrated story checks and acceptance coverage must pass."
+            }
+          ],
+          "invariants": [
+            "Completion is based on observed validation and acceptance coverage."
+          ],
+          "remedies": [
+            {
+              "code": "story_validation_failed",
+              "target": "s5_implementation",
+              "action": "rerun_validation",
+              "description": "Repair the failing point or acceptance gap and rerun story validation."
+            }
+          ]
+        },
+        "command": {
+          "argv": [
+            "darkstar-project",
+            "validate",
+            "--json"
+          ],
+          "timeoutSeconds": 1800
+        },
         "transitions": []
+      },
+      "clarify_branch": {
+        "displayName": "needs clarification",
+        "type": "gate",
+        "inputs": {
+          "condition": {
+            "from": "run.input.needs_clarification",
+            "type": "boolean"
+          }
+        },
+        "outputs": {
+          "passed": {
+            "type": "boolean"
+          },
+          "gate_evidence": {
+            "type": "object"
+          }
+        },
+        "gate": {
+          "policy": "workflow-condition",
+          "condition": {
+            "op": "eq",
+            "args": [
+              {
+                "ref": "input.condition"
+              },
+              {
+                "literal": true
+              }
+            ]
+          }
+        },
+        "transitions": [
+          {
+            "id": "clarify_branch_true",
+            "to": "s1_clarification",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "clarify_branch_false",
+            "to": "research_branch",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ]
+            }
+          }
+        ],
+        "entry": false,
+        "terminal": false,
+        "readiness": {
+          "recommendedEvidence": [],
+          "policyGates": [],
+          "invariants": [
+            "Select exactly one branch from the supplied Boolean condition."
+          ],
+          "remedies": []
+        }
+      },
+      "research_branch": {
+        "displayName": "needs research",
+        "type": "gate",
+        "inputs": {
+          "condition": {
+            "from": "run.input.needs_research",
+            "type": "boolean"
+          }
+        },
+        "outputs": {
+          "passed": {
+            "type": "boolean"
+          },
+          "gate_evidence": {
+            "type": "object"
+          }
+        },
+        "gate": {
+          "policy": "workflow-condition",
+          "condition": {
+            "op": "eq",
+            "args": [
+              {
+                "ref": "input.condition"
+              },
+              {
+                "literal": true
+              }
+            ]
+          }
+        },
+        "transitions": [
+          {
+            "id": "research_branch_true",
+            "to": "s2_research",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "research_branch_false",
+            "to": "design_branch",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ]
+            }
+          }
+        ],
+        "join": {
+          "mode": "one",
+          "from": [
+            "clarify_branch_false",
+            "s1_to_research_branch"
+          ]
+        },
+        "entry": false,
+        "terminal": false,
+        "readiness": {
+          "recommendedEvidence": [],
+          "policyGates": [],
+          "invariants": [
+            "Select exactly one branch from the supplied Boolean condition."
+          ],
+          "remedies": []
+        }
+      },
+      "design_branch": {
+        "displayName": "needs design",
+        "type": "gate",
+        "inputs": {
+          "condition": {
+            "from": "run.input.needs_design",
+            "type": "boolean"
+          }
+        },
+        "outputs": {
+          "passed": {
+            "type": "boolean"
+          },
+          "gate_evidence": {
+            "type": "object"
+          }
+        },
+        "gate": {
+          "policy": "workflow-condition",
+          "condition": {
+            "op": "eq",
+            "args": [
+              {
+                "ref": "input.condition"
+              },
+              {
+                "literal": true
+              }
+            ]
+          }
+        },
+        "transitions": [
+          {
+            "id": "design_branch_true",
+            "to": "s3_design",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "design_branch_false",
+            "to": "s4_plan",
+            "when": {
+              "op": "eq",
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ]
+            }
+          }
+        ],
+        "join": {
+          "mode": "one",
+          "from": [
+            "research_branch_false",
+            "s2_to_design_branch"
+          ]
+        },
+        "entry": false,
+        "terminal": false,
+        "readiness": {
+          "recommendedEvidence": [],
+          "policyGates": [],
+          "invariants": [
+            "Select exactly one branch from the supplied Boolean condition."
+          ],
+          "remedies": []
+        }
       }
     }
   }

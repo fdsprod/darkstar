@@ -1,26 +1,102 @@
 {
   "runInputs": {
-    "story": {"id": "story-1", "title": "Implement tenant-aware rate limits", "acceptanceCriteria": ["Limits are tenant-aware"]},
-    "repository": "C:/work/example",
+    "story": {
+      "id": "story-1",
+      "title": "Implement tenant-aware rate limits",
+      "acceptanceCriteria": [
+        "Limits are tenant-aware"
+      ]
+    },
+    "repository": {
+      "projectId": "C:/work/example"
+    },
     "needs_clarification": true,
     "needs_research": true,
     "needs_design": true
   },
   "results": {
-    "s0_readiness": [{"readiness": {"level": "recommendation"}}],
-    "s1_clarification": [{"answers": {"scope": "organization"}}],
-    "s2_research": [{"research": {"pattern": "token-bucket"}}],
-    "s3_design": [{"design": {"artifactId": "artifact:story-design:1"}}],
-    "s4_plan": [{"implementation_plan": {"points": ["storage", "api"]}}],
-    "s5_implementation": [
-      {"changeset": {"point": "storage", "commit": "1111111"}, "progress": {"completed_points": 1, "remaining_points": 1}},
-      {"changeset": {"point": "api", "commit": "2222222"}, "progress": {"completed_points": 2, "remaining_points": 0}}
+    "s0_readiness": [
+      {
+        "readiness": {
+          "level": "recommendation"
+        },
+        "document": "# Questions and readiness\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
     ],
-    "s6_validation": [{"validation": {"passed": true, "acceptanceCovered": true}}]
+    "s1_clarification": [
+      {
+        "answers": {
+          "scope": "organization"
+        }
+      }
+    ],
+    "s2_research": [
+      {
+        "research": {
+          "pattern": "token-bucket"
+        },
+        "document": "# Focused developer research\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "s3_design": [
+      {
+        "design": {
+          "artifactId": "artifact:story-design:1"
+        },
+        "document": "# Story-level design\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "s4_plan": [
+      {
+        "implementation_plan": {
+          "points": [
+            "storage",
+            "api"
+          ]
+        },
+        "document": "# Implementation plan\n\n## Overview\nFixture evidence.\n\n## Approach\nFixture design.\n\n## Validation\nFixture checks.\n\n## Questions\nFixture questions.\n\n## Known context\nFixture context."
+      }
+    ],
+    "s5_implementation": [
+      {
+        "changeset": {
+          "point": "storage",
+          "commit": "1111111"
+        },
+        "progress": {
+          "completed_points": 1,
+          "remaining_points": 1
+        }
+      },
+      {
+        "changeset": {
+          "point": "api",
+          "commit": "2222222"
+        },
+        "progress": {
+          "completed_points": 2,
+          "remaining_points": 0
+        }
+      }
+    ],
+    "s6_validation": [
+      {
+        "validation": {
+          "passed": true,
+          "acceptanceCovered": true
+        }
+      }
+    ]
   },
   "checkpoints": {
-    "s2_research": ["approve"],
-    "s3_design": ["approve"],
-    "s4_plan": ["approve"]
+    "s2_research": [
+      "approve"
+    ],
+    "s3_design": [
+      "approve"
+    ],
+    "s4_plan": [
+      "approve"
+    ]
   }
 }

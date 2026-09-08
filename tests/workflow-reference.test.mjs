@@ -15,7 +15,7 @@ import {
 } from "../scripts/workflow-reference.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const workflowPath = (name) => join(root, "examples", "workflows", name);
+const workflowPath = (name) => join(root, ...(["mvp-walking-skeleton.json","split-design.json"].includes(name) ? ["tests","fixtures","workflows"] : ["examples","workflows"]), name);
 const scenarioPath = (name) => join(root, "examples", "scenarios", name);
 
 function runExample(workflow, scenario, entry, terminals, overrides = new Map()) {
@@ -262,7 +262,7 @@ test("true bounded transition fails visibly when its budget is exhausted", () =>
   const path = workflowPath("story-execution.json");
   const document = loadJson(path);
   const fixture = {
-    runInputs: { story: {}, repository: "C:/work/example" },
+    runInputs: { story: {}, repository: {projectId:"example"} },
     results: {
       s5_implementation: Array.from({ length: 22 }, (_, index) => ({
         changeset: { point: index + 1 },
