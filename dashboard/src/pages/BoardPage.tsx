@@ -167,9 +167,10 @@ function WorkCard({ card, plan, pending, onSelect, onDrag, onMove }: { card: Boa
 }
 
 function MoveMenu({ card, plan, pending, onMove }: { card: BoardCard; plan?: Schemas["WorkTransitionPlan"]; pending: boolean; onMove(card: BoardCard, target: BoardLifecycle, source: WorkTransitionSource): Promise<void> }) {
-  const menuLabel = card.lifecycle === "ready" ? "Start" : "Move";
+  const menuLabel = "Move";
   return <details className="move-menu"><summary className="card-action" aria-label={`${menuLabel} ${card.work.title}`}>{pending ? "Working…" : menuLabel}</summary><div className="move-menu__items" aria-label={`${menuLabel} ${card.work.title}`}>
     {LIFECYCLE_COLUMNS.map((target) => {
+      if (card.lifecycle === "ready" && target === "running") return null;
       const enabled = plan ? transitionDecision(plan, target)?.availability === "enabled" : false;
       const reason = disabledTransitionReason(plan, target);
       return <button key={target} type="button" disabled={!enabled || pending} title={enabled ? undefined : reason} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void onMove(card, target, "menu"); }}><span>{target === "running" && card.lifecycle === "ready" ? "Start run" : `Move to ${lifecycleLabels[target]}`}</span><small>{enabled ? "Available" : reason}</small></button>;
@@ -192,9 +193,11 @@ function WorkQuickPanel({ card, plan, events, pending, onClose, onMove }: { card
 }
 
 function readinessSummary(card: BoardCard, plan?: Schemas["WorkTransitionPlan"]) {
+  if (card.lifecycle === "ready") return "Queued. Starts automatically when a run slot is available.";
+  if (card.lifecycle === "review") return "Approval required. Open readiness to review the route.";
   if (!plan) return "Checking the server-provided lifecycle plan.";
   const running = transitionDecision(plan, "running");
-  if (running?.availability === "enabled") return card.lifecycle === "ready" ? "Ready to start." : "The run can continue.";
+  if (running?.availability === "enabled") return "The run can continue.";
   return disabledTransitionReason(plan, "running");
 }
 

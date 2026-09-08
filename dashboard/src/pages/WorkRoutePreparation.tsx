@@ -66,7 +66,7 @@ export function WorkRoutePreparation({ work, run, onChanged }: { work: Schemas["
   if (run && !["ready", "waiting", "completed", "cancelled", "failed"].includes(run.status)) return null;
   if (!prepared || !view || !assessment || !presentation) return <section className="detail-section route-preparation">
     <SectionHeader eyebrow="Automatic route assessment" title="Choose the smallest safe workflow route" />
-    <p>DARKSTAR will assess the requested outcome, evidence, and project policy, then freeze a preview before any provider work starts.</p>
+    <p>DARKSTAR assesses the requested outcome, evidence, and project policy. Ready work starts automatically when capacity is available; questions and approvals pause it for review.</p>
     <PreparationEditor draft={draft} workflows={workflows} busy={busy} onChange={updateDraft} />
     {state.kind === "error" || state.kind === "stale" ? <AsyncPanel compact state="error" title={state.kind === "stale" ? "Assessment became stale" : "Assessment unavailable"} message={state.message} /> : undefined}
     <button className="button button--primary" type="button" disabled={busy} onClick={() => void prepare()}>{busy ? "Assessing…" : "Assess route"}</button>
@@ -87,7 +87,7 @@ export function WorkRoutePreparation({ work, run, onChanged }: { work: Schemas["
     {(state.kind === "error" || state.kind === "stale") && <AsyncPanel compact state="error" title={state.kind === "stale" ? "Assessment became stale" : "Action unavailable"} message={state.message} />}
     {message && <AsyncPanel compact state="success" title="Route decision recorded" message={message} />}
     <div className="route-preparation__actions">
-      {presentation.readiness === "input_required" ? <button className="button button--primary" type="button" disabled={busy} onClick={() => void prepare()}>Supply inputs and reassess</button> : <button className="button button--primary" type="button" disabled={busy} onClick={() => void decide("confirm")}>{presentation.readiness === "confirmation_required" ? "Confirm exact route" : "Start assessed route"}</button>}
+      {presentation.readiness === "input_required" ? <button className="button button--primary" type="button" disabled={busy} onClick={() => void prepare()}>Supply inputs and reassess</button> : presentation.readiness === "confirmation_required" ? <button className="button button--primary" type="button" disabled={busy} onClick={() => void decide("confirm")}>Approve and queue route</button> : <p>Queued. Starts automatically when a run slot is available.</p>}
       <AppLink className="navigation-action" to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(work.id)}&ingest=1`}>Add work artifact →</AppLink>
       <button className="button button--danger" type="button" disabled={busy} onClick={() => void decide("cancel")}>Cancel preview</button>
     </div>

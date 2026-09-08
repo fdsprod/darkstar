@@ -205,6 +205,9 @@ function lifecycleFor(work: Schemas["WorkItem"], run?: Schemas["Run"]): BoardLif
     case "pending":
     case "draft": return "backlog";
     case "ready":
+      if (run.routeSnapshot?.assessment?.questions?.length) return "waiting";
+      if (run.routeSnapshot?.assessment?.confirmationReasons?.length) return "review";
+      return "ready";
     case "queued": return "ready";
     case "running": return "running";
     case "waiting": return "waiting";
