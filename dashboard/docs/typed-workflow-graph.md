@@ -1,53 +1,26 @@
-# Typed workflow graph
+# Workflow canvas
 
-In `darkstar.local/v1alpha3`, reusable nodes carry an exact `definition` reference with a closed `built_in`,
-`project`, or `user` scope, semantic version, and content digest. Published
-workflow JSON retains that resolved reference, so run snapshots continue to use
-the same definition even after a newer version is created or the library entry
-is archived. Built-ins are immutable; customization creates a project or user
-derivative with explicit provenance.
+The workflow editor shows one workflow version at a time on a canvas. Published versions, including the two shipped workflows, are read-only. **New version** creates an editable draft under the same workflow name. Publishing a higher semantic version makes it the default for future unpinned runs. Existing runs retain their resolved version and snapshot. Historical published versions remain inspectable.
 
-The `routing` node is a first-class typed executor. Its outputs declare the
-selected route, rationale, advice, missing information, assumptions, and whether
-confirmation is required. Each named branch references an existing transition
-ID, and authoritative validation rejects missing transitions or output type
-mismatches before publish; assessment output never edits graph topology.
+Right-click the canvas (or focus it and press Insert) to add a node. Select a node to open its inspector; click empty canvas or press Escape to close it. Drag cards to position them. Connect matching pins by dragging, or click an output followed by an input. The **+ Input** pin creates a named, typed binding. White execution connections determine order; colored data connections supply values. All connections remain visible. Layout is presentation data and does not change execution semantics.
 
-DAR-145 implements the authoring projection of the accepted DS-002
-[execution semantics](../../docs/architecture/workflow/execution-semantics.md).
-It preserves the existing draft revision/CAS, validation, route preview and
-immutable publication APIs.
+Start is an explicit movable event card connected to the configured entry. Starting a run invokes that entry when its required inputs resolve. Resource nodes supply values; they do not execute. A Branch / IF node evaluates its predicate and exposes True and False execution pins. Else is the false pin. Command, reasoning, approval, routing, point execution, and subworkflow nodes retain their runtime contracts.
 
-Ports and edges are tagged execution or data variants. Stable node IDs and
-declared input/output IDs identify endpoints; run inputs are explicit source
-ports. The graph is rebuilt from the workflow document, so there is no second
-binding table to synchronize with Structure view. Layout and viewport live only
-in the existing presentation document and never enter the execution digest.
+| Resource | Meaning |
+| --- | --- |
+| Task | Snapshot of the starting board work item and description |
+| Repository | Repository identity from the selected project |
+| Artifact | Markdown/text input, or a named output produced by an action |
+| Template | Versioned Markdown instructions and optional required headings |
+| Constant | A typed literal; objects and arrays can carry a user-defined JSON Schema |
+| Config | Selected effective non-secret configuration key, resolved at run start |
+| Open items | Shared run journal with read, add, defer, and resolve tools |
+| Decision log | Shared run journal with read, record, and supersede tools |
 
-Solid edges represent execution and dashed edges represent data bindings.
-Click or keyboard-activate an output then an input to connect them. The shared
-Data bindings form offers the same operation without canvas interaction.
-Reconnecting a data port replaces its source with the selected whole value and
-removes the old source's JSON pointer. The input inspector can configure a new
-pointer or remove the binding. Integer outputs can bind to number inputs; other
-whole-value connections require equal JSON types, matching daemon validation.
-Existing pointer bindings are preserved and evaluated by the daemon.
+Each action output also appears as a separate value/artifact card. Connect it onward to consumers. An artifact input becomes a generated output when a producer is wired into it. A reasoning node may have multiple outputs, each with its own type, schema, filename, and template input. Add artifact outputs in the selected reasoning node inspector, then select each output card to configure its contract. Templates are connected inputs; each output explicitly selects which connected template governs it.
 
-Inline connection findings identify missing sources and incompatible whole-value
-types before saving. They are advisory authoring checks; saved-revision server
-validation remains mandatory for publication and covers topology, predicates,
-executor configuration, schemas and references. Selecting a finding opens the
-corresponding inspector section and focuses the exact field.
+The daemon supplies `read_input`, `submit_output`, and the connected journal tools to the provider. The prompt includes the exact input IDs, output contracts, template contents, and instructions. The agent submits outputs individually and receives validation errors to correct. Final output must match the submitted values; required outputs cannot be skipped. Output values persist with run execution evidence. Journals use daemon-owned append-only SQLite events; Markdown is a read projection, and resolving an item records another event without rewriting history. These tools do not grant arbitrary journal-file mutation.
 
-Canvas controls provide auto-layout, zoom-to-fit, zoom, and a node minimap.
-Arrow keys pan while the canvas is focused; Shift+arrow moves the selected node.
-Escape cancels a pending connection from any canvas control. Structure remains
-the default view and works on narrow displays, with no drag needed to create,
-connect, configure, reorder or delete nodes. The URL still stores the selected
-draft, view and node/transition, and draft conflicts retain both documents until
-the operator chooses a base explicitly.
+The shipped Story Execution 2.0.0 contains Questions → clarification → Research → Design → Planning → Execution, with explicit conditional branches and document outputs. Software Delivery 2.0.0 retains the broader delivery stages and pins its Story Execution child to 2.0.0. The former walking-skeleton and split-design examples are test fixtures, not shipped library entries.
 
-The eight port-model tests cover identity, compatibility, stale selections,
-pointer reconnection, immediate findings, malformed types, layout isolation and
-node renaming. Browser-level integrated authoring and CAS coverage belongs to
-the expanded DAR-140 acceptance gate.
+Validation still runs before publication. The canvas is the authoring surface; there is no Structure tab, JSON editor, route-preview panel, fixed run-input card, palette sidebar, or data-binding form.

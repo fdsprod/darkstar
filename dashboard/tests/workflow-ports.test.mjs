@@ -16,9 +16,9 @@ const project = (document, layout = {}) => { const graph = deriveEditorGraph(doc
 
 test("typed projection separates execution, node outputs and run-input bindings using stable IDs", () => {
   const document = fixture(), before = structuredClone(document), result = project(document);
-  assert.deepEqual(result.edges.map((edge) => edge.kind), ["execution", "data", "data"]);
-  assert.equal(result.edges[1].source.portId, "answer");
-  assert.equal(result.edges[2].source.kind, "run_input");
+  assert.deepEqual(result.edges.map((edge) => edge.kind), ["execution", "execution", "data", "data"]);
+  assert.equal(result.edges[2].source.portId, "answer");
+  assert.equal(result.edges[3].source.kind, "run_input");
   assert.deepEqual(result.findings, []);
   assert.deepEqual(document, before);
   const moved = project(document, { nodes: { start: { x: 900, y: 500 } } });
@@ -54,7 +54,7 @@ test("reconnecting a whole value preserves optional policy and unknown fields wh
   assert.deepEqual(result.document.spec.nodes.finish.inputs.answer, { from: "node.start.output.answer", type: "number", required: false, default: 0, description: "Score", futureBinding: "preserved" });
   assert.equal(document.spec.nodes.finish.inputs.answer.pointer, "/score");
   assert.deepEqual(project(result.document).findings, []);
-  assert.equal(project(JSON.parse(JSON.stringify(result.document))).edges[1].source.portId, "answer");
+  assert.equal(project(JSON.parse(JSON.stringify(result.document))).edges[2].source.portId, "answer");
 });
 
 test("incomplete and incompatible draft bindings are navigable before server validation", () => {
@@ -77,7 +77,7 @@ test("auto-layout handles cycles and disconnected nodes without touching executi
   document = connectNodes(document, "finish", "start", "bounded_repair");
   const before = JSON.stringify(document), { graph, ports } = project(document), layout = normalizeLayout({ futureLayout: "kept" });
   const next = autoLayoutGraph(layout, graph, ports);
-  assert.equal(next.futureLayout, "kept"); assert.equal(Object.keys(next.nodes).length, 3);
+  assert.equal(next.futureLayout, "kept"); assert.equal(Object.keys(next.nodes).length, 7);
   assert.deepEqual(next, autoLayoutGraph(layout, graph, ports));
   assert.equal(JSON.stringify(document), before);
   assert.deepEqual(project(document, next).edges, project(document).edges);
@@ -85,12 +85,12 @@ test("auto-layout handles cycles and disconnected nodes without touching executi
   assert.ok(bounds.x < 0, "run inputs have room to the left of nodes");
   assert.ok(bounds.width >= 720 && bounds.height >= 440, "canvas bounds reserve usable graph extents");
   const start = next.nodes.start, finish = next.nodes.finish, isolated = next.nodes.isolated;
-  assert.ok(finish.y - start.y >= 300, "connected layers have enough vertical clearance for nodes and edges");
-  assert.ok(Math.abs(start.x - isolated.x) >= 400, "nodes sharing a layer receive content-aware horizontal clearance");
-  assert.equal(next.portLayoutVersion, 6);
+  assert.ok(finish.x - start.x >= 400, "connected layers have enough horizontal clearance for nodes and edges");
+  assert.ok(Math.abs(start.y - isolated.y) >= 150, "nodes sharing a layer receive content-aware horizontal clearance");
+  assert.equal(next.portLayoutVersion, 7);
   assert.equal(next.viewport.zoom, 0.85, "ordinary auto-layout keeps labels readable instead of fitting the whole graph");
   assert.deepEqual(preparePortLayout(next, graph, ports), next, "current layout coordinates remain authoritative");
-  assert.equal(preparePortLayout({ ...next, portLayoutVersion: 5 }, graph, ports).portLayoutVersion, 6, "legacy card coordinates migrate deterministically");
+  assert.equal(preparePortLayout({ ...next, portLayoutVersion: 5 }, graph, ports).portLayoutVersion, 7, "legacy card coordinates migrate deterministically");
 });
 
 test("software-delivery ranks forward control flow monotonically and leaves bounded repair pointing backward", () => {
@@ -98,16 +98,16 @@ test("software-delivery ranks forward control flow monotonically and leaves boun
   const { graph, ports } = project(document);
   const next = autoLayoutGraph(normalizeLayout({}), graph, ports);
   const forward = graph.edges.filter((edge) => edge.kind !== "bounded_repair");
-  for (const edge of forward) assert.ok(next.nodes[edge.to].y > next.nodes[edge.from].y, `${edge.id} must advance top to bottom`);
+  for (const edge of forward) assert.ok(next.nodes[edge.to].x > next.nodes[edge.from].x, `${edge.id} must advance left to right`);
   const repair = graph.edges.find((edge) => edge.kind === "bounded_repair");
   assert.equal(repair.from, "p12_integrated_validation");
   assert.equal(repair.to, "p11_story_execution");
-  assert.ok(next.nodes[repair.to].y < next.nodes[repair.from].y, "bounded repair returns to its prior stage without affecting rank");
+  assert.ok(next.nodes[repair.to].x < next.nodes[repair.from].x, "bounded repair returns to its prior stage without affecting rank");
   const mainSequence = ["p0_intake", "p1_route_assessment", "p1_route_gate", "p1_route_review", "p2_product_discovery", "p3_poc", "p4_requirements", "p5_experience_design", "p6_product_readiness", "p7_technical_research", "p8_technical_design", "p9_decomposition", "p10_delivery_readiness", "p11_story_execution", "p12_integrated_validation", "p13_pull_request", "p14_review_ci", "p15_release_readiness", "p16_release", "p17_verification"];
-  assert.deepEqual(mainSequence.map((id) => next.nodes[id].y), mainSequence.map((id) => next.nodes[id].y).toSorted((top, bottom) => top - bottom));
+  assert.deepEqual(mainSequence.map((id) => next.nodes[id].x), mainSequence.map((id) => next.nodes[id].x).toSorted((top, bottom) => top - bottom));
   const bounds = graphBounds(deriveEditorGraph(document, next), ports);
-  assert.ok(bounds.height > bounds.width * 4, `expected a tall route, got ${bounds.width}×${bounds.height}`);
-  assert.ok(bounds.width < 1600, "branch alternatives stay near their decision instead of producing a horizontal strip");
+  assert.ok(bounds.width > bounds.height, `expected a horizontal route, got ${bounds.width}×${bounds.height}`);
+  
   assert.deepEqual(next, autoLayoutGraph(normalizeLayout({}), graph, ports), "branch placement is deterministic");
 });
 
@@ -120,8 +120,8 @@ test("same-rank conditional branches follow authored transition order", () => {
   ];
   const { graph, ports } = project(document);
   const next = autoLayoutGraph(normalizeLayout({}), graph, ports);
-  assert.equal(next.nodes.beta.y, next.nodes.alpha.y);
-  assert.ok(next.nodes.beta.x > next.nodes.alpha.x, "authored branch order remains stable within its shared rank");
+  assert.equal(next.nodes.beta.x, next.nodes.alpha.x);
+  assert.ok(next.nodes.beta.y > next.nodes.alpha.y, "authored branch order remains stable within its shared rank");
 });
 
 test("authoritative node rename rewrites bindings and therefore both graph views", () => {
@@ -129,6 +129,6 @@ test("authoritative node rename rewrites bindings and therefore both graph views
   assert.equal(renamed.preview.kind, "ready");
   const projection = project(renamed.document, renamed.layout);
   assert.equal(projection.edges[1].source.nodeId, "producer");
-  assert.equal(projection.edges[0].source.nodeId, "producer");
+  assert.equal(projection.edges[0].source.nodeId, "$start");
   assert.deepEqual(projection.findings, []);
 });

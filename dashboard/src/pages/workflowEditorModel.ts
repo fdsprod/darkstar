@@ -49,7 +49,7 @@ export type CheckpointConfig =
   | { mode: "approve_on_change"; when: WorkflowPredicate; maxRevisions?: number }
   | { mode: "external"; externalCondition: string };
 export type NodeExecutor =
-  | { type: "reasoning"; agent: string; skills: string[]; tools: string[] }
+  | { type: "reasoning"; agent: string; instructions?: string; skills: string[]; tools: string[] }
   | { type: "gate"; policy: string; condition: WorkflowPredicate }
   | { type: "command"; argv: string[]; cwd?: string; timeoutSeconds?: number }
   | { type: "approval"; actor: string; externalCondition?: string; evidenceOutput?: string }
@@ -97,7 +97,7 @@ export interface VisualNode {
   position: NodePosition;
 }
 export interface VisualEdge { id: string; transitionId: string; from: string; to: string; kind: WorkflowEdgeKind; conditional: boolean; maxTraversals?: number }
-export interface EditorGraph { nodes: VisualNode[]; edges: VisualEdge[] }
+export interface EditorGraph { nodes: VisualNode[]; edges: VisualEdge[]; entry?: string; bindings?: {source:string;target:string}[] }
 
 const nodeTypes: readonly WorkflowNodeType[] = ["reasoning", "gate", "command", "approval", "subworkflow", "point_execution", "routing"];
 const identifier = /^[a-z][a-z0-9_]{0,63}$/;
@@ -185,7 +185,7 @@ export function deriveEditorGraph(document: unknown, layoutValue: unknown, findi
     }
     index += 1;
   }
-  return { nodes, edges };
+  return { nodes, edges, entry: String(record(record(record(document).spec).routeDefaults).entry ?? ""), bindings: Object.entries(workflowNodes(record(document))).flatMap(([id,raw]) => Object.values(record(record(raw).inputs)).map(binding=>({source:String(record(binding).from),target:id}))) };
 }
 
 export function addNode(document: JsonObject, type: WorkflowNodeType, requestedId?: string): { document: JsonObject; nodeId: string } {
@@ -308,7 +308,7 @@ export function inspectNode(document: unknown, nodeId: string): AuthoringNode | 
   switch (raw.type) {
     case "reasoning": {
       const value = record(raw.reasoning);
-      return { ...common, executor: { type: "reasoning", agent: stringValue(value.agent), skills: stringArray(value.skills), tools: stringArray(value.tools) } };
+      return { ...common, executor: { type: "reasoning", agent: stringValue(value.agent), instructions:stringValue(value.instructions), skills: stringArray(value.skills), tools: stringArray(value.tools) } };
     }
     case "gate": {
       const value = record(raw.gate);
@@ -349,7 +349,7 @@ export function updateNodeExecutor(document: JsonObject, nodeId: string, executo
   const next = clone(document); const node = record(workflowNodes(next)[nodeId]);
   if (node.type !== executor.type) return next;
   switch (executor.type) {
-    case "reasoning": node.reasoning = { ...record(node.reasoning), agent: executor.agent, skills: uniqueStrings(executor.skills), tools: uniqueStrings(executor.tools) }; break;
+    case "reasoning": node.reasoning = { ...record(node.reasoning), agent: executor.agent, instructions:executor.instructions ?? "", skills: uniqueStrings(executor.skills), tools: uniqueStrings(executor.tools) }; break;
     case "gate": node.gate = { ...record(node.gate), policy: executor.policy, condition: encodePredicate(executor.condition) }; break;
     case "command": node.command = { ...record(node.command), argv: executor.argv, ...(executor.cwd ? { cwd: executor.cwd } : {}), ...(executor.timeoutSeconds ? { timeoutSeconds: executor.timeoutSeconds } : {}) }; removeEmptyOptional(record(node.command), "cwd", executor.cwd); removeEmptyOptional(record(node.command), "timeoutSeconds", executor.timeoutSeconds); break;
     case "approval": {
@@ -611,7 +611,7 @@ function supportedExecutor(node: JsonObject) {
   const expected = node.type === "subworkflow" ? "call" : node.type === "point_execution" ? "points" : String(node.type);
   if (executorFields.some((field) => field !== expected && node[field] !== undefined)) return false;
   switch (node.type) {
-    case "reasoning": { const value = node.reasoning; return isPlainRecord(value) && hasOnlyKeys(value, ["agent", "skills", "tools"]) && typeof value.agent === "string" && value.agent.length > 0 && (value.skills === undefined || Array.isArray(value.skills) && value.skills.every((item) => typeof item === "string") && new Set(value.skills).size === value.skills.length) && (value.tools === undefined || Array.isArray(value.tools) && value.tools.every((item) => typeof item === "string") && new Set(value.tools).size === value.tools.length); }
+    case "reasoning": { const value = node.reasoning; return isPlainRecord(value) && hasOnlyKeys(value, ["agent", "skills", "tools", "instructions"]) && typeof value.agent === "string" && value.agent.length > 0 && (value.skills === undefined || Array.isArray(value.skills) && value.skills.every((item) => typeof item === "string") && new Set(value.skills).size === value.skills.length) && (value.tools === undefined || Array.isArray(value.tools) && value.tools.every((item) => typeof item === "string") && new Set(value.tools).size === value.tools.length); }
     case "gate": { const value = node.gate; return isPlainRecord(value) && hasOnlyKeys(value, ["policy", "condition"]) && typeof value.policy === "string" && value.policy.length > 0 && value.condition !== undefined && decodePredicate(value.condition).kind !== "unsupported"; }
     case "command": { const value = node.command; return isPlainRecord(value) && hasOnlyKeys(value, ["argv", "cwd", "timeoutSeconds"]) && Array.isArray(value.argv) && value.argv.length > 0 && value.argv.every((item) => typeof item === "string") && (value.cwd === undefined || typeof value.cwd === "string") && (value.timeoutSeconds === undefined || positiveInteger(value.timeoutSeconds)); }
     case "approval": { const value = node.approval; if (!isPlainRecord(value) || !hasOnlyKeys(value, ["actor", "externalCondition", "evidenceOutput"]) || typeof value.actor !== "string" || value.actor.length === 0) return false; return value.actor === "external" ? typeof value.externalCondition === "string" && value.externalCondition.length > 0 && typeof value.evidenceOutput === "string" && identifier.test(value.evidenceOutput) : value.externalCondition === undefined && value.evidenceOutput === undefined; }
