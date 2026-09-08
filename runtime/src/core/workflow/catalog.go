@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"darkstar/src/ports/valueschema"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -270,6 +271,7 @@ type RoutePreview struct {
 
 // Catalog coordinates scope-aware loading, version installation, and run snapshots.
 type Catalog struct {
+	valueSchemas valueschema.Validator
 	publishMu    sync.Mutex
 	source       workflowstore.Source
 	store        workflowstore.Store
@@ -402,7 +404,7 @@ func (c *Catalog) Load(ctx context.Context) ([]LoadedDefinition, error) {
 	}
 	selected := make(map[string]LoadedDefinition, len(candidates))
 	for _, candidate := range candidates {
-		loaded, err := loadCandidate(candidate)
+		loaded, err := loadCandidate(candidate, c.valueSchemas)
 		if err != nil {
 			return nil, err
 		}
@@ -860,7 +862,7 @@ func decoderErrorLocation(err error) string {
 // an installed digest and validates the authored route and data mappings against
 // that immutable child before a draft may validate or publish successfully.
 func (c *Catalog) resolveCandidateSubworkflows(ctx context.Context, candidate workflowstore.Candidate) (LoadedDefinition, ValidationErrors, error) {
-	definition, err := loadCandidate(candidate)
+	definition, err := loadCandidate(candidate, c.valueSchemas)
 	if err != nil {
 		return LoadedDefinition{}, nil, err
 	}
@@ -940,7 +942,7 @@ func (c *Catalog) resolveCandidateSubworkflows(ctx context.Context, candidate wo
 	if marshalErr != nil {
 		return LoadedDefinition{}, nil, fmt.Errorf("encode resolved sub-workflows: %w", marshalErr)
 	}
-	definition, err = loadCandidate(workflowstore.Candidate{Scope: candidate.Scope, Reference: candidate.Reference, Content: resolved})
+	definition, err = loadCandidate(workflowstore.Candidate{Scope: candidate.Scope, Reference: candidate.Reference, Content: resolved}, c.valueSchemas)
 	return definition, nil, err
 }
 
@@ -1406,13 +1408,16 @@ func (c *Catalog) InstallConfigured(ctx context.Context) ([]InstallResult, error
 	return results, nil
 }
 
-func loadCandidate(candidate workflowstore.Candidate) (LoadedDefinition, error) {
+func loadCandidate(candidate workflowstore.Candidate, validators ...valueschema.Validator) (LoadedDefinition, error) {
 	if !validSourceScope(candidate.Scope) || candidate.Reference == "" {
 		return LoadedDefinition{}, fmt.Errorf("workflow candidate has invalid source %q at %q", candidate.Scope, candidate.Reference)
 	}
 	document, canonical, digest, err := Canonicalize(candidate.Content)
 	if err != nil {
 		return LoadedDefinition{}, fmt.Errorf("workflow %s %q: %w", candidate.Scope, candidate.Reference, err)
+	}
+	if err := validateValueSchemas(document, validators...); err != nil {
+		return LoadedDefinition{}, err
 	}
 	return LoadedDefinition{
 		Document: document, CanonicalJSON: canonical, Digest: digest,
@@ -1473,4 +1478,39 @@ func scopePrecedence(scope workflowstore.Scope) int {
 	default:
 		return 0
 	}
+}
+
+func (c *Catalog) WithValueSchemaValidator(validator valueschema.Validator) *Catalog {
+	c.valueSchemas = validator
+	return c
+}
+func validateValueSchemas(document Document, validators ...valueschema.Validator) error {
+	validate := func(schema, value json.RawMessage) error {
+		if len(schema) == 0 {
+			return nil
+		}
+		if len(validators) == 0 || validators[0] == nil {
+			return errors.New("workflow requires a value schema validator")
+		}
+		return validators[0].Validate(schema, value)
+	}
+	for id, input := range document.Spec.Inputs {
+		var value json.RawMessage
+		if input.Resource != nil {
+			if source, ok := input.Resource.Source.(ConstantResource); ok {
+				value = source.Value
+			}
+		}
+		if err := validate(input.SchemaDefinition, value); err != nil {
+			return fmt.Errorf("input %s: %w", id, err)
+		}
+	}
+	for id, node := range document.Spec.Nodes {
+		for output, decl := range node.Fields().Outputs {
+			if err := validate(decl.SchemaDefinition, nil); err != nil {
+				return fmt.Errorf("node %s output %s: %w", id, output, err)
+			}
+		}
+	}
+	return nil
 }

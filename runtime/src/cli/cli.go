@@ -4,6 +4,7 @@ package cli
 import (
 	"context"
 	"crypto/rand"
+	valueschemaadapter "darkstar/src/adapters/valueschema/jsonschema"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -364,6 +365,9 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return fmt.Errorf("configure workflow sources: %w", err)
 	}
 	workflowCatalog, err := workflow.NewCatalog(workflowSource, database)
+	if workflowCatalog != nil {
+		workflowCatalog.WithValueSchemaValidator(valueschemaadapter.Validator{})
+	}
 	if err != nil {
 		_ = database.Close()
 		service.database = nil
@@ -477,6 +481,9 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return err
 	}
 	executions, err := runexecution.New(ctx, database, runexecution.ProviderFactoryFunc(newFakeRunProvider), logs)
+	if executions != nil {
+		executions.SetValueSchemaValidator(valueschemaadapter.Validator{})
+	}
 	if err != nil {
 		_ = database.Close()
 		service.database = nil

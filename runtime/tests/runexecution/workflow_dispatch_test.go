@@ -142,7 +142,7 @@ func TestPrepareUsesPersistedRoutingOverrideAndResolvesOmittedVersion(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.WorkflowVersion != "1.0.0" || planner.version != "" || planner.request.From != "design" || !reflect.DeepEqual(planner.request.Until, []workflow.Identifier{"delivery"}) {
+	if prepared.WorkflowVersion != "1.0.0" || planner.version != "1.0.0" || planner.request.From != "design" || !reflect.DeepEqual(planner.request.Until, []workflow.Identifier{"delivery"}) {
 		t.Fatalf("prepared=%#v planner version=%q route=%#v", prepared, planner.version, planner.request)
 	}
 }
@@ -157,7 +157,7 @@ func TestPrepareResolvesAutomaticWorkToServerDefault(t *testing.T) {
 	if _, err := service.Prepare(context.Background(), CreateRequest{WorkItemID: workID}, "prepare-automatic-route"); err != nil {
 		t.Fatal(err)
 	}
-	if planner.name != DefaultWorkflowID || planner.version != DefaultWorkflowVersion || planner.request.From != "" || len(planner.request.Until) != 0 {
+	if planner.name != DefaultWorkflowID || planner.version != "1.0.0" || planner.request.From != "" || len(planner.request.Until) != 0 {
 		t.Fatalf("automatic planner input = %s@%s %#v", planner.name, planner.version, planner.request)
 	}
 }

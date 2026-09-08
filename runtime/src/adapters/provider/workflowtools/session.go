@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	valueschemaadapter "darkstar/src/adapters/valueschema/jsonschema"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -153,7 +154,7 @@ func (s *Session) Call(ctx context.Context, callID, name string, raw json.RawMes
 		if err := json.Unmarshal(raw, &args); err != nil {
 			return nil, err
 		}
-		if err := workflow.ValidateDeliverable(s.Node, args.ID, args.Value, s.Inputs); err != nil {
+		if err := workflow.ValidateDeliverable(s.Node, args.ID, args.Value, s.Inputs, valueschemaadapter.Validator{}); err != nil {
 			return nil, err
 		}
 		return s.append(ctx, "output:"+s.AttemptID+":"+string(args.ID), "submit", string(args.ID), callID, string(args.Value), false)

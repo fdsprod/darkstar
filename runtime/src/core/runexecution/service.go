@@ -4,6 +4,7 @@ package runexecution
 import (
 	"context"
 	"crypto/sha256"
+	"darkstar/src/ports/valueschema"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -258,6 +259,7 @@ type LogSink interface {
 
 // Service owns provider workers for one daemon lifetime.
 type Service struct {
+	valueSchemas              valueschema.Validator
 	advisor                   routeadvisor.Advisor
 	evidenceResolver          routeadvisor.EvidenceResolver
 	preparationPolicyResolver func(context.Context, statestore.ProjectProjection) (preparation.Policy, error)
@@ -1717,4 +1719,8 @@ func pendingEvent(kind string, aggregateType statestore.AggregateType, aggregate
 		ExpectedRevision: revision, Kind: kind, OccurredAt: occurredAt.UTC().Round(0), CorrelationID: correlationID,
 		CommandID: commandID, Actor: statestore.Actor{Type: actorType, ID: actorID}, Data: encoded, Metadata: json.RawMessage(`{}`),
 	}
+}
+
+func (service *Service) SetValueSchemaValidator(validator valueschema.Validator) {
+	service.valueSchemas = validator
 }

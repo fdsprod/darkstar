@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/santhosh-tekuri/jsonschema/v6"
+	"darkstar/src/ports/valueschema"
 )
 
 // Resource is a closed source union. Storage and execution still share the
@@ -164,7 +164,7 @@ type ArtifactContract struct {
 	TemplateInput Identifier `json:"templateInput,omitempty"`
 }
 
-func ValidateDeliverable(node Node, id Identifier, value json.RawMessage, inputs map[Identifier]json.RawMessage) error {
+func ValidateDeliverable(node Node, id Identifier, value json.RawMessage, inputs map[Identifier]json.RawMessage, validators ...valueschema.Validator) error {
 	declaration, exists := node.Fields().Outputs[id]
 	if !exists {
 		return fmt.Errorf("undeclared output %q", id)
@@ -172,8 +172,13 @@ func ValidateDeliverable(node Node, id Identifier, value json.RawMessage, inputs
 	if !literalMatchesType(value, declaration.Type) {
 		return fmt.Errorf("output %q must have type %s", id, declaration.Type)
 	}
-	if err := ValidateSchemaValue(declaration.SchemaDefinition, value); err != nil {
-		return fmt.Errorf("output %s: %w", id, err)
+	if len(declaration.SchemaDefinition) > 0 {
+		if len(validators) == 0 || validators[0] == nil {
+			return errors.New("output requires a value schema validator")
+		}
+		if err := validators[0].Validate(declaration.SchemaDefinition, value); err != nil {
+			return fmt.Errorf("output %s: %w", id, err)
+		}
 	}
 	if declaration.Artifact == nil {
 		return nil
@@ -193,29 +198,25 @@ func ValidateDeliverable(node Node, id Identifier, value json.RawMessage, inputs
 	return ValidateArtifact(*declaration.Artifact, content, template)
 }
 
+// ValidateSchemaValue validates the transport shape. Full schema compilation and
+// value checking belong to the injected valueschema port at catalog/execution boundaries.
 func ValidateSchemaValue(schema, value json.RawMessage) error {
 	if len(schema) == 0 {
 		return nil
 	}
-	var definition, instance any
+	var definition any
 	if err := json.Unmarshal(schema, &definition); err != nil {
 		return err
 	}
-	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource("workflow-value.json", definition); err != nil {
-		return err
+	switch definition.(type) {
+	case map[string]any, bool:
+	default:
+		return errors.New("schema must be an object or boolean")
 	}
-	compiled, err := compiler.Compile("workflow-value.json")
-	if err != nil {
-		return err
+	if len(value) > 0 && !json.Valid(value) {
+		return errors.New("invalid JSON value")
 	}
-	if len(value) == 0 {
-		return nil
-	}
-	if err := json.Unmarshal(value, &instance); err != nil {
-		return err
-	}
-	return compiled.Validate(instance)
+	return nil
 }
 
 func ValidateArtifact(contract ArtifactContract, content string, template *TemplateResource) error {

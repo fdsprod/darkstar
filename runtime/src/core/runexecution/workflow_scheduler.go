@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"darkstar/src/ports/valueschema"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -217,9 +218,9 @@ func chooseTransition(nodeID workflow.Identifier, node workflow.Node, route work
 	return selected, nil
 }
 
-func prepareWorkflowAdvance(dispatch AttemptRequestContext, output map[workflow.Identifier]json.RawMessage) (workflowAdvance, error) {
+func prepareWorkflowAdvance(dispatch AttemptRequestContext, output map[workflow.Identifier]json.RawMessage, validators ...valueschema.Validator) (workflowAdvance, error) {
 	for id, value := range output {
-		if err := workflow.ValidateDeliverable(dispatch.Node, id, value, dispatch.NodeInputs); err != nil {
+		if err := workflow.ValidateDeliverable(dispatch.Node, id, value, dispatch.NodeInputs, validators...); err != nil {
 			return workflowAdvance{}, err
 		}
 	}
@@ -417,6 +418,11 @@ func (s *Service) completeWorkflowSucceeded(ctx context.Context, attempt statest
 	if err != nil {
 		return &workflowAdmissionError{code: "RUN_OUTPUT_INVALID", message: err.Error()}
 	}
+	for id, value := range outputs {
+		if err := workflow.ValidateDeliverable(dispatch.Node, id, value, dispatch.NodeInputs, s.valueSchemas); err != nil {
+			return &workflowAdmissionError{code: "RUN_OUTPUT_INVALID", message: err.Error()}
+		}
+	}
 	checkpoint := dispatch.Node.Fields().Checkpoint
 	waiting := checkpoint != nil && checkpoint.Mode() != workflow.CheckpointNone
 	advance := workflowAdvance{context: dispatch.ExecutionContext}
@@ -424,7 +430,7 @@ func (s *Service) completeWorkflowSucceeded(ctx context.Context, attempt statest
 	accepted[workflow.Identifier(attempt.NodeID)] = cloneRawMap(outputs)
 	advance.context.AcceptedOutputs = stringAcceptedOutputs(accepted)
 	if !waiting {
-		advance, err = prepareWorkflowAdvance(dispatch, outputs)
+		advance, err = prepareWorkflowAdvance(dispatch, outputs, s.valueSchemas)
 		if err != nil {
 			return &workflowAdmissionError{code: workflowFailureCode(err, "WORKFLOW_TRANSITION_FAILED"), message: err.Error()}
 		}

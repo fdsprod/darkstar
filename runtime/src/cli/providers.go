@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/sha256"
+	valueschemaadapter "darkstar/src/adapters/valueschema/jsonschema"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,7 @@ import (
 	"strings"
 
 	"darkstar/src/adapters/provider/codex"
-	"darkstar/src/adapters/workflowtools"
+	"darkstar/src/adapters/provider/workflowtools"
 	"darkstar/src/core/config"
 	"darkstar/src/core/configmutation"
 	"darkstar/src/core/runexecution"
@@ -345,7 +346,7 @@ func (wiring *daemonProviderWiring) ResolveWorkflowConfig(ctx context.Context, n
 			if setting.Key == resource.Key && setting.Value.Type() != config.SettingSecretReference {
 				encoded, _ := json.Marshal(setting.Value.Value())
 				declaration := definition.Document.Spec.Inputs[id]
-				if err := workflow.ValidateSchemaValue(declaration.SchemaDefinition, encoded); err != nil {
+				if err := (valueschemaadapter.Validator{}).Validate(declaration.SchemaDefinition, encoded); err != nil {
 					return nil, err
 				}
 				result[id] = encoded
