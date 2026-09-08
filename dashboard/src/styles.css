@@ -846,3 +846,8 @@ div.settings-boundary p { flex-basis: 100%; margin: 2px 0 0; }
 .workflow-flow-node--event { border-color:#b54d67; background:#251720; }
 .workflow-flow-node--artifact { border-color:#ae8d45; }
 .workflow-flow-node--gate { border-color:#9281d0; }
+
+/* Pin labels and wires share the same nominal type color. */
+.workflow-flow-port small { color:var(--port-color,#94a3b8); }
+.canvas-edge--data { opacity:.85; }
+.canvas-edge--data path, .canvas-edge--execution path { stroke:var(--port-color,#e5e7eb); }

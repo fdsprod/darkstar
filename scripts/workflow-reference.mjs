@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 const ID_RE = /^[a-z][a-z0-9_]{0,63}$/;
 const NODE_TYPES = new Set(["reasoning", "gate", "command", "approval", "subworkflow", "point_execution"]);
 const EXECUTOR_FIELDS = Object.freeze(["reasoning", "gate", "command", "approval", "call", "points"]);
-const VALUE_TYPES = new Set(["null", "boolean", "integer", "number", "string", "array", "object"]);
+const VALUE_TYPES = new Set(["null", "boolean", "integer", "number", "string", "array", "object", "template", "markdown", "repository", "task", "open_items", "decision_log"]);
 const MISSING = Symbol("missing");
 
 export class WorkflowError extends Error {
@@ -80,6 +80,7 @@ function jsonType(value) {
 }
 
 function matchesType(value, declared) {
+  declared = declared === "markdown" ? "string" : ["template","repository","task","open_items","decision_log"].includes(declared) ? "object" : declared;
   const actual = jsonType(value);
   return actual === declared || (declared === "number" && actual === "integer");
 }

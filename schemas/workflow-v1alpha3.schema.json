@@ -37,7 +37,13 @@
         "number",
         "string",
         "array",
-        "object"
+        "object",
+        "task",
+        "repository",
+        "template",
+        "markdown",
+        "open_items",
+        "decision_log"
       ]
     },
     "metadata": {

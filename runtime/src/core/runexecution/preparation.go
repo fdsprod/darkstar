@@ -229,7 +229,7 @@ func preparationInputType(raw json.RawMessage, kind workflow.ValueType) bool {
 	if json.Unmarshal(raw, &value) != nil {
 		return false
 	}
-	switch kind {
+	switch kind.StorageType() {
 	case workflow.ValueNull:
 		return value == nil
 	case workflow.ValueBoolean:

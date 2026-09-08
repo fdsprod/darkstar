@@ -610,7 +610,7 @@ func rawMessageHasType(value json.RawMessage, want ValueType) bool {
 	if err := decoder.Decode(&decoded); err != nil {
 		return false
 	}
-	switch want {
+	switch want.StorageType() {
 	case ValueNull:
 		return decoded == nil
 	case ValueBoolean:

@@ -243,7 +243,7 @@ func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]wo
 	properties := make(map[string]any, len(ids))
 	for _, id := range ids {
 		declaration := outputs[workflow.Identifier(id)]
-		property := map[string]any{"type": string(declaration.Type)}
+		property := map[string]any{"type": string(declaration.Type.StorageType())}
 		if len(declaration.SchemaDefinition) != 0 {
 			if err := json.Unmarshal(declaration.SchemaDefinition, &property); err != nil {
 				return nil, err
@@ -254,7 +254,7 @@ func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]wo
 		if declaration.Description != "" {
 			property["description"] = declaration.Description
 		}
-		if declaration.Type == workflow.ValueObject {
+		if declaration.Type.StorageType() == workflow.ValueObject {
 			property["properties"] = map[string]any{}
 			property["required"] = []string{}
 			property["additionalProperties"] = false

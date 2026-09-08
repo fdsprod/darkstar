@@ -524,7 +524,7 @@ func (c *Catalog) AuthoringCatalog(ctx context.Context) (AuthoringCatalog, error
 	}
 	return AuthoringCatalog{SchemaVersion: 1,
 		NodeTypes:       []NodeType{NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution},
-		ValueTypes:      []ValueType{ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject},
+		ValueTypes:      []ValueType{ValueTask, ValueRepository, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog, ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject},
 		CheckpointModes: []CheckpointMode{CheckpointNone, CheckpointAcknowledge, CheckpointApprove, CheckpointApproveOnChange, CheckpointExternal},
 		PredicateOps:    []string{"const", "eq", "ne", "lt", "lte", "gt", "gte", "present", "all", "any", "not"},
 		Agents:          unavailableStrings, Policies: unavailableStrings, Schemas: unavailableStrings, Skills: skills, Tools: tools, Workflows: workflows}, nil

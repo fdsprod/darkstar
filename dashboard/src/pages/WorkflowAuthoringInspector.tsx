@@ -185,7 +185,7 @@ function optionalPositive(value: string) { const number = Number(value); return 
 function optionalNonnegative(value: string) { const number = Number(value); return value && Number.isInteger(number) && number >= 0 ? Math.min(100, number) : undefined; }
 function versionKey(value: { name: string; version: string; digest?: string }) { return `${value.name}\u001f${value.version}\u001f${value.digest ?? ""}`; }
 function isJsonValue(value: unknown): value is JsonValue { if (value === null || typeof value === "boolean" || typeof value === "string" || typeof value === "number" && Number.isFinite(value)) return true; if (Array.isArray(value)) return value.every(isJsonValue); return typeof value === "object" && value !== null && Object.values(value).every(isJsonValue); }
-const valueTypes: readonly ValueType[] = ["null", "boolean", "integer", "number", "string", "array", "object"];
+const valueTypes: readonly ValueType[] = ["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "template", "markdown", "open_items", "decision_log"];
 function replaceAt<T>(values: readonly T[], index: number, value: T) { return values.map((item, itemIndex) => itemIndex === index ? value : item); }
 function removeAt<T>(values: readonly T[], index: number) { return values.filter((_, itemIndex) => itemIndex !== index); }
 function emptyReadiness(): ReadinessConfig { return { recommendedEvidence: [], policyGates: [], invariants: [], remedies: [] }; }

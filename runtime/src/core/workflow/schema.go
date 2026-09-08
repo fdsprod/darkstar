@@ -52,6 +52,27 @@ type RouteProfile struct {
 type ValueType string
 
 const (
+	ValueTask        ValueType = "task"
+	ValueRepository  ValueType = "repository"
+	ValueTemplate    ValueType = "template"
+	ValueMarkdown    ValueType = "markdown"
+	ValueOpenItems   ValueType = "open_items"
+	ValueDecisionLog ValueType = "decision_log"
+)
+
+// StorageType describes serialization, never connection compatibility.
+func (value ValueType) StorageType() ValueType {
+	switch value {
+	case ValueMarkdown:
+		return ValueString
+	case ValueTask, ValueRepository, ValueTemplate, ValueOpenItems, ValueDecisionLog:
+		return ValueObject
+	default:
+		return value
+	}
+}
+
+const (
 	ValueNull    ValueType = "null"
 	ValueBoolean ValueType = "boolean"
 	ValueInteger ValueType = "integer"

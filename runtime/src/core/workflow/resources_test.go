@@ -41,3 +41,24 @@ func TestDeliverablesRespectIndependentTemplatesAndSchemas(t *testing.T) {
 		t.Fatal("path escape accepted")
 	}
 }
+
+func TestNominalTypesHaveDistinctConnectionsAndValidStorage(t *testing.T) {
+	types := []ValueType{ValueTask, ValueRepository, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog}
+	for _, source := range types {
+		raw := json.RawMessage(`{}`)
+		if source == ValueMarkdown {
+			raw = json.RawMessage(`"# Design"`)
+		}
+		if !rawMessageHasType(raw, source) || !literalMatchesType(raw, source) {
+			t.Fatalf("valid %s storage rejected", source)
+		}
+		for _, target := range types {
+			if typesCompatible(source, target) != (source == target) {
+				t.Fatalf("incorrect connection %s to %s", source, target)
+			}
+		}
+		if typesCompatible(source, source.StorageType()) {
+			t.Fatalf("nominal %s silently converts to %s", source, source.StorageType())
+		}
+	}
+}

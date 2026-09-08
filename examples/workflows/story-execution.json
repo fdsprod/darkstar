@@ -3,19 +3,19 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/story-execution",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "displayName": "Story execution"
   },
   "spec": {
     "inputs": {
       "story": {
-        "type": "object",
+        "type": "task",
         "resource": {
           "kind": "task"
         }
       },
       "repository": {
-        "type": "object",
+        "type": "repository",
         "resource": {
           "kind": "repository"
         }
@@ -42,19 +42,19 @@
         }
       },
       "open_items": {
-        "type": "object",
+        "type": "open_items",
         "resource": {
           "kind": "open_items"
         }
       },
       "decision_log": {
-        "type": "object",
+        "type": "decision_log",
         "resource": {
           "kind": "decision_log"
         }
       },
       "s0_readiness_template": {
-        "type": "object",
+        "type": "template",
         "resource": {
           "kind": "template",
           "version": "1.0.0",
@@ -66,7 +66,7 @@
         }
       },
       "s2_research_template": {
-        "type": "object",
+        "type": "template",
         "resource": {
           "kind": "template",
           "version": "1.0.0",
@@ -79,7 +79,7 @@
         }
       },
       "s3_design_template": {
-        "type": "object",
+        "type": "template",
         "resource": {
           "kind": "template",
           "version": "1.0.0",
@@ -92,7 +92,7 @@
         }
       },
       "s4_plan_template": {
-        "type": "object",
+        "type": "template",
         "resource": {
           "kind": "template",
           "version": "1.0.0",
@@ -162,23 +162,23 @@
         "inputs": {
           "story": {
             "from": "run.input.story",
-            "type": "object"
+            "type": "task"
           },
           "repository": {
             "from": "run.input.repository",
-            "type": "object"
+            "type": "repository"
           },
           "template": {
             "from": "run.input.s0_readiness_template",
-            "type": "object"
+            "type": "template"
           },
           "open_items": {
             "from": "run.input.open_items",
-            "type": "object"
+            "type": "open_items"
           },
           "decision_log": {
             "from": "run.input.decision_log",
-            "type": "object"
+            "type": "decision_log"
           }
         },
         "outputs": {
@@ -186,7 +186,7 @@
             "type": "object"
           },
           "document": {
-            "type": "string",
+            "type": "markdown",
             "artifact": {
               "filename": "questions.md",
               "templateInput": "template"
@@ -241,11 +241,11 @@
         "inputs": {
           "story": {
             "from": "run.input.story",
-            "type": "object"
+            "type": "task"
           },
           "questions": {
             "from": "node.s0_readiness.output.document",
-            "type": "string",
+            "type": "markdown",
             "required": false
           }
         },
@@ -298,11 +298,11 @@
         "inputs": {
           "story": {
             "from": "run.input.story",
-            "type": "object"
+            "type": "task"
           },
           "repository": {
             "from": "run.input.repository",
-            "type": "object"
+            "type": "repository"
           },
           "answers": {
             "from": "node.s1_clarification.output.answers",
@@ -311,19 +311,19 @@
           },
           "template": {
             "from": "run.input.s2_research_template",
-            "type": "object"
+            "type": "template"
           },
           "open_items": {
             "from": "run.input.open_items",
-            "type": "object"
+            "type": "open_items"
           },
           "decision_log": {
             "from": "run.input.decision_log",
-            "type": "object"
+            "type": "decision_log"
           },
           "questions": {
             "from": "node.s0_readiness.output.document",
-            "type": "string",
+            "type": "markdown",
             "required": false
           }
         },
@@ -332,7 +332,7 @@
             "type": "object"
           },
           "document": {
-            "type": "string",
+            "type": "markdown",
             "artifact": {
               "filename": "research.md",
               "templateInput": "template"
@@ -394,11 +394,11 @@
         "inputs": {
           "story": {
             "from": "run.input.story",
-            "type": "object"
+            "type": "task"
           },
           "repository": {
             "from": "run.input.repository",
-            "type": "object"
+            "type": "repository"
           },
           "research": {
             "from": "node.s2_research.output.research",
@@ -407,19 +407,19 @@
           },
           "template": {
             "from": "run.input.s3_design_template",
-            "type": "object"
+            "type": "template"
           },
           "open_items": {
             "from": "run.input.open_items",
-            "type": "object"
+            "type": "open_items"
           },
           "decision_log": {
             "from": "run.input.decision_log",
-            "type": "object"
+            "type": "decision_log"
           },
           "questions": {
             "from": "node.s0_readiness.output.document",
-            "type": "string",
+            "type": "markdown",
             "required": false
           },
           "answers": {
@@ -429,7 +429,7 @@
           },
           "research_document": {
             "from": "node.s2_research.output.document",
-            "type": "string",
+            "type": "markdown",
             "required": false
           }
         },
@@ -438,7 +438,7 @@
             "type": "object"
           },
           "document": {
-            "type": "string",
+            "type": "markdown",
             "artifact": {
               "filename": "design.md",
               "templateInput": "template"
@@ -500,11 +500,11 @@
         "inputs": {
           "story": {
             "from": "run.input.story",
-            "type": "object"
+            "type": "task"
           },
           "repository": {
             "from": "run.input.repository",
-            "type": "object"
+            "type": "repository"
           },
           "design": {
             "from": "node.s3_design.output.design",
@@ -513,19 +513,19 @@
           },
           "template": {
             "from": "run.input.s4_plan_template",
-            "type": "object"
+            "type": "template"
           },
           "open_items": {
             "from": "run.input.open_items",
-            "type": "object"
+            "type": "open_items"
           },
           "decision_log": {
             "from": "run.input.decision_log",
-            "type": "object"
+            "type": "decision_log"
           },
           "questions": {
             "from": "node.s0_readiness.output.document",
-            "type": "string",
+            "type": "markdown",
             "required": false
           },
           "answers": {
@@ -535,12 +535,12 @@
           },
           "research_document": {
             "from": "node.s2_research.output.document",
-            "type": "string",
+            "type": "markdown",
             "required": false
           },
           "design_document": {
             "from": "node.s3_design.output.document",
-            "type": "string",
+            "type": "markdown",
             "required": false
           }
         },
@@ -549,7 +549,7 @@
             "type": "object"
           },
           "document": {
-            "type": "string",
+            "type": "markdown",
             "artifact": {
               "filename": "plan.md",
               "templateInput": "template"
@@ -625,11 +625,11 @@
         "inputs": {
           "story": {
             "from": "run.input.story",
-            "type": "object"
+            "type": "task"
           },
           "repository": {
             "from": "run.input.repository",
-            "type": "object"
+            "type": "repository"
           },
           "implementation_plan": {
             "from": "node.s4_plan.output.implementation_plan",
@@ -643,16 +643,16 @@
           },
           "plan_document": {
             "from": "node.s4_plan.output.document",
-            "type": "string",
+            "type": "markdown",
             "required": false
           },
           "open_items": {
             "from": "run.input.open_items",
-            "type": "object"
+            "type": "open_items"
           },
           "decision_log": {
             "from": "run.input.decision_log",
-            "type": "object"
+            "type": "decision_log"
           }
         },
         "outputs": {
@@ -809,11 +809,11 @@
         "inputs": {
           "story": {
             "from": "run.input.story",
-            "type": "object"
+            "type": "task"
           },
           "repository": {
             "from": "run.input.repository",
-            "type": "object"
+            "type": "repository"
           },
           "changeset": {
             "from": "node.s5_implementation.output.changeset",

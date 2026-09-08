@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { installEmptyControlPlane } from "./acceptance.fixtures";
 
 const digest=(value:string)=>value.repeat(64);
-const document={apiVersion:"darkstar.local/v1alpha3",kind:"Workflow",metadata:{name:"darkstar/example",version:"1.0.0"},spec:{inputs:{task:{type:"object",resource:{kind:"task"}},design_template:{type:"object",resource:{kind:"template",version:"1.0.0",content:"# Design\n## Approach",requiredHeadings:["Approach"]}}},routeDefaults:{entry:"design",terminals:["design"]},nodes:{design:{type:"reasoning",displayName:"Design",entry:true,terminal:true,inputs:{task:{type:"object",from:"run.input.task"},template:{type:"object",from:"run.input.design_template"}},outputs:{design:{type:"string",artifact:{filename:"design.md",templateInput:"template"}}},reasoning:{agent:"designer",instructions:"Design the requested solution."},transitions:[]}}}};
+const document={apiVersion:"darkstar.local/v1alpha3",kind:"Workflow",metadata:{name:"darkstar/example",version:"1.0.0"},spec:{inputs:{task:{type:"task",resource:{kind:"task"}},design_template:{type:"template",resource:{kind:"template",version:"1.0.0",content:"# Design\n## Approach",requiredHeadings:["Approach"]}}},routeDefaults:{entry:"design",terminals:["design"]},nodes:{design:{type:"reasoning",displayName:"Design",entry:true,terminal:true,inputs:{task:{type:"task",from:"run.input.task"},template:{type:"template",from:"run.input.design_template"}},outputs:{design:{type:"markdown",artifact:{filename:"design.md",templateInput:"template"}}},reasoning:{agent:"designer",instructions:"Design the requested solution."},transitions:[]}}}};
 
 test("published canvas versions preserve identity, edit typed resources, and publish the new version",async({page},testInfo)=>{
  await page.setViewportSize({width:1600,height:1000});await installEmptyControlPlane(page);
@@ -18,6 +18,9 @@ test("published canvas versions preserve identity, edit typed resources, and pub
  await expect(page.locator(".workflow-editor-left")).toHaveCount(0);await expect(page.getByRole("tab")).toHaveCount(0);await expect(page.getByRole("complementary",{name:"Contextual inspector"})).toHaveCount(0);
  await page.getByRole("button",{name:"Zoom to fit"}).click();
  await expect(page.locator('.react-flow__node[data-id="$start"]')).toBeVisible();
+ const typeColor=async(id:string)=>page.locator('.react-flow__node[data-id="'+id+'"] .react-flow__handle.source').evaluate(el=>getComputedStyle(el).backgroundColor);
+ expect(await typeColor("$input:design_template")).not.toBe(await typeColor("$output:design:design"));
+ await expect(page.locator('.react-flow__node[data-id="$input:design_template"] small')).toHaveText("template");
  await page.screenshot({path:testInfo.outputPath("published-canvas.png")});
  await page.getByRole("button",{name:"New version",exact:true}).click();await expect.poll(()=>duplicate?.newName).toBe("darkstar/example");
  await expect(page.getByText("Draft",{exact:true})).toBeVisible();await page.getByRole("button",{name:"Zoom to fit"}).click();

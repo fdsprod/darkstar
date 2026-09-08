@@ -12,7 +12,7 @@ export type PortEdge =
 export interface PortFinding { nodeId: string; field: string; code: string; message: string }
 export interface PortGraph { ports: Port[]; edges: PortEdge[]; findings: PortFinding[] }
 const record = (value: unknown): JsonObject => value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
-const valueTypes = new Set(["null", "boolean", "integer", "number", "string", "array", "object"]);
+const valueTypes = new Set(["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "template", "markdown", "open_items", "decision_log"]);
 const compatible = (source: ValueType, target: ValueType) => valueTypes.has(source) && valueTypes.has(target) && (source === target || source === "integer" && target === "number");
 export const portKey = (port: Port) => JSON.stringify(port.kind === "run_input" ? [port.kind, port.portId] : [port.kind, port.nodeId, port.direction, port.portId]);
 export const portLabel = (port: Port) => port.kind === "run_input" ? `Resource ${port.portId} (${port.valueType})` : `${port.nodeId}.${port.portId}${port.kind === "data" ? ` (${port.valueType}${port.required ? ", required" : ", optional"})` : " (execution)"}`;
@@ -46,7 +46,7 @@ export function derivePortGraph(document: JsonObject, graph: EditorGraph): PortG
       if (!binding.pointer && !compatible(source.valueType, target.valueType)) findings.push({ nodeId: target.nodeId, field: `inputs.${target.portId}`, code: "WF_BINDING_INCOMPATIBLE", message: `binding "${target.portId}" expects ${target.valueType} from ${source.valueType}` });
     }
   }
-  for (const [id,value] of Object.entries(record(spec.inputs))) if(record(record(value).resource).kind === "artifact") ports.push({kind:"data",nodeId:"$input:"+id,portId:"$write",direction:"input",valueType:"string",required:false});
+  for (const [id,value] of Object.entries(record(spec.inputs))) if(record(record(value).resource).kind === "artifact") ports.push({kind:"data",nodeId:"$input:"+id,portId:"$write",direction:"input",valueType:"markdown",required:false});
   for (const node of graph.nodes) ports.push({ kind: "data", nodeId: node.id, portId: "$new", direction: "input", valueType: "object", required: false });
   ports.push({kind:"execution",nodeId:"$start",portId:"complete",direction:"output"});
   const entry = String(record(spec.routeDefaults).entry);
@@ -151,3 +151,9 @@ export function preparePortLayout(layout: WorkflowLayout, graph: EditorGraph, po
 }
 
 function gateBranch(transition: JsonObject): string { const args=record(transition.when).args; if(Array.isArray(args)){ const literal=args.map(record).find(a=>typeof a.literal === "boolean"); if(literal)return String(literal.literal); }return "true"; }
+
+export const portColors: Record<ValueType | "execution", string> = {
+ execution:"#e5e7eb", task:"#60a5fa", repository:"#fb923c", template:"#c084fc", markdown:"#4ade80",
+ open_items:"#facc15", decision_log:"#f472b6", string:"#2dd4bf", boolean:"#f87171", integer:"#22d3ee", number:"#38bdf8", object:"#a5b4fc", array:"#d4a373", null:"#94a3b8"
+};
+export function portColor(port:Port):string {return port.kind==="execution"?portColors.execution:port.kind==="data"&&port.portId==="$new"?"#94a3b8":portColors[port.valueType]??"#94a3b8";}

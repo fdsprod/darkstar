@@ -254,10 +254,18 @@ func (state *validationState) validateResources() {
 		}
 		want := declaration.Type
 		switch source := declaration.Resource.Source.(type) {
-		case TaskResource, RepositoryResource, TemplateResource, OpenItemsResource, DecisionLogResource:
-			want = ValueObject
+		case TaskResource:
+			want = ValueTask
+		case RepositoryResource:
+			want = ValueRepository
+		case TemplateResource:
+			want = ValueTemplate
+		case OpenItemsResource:
+			want = ValueOpenItems
+		case DecisionLogResource:
+			want = ValueDecisionLog
 		case ArtifactResource:
-			want = ValueString
+			want = ValueMarkdown
 		case ConstantResource:
 			if !literalMatchesType(source.Value, declaration.Type) {
 				state.add(ValidationBindingIncompatible, "constant does not match declared type", location, nil)
@@ -269,8 +277,8 @@ func (state *validationState) validateResources() {
 		default:
 			state.add(ValidationSchemaInvalid, "unknown resource source", location, nil)
 		}
-		if declaration.Type != want {
-			state.add(ValidationBindingIncompatible, "resource requires an object value", location, nil)
+		if declaration.Type != want && declaration.Type != want.StorageType() {
+			state.add(ValidationBindingIncompatible, fmt.Sprintf("resource requires %s", want), location, nil)
 		}
 	}
 	for nodeID, node := range state.nodes {
@@ -283,8 +291,8 @@ func (state *validationState) validateResources() {
 			if output.Artifact == nil {
 				continue
 			}
-			if output.Type != ValueString {
-				state.add(ValidationBindingIncompatible, "Markdown artifact output must be a string", location, nil)
+			if output.Type != ValueString && output.Type != ValueMarkdown {
+				state.add(ValidationBindingIncompatible, "Markdown artifact output must have type markdown", location, nil)
 			}
 			if err := ValidateArtifact(*output.Artifact, "placeholder", nil); err != nil {
 				state.add(ValidationSchemaInvalid, err.Error(), location+"/artifact", nil)
@@ -323,7 +331,7 @@ func literalMatchesType(raw json.RawMessage, kind ValueType) bool {
 	if json.Unmarshal(raw, &value) != nil {
 		return false
 	}
-	switch kind {
+	switch kind.StorageType() {
 	case ValueNull:
 		return value == nil
 	case ValueBoolean:

@@ -183,7 +183,7 @@ func (state *validationState) validateProfiles() {
 				continue
 			}
 			actual, valid := rawValueType(value)
-			if !valid || !typesCompatible(actual, declaration.Type) {
+			if !valid || !typesCompatible(actual, declaration.Type.StorageType()) {
 				state.add(ValidationBindingIncompatible, fmt.Sprintf("profile default for %q has type %s, want %s", inputID, actual, declaration.Type), location, nil)
 			}
 		}
@@ -359,7 +359,7 @@ func (state *validationState) validateBindings(nodeID Identifier, fields NodeFie
 		optional, ok := binding.(OptionalBinding)
 		if ok && optional.Default != nil {
 			actual, valid := rawValueType(optional.Default)
-			if !valid || !typesCompatible(actual, optional.Type) {
+			if !valid || !typesCompatible(actual, optional.Type.StorageType()) {
 				state.add(ValidationBindingIncompatible,
 					fmt.Sprintf("default for %q has type %s, want %s", inputID, actual, optional.Type), location+"/default", nil)
 			}

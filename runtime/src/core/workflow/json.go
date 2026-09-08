@@ -1293,7 +1293,7 @@ func validateIdentifierList(values []Identifier, unique bool) error {
 
 func validateValueType(value ValueType) error {
 	switch value {
-	case ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject:
+	case ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject, ValueTask, ValueRepository, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog:
 		return nil
 	default:
 		return fmt.Errorf("unsupported value type %q", value)

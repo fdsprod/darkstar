@@ -21,7 +21,7 @@ export function addResource(document: JsonObject, kind: ResourceKind) {
   if (kind === "constant") source.value = "";
   if (kind === "artifact") Object.assign(source,{filename:"document.md",content:""});
   if (kind === "config") source.key = "provider.codex.executable";
-  inputs[id] = { type: kind === "constant" || kind === "config" || kind === "artifact" ? "string" : "object", resource: source };
+  inputs[id] = { type: kind === "constant" || kind === "config" ? "string" : kind === "artifact" ? "markdown" : kind, resource: source };
   return { document: next, id: inputNodeId(id) };
 }
 
@@ -52,7 +52,7 @@ export function setOutputContract(document: JsonObject, node: string, id: string
 export function addArtifactOutput(document: JsonObject, node: string) {
   const outputs = record(record(record(record(document.spec).nodes)[node]).outputs);
   let id = "document"; for (let i = 2; Object.hasOwn(outputs, id); i++) id = `document_${i}`;
-  return { document: setOutputContract(document, node, id, { type: "string" satisfies ValueType, artifact: { filename: `${id}.md` } }), id: outputNodeId(node, id) };
+  return { document: setOutputContract(document, node, id, { type: "markdown" satisfies ValueType, artifact: { filename: `${id}.md` } }), id: outputNodeId(node, id) };
 }
 
 /** Semantic ordering for the version picker; build metadata has no precedence. */

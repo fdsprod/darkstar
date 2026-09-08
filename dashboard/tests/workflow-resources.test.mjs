@@ -6,7 +6,7 @@ import {autoLayoutGraph,derivePortGraph,bindPorts} from '../src/pages/workflowPo
 test('resources have independent positions and remain upstream of their consumers',()=>{
  let doc=createStarterDocument('test/resources');for(const kind of ['task','template','repository'])doc=addResource(doc,kind).document;
  doc=addArtifactOutput(doc,'start').document;
- doc.spec.nodes.start.inputs={task:{type:'object',from:'run.input.task'},template:{type:'object',from:'run.input.template'}};
+ doc.spec.nodes.start.inputs={task:{type:'task',from:'run.input.task'},template:{type:'template',from:'run.input.template'}};
  const graph=deriveEditorGraph(doc,{}),ports=derivePortGraph(doc,graph).ports;
  const positions=autoLayoutGraph(normalizeLayout({}),graph,ports).nodes;
  assert.equal(new Set(Object.values(positions).map(p=>`${p.x}:${p.y}`)).size,Object.keys(positions).length);
@@ -14,8 +14,8 @@ test('resources have independent positions and remain upstream of their consumer
 });
 test('wiring an artifact producer rewrites consumers to the typed output',()=>{
  let doc=addResource(createStarterDocument('test/artifact'),'artifact').document;
- doc.spec.nodes.start.outputs={document:{type:'string'}};
- doc.spec.nodes.start.inputs={previous:{type:'string',from:'run.input.artifact',required:false}};
+ doc.spec.nodes.start.outputs={document:{type:'markdown'}};
+ doc.spec.nodes.start.inputs={previous:{type:'markdown',from:'run.input.artifact',required:false}};
  const ports=derivePortGraph(doc,deriveEditorGraph(doc,{})).ports;
  const result=bindPorts(doc,ports.find(p=>p.kind==='data'&&p.direction==='output'),ports.find(p=>p.portId==='$write'),ports);
  assert.equal(result.kind,'changed');assert.equal(result.document.spec.inputs.artifact,undefined);
@@ -24,3 +24,11 @@ test('wiring an artifact producer rewrites consumers to the typed output',()=>{
 });
 
 test('version picker puts the current semantic version first',()=>{assert.deepEqual(['1.9.0','2.0.0-beta.1','2.0.0','1.10.0'].sort((a,b)=>compareWorkflowVersions(b,a)),['2.0.0','2.0.0-beta.1','1.10.0','1.9.0']);});
+
+ test('nominal resource types reject structurally similar resources',()=>{
+ let doc=createStarterDocument('test/nominal');for(const kind of ['template','repository','task'])doc=addResource(doc,kind).document;
+ doc.spec.nodes.start.inputs={template:{type:'template',from:'run.input.template'}};
+ const ports=derivePortGraph(doc,deriveEditorGraph(doc,{})).ports,target=ports.find(p=>p.kind==='data'&&p.portId==='template');
+ for(const id of ['task','repository'])assert.equal(bindPorts(doc,ports.find(p=>p.kind==='run_input'&&p.portId===id),target,ports).kind,'invalid');
+ assert.equal(bindPorts(doc,ports.find(p=>p.kind==='run_input'&&p.portId==='template'),target,ports).kind,'changed');
+ });

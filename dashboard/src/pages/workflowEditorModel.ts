@@ -56,7 +56,7 @@ export type NodeExecutor =
   | { type: "subworkflow"; workflow: { name: string; version: string; digest?: string; path?: string }; entry: string; terminals: string[]; inputs: Record<string, string>; outputs: Record<string, string> }
   | { type: "point_execution"; planInput: string; approval: "none" | "every" | "risk" | "combined"; riskTags: string[]; validation: "each" | "combined" | "each_and_combined"; publishing: "after_story_validation" | "after_each_point" }
   | { type: "routing"; agent: string; branches: Array<{ name: string; transition: string }>; routeOutput: string; rationaleOutput: string; adviceOutput: string; missingInformationOutput: string; assumptionsOutput: string; confirmationOutput: string };
-export type ValueType = "null" | "boolean" | "integer" | "number" | "string" | "array" | "object";
+export type ValueType = "null" | "boolean" | "integer" | "number" | "string" | "array" | "object" | "task" | "repository" | "template" | "markdown" | "open_items" | "decision_log";
 export interface BindingConfig { id: string; from: string; pointer?: string; type: ValueType; required: boolean; default?: JsonValue; description?: string; raw?: JsonObject }
 export interface OutputConfig { id: string; type: ValueType; schema?: string; description?: string; required: boolean; raw?: JsonObject }
 export type ValidatorConfig = { kind: "schema"; output: string; schema: string; raw?: JsonObject } | { kind: "command"; command: string[]; raw?: JsonObject };
@@ -590,7 +590,7 @@ function hasOnlyKeys(value: JsonObject, allowed: readonly string[]) { return Obj
 function clampInteger(value: number, minimum: number, maximum: number) { return Math.max(minimum, Math.min(maximum, Math.round(value))); }
 function validUniqueIDs(values: readonly string[]) { return values.every((value) => identifier.test(value)) && new Set(values).size === values.length; }
 function supportedSharedSections(node: JsonObject) {
-  const values = ["null", "boolean", "integer", "number", "string", "array", "object"];
+  const values = ["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "template", "markdown", "open_items", "decision_log"];
   if (!hasOnlyKeys(node, ["displayName", "type", "entry", "terminal", "inputs", "outputs", "readiness", "definition", "reasoning", "gate", "command", "approval", "call", "points", "routing", "validators", "retry", "checkpoint", "transitionMode", "join", "permissions", "transitions"])) return false;
   if (typeof node.entry !== "boolean" || typeof node.terminal !== "boolean" || node.displayName !== undefined && (typeof node.displayName !== "string" || node.displayName.length === 0)) return false;
   if (!isPlainRecord(node.inputs) || !Object.entries(node.inputs).every(([id, value]) => identifier.test(id) && isPlainRecord(value) && hasOnlyKeys(value, ["from", "pointer", "type", "required", "default", "description"]) && typeof value.from === "string" && /^(run\.input\.[a-z][a-z0-9_]{0,63}|node\.[a-z][a-z0-9_]{0,63}\.output\.[a-z][a-z0-9_]{0,63})$/.test(value.from) && values.includes(String(value.type)) && (value.required === undefined || typeof value.required === "boolean") && (value.pointer === undefined || typeof value.pointer === "string" && /^(?:|(?:\/(?:[^~/]|~[01])*)+)$/.test(value.pointer)) && (value.description === undefined || typeof value.description === "string") && (!Object.hasOwn(value, "default") || value.required === false && isJsonValue(value.default)))) return false;
