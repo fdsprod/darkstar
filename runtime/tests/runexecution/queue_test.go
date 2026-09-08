@@ -87,6 +87,15 @@ func TestQueueAutomaticPickupCapacityAndRelease(t *testing.T) {
 	}
 	evidence, _ := db.RunEvidence(context.Background(), ids[3])
 	assertControlEventCount(t, evidence.Events, "attempt.created", 1)
+	fourth, _ = s.Get(context.Background(), ids[3])
+	if _, err := s.Pause(context.Background(), ControlRequest{RunID: ids[3], ExpectedResourceVersion: fourth.Run.ResourceVersion, IdempotencyKey: "pause-fourth-queue"}); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := s.Get(context.Background(), ids[0])
+	if _, err := s.Resume(context.Background(), ControlRequest{RunID: ids[0], ExpectedResourceVersion: first.Run.ResourceVersion, IdempotencyKey: "resume-first-queue"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForControlRun(t, s, ids[0], func(v View) bool { return v.Run.Status == statestore.RunRunning })
 }
 
 func TestAuthorizedQueueSurvivesRestartWithoutAttempt(t *testing.T) {

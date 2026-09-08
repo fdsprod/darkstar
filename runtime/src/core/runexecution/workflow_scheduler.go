@@ -351,19 +351,24 @@ func (s *Service) startWorkflowVisit(ctx context.Context, attempt statestore.Att
 	if err != nil {
 		return err
 	}
-	if node.Status != statestore.NodePending {
+	if node.Status != statestore.NodePending && node.Status != statestore.NodeRunning {
 		return nil
 	}
 	events := make([]statestore.PendingEvent, 0, 3)
 	if run.Status == statestore.RunQueued {
-		events = append(events, pendingEvent("run.visit_ready", statestore.AggregateRun, run.RunID, run.ResourceVersion, run.RunID, "visit-ready:"+attempt.AttemptID, statestore.ActorSystem, "daemon", s.now(), map[string]any{"visitId": node.VisitID}))
+		events = append(events, pendingEvent("run.visit_ready", statestore.AggregateRun, run.RunID, run.ResourceVersion, run.RunID, fmt.Sprintf("visit-ready:%s:%d", attempt.AttemptID, run.ResourceVersion), statestore.ActorSystem, "daemon", s.now(), map[string]any{"visitId": node.VisitID}))
 	} else if run.Status != statestore.RunRunning {
 		return fmt.Errorf("cannot start workflow visit while run is %s", run.Status)
 	}
-	events = append(events,
-		pendingEvent("visit.ready", statestore.AggregateVisit, node.VisitID, node.ResourceVersion, run.RunID, "visit-ready:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{}),
-		pendingEvent("visit.started", statestore.AggregateVisit, node.VisitID, node.ResourceVersion+1, run.RunID, "visit-start:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{}),
-	)
+	if node.Status == statestore.NodePending {
+		events = append(events,
+			pendingEvent("visit.ready", statestore.AggregateVisit, node.VisitID, node.ResourceVersion, run.RunID, "visit-ready:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{}),
+			pendingEvent("visit.started", statestore.AggregateVisit, node.VisitID, node.ResourceVersion+1, run.RunID, "visit-start:"+node.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{}),
+		)
+	}
+	if len(events) == 0 {
+		return nil
+	}
 	_, err = s.store.Append(ctx, events...)
 	return err
 }
