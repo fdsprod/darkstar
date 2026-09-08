@@ -285,4 +285,12 @@ func TestClarificationsBelongToOneProposedRoute(t *testing.T) {
 	if result.Route.Entry != "plan" || len(result.Questions) != 1 || result.Questions[0].ID != "plan" {
 		t.Fatalf("mixed candidate questions: %#v", result.Questions)
 	}
+	input.Policy.Version = "smallest-safe-v1"
+	legacy, err := preparation.Assess(input, a)
+	if err != nil || len(legacy.Questions) != len(a.Candidates) {
+		t.Fatalf("legacy assessment changed: %v, %#v", err, legacy.Questions)
+	}
+	if err := preparation.Verify(legacy); err != nil {
+		t.Fatalf("legacy wait cannot be read: %v", err)
+	}
 }

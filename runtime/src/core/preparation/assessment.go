@@ -288,35 +288,41 @@ func Assess(input Input, advice routeadvisor.Advice) (Assessment, error) {
 			}
 			a.Route = route
 			a.Rationale = "No safe, outcome-complete candidate is established."
-			// Ask about one proposed route, never aggregate mutually exclusive alternatives.
-			pending := []routeadvisor.CandidateAdvice{}
-			for _, item := range advice.Candidates {
-				if item.Disposition == "input_required" {
-					pending = append(pending, item)
+			if input.Policy.Version == "smallest-safe-v1" {
+				// Preserve verification of immutable assessments created by the old policy.
+				for _, item := range advice.Candidates {
+					a.Questions = append(a.Questions, item.Questions...)
+				}
+			} else {
+				// Ask about one proposed route, never aggregate mutually exclusive alternatives.
+				pending := []routeadvisor.CandidateAdvice{}
+				for _, item := range advice.Candidates {
+					if item.Disposition == "input_required" {
+						pending = append(pending, item)
+					}
+				}
+				defaultKey := boundaryKey(string(route.Entry), identifierStrings(route.Terminals))
+				sort.Slice(pending, func(i, j int) bool {
+					left, right := adviceKey(pending[i]), adviceKey(pending[j])
+					if (left == defaultKey) != (right == defaultKey) {
+						return left == defaultKey
+					}
+					if len(pending[i].Questions) != len(pending[j].Questions) {
+						return len(pending[i].Questions) < len(pending[j].Questions)
+					}
+					return left < right
+				})
+				if len(pending) > 0 {
+					selected := pending[0]
+					boundaries := []workflow.Identifier{}
+					for _, id := range selected.Terminals {
+						boundaries = append(boundaries, workflow.Identifier(id))
+					}
+					a.Route, _ = workflow.CreateRoute(input.Workflow, workflow.RouteRequest{From: workflow.Identifier(selected.Entry), Until: boundaries}, context)
+					a.Rationale = selected.Rationale
+					a.Questions = append(a.Questions, selected.Questions...)
 				}
 			}
-			defaultKey := boundaryKey(string(route.Entry), identifierStrings(route.Terminals))
-			sort.Slice(pending, func(i, j int) bool {
-				left, right := adviceKey(pending[i]), adviceKey(pending[j])
-				if (left == defaultKey) != (right == defaultKey) {
-					return left == defaultKey
-				}
-				if len(pending[i].Questions) != len(pending[j].Questions) {
-					return len(pending[i].Questions) < len(pending[j].Questions)
-				}
-				return left < right
-			})
-			if len(pending) > 0 {
-				selected := pending[0]
-				boundaries := []workflow.Identifier{}
-				for _, id := range selected.Terminals {
-					boundaries = append(boundaries, workflow.Identifier(id))
-				}
-				a.Route, _ = workflow.CreateRoute(input.Workflow, workflow.RouteRequest{From: workflow.Identifier(selected.Entry), Until: boundaries}, context)
-				a.Rationale = selected.Rationale
-				a.Questions = append(a.Questions, selected.Questions...)
-			}
-
 			if len(a.Questions) == 0 {
 				a.Questions = append(a.Questions, routeadvisor.Question{ID: "outcome", Prompt: "Clarify the requested deliverable and acceptance criteria so a safe route can be selected."})
 			}
