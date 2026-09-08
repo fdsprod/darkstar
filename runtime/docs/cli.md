@@ -41,16 +41,19 @@ restart impact. Machine JSON is the same versioned contract returned by HTTP.
 The durable Ready lifecycle has explicit CLI/API parity:
 
 ```text
-darkstar run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile>]
-darkstar run launch <run-id> --if-match <version>
+darkstar run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile> | --entry-node <node> --terminal-node <node>...] [--answers-json <object>] [--inputs-json <object>] [--evidence <reference>]...
+darkstar run launch <run-id> --if-match <version> [--confirm-assessment <digest>]
 ```
 
 `darkstar run prepare` validates the work item, resolves an exact installed
 workflow and optional profile, freezes its route and immutable inputs through
 `POST /api/v1/runs/prepare`, and records readiness or targeted input requirements without
-starting execution of the selected route. `darkstar run launch` admits that exact prepared
+starting execution of the selected route. An explicit entry/terminal boundary is an alternative
+to a named profile and is validated against the installed typed graph. Repeated `--evidence` references and the answer/input
+JSON objects participate in the immutable assessment identity. `darkstar run launch` admits that exact prepared
 revision through `POST /api/v1/runs/{runId}/start`; its required `--if-match`
-value prevents a stale terminal or automation from starting a superseded run.
+value prevents a stale terminal or automation from starting a superseded run, and
+`--confirm-assessment` binds an explicit confirmation to the displayed assessment digest.
 Both commands accept `--idempotency-key` for safe retries.
 
 The compatibility command `darkstar run start <work-id> --workflow <name>

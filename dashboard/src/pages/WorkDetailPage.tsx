@@ -9,13 +9,14 @@ import { PageHeader, type BreadcrumbItem } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { humanize, shortIdentifier, statusTone } from "./runDetailModel";
 import { ProducedArtifacts } from "./ProducedArtifacts";
+import { WorkRoutePreparation } from "./WorkRoutePreparation";
 import { contextLocation, latestRun, parseWorkContextTab, type WorkContextTab, workNextAction } from "./workContextModel";
 
 type Schemas = components["schemas"];
 
 export function WorkDetailPage() {
   const { route, search, navigate } = useRouter();
-  const { state } = useDashboardState();
+  const { state, refresh } = useDashboardState();
   const workId = route.params.workId;
   const [view, setView] = useState<Schemas["WorkItemView"]>();
   const [error, setError] = useState("");
@@ -27,7 +28,7 @@ export function WorkDetailPage() {
       .then((value) => setView(value))
       .catch((cause) => { if (!abort.signal.aborted) setError(detailError(cause, "work item")); });
     return () => abort.abort();
-  }, [state.cursor, workId]);
+  }, [state.cursor, state.lastSynchronizedAt, workId]);
 
   if (error) return <DetailFailure title="Work item unavailable" message={error} pageTitle="Work item" breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(workId) }]} />;
   if (!view) return <DetailLoading label="Loading work item" pageTitle="Work item" breadcrumbs={[{ label: "Board", to: "/board" }, { label: shortIdentifier(workId) }]} />;
@@ -56,7 +57,9 @@ export function WorkDetailPage() {
         <SummaryFact label="Priority" value={String(view.work.priority)} />
         <SummaryFact label="Current run" value={currentRun ? `${currentRun.workflowId} · ${humanize(currentRun.status)}` : "Not prepared"} />
         <SummaryFact label="Next action" value={next.label} />
-      </section>{currentRun ? <section className="detail-section current-run-card"><SectionHeader eyebrow="Current execution" title={currentRun.workflowId} meta={<StatusPill status={currentRun.status} />} /><p>Updated {formatDate(currentRun.updatedAt)} · workflow version {currentRun.workflowVersion}</p><AppLink className="navigation-action" to={`/work/${encodeURIComponent(view.work.id)}/run/${encodeURIComponent(currentRun.id)}`}>Open current run context →</AppLink></section> : <EmptyDetail title="No current run" message="Prepare this outcome from its Runs tab." />}
+      </section>{currentRun ? <section className="detail-section current-run-card"><SectionHeader eyebrow="Current execution" title={currentRun.workflowId} meta={<StatusPill status={currentRun.status} />} /><p>Updated {formatDate(currentRun.updatedAt)} · workflow version {currentRun.workflowVersion}</p><AppLink className="navigation-action" to={`/work/${encodeURIComponent(view.work.id)}/run/${encodeURIComponent(currentRun.id)}`}>Open current run context →</AppLink></section> : <EmptyDetail title="No current run" message="Assess a route below before starting provider work." />}
+
+      <WorkRoutePreparation work={view.work} run={currentRun} onChanged={refresh} />
 
       <section className="detail-section work-plan-evidence">
         <SectionHeader eyebrow="Accepted-plan targets" title={<>Stories &amp; implementation points</>} meta={<span className="section-count">{view.stories.length} / {view.points.length}</span>} />

@@ -88,6 +88,54 @@ func TestPreparationQuestionsBlockResumeAndAnswersReachAdvisor(t *testing.T) {
 	}
 }
 
+func TestPreparationResolvesSubmittedEvidenceReferencesIntoFrozenAssessment(t *testing.T) {
+	s, db, _ := newControlTestService(t, false)
+	_, work := seedWorkflowWork(t, db)
+	planner := workflowDispatchPlannerFor(workflow.NoCheckpoint{}, true)
+	_ = s.SetWorkflowPlanner(planner)
+	_ = s.SetRouteEvidenceResolver(testEvidenceResolver(func(_ context.Context, reference string) (routeadvisor.Evidence, error) {
+		if reference != "docs/plan.md" {
+			return routeadvisor.Evidence{}, routeadvisor.ErrEvidenceUnavailable
+		}
+		return routeadvisor.Evidence{Reference: reference, Digest: strings.Repeat("d", 64), Content: "Accepted plan"}, nil
+	}))
+	_ = s.SetRouteAdvisor(routeadvisor.AdvisorFunc(func(_ context.Context, input routeadvisor.Request) (routeadvisor.Advice, error) {
+		if len(input.Evidence) != 1 || input.Evidence[0].Reference != "docs/plan.md" || input.Evidence[0].Content != "Accepted plan" {
+			t.Fatalf("advisor evidence = %#v", input.Evidence)
+		}
+		return routeadvisor.Advice{Confidence: "high", EvidenceUsed: []string{"docs/plan.md"}, Candidates: []routeadvisor.CandidateAdvice{{Entry: "design", Terminals: []string{"design"}, Disposition: "suitable", Rationale: "Evidence establishes the focused route."}}}, nil
+	}))
+	run, err := s.Prepare(context.Background(), CreateRequest{WorkItemID: work, WorkflowID: planner.preview.Workflow.Name, Preparation: &PreparationInput{Evidence: []string{" docs/plan.md ", "docs/plan.md"}}}, "assessment-evidence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.Get(context.Background(), run.RunID)
+	if err != nil || view.Assessment == nil || len(view.Assessment.Input.Evidence) != 1 || view.Assessment.Input.Evidence[0].Reference != "docs/plan.md" {
+		t.Fatalf("frozen evidence = %#v, err=%v", view.Assessment, err)
+	}
+}
+
+func TestPreparationAcceptsExplicitRouteOverrideForAutomaticWork(t *testing.T) {
+	s, db, _ := newControlTestService(t, false)
+	_, work := seedWorkflowWork(t, db)
+	planner := workflowDispatchPlannerFor(workflow.NoCheckpoint{}, true)
+	_ = s.SetWorkflowPlanner(planner)
+	run, err := s.Prepare(context.Background(), CreateRequest{WorkItemID: work, WorkflowID: planner.preview.Workflow.Name, Preparation: &PreparationInput{RouteOverride: &workflow.RouteRequest{From: "design", Until: []workflow.Identifier{"design"}}}}, "assessment-route-override")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.Get(context.Background(), run.RunID)
+	if err != nil || view.Assessment == nil || view.Assessment.Input.Override == nil || view.Assessment.Input.Override.From != "design" {
+		t.Fatalf("frozen route override = %#v, err=%v", view.Assessment, err)
+	}
+}
+
+type testEvidenceResolver func(context.Context, string) (routeadvisor.Evidence, error)
+
+func (resolve testEvidenceResolver) Resolve(ctx context.Context, reference string) (routeadvisor.Evidence, error) {
+	return resolve(ctx, reference)
+}
+
 func TestLaunchRejectsPolicyChangedAfterAssessment(t *testing.T) {
 	s, db, _ := newControlTestService(t, false)
 	_, work := seedWorkflowWork(t, db)

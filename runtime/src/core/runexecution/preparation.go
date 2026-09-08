@@ -105,7 +105,17 @@ func (s *Service) assessPreparationInput(ctx context.Context, request CreateRequ
 	s.mu.Lock()
 	resolver := s.evidenceResolver
 	s.mu.Unlock()
-	for _, reference := range work.Evidence {
+	references := append([]string(nil), work.Evidence...)
+	if request.Preparation != nil {
+		references = append(references, request.Preparation.Evidence...)
+	}
+	seenReferences := map[string]bool{}
+	for _, reference := range references {
+		reference = strings.TrimSpace(reference)
+		if reference == "" || seenReferences[reference] {
+			continue
+		}
+		seenReferences[reference] = true
 		evidence := routeadvisor.Evidence{Reference: reference}
 		if resolver != nil {
 			resolved, resolveErr := resolver.Resolve(ctx, reference)
@@ -118,7 +128,10 @@ func (s *Service) assessPreparationInput(ctx context.Context, request CreateRequ
 		}
 		input.Evidence = append(input.Evidence, evidence)
 	}
-	if work.RoutingIntent.Mode == statestore.WorkRoutingOverride {
+	if request.Preparation != nil && request.Preparation.RouteOverride != nil {
+		selected := *request.Preparation.RouteOverride
+		input.Override = &selected
+	} else if work.RoutingIntent.Mode == statestore.WorkRoutingOverride {
 		selected, selectionErr := workRouteRequest(work, request)
 		if selectionErr != nil {
 			return preview, selectionErr

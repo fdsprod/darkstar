@@ -60,8 +60,10 @@ type CreateRequest struct {
 }
 
 type PreparationInput struct {
-	Answers   map[string]string                       `json:"answers,omitempty"`
-	RunInputs map[workflow.Identifier]json.RawMessage `json:"runInputs,omitempty"`
+	Answers       map[string]string                       `json:"answers,omitempty"`
+	RunInputs     map[workflow.Identifier]json.RawMessage `json:"runInputs,omitempty"`
+	Evidence      []string                                `json:"evidence,omitempty"`
+	RouteOverride *workflow.RouteRequest                  `json:"routeOverride,omitempty"`
 }
 
 // PageInfo describes the next stable run-list cursor.
@@ -638,8 +640,17 @@ func workRouteRequest(work statestore.WorkItemProjection, request CreateRequest)
 	}
 	switch intent.Mode {
 	case statestore.WorkRoutingAutomatic:
+		if request.Preparation != nil && request.Preparation.RouteOverride != nil {
+			if request.Profile != "" {
+				return workflow.RouteRequest{}, fmt.Errorf("%w: routeOverride cannot be combined with a profile", ErrInvalidRequest)
+			}
+			return *request.Preparation.RouteOverride, nil
+		}
 		return workflow.RouteRequest{}, nil
 	case statestore.WorkRoutingOverride:
+		if request.Preparation != nil && request.Preparation.RouteOverride != nil {
+			return workflow.RouteRequest{}, fmt.Errorf("%w: preparation cannot replace the work item's routing override", ErrInvalidRequest)
+		}
 		if request.WorkflowID != intent.WorkflowID {
 			return workflow.RouteRequest{}, fmt.Errorf("%w: workflowId conflicts with the work item's routing override", ErrInvalidRequest)
 		}

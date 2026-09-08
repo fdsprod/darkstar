@@ -12,6 +12,7 @@ import (
 
 	"darkstar/src/core/preparation"
 	"darkstar/src/core/runexecution"
+	"darkstar/src/core/workflow"
 	"darkstar/src/ports/statestore"
 )
 
@@ -53,7 +54,7 @@ func parseWorkRun(args []string, action string) (runexecution.CreateRequest, str
 	}
 	request := runexecution.CreateRequest{WorkItemID: args[0]}
 	key := ""
-	seenWorkflow, seenVersion, seenProfile := false, false, false
+	seenWorkflow, seenVersion, seenProfile, seenEntry := false, false, false, false
 	for index := 1; index < len(args); index += 2 {
 		if index+1 >= len(args) || args[index+1] == "" {
 			return runexecution.CreateRequest{}, "", fmt.Errorf("%s requires a value", args[index])
@@ -75,11 +76,31 @@ func parseWorkRun(args []string, action string) (runexecution.CreateRequest, str
 				return runexecution.CreateRequest{}, "", errors.New("--profile requires one workflow profile identifier")
 			}
 			seenProfile, request.Profile = true, value
-		case "--answers-json", "--inputs-json":
+		case "--entry-node", "--terminal-node":
+			if !runNodePattern.MatchString(value) {
+				return runexecution.CreateRequest{}, "", fmt.Errorf("%s requires one workflow node identifier", args[index])
+			}
 			if request.Preparation == nil {
 				request.Preparation = &runexecution.PreparationInput{}
 			}
-			if args[index] == "--answers-json" {
+			if request.Preparation.RouteOverride == nil {
+				request.Preparation.RouteOverride = &workflow.RouteRequest{}
+			}
+			if args[index] == "--entry-node" {
+				if seenEntry {
+					return runexecution.CreateRequest{}, "", errors.New("--entry-node may be specified only once")
+				}
+				seenEntry, request.Preparation.RouteOverride.From = true, workflow.Identifier(value)
+			} else {
+				request.Preparation.RouteOverride.Until = append(request.Preparation.RouteOverride.Until, workflow.Identifier(value))
+			}
+		case "--answers-json", "--inputs-json", "--evidence":
+			if request.Preparation == nil {
+				request.Preparation = &runexecution.PreparationInput{}
+			}
+			if args[index] == "--evidence" {
+				request.Preparation.Evidence = append(request.Preparation.Evidence, value)
+			} else if args[index] == "--answers-json" {
 				if request.Preparation.Answers != nil || json.Unmarshal([]byte(value), &request.Preparation.Answers) != nil || request.Preparation.Answers == nil {
 					return runexecution.CreateRequest{}, "", errors.New("--answers-json requires one JSON object of question IDs to string answers")
 				}
@@ -104,6 +125,9 @@ func parseWorkRun(args []string, action string) (runexecution.CreateRequest, str
 	}
 	if key == "" {
 		key = newIdempotencyKey()
+	}
+	if request.Profile != "" && request.Preparation != nil && request.Preparation.RouteOverride != nil {
+		return runexecution.CreateRequest{}, "", errors.New("--profile cannot be combined with --entry-node or --terminal-node")
 	}
 	return request, key, nil
 }

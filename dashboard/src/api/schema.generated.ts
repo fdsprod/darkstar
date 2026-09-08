@@ -154,7 +154,7 @@ export interface components {
     "ProviderPermissionList": { "schemaVersion": 1; "items": Array<components["schemas"]["ProviderPermission"]>; };
     "ProviderPermissionDecisionRequest": { "decision": "allow_once" | "deny" | "cancel"; "scopeDigest": string; };
     "RunExportManifest": { "schemaVersion": 1; "runId": string; "exportedAt": string; "redactionPolicy": "default-v1"; "entries": Array<{ "path": string; "kind": "run_snapshot" | "events" | "command_evidence" | "artifact_index" | "log"; "mediaType": string; "sha256": string; "size": number; }>; "omissions": Array<{ "kind": "artifact" | "log" | "reference"; "reference": string; "reason": "unavailable" | "sensitive_by_default"; }>; };
-    "RunPreparationInput": { "answers"?: { [key: string]: string; }; "runInputs"?: { [key: string]: unknown; }; };
+    "RunPreparationInput": { "answers"?: { [key: string]: string; }; "runInputs"?: { [key: string]: unknown; }; "evidence"?: Array<string>; "routeOverride"?: { "from"?: string; "until"?: Array<string>; }; };
     "LaunchPreparedRunRequest": { "assessmentDigest": string; };
     "PreparationQuestion": { "id": string; "prompt": string; };
     "PreparationCandidateAdvice": { "entry": string; "disposition": "suitable" | "unsuitable" | "input_required"; "rationale": string; "questions": Array<components["schemas"]["PreparationQuestion"]> | null; "assumptions": Array<string> | null; "terminals": Array<string>; };

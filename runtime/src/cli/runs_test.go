@@ -64,8 +64,8 @@ func TestRunPrepareAndLaunchUseDurableReadyAPI(t *testing.T) {
 	if runs.launched != 1 || runs.control.RunID != run.RunID || runs.control.ExpectedResourceVersion != 7 || runs.control.IdempotencyKey != "cli-launch-run" {
 		t.Fatalf("launch calls=%d request=%#v", runs.launched, runs.control)
 	}
-	runCLIJSON(t, []string{"run", "prepare", run.WorkItemID, "--answers-json", `{"goal":"Implement the reviewed design"}`, "--inputs-json", `{"request":{"approved":true}}`, "--json"}, &prepared)
-	if runs.create.Preparation == nil || runs.create.Preparation.Answers["goal"] != "Implement the reviewed design" || string(runs.create.Preparation.RunInputs["request"]) != `{"approved":true}` || runs.create.WorkflowID != "" {
+	runCLIJSON(t, []string{"run", "prepare", run.WorkItemID, "--answers-json", `{"goal":"Implement the reviewed design"}`, "--inputs-json", `{"request":{"approved":true}}`, "--evidence", "docs/plan.md", "--json"}, &prepared)
+	if runs.create.Preparation == nil || runs.create.Preparation.Answers["goal"] != "Implement the reviewed design" || string(runs.create.Preparation.RunInputs["request"]) != `{"approved":true}` || len(runs.create.Preparation.Evidence) != 1 || runs.create.Preparation.Evidence[0] != "docs/plan.md" || runs.create.WorkflowID != "" {
 		t.Fatalf("preparation inputs lost: %#v", runs.create)
 	}
 	digest := strings.Repeat("a", 64)
@@ -84,6 +84,10 @@ func TestParseRunPrepareAndLaunchRejectAmbiguousArguments(t *testing.T) {
 	}
 	if _, _, err := parseRunPrepare([]string{"--scenario", "fake-success"}); err == nil {
 		t.Fatal("prepare accepted fake scenario")
+	}
+	override, _, err := parseRunPrepare([]string{workID, "--entry-node", "design", "--terminal-node", "verify", "--terminal-node", "deliver"})
+	if err != nil || override.Preparation == nil || override.Preparation.RouteOverride == nil || override.Preparation.RouteOverride.From != "design" || len(override.Preparation.RouteOverride.Until) != 2 {
+		t.Fatalf("route override parse = %#v, err=%v", override, err)
 	}
 	if _, _, _, _, err := parseRunLaunch([]string{"run_00000000000000000000000000"}); err == nil {
 		t.Fatal("launch accepted missing --if-match")
@@ -144,6 +148,7 @@ func TestPreparationArgumentsRejectMalformedObjectsAndConfirmation(t *testing.T)
 		{"--answers-json", "null"}, {"--answers-json", "[]"}, {"--answers-json", `{"x":1}`},
 		{"--answers-json", "{}", "--answers-json", "{}"}, {"--inputs-json", "null"},
 		{"--inputs-json", `{"bad-name":true}`}, {"--inputs-json", "{}", "--inputs-json", "{}"},
+		{"--profile", "delivery", "--entry-node", "design"}, {"--entry-node", "design", "--entry-node", "verify"},
 	} {
 		if _, _, err := parseRunPrepare(append([]string{"work_00000000000000000000000000"}, args...)); err == nil {
 			t.Errorf("accepted %v", args)

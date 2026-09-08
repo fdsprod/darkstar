@@ -116,6 +116,8 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
     ["createWorkItem", "createWorkItem", "darkstar work create", "work.created"],
     ["applyWorkItemTransition", "applyWorkItemTransition", "darkstar work transition apply", "run.created"],
     ["prepareRun", "prepareRun", "darkstar run prepare", "run.created"],
+    ["startRun", "startPreparedRun", "darkstar run launch", "run.started"],
+    ["cancelRun", "cancelRun", "darkstar run cancel", "run.cancelled"],
     ["decideRunReadiness", "decideRunReadiness", "darkstar run readiness decide", "readiness.decision_recorded"],
     ["decideApproval", "decideApproval", "darkstar approval decide", "approval.decided"],
     ["submitCheckpointFeedbackSet", "submitCheckpointFeedbackSet", "darkstar review feedback-set submit", "approval.feedback_submitted"],
