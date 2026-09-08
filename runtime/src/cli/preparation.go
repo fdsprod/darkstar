@@ -17,7 +17,7 @@ import (
 // configuredPreparationPolicy reloads effective configuration for each immutable
 // assessment so later configuration edits cannot mutate a recorded decision.
 func configuredPreparationPolicy(paths platformport.Paths, projectRoot string) (preparation.Policy, error) {
-	policy := preparation.Policy{Version: "smallest-safe-v1", RequiredNodes: []workflow.Identifier{}, ConsequentialNodes: []workflow.Identifier{}, AllowedAssumptions: []string{}}
+	policy := preparation.Policy{Version: "smallest-safe-v2", RequiredNodes: []workflow.Identifier{}, ConsequentialNodes: []workflow.Identifier{}, AllowedAssumptions: []string{}}
 	locations, err := daemonconfiguration.ResolveFileLocations(paths, projectRoot)
 	if err != nil {
 		return policy, err

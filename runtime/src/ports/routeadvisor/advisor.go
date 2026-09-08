@@ -22,7 +22,16 @@ type Candidate struct {
 	Contracts json.RawMessage `json:"contracts"`
 }
 
+type PlanningContext struct {
+	ProjectID        string                     `json:"projectId"`
+	ProjectName      string                     `json:"projectName"`
+	DefaultEntry     string                     `json:"defaultEntry"`
+	DefaultTerminals []string                   `json:"defaultTerminals"`
+	RunInputs        map[string]json.RawMessage `json:"runInputs"`
+}
+
 type Request struct {
+	Context    PlanningContext   `json:"context"`
 	Digest     string            `json:"digest"`
 	Outcome    string            `json:"outcome"`
 	Details    string            `json:"details"`

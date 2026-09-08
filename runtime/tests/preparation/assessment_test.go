@@ -257,3 +257,32 @@ func TestUnknownModelCandidateAndLocalGateVersusGlobalPolicy(t *testing.T) {
 		t.Fatal("global policy node was bypassed")
 	}
 }
+
+func TestAdvisorReceivesResolvedProjectAndWorkflowContext(t *testing.T) {
+	input := fixture()
+	input.Project.ProjectID = "project_known"
+	input.Project.Name = "Known repository"
+	input.Context.RunInputs = map[workflow.Identifier]json.RawMessage{"repository": json.RawMessage(`{"projectId":"project_known"}`), "needs_design": json.RawMessage("false")}
+	request, _ := preparation.Candidates(input)
+	if request.Context.ProjectID != "project_known" || request.Context.DefaultEntry != "plan" || string(request.Context.RunInputs["needs_design"]) != "false" {
+		t.Fatalf("missing context: %#v", request.Context)
+	}
+	if !strings.Contains(string(request.Candidates[0].Contracts), "execution") {
+		t.Fatal("stage execution omitted")
+	}
+}
+func TestClarificationsBelongToOneProposedRoute(t *testing.T) {
+	input := fixture()
+	a := advice(input)
+	for i := range a.Candidates {
+		a.Candidates[i].Disposition = "input_required"
+		a.Candidates[i].Questions = []routeadvisor.Question{{ID: a.Candidates[i].Entry, Prompt: "Question for " + a.Candidates[i].Entry}}
+	}
+	result, err := preparation.Assess(input, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Route.Entry != "plan" || len(result.Questions) != 1 || result.Questions[0].ID != "plan" {
+		t.Fatalf("mixed candidate questions: %#v", result.Questions)
+	}
+}

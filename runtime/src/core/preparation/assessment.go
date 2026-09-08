@@ -79,6 +79,10 @@ func Digest(value any) string {
 // nodes and exact default/profile terminal sets. It never invents graph edges.
 func Candidates(input Input) (routeadvisor.Request, []Alternative) {
 	request := routeadvisor.Request{Digest: Digest(input), Outcome: input.Work.Title, Details: input.Work.Details, Answers: input.Answers, Evidence: input.Evidence, Candidates: []routeadvisor.Candidate{}}
+	request.Context = routeadvisor.PlanningContext{ProjectID: input.Project.ProjectID, ProjectName: input.Project.Name, DefaultEntry: string(input.Workflow.Spec.RouteDefaults.Entry), DefaultTerminals: identifierStrings(input.Workflow.Spec.RouteDefaults.Terminals), RunInputs: map[string]json.RawMessage{}}
+	for id, value := range input.Context.RunInputs {
+		request.Context.RunInputs[string(id)] = value
+	}
 	entries := []workflow.Identifier{}
 	for id, node := range input.Workflow.Spec.Nodes {
 		if node.Fields().Entry {
@@ -101,7 +105,7 @@ func Candidates(input Input) (routeadvisor.Request, []Alternative) {
 			for _, n := range route.Nodes {
 				nodes = append(nodes, string(n.ID))
 				fields := input.Workflow.Spec.Nodes[n.ID].Fields()
-				contracts[string(n.ID)] = map[string]any{"name": fields.DisplayName, "inputs": fields.Inputs, "outputs": fields.Outputs, "readiness": fields.Readiness}
+				contracts[string(n.ID)] = map[string]any{"type": input.Workflow.Spec.Nodes[n.ID].Type(), "execution": input.Workflow.Spec.Nodes[n.ID], "name": fields.DisplayName, "inputs": fields.Inputs, "outputs": fields.Outputs, "readiness": fields.Readiness}
 			}
 			terminals := []string{}
 			for _, id := range route.Terminals {
@@ -284,9 +288,35 @@ func Assess(input Input, advice routeadvisor.Advice) (Assessment, error) {
 			}
 			a.Route = route
 			a.Rationale = "No safe, outcome-complete candidate is established."
+			// Ask about one proposed route, never aggregate mutually exclusive alternatives.
+			pending := []routeadvisor.CandidateAdvice{}
 			for _, item := range advice.Candidates {
-				a.Questions = append(a.Questions, item.Questions...)
+				if item.Disposition == "input_required" {
+					pending = append(pending, item)
+				}
 			}
+			defaultKey := boundaryKey(string(route.Entry), identifierStrings(route.Terminals))
+			sort.Slice(pending, func(i, j int) bool {
+				left, right := adviceKey(pending[i]), adviceKey(pending[j])
+				if (left == defaultKey) != (right == defaultKey) {
+					return left == defaultKey
+				}
+				if len(pending[i].Questions) != len(pending[j].Questions) {
+					return len(pending[i].Questions) < len(pending[j].Questions)
+				}
+				return left < right
+			})
+			if len(pending) > 0 {
+				selected := pending[0]
+				boundaries := []workflow.Identifier{}
+				for _, id := range selected.Terminals {
+					boundaries = append(boundaries, workflow.Identifier(id))
+				}
+				a.Route, _ = workflow.CreateRoute(input.Workflow, workflow.RouteRequest{From: workflow.Identifier(selected.Entry), Until: boundaries}, context)
+				a.Rationale = selected.Rationale
+				a.Questions = append(a.Questions, selected.Questions...)
+			}
+
 			if len(a.Questions) == 0 {
 				a.Questions = append(a.Questions, routeadvisor.Question{ID: "outcome", Prompt: "Clarify the requested deliverable and acceptance criteria so a safe route can be selected."})
 			}

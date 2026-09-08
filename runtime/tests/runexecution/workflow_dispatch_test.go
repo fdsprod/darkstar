@@ -96,7 +96,7 @@ func TestCreatePersistsInputRequiredWaitWithoutDispatch(t *testing.T) {
 	if view.Run.Status != statestore.RunWaiting || len(view.Nodes) != 0 || len(view.Attempts) != 0 {
 		t.Fatalf("input-required run = %#v", view)
 	}
-	if view.Issue == nil || view.Issue.Kind != "input_required" || view.Issue.Code != "RUN_INPUT_REQUIRED" || !strings.Contains(view.Issue.Message, "run.input.story") {
+	if view.Issue == nil || view.Issue.Kind != "input_required" || view.Issue.Code != "RUN_INPUT_REQUIRED" || !strings.Contains(view.Issue.Message, "Open readiness") {
 		t.Fatalf("input-required issue = %#v", view.Issue)
 	}
 	if _, err := service.Resume(context.Background(), ControlRequest{RunID: created.RunID, ExpectedResourceVersion: view.Run.ResourceVersion, IdempotencyKey: "resume-without-input"}); !errors.Is(err, ErrInvalidControl) {

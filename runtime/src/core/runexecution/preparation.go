@@ -71,7 +71,7 @@ func (s *Service) assessPreparation(ctx context.Context, request CreateRequest, 
 }
 
 func (s *Service) resolvePreparationPolicy(ctx context.Context, project statestore.ProjectProjection, document workflow.Document) (preparation.Policy, error) {
-	policy := preparation.Policy{Version: "smallest-safe-v1", RequiredNodes: []workflow.Identifier{}, ConsequentialNodes: []workflow.Identifier{}, AllowedAssumptions: []string{}}
+	policy := preparation.Policy{Version: "smallest-safe-v2", RequiredNodes: []workflow.Identifier{}, ConsequentialNodes: []workflow.Identifier{}, AllowedAssumptions: []string{}}
 	s.mu.Lock()
 	policyResolver := s.preparationPolicyResolver
 	s.mu.Unlock()
@@ -217,11 +217,7 @@ func readPreparation(route workflow.Route) (*preparation.Assessment, error) {
 }
 
 func preparationQuestions(a *preparation.Assessment) string {
-	questions := []string{}
-	for _, q := range a.Questions {
-		questions = append(questions, q.ID+": "+q.Prompt)
-	}
-	return strings.Join(questions, " ") + " Prepare again with preparation.answers/runInputs and a new idempotency key; the new assessment supersedes this preparation wait."
+	return fmt.Sprintf("Route preparation needs %d clarification(s). Open readiness to answer the questions and reassess.", len(a.Questions))
 }
 
 func preparationInputType(raw json.RawMessage, kind workflow.ValueType) bool {
