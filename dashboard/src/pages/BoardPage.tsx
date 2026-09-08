@@ -234,7 +234,7 @@ function CreateWorkDialog({ dialogRef, projects, workflows, onCreated }: { dialo
 }
 
 function countByLifecycle(cards: readonly BoardCard[]) { const counts = Object.fromEntries(LIFECYCLE_COLUMNS.map((lifecycle) => [lifecycle, 0])) as Record<BoardLifecycle, number>; for (const card of cards) counts[card.lifecycle] += 1; return counts; }
-function safeActionError(error: unknown) { if (error instanceof ApiRequestError) { if (error.status === 409 || error.status === 412) return "This item changed before the action completed. The board was refreshed; try again."; if (error.status === 400) return "The daemon rejected this action because it is not valid for the current state."; } return "The action could not be completed. Check daemon health and try again."; }
+function safeActionError(error: unknown) { if (error instanceof ApiRequestError) { if (error.status === 412) return "This item changed before the action completed. The board was refreshed; try again."; if (error.status === 409) return "This action is not available in the item’s current state. The board was refreshed."; if (error.status === 400) return "The daemon rejected this action because it is not valid for the current state."; } return "The action could not be completed. Check daemon health and try again."; }
 function compactId(value: string) { return value.length < 16 ? value : `${value.slice(0, 8)}…${value.slice(-4)}`; }
 function initials(value: string) { return value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase(); }
 function humanize(value: string) { return value.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase()); }

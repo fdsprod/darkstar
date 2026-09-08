@@ -183,6 +183,15 @@ func TestCancelMarksUncertainProviderTerminationForReconciliation(t *testing.T) 
 	if err != nil || final.Attempts[0].Status != statestore.AttemptReconcileRequired || factory.callCount(fake.CallCancel) != 1 {
 		t.Fatalf("uncertain cancel result = %#v, %v; cancel calls=%d", final, err, factory.callCount(fake.CallCancel))
 	}
+	cancelled, err := service.Cancel(context.Background(), ControlRequest{RunID: view.Run.RunID, ExpectedResourceVersion: final.Run.ResourceVersion, IdempotencyKey: "cancel-reconciled-confirmed"})
+	if err != nil || cancelled.Status != statestore.RunCancelled {
+		t.Fatalf("Cancel(reconcile required) = %#v, %v", cancelled, err)
+	}
+	abandoned, err := service.Get(context.Background(), view.Run.RunID)
+	if err != nil || abandoned.Attempts[0].Status != statestore.AttemptReconcileRequired {
+		t.Fatalf("cancellation must preserve uncertain attempt evidence: %#v, %v", abandoned, err)
+	}
+
 }
 
 func TestAgentViewListsExecutionContextAndCancelsSelectedAttempt(t *testing.T) {

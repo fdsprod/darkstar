@@ -451,7 +451,7 @@ func (s *Service) Cancel(ctx context.Context, request ControlRequest) (statestor
 	if err != nil || done {
 		return replayed, err
 	}
-	allowed := []statestore.RunStatus{statestore.RunDraft, statestore.RunReady, statestore.RunQueued, statestore.RunRunning, statestore.RunWaiting, statestore.RunBlocked, statestore.RunFailed}
+	allowed := []statestore.RunStatus{statestore.RunDraft, statestore.RunReady, statestore.RunQueued, statestore.RunRunning, statestore.RunWaiting, statestore.RunBlocked, statestore.RunFailed, statestore.RunReconcileRequired}
 	if _, err := s.controlRun(ctx, request, action, allowed...); err != nil {
 		return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, err)
 	}

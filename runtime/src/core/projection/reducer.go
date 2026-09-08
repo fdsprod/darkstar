@@ -210,7 +210,7 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 		}
 		next.Status = statestore.RunFailed
 	case "run.cancelled":
-		if current.Status.Terminal() {
+		if current.Status.Terminal() && current.Status != statestore.RunReconcileRequired {
 			return statestore.RunProjection{}, true, invalidTransition("run", current.RunID, string(current.Status), event.Kind)
 		}
 		next.Status = statestore.RunCancelled
