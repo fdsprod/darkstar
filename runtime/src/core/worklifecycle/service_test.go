@@ -96,6 +96,7 @@ func (s *memoryStore) CompleteCommand(_ context.Context, request statestore.Comp
 }
 
 type fakeRuntime struct {
+	prepareError              error
 	store                     *memoryStore
 	prepareCalls, launchCalls int
 	prepareKey, launchKey     string
@@ -105,6 +106,9 @@ type fakeRuntime struct {
 func (r *fakeRuntime) Prepare(_ context.Context, request runexecution.CreateRequest, key string) (statestore.RunProjection, error) {
 	r.prepareCalls++
 	r.prepareKey = key
+	if r.prepareError != nil {
+		return statestore.RunProjection{}, r.prepareError
+	}
 	run := statestore.RunProjection{RunID: "run_01K3Z1D1AAAAAAAAAAAAAAAAAAA", WorkItemID: request.WorkItemID, WorkflowID: request.WorkflowID, WorkflowVersion: request.WorkflowVersion, Status: statestore.RunReady, ResourceVersion: 2, LastGlobalPosition: 3}
 	r.store.runs = append(r.store.runs, run)
 	return run, nil
@@ -381,5 +385,17 @@ func TestPreparationCannotLeakIntoSiblingTargets(t *testing.T) {
 	_, err := service.Plan(context.Background(), store.work.WorkItemID, PlanRequest{Target: StateRunning, Preparation: &Preparation{WorkflowID: "delivery", WorkflowVersion: "1"}})
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestPreparationFailurePreservesCauseOnReplay(t *testing.T) {
+	store := newMemoryStore()
+	runtime := &fakeRuntime{store: store, prepareError: errors.New("unsupported provider version")}
+	service, _ := New(store, runtime)
+	request := ApplyRequest{PlanRequest: PlanRequest{Target: StateReady}, ExpectedResourceVersion: 2, IdempotencyKey: "prepare-provider-failure"}
+	_, first := service.Apply(context.Background(), store.work.WorkItemID, request)
+	_, replayed := service.Apply(context.Background(), store.work.WorkItemID, request)
+	if first == nil || replayed == nil || first.Error() != replayed.Error() || errors.Is(first, ErrRejected) || runtime.prepareCalls != 1 {
+		t.Fatalf("errors = %v / %v, calls = %d", first, replayed, runtime.prepareCalls)
 	}
 }

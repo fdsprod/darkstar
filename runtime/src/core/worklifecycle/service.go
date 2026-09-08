@@ -511,7 +511,7 @@ func (s *Service) Apply(ctx context.Context, workItemID string, request ApplyReq
 			conflict := &VersionConflictError{Expected: request.ExpectedResourceVersion, Current: current}
 			return Result{}, s.finishFailure(ctx, request.IdempotencyKey, "version", conflict.Error(), &current, 412, conflict)
 		}
-		return Result{}, s.finishFailure(ctx, request.IdempotencyKey, "runtime", err.Error(), nil, 409, ErrRejected)
+		return Result{}, s.finishFailure(ctx, request.IdempotencyKey, "runtime", err.Error(), nil, 409, fmt.Errorf("workflow preparation or execution failed: %w", err))
 	}
 	after, err := s.Plan(ctx, workItemID, request.PlanRequest)
 	if err != nil {
@@ -564,6 +564,9 @@ func decodeResponse(encoded json.RawMessage) (Result, error) {
 	}
 	if response.Failure.Kind == "version" && response.Failure.Current != nil {
 		return Result{}, &VersionConflictError{Current: *response.Failure.Current}
+	}
+	if response.Failure.Kind == "runtime" {
+		return Result{}, fmt.Errorf("workflow preparation or execution failed: %s", response.Failure.Message)
 	}
 	return Result{}, ErrRejected
 }
