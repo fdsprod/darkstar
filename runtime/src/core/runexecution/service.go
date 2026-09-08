@@ -31,7 +31,7 @@ const (
 	createScope                  = "runs.create"
 	prepareScope                 = "runs.prepare"
 	DefaultWorkflowID            = "darkstar/story-execution"
-	DefaultWorkflowVersion       = "2.0.2"
+	DefaultWorkflowVersion       = "2.0.3"
 	compatibilityWorkflowID      = "darkstar/mvp-walking-skeleton"
 	compatibilityWorkflowVersion = "1.0.0"
 	nodeID                       = "technical_design"

@@ -318,9 +318,9 @@ export function validateWorkflow(document, sourcePath = null, callStack = []) {
       if (kind === "bounded" && (!Number.isInteger(edge.maxTraversals) || edge.maxTraversals < 1)) errors.push(fail("WF_SCHEMA_INVALID", "bounded transition needs positive maxTraversals", edgeLocation));
       if (kind !== "bounded" && Object.hasOwn(edge, "maxTraversals")) errors.push(fail("WF_SCHEMA_INVALID", "normal transition cannot declare maxTraversals", edgeLocation));
       if (Object.hasOwn(edge, "when")) {
-        errors.push(...checkPredicate(edge.when, new Set(Object.keys(node.outputs)), new Set(Object.keys(runInputs)), `${edgeLocation}/when`));
+        errors.push(...checkPredicate(edge.when, new Set(Object.keys(node.outputs)), new Set(Object.keys(runInputs)), `${edgeLocation}/when`, new Set(Object.keys(node.inputs))));
         if (node.type === "reasoning" && predicateReferences(edge.when, "output.")) {
-          errors.push(fail("WF_REASONING_EDGE_INVALID", `reasoning node '${nodeId}' cannot branch on its own output`, `${edgeLocation}/when`));
+          errors.push(fail("WF_REASONING_EDGE_INVALID", `reasoning node '${nodeId}' cannot branch on its own output`, `${edgeLocation}/when`, new Set(Object.keys(node.inputs))));
         }
       }
     });
@@ -793,7 +793,7 @@ export class Runner {
     const matches = [];
     for (const edgeId of this.route.outgoing[nodeId] ?? []) {
       const { edge } = this.route.edges.get(edgeId);
-      if (!evaluate(edge.when ?? { const: true }, candidate, this.runInputs)) continue;
+      if (!evaluate(edge.when ?? { const: true }, candidate, this.runInputs, inputs)) continue;
       if ((edge.kind ?? "normal") === "bounded" && this.count(this.loopCounts, edgeId) >= edge.maxTraversals) throw fail("RUN_LOOP_LIMIT_EXHAUSTED", `transition '${edgeId}' exhausted its traversal budget`, `/spec/nodes/${nodeId}/transitions`, { transitionId: edgeId });
       matches.push(edgeId);
     }

@@ -132,3 +132,5 @@ test("authoritative node rename rewrites bindings and therefore both graph views
   assert.equal(projection.edges[0].source.nodeId, "$start");
   assert.deepEqual(projection.findings, []);
 });
+
+test('delivery configuration and readiness artifacts have visible consumer wires',()=>{const document=JSON.parse(readFileSync(new URL('../../examples/workflows/software-delivery.json',import.meta.url),'utf8'));const graph=derivePortGraph(document,deriveEditorGraph(document,{}));for(const id of ['route_readiness_threshold','needs_poc','needs_experience_design','needs_technical_research'])assert.ok(graph.edges.some(e=>e.kind==='data'&&e.source.kind==='run_input'&&e.source.portId===id),id);for(const id of ['product_readiness','delivery_readiness','review_ci'])assert.ok(graph.edges.some(e=>e.kind==='data'&&e.source.kind==='data'&&e.source.portId===id),id);const branches=graph.edges.filter(e=>e.kind==='execution'&&e.source.nodeId==='p1_route_gate');assert.deepEqual(branches.map(e=>[e.source.portId,e.target.nodeId]),[['true','p2_product_discovery'],['false','p1_route_review']]);});

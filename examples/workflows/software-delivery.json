@@ -3,7 +3,7 @@
   "kind": "Workflow",
   "metadata": {
     "name": "darkstar/software-delivery",
-    "version": "2.0.2",
+    "version": "2.0.3",
     "displayName": "Software delivery"
   },
   "spec": {
@@ -495,6 +495,10 @@
             "from": "node.p1_route_assessment.output.route_assessment",
             "type": "markdown",
             "required": false
+          },
+          "route_readiness_threshold": {
+            "from": "run.input.route_readiness_threshold",
+            "type": "number"
           }
         },
         "outputs": {
@@ -556,7 +560,7 @@
                 "ref": "input.readiness"
               },
               {
-                "ref": "run.input.route_readiness_threshold"
+                "ref": "input.route_readiness_threshold"
               }
             ]
           }
@@ -686,6 +690,20 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
+          },
+          "needs_poc": {
+            "from": "run.input.needs_poc",
+            "type": "boolean"
+          },
+          "route_assessment": {
+            "from": "node.p1_route_assessment.output.route_assessment",
+            "type": "markdown",
+            "required": false
+          },
+          "route_decision": {
+            "from": "node.p1_route_review.output.route_decision",
+            "type": "markdown",
+            "required": false
           }
         },
         "outputs": {
@@ -739,7 +757,7 @@
               "op": "eq",
               "args": [
                 {
-                  "ref": "run.input.needs_poc"
+                  "ref": "input.needs_poc"
                 },
                 {
                   "literal": true
@@ -754,7 +772,7 @@
               "op": "eq",
               "args": [
                 {
-                  "ref": "run.input.needs_poc"
+                  "ref": "input.needs_poc"
                 },
                 {
                   "literal": false
@@ -884,6 +902,10 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
+          },
+          "needs_experience_design": {
+            "from": "run.input.needs_experience_design",
+            "type": "boolean"
           }
         },
         "outputs": {
@@ -937,7 +959,7 @@
               "op": "eq",
               "args": [
                 {
-                  "ref": "run.input.needs_experience_design"
+                  "ref": "input.needs_experience_design"
                 },
                 {
                   "literal": true
@@ -952,7 +974,7 @@
               "op": "eq",
               "args": [
                 {
-                  "ref": "run.input.needs_experience_design"
+                  "ref": "input.needs_experience_design"
                 },
                 {
                   "literal": false
@@ -1063,6 +1085,10 @@
             "from": "node.p5_experience_design.output.experience_design",
             "type": "markdown",
             "required": false
+          },
+          "needs_technical_research": {
+            "from": "run.input.needs_technical_research",
+            "type": "boolean"
           }
         },
         "outputs": {
@@ -1110,7 +1136,7 @@
               "op": "eq",
               "args": [
                 {
-                  "ref": "run.input.needs_technical_research"
+                  "ref": "input.needs_technical_research"
                 },
                 {
                   "literal": true
@@ -1125,7 +1151,7 @@
               "op": "eq",
               "args": [
                 {
-                  "ref": "run.input.needs_technical_research"
+                  "ref": "input.needs_technical_research"
                 },
                 {
                   "literal": false
@@ -1160,6 +1186,16 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
+          },
+          "product_readiness": {
+            "from": "node.p6_product_readiness.output.product_readiness",
+            "type": "markdown",
+            "required": false
+          },
+          "requirements": {
+            "from": "node.p4_requirements.output.requirements",
+            "type": "markdown",
+            "required": false
           }
         },
         "outputs": {
@@ -1249,6 +1285,16 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
+          },
+          "product_readiness": {
+            "from": "node.p6_product_readiness.output.product_readiness",
+            "type": "markdown",
+            "required": false
+          },
+          "requirements": {
+            "from": "node.p4_requirements.output.requirements",
+            "type": "markdown",
+            "required": false
           }
         },
         "outputs": {
@@ -1603,7 +1649,7 @@
         "call": {
           "workflow": {
             "name": "darkstar/story-execution",
-            "version": "2.0.2",
+            "version": "2.0.3",
             "path": "story-execution.json"
           },
           "entry": "s0_readiness",
@@ -1647,6 +1693,11 @@
           "story_validation": {
             "from": "node.p11_story_execution.output.story_validation",
             "type": "schema:validation",
+            "required": false
+          },
+          "delivery_readiness": {
+            "from": "node.p10_delivery_readiness.output.delivery_readiness",
+            "type": "markdown",
             "required": false
           }
         },
@@ -1904,6 +1955,11 @@
           "decision_log": {
             "from": "run.input.decision_log",
             "type": "decision_log"
+          },
+          "review_ci": {
+            "from": "node.p14_review_ci.output.review_ci",
+            "type": "schema:review_ci",
+            "required": false
           }
         },
         "outputs": {
