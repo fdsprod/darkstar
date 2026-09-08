@@ -36,14 +36,13 @@ test("every dashboard tabset has roving focus and persistent controlled panels",
     read("../src/pages/ArtifactsPage.tsx"),
     read("../src/pages/SettingsPage.tsx"),
   ]);
-  for (const source of [agents, workflows, artifacts, settings]) {
+  for (const source of [agents, artifacts, settings]) {
     assert.match(source, /tabKeyTarget/);
     assert.match(source, /role="tab"[^>]*tabIndex=/);
     assert.match(source, /onKeyDown=/);
   }
   for (const [source, ids] of [
     [agents, ["agent-panel-executions", "agent-panel-permissions"]],
-    [workflows, ["workflow-editor-panel-canvas", "workflow-editor-panel-structure"]],
     [artifacts, ["evidence-source-panel-file", "evidence-source-panel-paste"]],
     [settings, ["settings-panel-health", "settings-panel-provider", "settings-panel-projects", "settings-panel-configuration"]],
   ]) {

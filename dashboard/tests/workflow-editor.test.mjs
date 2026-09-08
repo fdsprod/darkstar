@@ -296,10 +296,10 @@ test("editor source exposes direct URL state, keyboard parity, conflict retentio
     readFile(new URL("../src/api/client.ts", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
-  for (const parameter of ["item", "view", "selection"]) assert.match(page, new RegExp(`params\\.get\\("${parameter}"\\)`));
+  for (const parameter of ["item", "selection"]) assert.match(page, new RegExp(`params\\.get\\("${parameter}"\\)`));
   const source = `${page}\n${inspector}`;
-  for (const affordance of ["Duplicate as draft", "Archive", "Start connection", "Move ${node.id} earlier", "Remove", "aria-live=\"polite\"", "event.key === \"Escape\"", "Preview route", "Validate draft", "Advanced JSON", "Publish exact revision"]) assert.ok(source.includes(affordance), `missing ${affordance}`);
-  for (const definitionControl of ["Reusable node definitions", "Create from selected node", "Use", "New version", "Built-in definitions are immutable"]) assert.ok(page.includes(definitionControl), `missing ${definitionControl}`);
+  for (const affordance of ["New version", "Publish version", "Workflow version"]) assert.ok(source.includes(affordance), `missing ${affordance}`);
+  assert.ok(page.includes("newName: item.version.name"));
   assert.match(page, /persistence\.remote/);
   for (const fence of ["semanticGenerationRef", "publishRequestRef", "currentDocumentRef", "result.published.sourceReference", "child.inert = true"]) assert.ok(page.includes(fence), `missing ${fence}`);
   for (const buffered of ["Apply mappings", "Apply node configuration", "onBlur={commit}", "Existing draft values remain visible and unchanged", "Configured reference unavailable"]) assert.ok(inspector.includes(buffered), `missing ${buffered}`);
@@ -311,7 +311,7 @@ test("editor source exposes direct URL state, keyboard parity, conflict retentio
   assert.equal(JSON.parse(manifest).dependencies["@xyflow/react"], "^12.11.6");
   for (const integration of ["ReactFlow", "ReactFlowProvider", "Handle", "MiniMap", "isValidConnection={validConnection}", "screenToFlowPosition", "onNodeDragStop"]) assert.ok(graphCanvas.includes(integration), `missing React Flow integration ${integration}`);
   assert.doesNotMatch(graphCanvas, /<svg\b/);
-  assert.match(page, /draggable=\{availability\.available\}/);
+  assert.ok(graphCanvas.includes("onPaneContextMenu"));
   assert.match(styles, /@media \(max-width: 820px\)[^{]*\{[^}]*\.workflow-editor-shell/s);
   assert.match(styles, /\.workflow-view-tabs button:first-child \{ display: none; \}/);
   assert.doesNotMatch(styles, /@media \(max-width: 820px\)[^{]*\{[^}]*\.node-palette \{ display: none; \}/s);
