@@ -68,7 +68,7 @@ const (
 // snapshot. Kind is part of the identity, so a tool cannot satisfy a skill.
 type CapabilityReference struct {
 	Kind CapabilityKind `json:"kind"`
-	Name string `json:"name"`
+	Name string         `json:"name"`
 }
 
 // CapabilityAvailability is the narrow view the workflow validator needs from

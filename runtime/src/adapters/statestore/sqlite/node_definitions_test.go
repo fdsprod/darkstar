@@ -46,7 +46,7 @@ func TestNodeDefinitionsPersistImmutableVersionsAndArchiveDiscoveryState(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	t.Cleanup(func() { _ = reopened.Close() })
 	values, err := reopened.NodeDefinitions(ctx)
 	if err != nil || len(values) != 1 || values[0].ArchivedAt == nil {
 		t.Fatalf("reopened = %#v %v", values, err)

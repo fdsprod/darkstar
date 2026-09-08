@@ -71,21 +71,51 @@ export function bindPorts(document: JsonObject, source: Port, target: Port, avai
   return { kind: "changed", document: next };
 }
 
-export function graphNodeHeight(ports: readonly Port[], nodeId: string) { return 124 + 28 * Math.max(...["input", "output"].map((direction) => ports.filter((port) => port.kind !== "run_input" && port.nodeId === nodeId && port.direction === direction).length)); }
+export const GRAPH_NODE_WIDTH = 340;
+export const GRAPH_NODE_HEADER_HEIGHT = 136;
+export const GRAPH_PORT_ROW_HEIGHT = 34;
+export const PORT_LAYOUT_VERSION = 4;
+export const READABLE_GRAPH_VIEWPORT = { x: 24, y: 48, zoom: 0.85 } as const;
+
+export function graphNodeWidth(ports: readonly Port[], node: Pick<EditorGraph["nodes"][number], "id" | "displayName" | "type">) {
+  const labels = ports.filter((port) => port.kind !== "run_input" && port.nodeId === node.id).map((port) => `${port.portId} ${"valueType" in port ? port.valueType : "execution"}${"required" in port && port.required ? " *" : ""}`);
+  const headerWidth = Math.max(node.displayName.length, node.type.replaceAll("_", " ").length) * 7 + 48;
+  const portWidth = Math.max(0, ...labels.map((label) => label.length * 6.5 + 30));
+  return Math.ceil(Math.max(GRAPH_NODE_WIDTH, headerWidth, portWidth * 2 + 52));
+}
+export function graphRunInputWidth(ports: readonly Port[]) { return Math.ceil(Math.max(280, ...ports.filter((port) => port.kind === "run_input").map((port) => `${port.portId} ${port.valueType}${"required" in port && port.required ? " *" : ""}`.length * 6.5 + 44))); }
+export function graphNodeHeight(ports: readonly Port[], nodeId: string) { return GRAPH_NODE_HEADER_HEIGHT + GRAPH_PORT_ROW_HEIGHT * Math.max(1, ...["input", "output"].map((direction) => ports.filter((port) => port.kind !== "run_input" && port.nodeId === nodeId && port.direction === direction).length)) + 20; }
 export function graphBounds(graph: EditorGraph, ports: readonly Port[]) {
-  const minX = Math.min(0, ...graph.nodes.map((node) => node.position.x)) - (ports.some((port) => port.kind === "run_input") ? 300 : 30);
-  const minY = Math.min(0, ...graph.nodes.map((node) => node.position.y)) - 30;
-  return { x: minX, y: minY, width: Math.max(560, ...graph.nodes.map((node) => node.position.x + 290)) - minX, height: Math.max(320, ports.filter((port) => port.kind === "run_input").length * 28 + 100, ...graph.nodes.map((node) => node.position.y + graphNodeHeight(ports, node.id) + 30)) - minY };
+  const hasInputs = ports.some((port) => port.kind === "run_input");
+  const minX = Math.min(0, ...graph.nodes.map((node) => node.position.x), hasInputs ? 80 : 0) - 60;
+  const minY = Math.min(0, ...graph.nodes.map((node) => node.position.y)) - 60;
+  return { x: minX, y: minY, width: Math.max(720, ...graph.nodes.map((node) => node.position.x + graphNodeWidth(ports, node) + 80), hasInputs ? 80 + graphRunInputWidth(ports) + 80 : 0) - minX, height: Math.max(440, ports.filter((port) => port.kind === "run_input").length * 38 + 170, ...graph.nodes.map((node) => node.position.y + graphNodeHeight(ports, node.id) + 80)) - minY };
 }
 export function autoLayoutGraph(layout: WorkflowLayout, graph: EditorGraph, ports: readonly Port[]): WorkflowLayout {
   // Stable breadth-first ranks; cycles/disconnected nodes are placed once, never chased.
-  const remaining = new Set(graph.nodes.map((node) => node.id)), ordered: string[] = [];
+  const remaining = new Set(graph.nodes.map((node) => node.id)), ordered: string[] = [], ranks = new Map<string, number>();
   const queue = graph.nodes.filter((node) => node.entry || !graph.edges.some((edge) => edge.to === node.id)).map((node) => node.id);
   while (remaining.size) {
     const id = queue.shift() ?? remaining.values().next().value!;
     if (!remaining.delete(id)) continue;
+    const parentRanks = graph.edges.filter((edge) => edge.to === id).map((edge) => ranks.get(edge.from)).filter((rank): rank is number => rank !== undefined);
+    ranks.set(id, parentRanks.length ? Math.max(...parentRanks) + 1 : 0);
     ordered.push(id); queue.push(...graph.edges.filter((edge) => edge.from === id).map((edge) => edge.to));
   }
-  const rowHeight = Math.max(220, ...graph.nodes.map((node) => graphNodeHeight(ports, node.id) + 40));
-  return { ...layout, nodes: Object.fromEntries(ordered.map((id, index) => [id, { x: 40 + index % 3 * 330, y: 40 + Math.floor(index / 3) * rowHeight }])) };
+  const layerOffsets = new Map<number, number>();
+  const layerWidths = new Map<number, number>();
+  for (const id of ordered) { const node = graph.nodes.find((item) => item.id === id)!; const rank = ranks.get(id) ?? 0; layerWidths.set(rank, Math.max(layerWidths.get(rank) ?? 0, graphNodeWidth(ports, node))); }
+  const layerX = new Map<number, number>();
+  let nextX = ports.some((port) => port.kind === "run_input") ? 80 + graphRunInputWidth(ports) + 120 : 80;
+  for (const rank of [...layerWidths.keys()].sort((left, right) => left - right)) { layerX.set(rank, nextX); nextX += layerWidths.get(rank)! + 120; }
+  return { ...layout, portLayoutVersion: PORT_LAYOUT_VERSION, viewport: { ...READABLE_GRAPH_VIEWPORT }, nodes: Object.fromEntries(ordered.map((id) => {
+    const rank = ranks.get(id) ?? 0, y = layerOffsets.get(rank) ?? 80;
+    layerOffsets.set(rank, y + graphNodeHeight(ports, id) + 72);
+    return [id, { x: layerX.get(rank) ?? 80, y }];
+  })) };
+}
+
+/** Replaces coordinates written for earlier, smaller cards with the current ranked layout. */
+export function preparePortLayout(layout: WorkflowLayout, graph: EditorGraph, ports: readonly Port[]): WorkflowLayout {
+  return layout.portLayoutVersion === PORT_LAYOUT_VERSION ? layout : autoLayoutGraph(layout, graph, ports);
 }

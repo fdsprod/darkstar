@@ -31,7 +31,7 @@ func TestReviewFeedbackSetDraftBindsExactCandidateAndRepresentation(t *testing.T
 	endpoint, _ := server.Endpoint()
 	body := `{"candidate":{"artifactId":"artifact_candidate","version":3},"candidateDigest":"` + strings.Repeat("a", 64) + `","scopeDigest":"` + strings.Repeat("b", 64) + `","policyDigest":"` + strings.Repeat("c", 64) + `","representation":{"representationId":"representation_safe","digest":"` + strings.Repeat("d", 64) + `","disclosure":"redacted"}}`
 	response := reviewFeedbackSetRequest(t, endpoint, "/api/v1/review-sessions/approval_00000000000000000000000000/feedback-sets", body, "draft-key", `"7"`)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusCreated || !strings.Contains(response.Header.Get("Location"), "/feedback-sets/feedbackset_") {
 		t.Fatalf("status=%d location=%q", response.StatusCode, response.Header.Get("Location"))
 	}
@@ -62,7 +62,7 @@ func TestReviewFeedbackSetSubmitPassesCompleteSetAndMapsStaleCandidate(t *testin
 	path := "/api/v1/review-sessions/approval_00000000000000000000000000/feedback-sets/feedbackset_00000000000000000000000000/submit"
 	response := reviewFeedbackSetRequest(t, endpoint, path, body, "submit-key", `"7"`)
 	_, _ = io.Copy(io.Discard, response.Body)
-	response.Body.Close()
+	_ = response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d", response.StatusCode)
 	}
@@ -72,10 +72,10 @@ func TestReviewFeedbackSetSubmitPassesCompleteSetAndMapsStaleCandidate(t *testin
 	service.err = checkpoint.ErrCandidateConflict
 	response = reviewFeedbackSetRequest(t, endpoint, path, body, "stale-key", `"7"`)
 	assertAPIError(t, response, http.StatusConflict, "APPROVAL_STALE_CANDIDATE")
-	response.Body.Close()
+	_ = response.Body.Close()
 	service.err = checkpoint.ErrCheckpointConflict
 	response = reviewFeedbackSetRequest(t, endpoint, path, body, "version-key", `"7"`)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	assertAPIError(t, response, http.StatusConflict, "APPROVAL_VERSION_CONFLICT")
 }
 
@@ -110,7 +110,7 @@ func TestReviewFeedbackSetSubmitAcceptsCompletePayloadAboveLegacyBodyLimit(t *te
 	}
 	path := "/api/v1/review-sessions/approval_00000000000000000000000000/feedback-sets/feedbackset_00000000000000000000000000/submit"
 	response := reviewFeedbackSetRequest(t, endpoint, path, string(body), "large-key", `"7"`)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK || len(service.feedback.Annotations) != 3 {
 		t.Fatalf("status=%d annotations=%d", response.StatusCode, len(service.feedback.Annotations))
 	}

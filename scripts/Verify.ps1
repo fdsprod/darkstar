@@ -12,6 +12,11 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+& npm run test:browser
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+
 & (Join-Path $PSScriptRoot "Build.ps1") -Version $Version
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE

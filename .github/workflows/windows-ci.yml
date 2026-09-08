@@ -50,6 +50,9 @@ jobs:
       - name: Install pinned lint and dashboard dependencies
         run: ./scripts/Bootstrap.ps1
 
+      - name: Install browser acceptance runtime
+        run: npx playwright install chromium
+
       - name: Check formatting, lint, test, and build
         run: ./scripts/Verify.ps1 -Version $env:GITHUB_SHA
         env:

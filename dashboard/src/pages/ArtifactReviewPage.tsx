@@ -61,7 +61,11 @@ function ArtifactReviewWorkspace({ approvalId }: { approvalId: string }) {
   const lifetimeAbortRef = useRef(new AbortController());
   const agentAttemptRef = useRef<string | undefined>(undefined);
 
-  useEffect(() => () => lifetimeAbortRef.current.abort(), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    lifetimeAbortRef.current = controller;
+    return () => controller.abort();
+  }, []);
 
   const load = useCallback(async (signal?: AbortSignal, acknowledge = false) => {
     try {

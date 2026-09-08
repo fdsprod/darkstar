@@ -153,7 +153,7 @@ func TestWorkflowValidationResolvesExactReusableDefinitionBeforeInstall(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	t.Cleanup(func() { _ = database.Close() })
 	builtin := workflow.NodeDefinition{Ref: workflow.ResolvedNodeDefinitionRef{Ref: workflow.BuiltInNodeDefinitionRef{Name: "route/assessment", Version: "1.0.0"}}, DisplayName: "Route assessment", Description: "Select route", Compatibility: workflow.APIVersionV1Alpha3, Inputs: map[workflow.Identifier]workflow.ValueDeclaration{}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"selected_route": {Type: workflow.ValueString}, "rationale": {Type: workflow.ValueString}, "advice": {Type: workflow.ValueString}, "missing_information": {Type: workflow.ValueArray}, "assumptions": {Type: workflow.ValueArray}, "confirmation_required": {Type: workflow.ValueBoolean}}, ConfigurationSchema: json.RawMessage(`{"type":"object"}`), Implementation: workflow.NodeImplementationRouting, RequiredCapabilities: []workflow.CapabilityReference{}, Lifecycle: workflow.NodeDefinitionActive, CreatedAt: time.Now().UTC()}
 	library, err := workflow.NewNodeDefinitionLibrary(builtin)
 	if err != nil {

@@ -98,13 +98,14 @@ func parseWorkRun(args []string, action string) (runexecution.CreateRequest, str
 			if request.Preparation == nil {
 				request.Preparation = &runexecution.PreparationInput{}
 			}
-			if args[index] == "--evidence" {
+			switch args[index] {
+			case "--evidence":
 				request.Preparation.Evidence = append(request.Preparation.Evidence, value)
-			} else if args[index] == "--answers-json" {
+			case "--answers-json":
 				if request.Preparation.Answers != nil || json.Unmarshal([]byte(value), &request.Preparation.Answers) != nil || request.Preparation.Answers == nil {
 					return runexecution.CreateRequest{}, "", errors.New("--answers-json requires one JSON object of question IDs to string answers")
 				}
-			} else {
+			case "--inputs-json":
 				if request.Preparation.RunInputs != nil || json.Unmarshal([]byte(value), &request.Preparation.RunInputs) != nil || request.Preparation.RunInputs == nil {
 					return runexecution.CreateRequest{}, "", errors.New("--inputs-json requires one JSON object of workflow input names to values")
 				}

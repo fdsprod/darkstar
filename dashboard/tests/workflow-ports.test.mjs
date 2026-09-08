@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { addNode, connectNodes, createStarterDocument, deriveEditorGraph, normalizeLayout, renameNode } from "../src/pages/workflowEditorModel.ts";
-import { autoLayoutGraph, bindPorts, connectionError, derivePortGraph, graphBounds, portKey } from "../src/pages/workflowPortModel.ts";
+import { autoLayoutGraph, bindPorts, connectionError, derivePortGraph, graphBounds, portKey, preparePortLayout } from "../src/pages/workflowPortModel.ts";
 
 function fixture() {
   let document = addNode(createStarterDocument("example/ports"), "command", "finish").document;
@@ -82,6 +82,14 @@ test("auto-layout handles cycles and disconnected nodes without touching executi
   assert.deepEqual(project(document, next).edges, project(document).edges);
   const bounds = graphBounds(deriveEditorGraph(document, next), ports);
   assert.ok(bounds.x < 0, "run inputs have room to the left of nodes");
+  assert.ok(bounds.width >= 720 && bounds.height >= 440, "canvas bounds reserve usable graph extents");
+  const start = next.nodes.start, finish = next.nodes.finish, isolated = next.nodes.isolated;
+  assert.ok(Math.abs(start.x - finish.x) >= 460, "connected layers have enough horizontal clearance for nodes and edges");
+  assert.ok(Math.abs(start.y - isolated.y) >= 110, "nodes sharing a layer receive content-aware vertical clearance");
+  assert.equal(next.portLayoutVersion, 4);
+  assert.equal(next.viewport.zoom, 0.85, "ordinary auto-layout keeps labels readable instead of fitting the whole graph");
+  assert.deepEqual(preparePortLayout(next, graph, ports), next, "current layout coordinates remain authoritative");
+  assert.equal(preparePortLayout({ ...next, portLayoutVersion: 3 }, graph, ports).portLayoutVersion, 4, "legacy card coordinates migrate deterministically");
 });
 
 test("authoritative node rename rewrites bindings and therefore both graph views", () => {
