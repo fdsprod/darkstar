@@ -25,6 +25,12 @@ test("published canvas versions preserve identity, edit typed resources, and pub
  await page.getByRole("button",{name:"New version",exact:true}).click();await expect.poll(()=>duplicate?.newName).toBe("darkstar/example");
  await expect(page.getByText("Draft",{exact:true})).toBeVisible();await page.getByRole("button",{name:"Zoom to fit"}).click();
  await page.locator('.react-flow__node[data-id="design"] .workflow-flow-node__body').click();await expect(page.getByText("Unsupported node",{exact:true})).toHaveCount(0);await expect(page.getByRole("complementary",{name:"Contextual inspector"})).toContainText("Instructions");await page.keyboard.press("Escape");
+
+ const snap=page.getByRole("button",{name:"Snap to grid",exact:true});await expect(snap).toHaveAttribute("aria-pressed","false");await snap.click();await expect.poll(()=>saves.at(-1)?.layout.snapToGrid).toBe(true);
+ const dragNode=page.locator('.react-flow__node[data-id="design"]');const box=await dragNode.boundingBox();if(!box)throw new Error("Missing design node");
+ await page.mouse.move(box.x+box.width/2,box.y+16);await page.mouse.down();await page.mouse.move(box.x+box.width/2+93,box.y+79,{steps:12});await page.mouse.up();
+ await expect.poll(()=>saves.at(-1)?.layout.nodes.design?.x % 22).toBe(0);await expect.poll(()=>saves.at(-1)?.layout.nodes.design?.y % 22).toBe(0);
+ await snap.click();await expect.poll(()=>saves.at(-1)?.layout.snapToGrid).toBe(false);await expect(snap).toHaveAttribute("aria-pressed","false");
  await page.locator('.react-flow__node[data-id="$input:design_template"] .workflow-flow-node__body').click();
  await page.getByRole("textbox",{name:"Template",exact:true}).fill("# Design\n## Approach\nExplain alternatives.");await page.getByRole("button",{name:"Apply",exact:true}).click();
  await expect.poll(()=>saves.at(-1)?.document.spec.inputs.design_template.resource.content).toContain("Explain alternatives");
