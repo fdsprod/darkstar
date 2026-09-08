@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  addNode, connectNodes, createStarterDocument, decodePredicate, deriveEditorGraph, edgeIdentity, encodePredicate, findingTarget, inspectNode, inspectTransition, moveNode, nodeExecutorComplete, nodeTypeAvailability, previewNodeRemoval, previewNodeRename, removeNode, removeNodeLayout, renameNode, updateNode, updateNodeCheckpoint, updateNodeExecutor, updateNodeShared, updateTransition, validationMatches,
+  addNode, connectNodes, createStarterDocument, decodePredicate, deriveEditorGraph, edgeIdentity, encodePredicate, findingTarget, inspectNode, inspectTransition, moveNode, nodeExecutorComplete, nodeTypeAvailability, previewNodeRemoval, previewNodeRename, removeNode, removeNodeLayout, renameNode, updateNode, updateNodeCheckpoint, updateNodeExecutor, updateNodeShared, updateTransition, useNodeDefinition, validationMatches,
 } from "../src/pages/workflowEditorModel.ts";
 
 test("layout is a separate projection and cannot change semantic document bytes", () => {
@@ -83,21 +83,33 @@ test("entry, terminal, route defaults, and checkpoint remain synchronized", () =
   assert.equal(document.spec.nodes.start.terminal, true);
 });
 
-test("all six executor variants decode and update through a closed typed model", () => {
+test("all seven executor variants decode and update through a closed typed model", () => {
   let document = createStarterDocument("example/editor");
-  for (const type of ["reasoning", "gate", "approval", "subworkflow", "point_execution"]) document = addNode(document, type, type).document;
-  assert.deepEqual(Object.values(document.spec.nodes).map((_, index) => inspectNode(document, Object.keys(document.spec.nodes)[index]).executor.type), ["command", "reasoning", "gate", "approval", "subworkflow", "point_execution"]);
+  for (const type of ["reasoning", "gate", "approval", "subworkflow", "point_execution", "routing"]) document = addNode(document, type, type).document;
+  assert.deepEqual(Object.values(document.spec.nodes).map((_, index) => inspectNode(document, Object.keys(document.spec.nodes)[index]).executor.type), ["command", "reasoning", "gate", "approval", "subworkflow", "point_execution", "routing"]);
   document = updateNodeExecutor(document, "gate", { type: "gate", policy: "release_policy", condition: { kind: "comparison", operator: "eq", left: { kind: "reference", ref: "input.ready" }, right: { kind: "literal", value: true } } });
   document = updateNodeExecutor(document, "start", { type: "command", argv: ["go", "test", "./..."], cwd: "runtime", timeoutSeconds: 120 });
   document = updateNodeExecutor(document, "approval", { type: "approval", actor: "external", externalCondition: "checks/pass", evidenceOutput: "approval_evidence" });
   document = updateNodeExecutor(document, "subworkflow", { type: "subworkflow", workflow: { name: "child/workflow", version: "2.1.0", digest: "a".repeat(64) }, entry: "start", terminals: ["finish"], inputs: { request: "request" }, outputs: { result: "node.finish.output.result" } });
   document.spec.nodes.point_execution.inputs.implementation_plan = { from: "run.input.implementation_plan", type: "object", required: true };
   document = updateNodeExecutor(document, "point_execution", { type: "point_execution", planInput: "implementation_plan", approval: "risk", riskTags: ["database"], validation: "each_and_combined", publishing: "after_each_point" });
+  document = updateNodeExecutor(document, "routing", { ...inspectNode(document, "routing").executor, branches: [{ name: "review", transition: "to_review" }] });
   assert.equal(document.spec.nodes.gate.gate.condition.op, "eq");
   assert.deepEqual(document.spec.nodes.start.command.argv, ["go", "test", "./..."]);
   assert.equal(document.spec.nodes.approval.outputs.approval_evidence.schema, "darkstar/approval-evidence/v1");
   assert.equal(document.spec.nodes.subworkflow.call.workflow.digest, "a".repeat(64));
   assert.equal(document.spec.nodes.point_execution.inputs.implementation_plan.type, "object");
+  assert.deepEqual(document.spec.nodes.routing.routing.branches, [{ name: "review", transition: "to_review" }]);
+  assert.equal(document.apiVersion, "darkstar.local/v1alpha3");
+});
+
+test("using a reusable node definition pins its exact immutable version", () => {
+  const definition = { scope: "project", owner: "project-1", name: "nodes/review", version: "2.1.0", digest: "a".repeat(64) };
+  const document = useNodeDefinition(createStarterDocument("example/editor"), "start", definition);
+  assert.equal(document.apiVersion, "darkstar.local/v1alpha3");
+  assert.deepEqual(document.spec.nodes.start.definition, definition);
+  definition.version = "9.9.9";
+  assert.equal(document.spec.nodes.start.definition.version, "2.1.0");
 });
 
 test("recursive predicates round trip and malformed conditions remain explicit and lossless", () => {
@@ -285,6 +297,7 @@ test("editor source exposes direct URL state, keyboard parity, conflict retentio
   for (const parameter of ["item", "view", "selection"]) assert.match(page, new RegExp(`params\\.get\\("${parameter}"\\)`));
   const source = `${page}\n${inspector}`;
   for (const affordance of ["Duplicate as draft", "Archive", "Start connection", "Move ${node.id} earlier", "Remove", "aria-live=\"polite\"", "event.key === \"Escape\"", "Preview route", "Validate draft", "Advanced JSON", "Publish exact revision"]) assert.ok(source.includes(affordance), `missing ${affordance}`);
+  for (const definitionControl of ["Reusable node definitions", "Create from selected node", "Use", "New version", "Built-in definitions are immutable"]) assert.ok(page.includes(definitionControl), `missing ${definitionControl}`);
   assert.match(page, /persistence\.remote/);
   for (const fence of ["semanticGenerationRef", "publishRequestRef", "currentDocumentRef", "result.published.sourceReference", "child.inert = true"]) assert.ok(page.includes(fence), `missing ${fence}`);
   for (const buffered of ["Apply mappings", "Apply node configuration", "onBlur={commit}", "Existing draft values remain visible and unchanged", "Configured reference unavailable"]) assert.ok(inspector.includes(buffered), `missing ${buffered}`);
@@ -297,4 +310,5 @@ test("editor source exposes direct URL state, keyboard parity, conflict retentio
   assert.match(styles, /\.workflow-view-tabs button:first-child \{ display: none; \}/);
   assert.doesNotMatch(styles, /@media \(max-width: 820px\)[^{]*\{[^}]*\.node-palette \{ display: none; \}/s);
   for (const method of ["getWorkflowLibrary", "getWorkflowAuthoringCatalog", "createWorkflowDraft", "duplicateWorkflowDraft", "updateWorkflowDraft", "previewWorkflowDraft", "validateWorkflowDraft", "publishWorkflowDraft", "archiveWorkflowVersion"]) assert.match(client, new RegExp(`${method}\\(`));
+  for (const method of ["listNodeDefinitions", "createNodeDefinition", "duplicateNodeDefinition", "versionNodeDefinition", "archiveNodeDefinition"]) assert.match(client, new RegExp(`${method}\\(`));
 });

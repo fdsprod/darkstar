@@ -1,5 +1,18 @@
 # Typed workflow graph
 
+In `darkstar.local/v1alpha3`, reusable nodes carry an exact `definition` reference with a closed `built_in`,
+`project`, or `user` scope, semantic version, and content digest. Published
+workflow JSON retains that resolved reference, so run snapshots continue to use
+the same definition even after a newer version is created or the library entry
+is archived. Built-ins are immutable; customization creates a project or user
+derivative with explicit provenance.
+
+The `routing` node is a first-class typed executor. Its outputs declare the
+selected route, rationale, advice, missing information, assumptions, and whether
+confirmation is required. Each named branch references an existing transition
+ID, and authoritative validation rejects missing transitions or output type
+mismatches before publish; assessment output never edits graph topology.
+
 DAR-145 implements the authoring projection of the accepted DS-002
 [execution semantics](../../docs/architecture/workflow/execution-semantics.md).
 It preserves the existing draft revision/CAS, validation, route preview and

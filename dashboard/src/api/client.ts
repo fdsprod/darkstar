@@ -104,6 +104,11 @@ export class DarkstarApiClient {
   listWorkflows(name?: string, signal?: AbortSignal) { return this.operation("listWorkflows", { query: { name }, signal }); }
   getWorkflowLibrary(signal?: AbortSignal) { return this.operation("getWorkflowLibrary", { signal }); }
   getWorkflowAuthoringCatalog(signal?: AbortSignal) { return this.operation("getWorkflowAuthoringCatalog", { signal }); }
+  listNodeDefinitions(query: { query?: string; scope?: "built_in" | "project" | "user"; lifecycle?: "active" | "archived" } = {}, signal?: AbortSignal) { return this.operation("listNodeDefinitions", { query, signal }); }
+  createNodeDefinition(body: Schemas["NodeDefinitionCreateRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("createNodeDefinition", { body, idempotencyKey, signal }); }
+  duplicateNodeDefinition(body: Schemas["NodeDefinitionDuplicateRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("duplicateNodeDefinition", { body, idempotencyKey, signal }); }
+  versionNodeDefinition(body: Schemas["NodeDefinitionVersionRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("versionNodeDefinition", { body, idempotencyKey, signal }); }
+  archiveNodeDefinition(body: Schemas["NodeDefinitionArchiveRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("archiveNodeDefinition", { body, idempotencyKey, signal }); }
   archiveWorkflowVersion(name: string, version: string, idempotencyKey: string, signal?: AbortSignal) { return this.operation("archiveWorkflowVersion", { body: { name, version }, idempotencyKey, signal }); }
   getWorkflowDraft(id: string, signal?: AbortSignal) { return this.operation("getWorkflowDraft", { query: { id }, signal }); }
   createWorkflowDraft(body: Schemas["WorkflowDraftCreateRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("createWorkflowDraft", { body, idempotencyKey, signal }); }

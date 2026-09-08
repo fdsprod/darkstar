@@ -76,6 +76,20 @@ type workflowArchiveRequest struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
+type nodeDefinitionDuplicateRequest struct {
+	Source  workflow.ResolvedNodeDefinitionRef `json:"source"`
+	Scope   workflow.NodeDefinitionScope       `json:"scope"`
+	Owner   string                             `json:"owner"`
+	Name    string                             `json:"name"`
+	Version string                             `json:"version"`
+}
+type nodeDefinitionVersionRequest struct {
+	Source  workflow.ResolvedNodeDefinitionRef `json:"source"`
+	Version string                             `json:"version"`
+}
+type nodeDefinitionArchiveRequest struct {
+	Ref workflow.ResolvedNodeDefinitionRef `json:"ref"`
+}
 
 func (s *Server) serveWorkflows(response http.ResponseWriter, request *http.Request, requestID string) {
 	s.mu.RLock()
@@ -105,6 +119,91 @@ func (s *Server) serveWorkflows(response http.ResponseWriter, request *http.Requ
 	}
 	action := strings.TrimPrefix(clean, "/api/v1/workflows/")
 	switch action {
+	case "node-definitions":
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writeWorkflowMethod(response, requestID, "GET, HEAD")
+			return
+		}
+		query := request.URL.Query()
+		filter := workflow.NodeDefinitionFilter{Query: query.Get("query")}
+		if scope := query.Get("scope"); scope != "" {
+			value := workflow.NodeDefinitionScope(scope)
+			filter.Scope = &value
+		}
+		if lifecycle := query.Get("lifecycle"); lifecycle != "" {
+			value := workflow.NodeDefinitionLifecycle(lifecycle)
+			filter.Lifecycle = &value
+		}
+		values, err := service.NodeDefinitions(request.Context(), filter)
+		if err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, values)
+	case "node-definitions/create":
+		if request.Method != http.MethodPost {
+			writeWorkflowMethod(response, requestID, "POST")
+			return
+		}
+		var input workflow.NodeDefinitionCreateRequest
+		if err := decodeWorkflowJSON(request, &input); err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		value, err := service.CreateNodeDefinition(request.Context(), input)
+		if err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusCreated, value)
+	case "node-definitions/duplicate":
+		if request.Method != http.MethodPost {
+			writeWorkflowMethod(response, requestID, "POST")
+			return
+		}
+		var input nodeDefinitionDuplicateRequest
+		if err := decodeWorkflowJSON(request, &input); err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		value, err := service.DuplicateNodeDefinition(request.Context(), input.Source, input.Scope, input.Owner, input.Name, input.Version)
+		if err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusCreated, value)
+	case "node-definitions/version":
+		if request.Method != http.MethodPost {
+			writeWorkflowMethod(response, requestID, "POST")
+			return
+		}
+		var input nodeDefinitionVersionRequest
+		if err := decodeWorkflowJSON(request, &input); err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		value, err := service.VersionNodeDefinition(request.Context(), input.Source, input.Version)
+		if err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusCreated, value)
+	case "node-definitions/archive":
+		if request.Method != http.MethodPost {
+			writeWorkflowMethod(response, requestID, "POST")
+			return
+		}
+		var input nodeDefinitionArchiveRequest
+		if err := decodeWorkflowJSON(request, &input); err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		value, err := service.ArchiveNodeDefinition(request.Context(), input.Ref)
+		if err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, value)
 	case "archive":
 		if request.Method != http.MethodPost {
 			writeWorkflowMethod(response, requestID, "POST")
@@ -405,7 +504,7 @@ func writeWorkflowError(response http.ResponseWriter, requestID string, err erro
 		writeAPIError(response, http.StatusNotFound, apiError{SchemaVersion: 1, Code: "NOT_FOUND", Message: "The requested workflow was not found.", RequestID: requestID})
 		return
 	}
-	if errors.Is(err, workflowstore.ErrVersionConflict) || errors.Is(err, workflowstore.ErrDraftConflict) || errors.Is(err, workflowstore.ErrBuiltInImmutable) {
+	if errors.Is(err, workflowstore.ErrVersionConflict) || errors.Is(err, workflowstore.ErrDraftConflict) || errors.Is(err, workflowstore.ErrBuiltInImmutable) || errors.Is(err, workflowstore.ErrNodeDefinitionConflict) || errors.Is(err, workflow.ErrNodeDefinitionImmutable) || errors.Is(err, workflow.ErrNodeDefinitionVersionConflict) {
 		writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "CONFLICT", Message: err.Error(), RequestID: requestID})
 		return
 	}

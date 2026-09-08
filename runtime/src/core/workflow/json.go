@@ -141,8 +141,8 @@ func (document *Document) UnmarshalJSON(data []byte) error {
 	if err := strictDecode(data, &wire); err != nil {
 		return err
 	}
-	if wire.APIVersion != APIVersionV1Alpha1 && wire.APIVersion != APIVersionV1Alpha2 {
-		return fmt.Errorf("apiVersion must be %q or %q", APIVersionV1Alpha1, APIVersionV1Alpha2)
+	if wire.APIVersion != APIVersionV1Alpha1 && wire.APIVersion != APIVersionV1Alpha2 && wire.APIVersion != APIVersionV1Alpha3 {
+		return fmt.Errorf("apiVersion must be %q, %q, or %q", APIVersionV1Alpha1, APIVersionV1Alpha2, APIVersionV1Alpha3)
 	}
 	if wire.Kind != KindWorkflow {
 		return fmt.Errorf("kind must be %q", KindWorkflow)
@@ -400,6 +400,8 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 		Approval       json.RawMessage   `json:"approval"`
 		Call           json.RawMessage   `json:"call"`
 		Points         json.RawMessage   `json:"points"`
+		Routing        json.RawMessage   `json:"routing"`
+		Definition     json.RawMessage   `json:"definition"`
 		Validators     []json.RawMessage `json:"validators"`
 		Retry          json.RawMessage   `json:"retry"`
 		Checkpoint     json.RawMessage   `json:"checkpoint"`
@@ -417,6 +419,9 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 	}
 	if apiVersion == APIVersionV1Alpha1 && (len(wire.Readiness) != 0 || len(wire.Points) != 0 || wire.Type == NodePointExecution) {
 		return nil, errors.New("readiness and point execution require apiVersion darkstar.local/v1alpha2")
+	}
+	if apiVersion != APIVersionV1Alpha3 && (len(wire.Routing) != 0 || len(wire.Definition) != 0 || wire.Type == NodeRouting) {
+		return nil, errors.New("reusable definitions and routing require apiVersion darkstar.local/v1alpha3")
 	}
 	displayName, err := decodeOptionalNonEmptyString(wire.DisplayName)
 	if err != nil {
@@ -474,11 +479,16 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 		Checkpoint: checkpoint, TransitionMode: transitionMode, Join: join,
 		Permissions: wire.Permissions, Transitions: transitions,
 	}
+	definition, err := decodeResolvedNodeDefinitionRef(wire.Definition)
+	if err != nil {
+		return nil, fmt.Errorf("definition: %w", err)
+	}
+	common.Definition = definition
 
 	executors := []struct {
 		kind NodeType
 		raw  json.RawMessage
-	}{{NodeReasoning, wire.Reasoning}, {NodeGate, wire.Gate}, {NodeCommand, wire.Command}, {NodeApproval, wire.Approval}, {NodeSubworkflow, wire.Call}, {NodePointExecution, wire.Points}}
+	}{{NodeReasoning, wire.Reasoning}, {NodeGate, wire.Gate}, {NodeCommand, wire.Command}, {NodeApproval, wire.Approval}, {NodeSubworkflow, wire.Call}, {NodePointExecution, wire.Points}, {NodeRouting, wire.Routing}}
 	for _, executor := range executors {
 		kind, raw := executor.kind, executor.raw
 		if kind != wire.Type && len(raw) != 0 {
@@ -533,9 +543,93 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 			return nil, fmt.Errorf("points: %w", err)
 		}
 		return PointExecutionNode{Common: common, Executor: executor}, nil
+	case NodeRouting:
+		executor, err := decodeRouting(wire.Routing)
+		if err != nil {
+			return nil, fmt.Errorf("routing: %w", err)
+		}
+		return RoutingNode{Common: common, Executor: executor}, nil
 	default:
 		panic("node type validated above")
 	}
+}
+
+func decodeResolvedNodeDefinitionRef(data []byte) (*ResolvedNodeDefinitionRef, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var wire struct {
+		Scope   NodeDefinitionScope `json:"scope"`
+		Owner   string              `json:"owner"`
+		Name    string              `json:"name"`
+		Version string              `json:"version"`
+		Digest  string              `json:"digest"`
+	}
+	if err := strictDecode(data, &wire); err != nil {
+		return nil, err
+	}
+	if !workflowNamePattern.MatchString(wire.Name) || !semanticVersionPattern.MatchString(wire.Version) || !digestPattern.MatchString(wire.Digest) {
+		return nil, errors.New("name, semantic version, and lowercase SHA-256 digest are required")
+	}
+	var ref NodeDefinitionRef
+	switch wire.Scope {
+	case NodeDefinitionBuiltIn:
+		if wire.Owner != "" {
+			return nil, errors.New("built-in definition cannot have an owner")
+		}
+		ref = BuiltInNodeDefinitionRef{Name: wire.Name, Version: wire.Version}
+	case NodeDefinitionProject:
+		if strings.TrimSpace(wire.Owner) == "" {
+			return nil, errors.New("project definition requires an owner")
+		}
+		ref = ProjectNodeDefinitionRef{ProjectID: wire.Owner, Name: wire.Name, Version: wire.Version}
+	case NodeDefinitionUser:
+		if strings.TrimSpace(wire.Owner) == "" {
+			return nil, errors.New("user definition requires an owner")
+		}
+		ref = UserNodeDefinitionRef{UserID: wire.Owner, Name: wire.Name, Version: wire.Version}
+	default:
+		return nil, fmt.Errorf("unsupported node-definition scope %q", wire.Scope)
+	}
+	return &ResolvedNodeDefinitionRef{Ref: ref, Digest: wire.Digest}, nil
+}
+
+func (resolved *ResolvedNodeDefinitionRef) UnmarshalJSON(data []byte) error {
+	value, err := decodeResolvedNodeDefinitionRef(data)
+	if err != nil {
+		return err
+	}
+	if value == nil {
+		return errors.New("node definition ref is required")
+	}
+	*resolved = *value
+	return nil
+}
+
+func decodeRouting(data []byte) (RoutingExecutor, error) {
+	var executor RoutingExecutor
+	if err := strictDecode(data, &executor); err != nil {
+		return RoutingExecutor{}, err
+	}
+	if strings.TrimSpace(executor.Agent) == "" || len(executor.Branches) == 0 {
+		return RoutingExecutor{}, errors.New("agent and at least one declared branch are required")
+	}
+	seenNames, seenTransitions := map[Identifier]bool{}, map[Identifier]bool{}
+	for i, branch := range executor.Branches {
+		if validateIdentifier(branch.Name) != nil || validateIdentifier(branch.Transition) != nil {
+			return RoutingExecutor{}, fmt.Errorf("branches[%d] requires valid name and transition identifiers", i)
+		}
+		if seenNames[branch.Name] || seenTransitions[branch.Transition] {
+			return RoutingExecutor{}, errors.New("branch names and transition references must be unique")
+		}
+		seenNames[branch.Name], seenTransitions[branch.Transition] = true, true
+	}
+	for name, output := range map[string]Identifier{"routeOutput": executor.RouteOutput, "rationaleOutput": executor.RationaleOutput, "adviceOutput": executor.AdviceOutput, "missingInformationOutput": executor.MissingInformationOutput, "assumptionsOutput": executor.AssumptionsOutput, "confirmationOutput": executor.ConfirmationOutput} {
+		if validateIdentifier(output) != nil {
+			return RoutingExecutor{}, fmt.Errorf("%s requires a valid output identifier", name)
+		}
+	}
+	return executor, nil
 }
 
 func decodeReadiness(data []byte) (*ReadinessContract, error) {
@@ -709,7 +803,7 @@ func decodeApproval(data []byte, apiVersion string) (ApprovalExecutor, error) {
 		if strings.TrimSpace(wire.ExternalCondition) == "" {
 			return nil, errors.New("external actor requires externalCondition")
 		}
-		if apiVersion == APIVersionV1Alpha2 {
+		if apiVersion == APIVersionV1Alpha2 || apiVersion == APIVersionV1Alpha3 {
 			if err := validateIdentifier(wire.EvidenceOutput); err != nil {
 				return nil, fmt.Errorf("external actor requires evidenceOutput: %w", err)
 			}
@@ -1158,7 +1252,7 @@ func decodeOperand(data []byte) (Operand, error) {
 }
 
 func validateDocument(document Document) error {
-	if (document.APIVersion != APIVersionV1Alpha1 && document.APIVersion != APIVersionV1Alpha2) || document.Kind != KindWorkflow {
+	if (document.APIVersion != APIVersionV1Alpha1 && document.APIVersion != APIVersionV1Alpha2 && document.APIVersion != APIVersionV1Alpha3) || document.Kind != KindWorkflow {
 		return errors.New("document has an unsupported apiVersion or kind")
 	}
 	if !workflowNamePattern.MatchString(document.Metadata.Name) || !semanticVersionPattern.MatchString(document.Metadata.Version) {
@@ -1204,7 +1298,7 @@ func validateValueType(value ValueType) error {
 
 func validNodeType(value NodeType) bool {
 	switch value {
-	case NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution:
+	case NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution, NodeRouting:
 		return true
 	default:
 		return false
@@ -1297,6 +1391,9 @@ func nodeObject(common NodeFields, nodeType NodeType, executorName string, execu
 	if common.DisplayName != "" {
 		result["displayName"] = common.DisplayName
 	}
+	if common.Definition != nil {
+		result["definition"] = common.Definition
+	}
 	if len(common.Validators) != 0 {
 		result["validators"] = common.Validators
 	}
@@ -1335,6 +1432,23 @@ func (node SubworkflowNode) MarshalJSON() ([]byte, error) {
 }
 func (node PointExecutionNode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nodeObject(node.Common, node.Type(), "points", node.Executor))
+}
+func (node RoutingNode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(nodeObject(node.Common, node.Type(), "routing", node.Executor))
+}
+
+func (resolved ResolvedNodeDefinitionRef) MarshalJSON() ([]byte, error) {
+	value := map[string]any{"scope": resolved.Ref.definitionScope(), "name": resolved.Ref.DefinitionName(), "version": resolved.Ref.DefinitionVersion(), "digest": resolved.Digest}
+	switch ref := resolved.Ref.(type) {
+	case ProjectNodeDefinitionRef:
+		value["owner"] = ref.ProjectID
+	case UserNodeDefinitionRef:
+		value["owner"] = ref.UserID
+	case BuiltInNodeDefinitionRef:
+	default:
+		return nil, fmt.Errorf("unsupported node-definition ref %T", resolved.Ref)
+	}
+	return json.Marshal(value)
 }
 
 func (node GateNode) MarshalJSON() ([]byte, error) {

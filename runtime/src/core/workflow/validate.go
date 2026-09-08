@@ -23,6 +23,8 @@ const (
 	ValidationDefaultRouteInvalid  ValidationCode = "WF_DEFAULT_ROUTE_INVALID"
 	ValidationCapabilityMissing    ValidationCode = "CAPABILITY_REQUIRED_MISSING"
 	ValidationReadinessInvalid     ValidationCode = "WF_READINESS_INVALID"
+	ValidationRoutingInvalid       ValidationCode = "WF_ROUTING_INVALID"
+	ValidationDefinitionInvalid    ValidationCode = "WF_NODE_DEFINITION_INVALID"
 )
 
 // ValidationError is one deterministic semantic error. Detail values are
@@ -65,8 +67,8 @@ const (
 // CapabilityReference is one available capability in an immutable validation
 // snapshot. Kind is part of the identity, so a tool cannot satisfy a skill.
 type CapabilityReference struct {
-	Kind CapabilityKind
-	Name string
+	Kind CapabilityKind `json:"kind"`
+	Name string `json:"name"`
 }
 
 // CapabilityAvailability is the narrow view the workflow validator needs from
@@ -223,10 +225,48 @@ func (state *validationState) validateNodes(nodeIDs []Identifier) {
 		state.validateReadiness(nodeID, fields)
 		state.validateApproval(nodeID, node, fields)
 		state.validatePointExecution(nodeID, node, fields)
+		state.validateRouting(nodeID, node, fields)
+		state.validateNodeDefinition(nodeID, fields)
 		state.validateValidators(nodeID, fields)
 		state.validatePredicates(nodeID, node, fields)
 		state.validateSubworkflow(nodeID, node, fields)
 		state.validateCapabilities(nodeID, node)
+	}
+}
+
+func (state *validationState) validateNodeDefinition(nodeID Identifier, fields NodeFields) {
+	if fields.Definition == nil {
+		return
+	}
+	if fields.Definition.Ref == nil || !digestPattern.MatchString(fields.Definition.Digest) {
+		state.add(ValidationDefinitionInvalid, "reusable node reference must resolve to an exact version digest", fmt.Sprintf("/spec/nodes/%s/definition", nodeID), nil)
+	}
+}
+
+func (state *validationState) validateRouting(nodeID Identifier, node Node, fields NodeFields) {
+	routing, ok := node.(RoutingNode)
+	if !ok {
+		return
+	}
+	transitions := map[Identifier]bool{}
+	for _, transition := range fields.Transitions {
+		transitions[transition.ID()] = true
+	}
+	for index, branch := range routing.Executor.Branches {
+		if !transitions[branch.Transition] {
+			state.add(ValidationRoutingInvalid, fmt.Sprintf("routing branch %q references undeclared transition %q", branch.Name, branch.Transition), fmt.Sprintf("/spec/nodes/%s/routing/branches/%d/transition", nodeID, index), nil)
+		}
+	}
+	expected := map[Identifier]ValueType{
+		routing.Executor.RouteOutput: ValueString, routing.Executor.RationaleOutput: ValueString,
+		routing.Executor.AdviceOutput: ValueString, routing.Executor.MissingInformationOutput: ValueArray,
+		routing.Executor.AssumptionsOutput: ValueArray, routing.Executor.ConfirmationOutput: ValueBoolean,
+	}
+	for output, valueType := range expected {
+		declaration, exists := fields.Outputs[output]
+		if !exists || declaration.Type != valueType {
+			state.add(ValidationRoutingInvalid, fmt.Sprintf("routing output %q must be declared as %s", output, valueType), fmt.Sprintf("/spec/nodes/%s/outputs/%s", nodeID, output), nil)
+		}
 	}
 }
 

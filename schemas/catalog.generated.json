@@ -85,7 +85,7 @@
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "921df44e45a6c50937d8cf27f5f2baf8bf67e2757acef4d561cf0d7d0ff0619d",
+      "sha256": "45830df1141a60fcced7aa6f6f9117e36fe9473f63e706039827776c9b80c9a2",
       "version": "v1alpha1"
     },
     {
@@ -143,6 +143,14 @@
       "name": "workflow-v1alpha2",
       "sha256": "67a5be583f8721fe4b0151b0f38d7aa0783fa1bf66bdb1ef84f700d3bdcdf350",
       "version": "v1alpha2"
+    },
+    {
+      "file": "workflow-v1alpha3.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/workflow-v1alpha3.schema.json",
+      "name": "workflow-v1alpha3",
+      "sha256": "fd740ffde323f3579dbfd31274d47633db988198726b7e4e2374ea857d5389be",
+      "version": "v1alpha3"
     }
   ],
   "schemaVersion": 1

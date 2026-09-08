@@ -326,6 +326,12 @@ type WorkflowService interface {
 	PublishDraft(context.Context, workflow.DraftPublishRequest) (workflow.DraftPublishResult, error)
 	DiscardDraft(context.Context, string, uint64) error
 	ArchiveVersion(context.Context, string, string) (workflowstore.Archive, error)
+	NodeDefinitions(context.Context, workflow.NodeDefinitionFilter) ([]workflow.NodeDefinition, error)
+	CreateNodeDefinition(context.Context, workflow.NodeDefinitionCreateRequest) (workflow.NodeDefinition, error)
+	PublishNodeDefinition(context.Context, workflow.NodeDefinition) (workflow.NodeDefinition, error)
+	DuplicateNodeDefinition(context.Context, workflow.ResolvedNodeDefinitionRef, workflow.NodeDefinitionScope, string, string, string) (workflow.NodeDefinition, error)
+	VersionNodeDefinition(context.Context, workflow.ResolvedNodeDefinitionRef, string) (workflow.NodeDefinition, error)
+	ArchiveNodeDefinition(context.Context, workflow.ResolvedNodeDefinitionRef) (workflow.NodeDefinition, error)
 }
 
 // SetWorkflows installs workflow operations before the endpoint is published.

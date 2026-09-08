@@ -8,6 +8,7 @@ import "encoding/json"
 const (
 	APIVersionV1Alpha1 = "darkstar.local/v1alpha1"
 	APIVersionV1Alpha2 = "darkstar.local/v1alpha2"
+	APIVersionV1Alpha3 = "darkstar.local/v1alpha3"
 	KindWorkflow       = "Workflow"
 )
 
@@ -82,6 +83,7 @@ const (
 	NodeApproval       NodeType = "approval"
 	NodeSubworkflow    NodeType = "subworkflow"
 	NodePointExecution NodeType = "point_execution"
+	NodeRouting        NodeType = "routing"
 )
 
 // Node is a closed executor union. Each concrete node carries exactly one
@@ -94,6 +96,7 @@ type Node interface {
 
 type NodeFields struct {
 	DisplayName    string
+	Definition     *ResolvedNodeDefinitionRef
 	Entry          bool
 	Terminal       bool
 	Inputs         map[Identifier]Binding
@@ -106,6 +109,52 @@ type NodeFields struct {
 	Join           *Join
 	Permissions    []string
 	Transitions    []Transition
+}
+
+// NodeDefinitionRef is a closed scope union. Scope ownership is carried by the
+// concrete variant, so a project definition can never accidentally be resolved
+// with a user owner (or vice versa).
+type NodeDefinitionRef interface {
+	DefinitionName() string
+	DefinitionVersion() string
+	definitionScope() NodeDefinitionScope
+	isNodeDefinitionRef()
+}
+
+type NodeDefinitionScope string
+
+const (
+	NodeDefinitionBuiltIn NodeDefinitionScope = "built_in"
+	NodeDefinitionProject NodeDefinitionScope = "project"
+	NodeDefinitionUser    NodeDefinitionScope = "user"
+)
+
+type BuiltInNodeDefinitionRef struct{ Name, Version string }
+
+func (r BuiltInNodeDefinitionRef) DefinitionName() string             { return r.Name }
+func (r BuiltInNodeDefinitionRef) DefinitionVersion() string          { return r.Version }
+func (BuiltInNodeDefinitionRef) definitionScope() NodeDefinitionScope { return NodeDefinitionBuiltIn }
+func (BuiltInNodeDefinitionRef) isNodeDefinitionRef()                 {}
+
+type ProjectNodeDefinitionRef struct{ ProjectID, Name, Version string }
+
+func (r ProjectNodeDefinitionRef) DefinitionName() string             { return r.Name }
+func (r ProjectNodeDefinitionRef) DefinitionVersion() string          { return r.Version }
+func (ProjectNodeDefinitionRef) definitionScope() NodeDefinitionScope { return NodeDefinitionProject }
+func (ProjectNodeDefinitionRef) isNodeDefinitionRef()                 {}
+
+type UserNodeDefinitionRef struct{ UserID, Name, Version string }
+
+func (r UserNodeDefinitionRef) DefinitionName() string             { return r.Name }
+func (r UserNodeDefinitionRef) DefinitionVersion() string          { return r.Version }
+func (UserNodeDefinitionRef) definitionScope() NodeDefinitionScope { return NodeDefinitionUser }
+func (UserNodeDefinitionRef) isNodeDefinitionRef()                 {}
+
+// ResolvedNodeDefinitionRef is the immutable snapshot stored in canonical
+// published workflows and consequently in run workflow snapshots.
+type ResolvedNodeDefinitionRef struct {
+	Ref    NodeDefinitionRef
+	Digest string
 }
 
 // ReadinessContract keeps advisory evidence and remedies separate from the
@@ -204,6 +253,41 @@ func (SubworkflowNode) isNode()              {}
 type PointExecutionNode struct {
 	Common   NodeFields
 	Executor PointExecutionExecutor
+}
+
+// RoutingNode emits a typed assessment. Branches name only authored transition
+// IDs; model output therefore selects existing topology rather than mutating it.
+type RoutingNode struct {
+	Common   NodeFields
+	Executor RoutingExecutor
+}
+
+func (RoutingNode) Type() NodeType       { return NodeRouting }
+func (n RoutingNode) Fields() NodeFields { return n.Common }
+func (RoutingNode) isNode()              {}
+
+type AdviceLevel string
+
+const (
+	AdviceProceed AdviceLevel = "proceed"
+	AdviceCaution AdviceLevel = "caution"
+	AdviceStop    AdviceLevel = "stop"
+)
+
+type RoutingBranch struct {
+	Name       Identifier `json:"name"`
+	Transition Identifier `json:"transition"`
+}
+
+type RoutingExecutor struct {
+	Agent                    string          `json:"agent"`
+	Branches                 []RoutingBranch `json:"branches"`
+	RouteOutput              Identifier      `json:"routeOutput"`
+	RationaleOutput          Identifier      `json:"rationaleOutput"`
+	AdviceOutput             Identifier      `json:"adviceOutput"`
+	MissingInformationOutput Identifier      `json:"missingInformationOutput"`
+	AssumptionsOutput        Identifier      `json:"assumptionsOutput"`
+	ConfirmationOutput       Identifier      `json:"confirmationOutput"`
 }
 
 func (PointExecutionNode) Type() NodeType       { return NodePointExecution }

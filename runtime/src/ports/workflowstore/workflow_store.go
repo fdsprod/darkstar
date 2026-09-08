@@ -18,7 +18,8 @@ var (
 	// ErrDraftConflict means an editor supplied a stale expected draft revision.
 	ErrDraftConflict = errors.New("workflow draft revision conflict")
 	// ErrBuiltInImmutable means a built-in definition was targeted for mutation.
-	ErrBuiltInImmutable = errors.New("built-in workflow is immutable")
+	ErrBuiltInImmutable       = errors.New("built-in workflow is immutable")
+	ErrNodeDefinitionConflict = errors.New("node definition version conflict")
 )
 
 // Scope identifies the configured source that supplied an authored workflow.
@@ -36,6 +37,24 @@ type Candidate struct {
 	Scope     Scope
 	Reference string
 	Content   json.RawMessage
+}
+
+type NodeDefinitionRecord struct {
+	Scope      DraftScope      `json:"scope"`
+	Owner      string          `json:"owner"`
+	Name       string          `json:"name"`
+	Version    string          `json:"version"`
+	Digest     string          `json:"digest"`
+	Document   json.RawMessage `json:"document"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	ArchivedAt *time.Time      `json:"archivedAt,omitempty"`
+}
+
+type NodeDefinitionStore interface {
+	InstallNodeDefinition(context.Context, NodeDefinitionRecord) (NodeDefinitionRecord, bool, error)
+	NodeDefinition(context.Context, DraftScope, string, string, string) (NodeDefinitionRecord, error)
+	NodeDefinitions(context.Context) ([]NodeDefinitionRecord, error)
+	ArchiveNodeDefinition(context.Context, DraftScope, string, string, string, time.Time) (NodeDefinitionRecord, bool, error)
 }
 
 // Source discovers authored workflow candidates without installing them.

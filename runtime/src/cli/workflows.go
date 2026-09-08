@@ -86,6 +86,8 @@ func runWorkflow(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	}
 	command := "darkstar workflow " + args[0]
 	switch args[0] {
+	case "node-definition":
+		return runNodeDefinition(args[1:], jsonOutput, stdout, stderr)
 	case "authoring-catalog":
 		if len(args) != 1 {
 			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected workflow authoring-catalog"))
@@ -373,6 +375,120 @@ func runWorkflow(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		return writeWorkflowResult(result, formatRoutePreview(result), false, jsonOutput, stdout, stderr, command)
 	default:
 		return workflowArgumentError(stdout, stderr, jsonOutput, "darkstar workflow", fmt.Errorf("unknown workflow command %q", args[0]))
+	}
+}
+
+func runNodeDefinition(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
+	command := "darkstar workflow node-definition"
+	if len(args) == 0 {
+		return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("a node-definition command is required"))
+	}
+	command += " " + args[0]
+	read := func(file string, destination any) error {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		decoder := json.NewDecoder(strings.NewReader(string(data)))
+		decoder.DisallowUnknownFields()
+		return decoder.Decode(destination)
+	}
+	switch args[0] {
+	case "list":
+		flags, err := workflowFlags(args[1:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		query := url.Values{}
+		for flag, key := range map[string]string{"--query": "query", "--scope": "scope", "--lifecycle": "lifecycle"} {
+			if flags[flag] != "" {
+				query.Set(key, flags[flag])
+			}
+		}
+		endpoint := "workflows/node-definitions"
+		if len(query) > 0 {
+			endpoint += "?" + query.Encode()
+		}
+		var result []workflow.NodeDefinition
+		if err := session.DoJSON(context.Background(), http.MethodGet, endpoint, nil, &result); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeWorkflowResult(result, fmt.Sprintf("%d node definition(s).", len(result)), false, jsonOutput, stdout, stderr, command)
+	case "create":
+		if len(args) < 2 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <definition.json> --idempotency-key <key>"))
+		}
+		flags, err := workflowFlags(args[2:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var input workflow.NodeDefinitionCreateRequest
+		if err := read(args[1], &input); err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var result workflow.NodeDefinition
+		if code := doWorkflowMutation(command, "workflows/node-definitions/create", flags["--idempotency-key"], input, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, "Created node definition.", false, jsonOutput, stdout, stderr, command)
+	case "duplicate":
+		if len(args) < 3 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <ref.json> <name> with scope, owner, version, and idempotency key"))
+		}
+		flags, err := workflowFlags(args[3:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var source workflow.ResolvedNodeDefinitionRef
+		if err := read(args[1], &source); err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		input := map[string]any{"source": source, "scope": flags["--scope"], "owner": flags["--owner"], "name": args[2], "version": flags["--version"]}
+		var result workflow.NodeDefinition
+		if code := doWorkflowMutation(command, "workflows/node-definitions/duplicate", flags["--idempotency-key"], input, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, "Duplicated node definition.", false, jsonOutput, stdout, stderr, command)
+	case "version":
+		if len(args) < 3 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <ref.json> <version> --idempotency-key <key>"))
+		}
+		flags, err := workflowFlags(args[3:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var source workflow.ResolvedNodeDefinitionRef
+		if err := read(args[1], &source); err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var result workflow.NodeDefinition
+		if code := doWorkflowMutation(command, "workflows/node-definitions/version", flags["--idempotency-key"], map[string]any{"source": source, "version": args[2]}, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, "Versioned node definition.", false, jsonOutput, stdout, stderr, command)
+	case "archive":
+		if len(args) < 2 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected <ref.json> --idempotency-key <key>"))
+		}
+		flags, err := workflowFlags(args[2:])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var ref workflow.ResolvedNodeDefinitionRef
+		if err := read(args[1], &ref); err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var result workflow.NodeDefinition
+		if code := doWorkflowMutation(command, "workflows/node-definitions/archive", flags["--idempotency-key"], map[string]any{"ref": ref}, &result, jsonOutput, stdout, stderr); code != -1 {
+			return code
+		}
+		return writeWorkflowResult(result, "Archived node definition.", false, jsonOutput, stdout, stderr, command)
+	default:
+		return workflowArgumentError(stdout, stderr, jsonOutput, command, fmt.Errorf("unknown node-definition command %q", args[0]))
 	}
 }
 

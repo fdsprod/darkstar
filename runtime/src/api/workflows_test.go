@@ -147,6 +147,115 @@ func TestWorkflowSubworkflowResolutionPinsExactChildrenAndRejectsUnsafeMappings(
 	}
 }
 
+func TestWorkflowValidationResolvesExactReusableDefinitionBeforeInstall(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "node-definitions.db"), sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	builtin := workflow.NodeDefinition{Ref: workflow.ResolvedNodeDefinitionRef{Ref: workflow.BuiltInNodeDefinitionRef{Name: "route/assessment", Version: "1.0.0"}}, DisplayName: "Route assessment", Description: "Select route", Compatibility: workflow.APIVersionV1Alpha3, Inputs: map[workflow.Identifier]workflow.ValueDeclaration{}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"selected_route": {Type: workflow.ValueString}, "rationale": {Type: workflow.ValueString}, "advice": {Type: workflow.ValueString}, "missing_information": {Type: workflow.ValueArray}, "assumptions": {Type: workflow.ValueArray}, "confirmation_required": {Type: workflow.ValueBoolean}}, ConfigurationSchema: json.RawMessage(`{"type":"object"}`), Implementation: workflow.NodeImplementationRouting, RequiredCapabilities: []workflow.CapabilityReference{}, Lifecycle: workflow.NodeDefinitionActive, CreatedAt: time.Now().UTC()}
+	library, err := workflow.NewNodeDefinitionLibrary(builtin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exact := library.Search(workflow.NodeDefinitionFilter{})[0].Ref
+	catalog, err := workflow.NewCatalog(emptyWorkflowSource{}, database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog.WithNodeDefinitionLibrary(library)
+	document := strings.Replace(routingWorkflowDocument(), `"definition":null`, fmt.Sprintf(`"definition":{"scope":"built_in","name":"route/assessment","version":"1.0.0","digest":%q}`, exact.Digest), 1)
+	if _, err := catalog.Install(ctx, workflowstore.Candidate{Scope: workflowstore.ScopeProject, Reference: "router.json", Content: json.RawMessage(document)}); err != nil {
+		t.Fatalf("install exact reusable node: %v", err)
+	}
+	wrong := strings.Replace(document, exact.Digest, strings.Repeat("f", 64), 1)
+	if _, err := catalog.Install(ctx, workflowstore.Candidate{Scope: workflowstore.ScopeProject, Reference: "wrong.json", Content: json.RawMessage(wrong)}); err == nil || !containsWorkflowIssue(err, "exact reusable node definition is unavailable") {
+		t.Fatalf("wrong digest error = %v", err)
+	}
+}
+
+func TestNodeDefinitionAPIMutationsPersistExactVersionsAndProtectBuiltIns(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "node-definition-api.db"), sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	builtin := workflow.NodeDefinition{Ref: workflow.ResolvedNodeDefinitionRef{Ref: workflow.BuiltInNodeDefinitionRef{Name: "route/assessment", Version: "1.0.0"}}, DisplayName: "Route assessment", Compatibility: workflow.APIVersionV1Alpha3, Inputs: map[workflow.Identifier]workflow.ValueDeclaration{}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{}, ConfigurationSchema: json.RawMessage(`{"type":"object"}`), Implementation: workflow.NodeImplementationRouting, RequiredCapabilities: []workflow.CapabilityReference{}, Lifecycle: workflow.NodeDefinitionActive, CreatedAt: time.Now().UTC()}
+	library, err := workflow.NewNodeDefinitionLibrary(builtin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := workflow.NewCatalog(emptyWorkflowSource{}, database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog.WithNodeDefinitionLibrary(library)
+	server, err := NewServer(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SetWorkflows(catalog); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Start(ctx, 1234, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestServer(t, server)
+	endpoint, _ := server.Endpoint()
+
+	create, _ := json.Marshal(workflow.NodeDefinitionCreateRequest{Scope: workflow.NodeDefinitionUser, Owner: "user-1", Name: "nodes/check", Version: "1.0.0", DisplayName: "Check", Description: "Reusable check", Inputs: map[workflow.Identifier]workflow.ValueDeclaration{}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{}, ConfigurationSchema: json.RawMessage(`{"type":"object"}`), Implementation: workflow.NodeImplementationExecutor, RequiredCapabilities: []workflow.CapabilityReference{}})
+	createdResponse := workflowRequest(t, endpoint, http.MethodPost, "/api/v1/workflows/node-definitions/create", create)
+	if createdResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d", createdResponse.StatusCode)
+	}
+	var created workflow.NodeDefinition
+	decodeJSON(t, createdResponse, &created)
+	_ = createdResponse.Body.Close()
+	if created.Ref.Digest == "" || created.CreatedAt.IsZero() {
+		t.Fatalf("server did not seal definition: %#v", created)
+	}
+
+	versionBody, _ := json.Marshal(map[string]any{"source": created.Ref, "version": "1.1.0"})
+	versionResponse := workflowRequest(t, endpoint, http.MethodPost, "/api/v1/workflows/node-definitions/version", versionBody)
+	if versionResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("version status = %d", versionResponse.StatusCode)
+	}
+	var versioned workflow.NodeDefinition
+	decodeJSON(t, versionResponse, &versioned)
+	_ = versionResponse.Body.Close()
+	if versioned.Ref.Ref.DefinitionVersion() != "1.1.0" || versioned.DerivedFrom == nil || versioned.DerivedFrom.Digest != created.Ref.Digest {
+		t.Fatalf("version provenance = %#v", versioned)
+	}
+
+	archiveBody, _ := json.Marshal(map[string]any{"ref": created.Ref})
+	archiveResponse := workflowRequest(t, endpoint, http.MethodPost, "/api/v1/workflows/node-definitions/archive", archiveBody)
+	if archiveResponse.StatusCode != http.StatusOK {
+		t.Fatalf("archive status = %d", archiveResponse.StatusCode)
+	}
+	drainWorkflowResponse(t, archiveResponse)
+	listResponse := workflowRequest(t, endpoint, http.MethodGet, "/api/v1/workflows/node-definitions?scope=user&lifecycle=archived", nil)
+	var archived []workflow.NodeDefinition
+	decodeJSON(t, listResponse, &archived)
+	_ = listResponse.Body.Close()
+	if len(archived) != 1 || archived[0].Ref.Digest != created.Ref.Digest {
+		t.Fatalf("archived exact version = %#v", archived)
+	}
+
+	builtinRef := library.Search(workflow.NodeDefinitionFilter{})[0].Ref
+	builtinBody, _ := json.Marshal(map[string]any{"ref": builtinRef})
+	builtinResponse := workflowRequest(t, endpoint, http.MethodPost, "/api/v1/workflows/node-definitions/archive", builtinBody)
+	if builtinResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("built-in archive status = %d", builtinResponse.StatusCode)
+	}
+	drainWorkflowResponse(t, builtinResponse)
+}
+
+func routingWorkflowDocument() string {
+	return `{"apiVersion":"darkstar.local/v1alpha3","kind":"Workflow","metadata":{"name":"routing-workflow","version":"1.0.0"},"spec":{"routeDefaults":{"entry":"route","terminals":["assessment"]},"nodes":{"route":{"displayName":"Route","definition":null,"type":"routing","entry":true,"terminal":false,"inputs":{},"outputs":{"selected_route":{"type":"string"},"rationale":{"type":"string"},"advice":{"type":"string"},"missing_information":{"type":"array"},"assumptions":{"type":"array"},"confirmation_required":{"type":"boolean"}},"routing":{"agent":"router","branches":[{"name":"assessment","transition":"to_assessment"}],"routeOutput":"selected_route","rationaleOutput":"rationale","adviceOutput":"advice","missingInformationOutput":"missing_information","assumptionsOutput":"assumptions","confirmationOutput":"confirmation_required"},"checkpoint":{"mode":"none"},"transitions":[{"id":"to_assessment","to":"assessment"}]},"assessment":{"type":"command","entry":false,"terminal":true,"inputs":{},"outputs":{},"command":{"argv":["assess"]},"checkpoint":{"mode":"none"},"transitions":[]}}}}`
+}
+
 func containsWorkflowIssue(err error, message string) bool {
 	var issues workflow.ValidationErrors
 	if !errors.As(err, &issues) {

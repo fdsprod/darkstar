@@ -39,6 +39,12 @@ export interface components {
     "WorkflowVersionSummary": { "name": string; "version": string; "digest": string; "sourceScope": "default" | "user" | "project"; "sourceReference": string; "installedAt": string; };
     "WorkflowDraft": { "id": string; "name": string; "scope": "user" | "project"; "scopeReference": string; "baseVersion"?: string; "revision": number; "document": {  }; "layout": {  }; "documentDigest": string; "updatedAt": string; };
     "WorkflowArchive": { "name": string; "version": string; "archivedAt": string; };
+    "NodeDefinitionRef": { "scope": "built_in"; "name": string; "version": string; "digest": string; } | { "scope": "project" | "user"; "owner": string; "name": string; "version": string; "digest": string; };
+    "NodeDefinition": { "ref": components["schemas"]["NodeDefinitionRef"]; "displayName": string; "description": string; "compatibility": "darkstar.local/v1alpha3"; "inputs": {  }; "outputs": {  }; "configurationSchema": {  }; "implementation": "executor" | "routing"; "requiredCapabilities": Array<{ "kind": "skill" | "tool"; "name": string; }>; "lifecycle": "active" | "archived"; "derivedFrom"?: components["schemas"]["NodeDefinitionRef"]; "usage"?: Array<{ "workflow": components["schemas"]["WorkflowIdentity"]; "nodeIds": Array<string>; }>; "createdAt": string; };
+    "NodeDefinitionCreateRequest": { "scope": "project" | "user"; "owner": string; "name": string; "version": string; "displayName": string; "description": string; "inputs": {  }; "outputs": {  }; "configurationSchema": {  }; "implementation": "executor" | "routing"; "requiredCapabilities": Array<{ "kind": "skill" | "tool"; "name": string; }>; };
+    "NodeDefinitionDuplicateRequest": { "source": components["schemas"]["NodeDefinitionRef"]; "scope": "project" | "user"; "owner": string; "name": string; "version": string; };
+    "NodeDefinitionVersionRequest": { "source": components["schemas"]["NodeDefinitionRef"]; "version": string; };
+    "NodeDefinitionArchiveRequest": { "ref": components["schemas"]["NodeDefinitionRef"]; };
     "WorkflowLibrary": { "versions": Array<components["schemas"]["WorkflowVersionSummary"]>; "drafts": Array<components["schemas"]["WorkflowDraft"]>; "archives": Array<components["schemas"]["WorkflowArchive"]>; };
     "WorkflowAuthoringCatalog": { "schemaVersion": 1; "nodeTypes": Array<"reasoning" | "gate" | "command" | "approval" | "subworkflow" | "point_execution">; "valueTypes": Array<"null" | "boolean" | "integer" | "number" | "string" | "array" | "object">; "checkpointModes": Array<"none" | "acknowledge" | "approve" | "approve_on_change" | "external">; "predicateOps": Array<"const" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "present" | "all" | "any" | "not">; "agents": components["schemas"]["WorkflowStringReferenceGroup"]; "policies": components["schemas"]["WorkflowStringReferenceGroup"]; "schemas": components["schemas"]["WorkflowStringReferenceGroup"]; "skills": components["schemas"]["WorkflowCapabilityReferenceGroup"]; "tools": components["schemas"]["WorkflowCapabilityReferenceGroup"]; "workflows": components["schemas"]["WorkflowInstalledReferenceGroup"]; };
     "WorkflowStringReferenceGroup": { "status": "known"; "items": Array<string>; } | { "status": "unavailable"; "reason": "not_configured" | "discovery_unsupported" | "read_failed"; };
@@ -262,6 +268,11 @@ export interface ApiOperations {
     "getWorkflowLibrary": { method: "GET"; path: "/api/v1/workflows/library"; response: components["schemas"]["WorkflowLibrary"]; body: never; };
     "getWorkflowAuthoringCatalog": { method: "GET"; path: "/api/v1/workflows/authoring-catalog"; response: components["schemas"]["WorkflowAuthoringCatalog"]; body: never; };
     "archiveWorkflowVersion": { method: "POST"; path: "/api/v1/workflows/archive"; response: components["schemas"]["WorkflowArchive"]; body: { "name": string; "version": string; }; };
+    "listNodeDefinitions": { method: "GET"; path: "/api/v1/workflows/node-definitions"; response: Array<components["schemas"]["NodeDefinition"]>; body: never; };
+    "createNodeDefinition": { method: "POST"; path: "/api/v1/workflows/node-definitions/create"; response: components["schemas"]["NodeDefinition"]; body: components["schemas"]["NodeDefinitionCreateRequest"]; };
+    "duplicateNodeDefinition": { method: "POST"; path: "/api/v1/workflows/node-definitions/duplicate"; response: components["schemas"]["NodeDefinition"]; body: components["schemas"]["NodeDefinitionDuplicateRequest"]; };
+    "versionNodeDefinition": { method: "POST"; path: "/api/v1/workflows/node-definitions/version"; response: components["schemas"]["NodeDefinition"]; body: components["schemas"]["NodeDefinitionVersionRequest"]; };
+    "archiveNodeDefinition": { method: "POST"; path: "/api/v1/workflows/node-definitions/archive"; response: components["schemas"]["NodeDefinition"]; body: components["schemas"]["NodeDefinitionArchiveRequest"]; };
     "getWorkflowDraft": { method: "GET"; path: "/api/v1/workflows/drafts/show"; response: components["schemas"]["WorkflowDraft"]; body: never; };
     "createWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/create"; response: components["schemas"]["WorkflowDraft"]; body: components["schemas"]["WorkflowDraftCreateRequest"]; };
     "duplicateWorkflowDraft": { method: "POST"; path: "/api/v1/workflows/drafts/duplicate"; response: components["schemas"]["WorkflowDraft"]; body: components["schemas"]["WorkflowDraftDuplicateRequest"]; };
@@ -359,6 +370,11 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "getWorkflowLibrary": { method: "GET", path: "/api/v1/workflows/library" },
   "getWorkflowAuthoringCatalog": { method: "GET", path: "/api/v1/workflows/authoring-catalog" },
   "archiveWorkflowVersion": { method: "POST", path: "/api/v1/workflows/archive" },
+  "listNodeDefinitions": { method: "GET", path: "/api/v1/workflows/node-definitions" },
+  "createNodeDefinition": { method: "POST", path: "/api/v1/workflows/node-definitions/create" },
+  "duplicateNodeDefinition": { method: "POST", path: "/api/v1/workflows/node-definitions/duplicate" },
+  "versionNodeDefinition": { method: "POST", path: "/api/v1/workflows/node-definitions/version" },
+  "archiveNodeDefinition": { method: "POST", path: "/api/v1/workflows/node-definitions/archive" },
   "getWorkflowDraft": { method: "GET", path: "/api/v1/workflows/drafts/show" },
   "createWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/create" },
   "duplicateWorkflowDraft": { method: "POST", path: "/api/v1/workflows/drafts/duplicate" },

@@ -11,7 +11,7 @@ import { WorkflowAuthoringInspector } from "./WorkflowAuthoringInspector";
 import { humanize, shortIdentifier } from "./runDetailModel";
 import { workflowEditorApi } from "./workflowEditorApi";
 import {
-  addNode, connectNodes, createStarterDocument, deriveEditorGraph, draftRevision, findingTarget, inspectNode, moveNode, normalizeLayout, nodeTypeAvailability, persistenceLabel,
+  addNode, connectNodes, createStarterDocument, deriveEditorGraph, draftRevision, findingTarget, inspectNode, moveNode, normalizeLayout, nodeTypeAvailability, persistenceLabel, useNodeDefinition,
   removeEdge, removeNode, removeNodeLayout, renameNode, reorderNode, updateNodeExecutor, validationMatches,
   type AuthoredTransitionKind, type EditorGraph, type EditorSelection, type EditorView, type JsonObject, type PersistenceState,
   type PublishState, type RoutePreviewState, type ValidationState, type WorkflowNodeType,
@@ -24,6 +24,7 @@ const palette: { type: WorkflowNodeType; label: string; description: string }[] 
   { type: "reasoning", label: "Reasoning", description: "Agent work" }, { type: "command", label: "Command", description: "Local command" },
   { type: "gate", label: "Gate", description: "Conditional branch" }, { type: "approval", label: "Approval", description: "Human checkpoint" },
   { type: "subworkflow", label: "Sub-workflow", description: "Pinned workflow call" }, { type: "point_execution", label: "Point execution", description: "Story point runner" },
+  { type: "routing", label: "Route assessment", description: "Choose one declared downstream branch" },
 ];
 
 export function WorkflowsPage() {
@@ -31,6 +32,11 @@ export function WorkflowsPage() {
   const params = useMemo(() => new URLSearchParams(search), [search]);
   const [library, setLibrary] = useState<Schemas["WorkflowLibrary"]>({ versions: [], drafts: [], archives: [] });
   const [catalog, setCatalog] = useState<Schemas["WorkflowAuthoringCatalog"]>();
+  const [definitions, setDefinitions] = useState<Schemas["NodeDefinition"][]>([]);
+  const [definitionQuery, setDefinitionQuery] = useState("");
+  const [definitionScope, setDefinitionScope] = useState<"" | "built_in" | "project" | "user">("");
+  const [definitionLifecycle, setDefinitionLifecycle] = useState<"active" | "archived">("active");
+  const [definitionName, setDefinitionName] = useState("nodes/custom");
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Schemas["WorkflowDraft"]>();
@@ -72,6 +78,8 @@ export function WorkflowsPage() {
   const refresh = async (signal?: AbortSignal) => { const next = await workflowEditorApi.library(signal); setLibrary(next); setLoadState("ready"); return next; };
   useEffect(() => { const abort = new AbortController(); void refresh(abort.signal).catch(() => { if (!abort.signal.aborted) setLoadState("error"); }); return () => abort.abort(); }, []);
   useEffect(() => { const abort = new AbortController(); void workflowEditorApi.catalog(abort.signal).then(setCatalog).catch(() => { /* form inputs remain available, but no server reference suggestions are invented */ }); return () => abort.abort(); }, []);
+  const refreshDefinitions = async (signal?: AbortSignal) => { const values = await workflowEditorApi.definitions({ query: definitionQuery || undefined, scope: definitionScope || undefined, lifecycle: definitionLifecycle }, signal); setDefinitions(values); return values; };
+  useEffect(() => { const abort = new AbortController(); const timer = window.setTimeout(() => void refreshDefinitions(abort.signal).catch(() => { if (!abort.signal.aborted) setAnnouncement("Node definitions could not be loaded."); }), 150); return () => { abort.abort(); window.clearTimeout(timer); }; }, [definitionQuery, definitionScope, definitionLifecycle]);
 
   const items = useMemo<LibraryItem[]>(() => [
     ...library.drafts.map((value) => ({ kind: "draft" as const, draft: value })),
@@ -219,6 +227,18 @@ export function WorkflowsPage() {
     if (!inspectNode(next, result.nodeId)) { setAnnouncement(`The ${humanize(type)} node could not be created from authoritative catalog data.`); return; }
     changeDocument(next, `${humanize(type)} node added.`); select({ kind: "node", nodeId: result.nodeId });
   }
+  async function createDefinitionFromSelection() {
+    if (!selectedNode || !document) return; const authored = inspectNode(document, selectedNode.id); if (!authored) return; setBusy("definition-create");
+    try {
+      const inputs = Object.fromEntries(authored.inputs.map((item) => [item.id, { type: item.type }]));
+      const outputs = Object.fromEntries(authored.outputs.map((item) => [item.id, { type: item.type, ...(item.schema ? { schema: item.schema } : {}), required: item.required }]));
+      const created = await workflowEditorApi.createDefinition({ scope: "user", owner: "local-user", name: definitionName.trim(), version: "1.0.0", displayName: authored.displayName, description: `Reusable ${authored.executor.type} node`, inputs, outputs, configurationSchema: { type: "object" }, implementation: authored.executor.type === "routing" ? "routing" : "executor", requiredCapabilities: [] });
+      await refreshDefinitions(); changeDocument(useNodeDefinition(document!, selectedNode.id, created.ref), `${created.displayName} created and pinned to ${created.ref.version}.`);
+    } catch (cause) { setAnnouncement(cause instanceof Error ? cause.message : "Node definition creation failed."); } finally { setBusy(""); }
+  }
+  async function duplicateDefinition(value: Schemas["NodeDefinition"]) { setBusy("definition-duplicate"); try { const created = await workflowEditorApi.duplicateDefinition({ source: value.ref, scope: "user", owner: "local-user", name: `${value.ref.name}-copy`, version: value.ref.version }); await refreshDefinitions(); setAnnouncement(`${created.displayName} duplicated as an editable user definition.`); } catch (cause) { setAnnouncement(cause instanceof Error ? cause.message : "Node definition duplication failed."); } finally { setBusy(""); } }
+  async function versionDefinition(value: Schemas["NodeDefinition"]) { setBusy("definition-version"); try { const created = await workflowEditorApi.versionDefinition({ source: value.ref, version: nextPatch(value.ref.version) }); await refreshDefinitions(); setAnnouncement(`${created.displayName} ${created.ref.version} created.`); } catch (cause) { setAnnouncement(cause instanceof Error ? cause.message : "Node definition versioning failed."); } finally { setBusy(""); } }
+  async function archiveDefinition(value: Schemas["NodeDefinition"]) { setBusy("definition-archive"); try { await workflowEditorApi.archiveDefinition({ ref: value.ref }); await refreshDefinitions(); setAnnouncement(`${value.displayName} ${value.ref.version} archived. Existing workflow references remain exact.`); } catch (cause) { setAnnouncement(cause instanceof Error ? cause.message : "Node definition archival failed."); } finally { setBusy(""); } }
   function focusNode(nodeId: string, field?: string) { if (connectFrom && !field && document) { if (connectFrom === nodeId) { setAnnouncement("Self transitions require a bounded repair path in Structure view."); return; } changeDocument(connectNodes(document, connectFrom, nodeId), "Execution ports connected."); setConnectFrom(undefined); return; } pendingFindingFocus.current = { nodeId, field }; setFocusRequest((value) => value + 1); select(document && field ? findingTarget(document, { nodeId, field, code: "PORT_FIELD", severity: "error", message: "" }).selection : { kind: "node", nodeId }); }
   function connectPorts(source: Port, target: Port) {
     if (!document || !portGraph) return;
@@ -238,6 +258,7 @@ export function WorkflowsPage() {
         <label className="workflow-search"><span className="sr-only">Search workflows by name, version, scope, or status</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workflows…" /></label>
         <div className="workflow-library-list" aria-busy={loadState === "loading"}>{visibleItems.map((item) => <article key={itemKey(item)} className={`workflow-library-item${selectedKey === itemKey(item) ? " workflow-library-item--selected" : ""}`}><button type="button" onClick={() => selectItem(item)}><strong>{itemName(item)}</strong><span>{itemVersion(item)} · {itemScope(item)}</span><small>{humanize(item.kind)}</small></button><div>{item.kind === "installed" && <button type="button" disabled={Boolean(busy)} onClick={() => void duplicateInstalled(item)}>Duplicate as draft</button>}{item.kind === "installed" && <button type="button" disabled={item.version.sourceScope === "default" || Boolean(busy)} title={item.version.sourceScope === "default" ? "Built-in workflows are immutable" : undefined} onClick={() => void archiveInstalled(item)}>Archive</button>}</div></article>)}</div>
         {draft && <section className="node-palette" aria-labelledby="node-palette-title"><h2 id="node-palette-title">Add node</h2><label className="field"><span>Search nodes</span><input type="search" value={paletteQuery} onChange={(event) => setPaletteQuery(event.target.value)} /></label>{palette.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(paletteQuery.toLowerCase().trim())).map((item) => { const availability = nodeTypeAvailability(item.type, catalog); return <button type="button" key={item.type} disabled={!availability.available} title={availability.message} onClick={() => void add(item.type)}><strong>{item.label}</strong><span>{availability.message ?? item.description}</span></button>; })}</section>}
+        {draft && <section className="node-palette" aria-labelledby="definition-library-title"><h2 id="definition-library-title">Reusable node definitions</h2><label className="field"><span>Search definitions</span><input type="search" value={definitionQuery} onChange={(event) => setDefinitionQuery(event.target.value)} /></label><label className="field"><span>Scope</span><select value={definitionScope} onChange={(event) => setDefinitionScope(event.target.value as typeof definitionScope)}><option value="">All scopes</option><option value="built_in">Built-in</option><option value="project">Project</option><option value="user">User</option></select></label><label className="field"><span>Lifecycle</span><select value={definitionLifecycle} onChange={(event) => setDefinitionLifecycle(event.target.value as typeof definitionLifecycle)}><option value="active">Active</option><option value="archived">Archived</option></select></label>{selectedNode && <div><label className="field"><span>Definition name</span><input value={definitionName} pattern="[a-z][a-z0-9._/-]{0,127}" onChange={(event) => setDefinitionName(event.target.value)} /></label><button type="button" disabled={Boolean(busy) || !definitionName.trim()} onClick={() => void createDefinitionFromSelection()}>Create from selected node</button></div>}{definitions.map((value) => { const immutable = value.ref.scope === "built_in"; return <article key={`${value.ref.scope}:${"owner" in value.ref ? value.ref.owner : ""}:${value.ref.name}:${value.ref.version}:${value.ref.digest}`} className="workflow-library-item"><strong>{value.displayName}</strong><span>{value.ref.version} · {humanize(value.ref.scope)} · {value.compatibility}</span><small>{value.implementation} · {(value.usage ?? []).length} workflow use{(value.usage ?? []).length === 1 ? "" : "s"}</small><div><button type="button" disabled={!selectedNode || value.lifecycle !== "active" || Boolean(busy)} onClick={() => { if (selectedNode && document) changeDocument(useNodeDefinition(document, selectedNode.id, value.ref), `${selectedNode.id} now uses ${value.ref.name} ${value.ref.version}.`); }}>Use</button><button type="button" disabled={Boolean(busy)} onClick={() => void duplicateDefinition(value)}>Duplicate</button><button type="button" disabled={immutable || value.lifecycle !== "active" || Boolean(busy)} title={immutable ? "Built-in definitions are immutable; duplicate one to derive an editable definition." : undefined} onClick={() => void versionDefinition(value)}>New version</button><button type="button" disabled={immutable || value.lifecycle !== "active" || Boolean(busy)} title={immutable ? "Built-in definitions are immutable." : undefined} onClick={() => void archiveDefinition(value)}>Archive</button></div></article>; })}</section>}
       </aside>
 
       <section className="workflow-editor-center" aria-label="Workflow editor">
@@ -291,3 +312,4 @@ function itemVersion(item: LibraryItem) { return item.kind === "draft" ? `r${ite
 function itemScope(item: LibraryItem) { return item.kind === "draft" ? item.draft.scope : item.kind === "installed" ? item.version.sourceScope : "archive"; }
 function itemSearch(item: LibraryItem) { return `${itemName(item)} ${itemVersion(item)} ${itemScope(item)} ${item.kind}`.toLowerCase(); }
 function suggestedVersion(draft: Schemas["WorkflowDraft"], versions: readonly Schemas["WorkflowVersionSummary"][]) { const candidates = versions.filter((version) => version.name === draft.name).map((version) => /^([0-9]+)\.([0-9]+)\.([0-9]+)$/.exec(version.version)).filter((value): value is RegExpExecArray => Boolean(value)).sort((left, right) => Number(right[1]) - Number(left[1]) || Number(right[2]) - Number(left[2]) || Number(right[3]) - Number(left[3])); const latest = candidates[0]; return latest ? `${latest[1]}.${latest[2]}.${Number(latest[3]) + 1}` : "1.0.0"; }
+function nextPatch(version: string) { const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version); return match ? `${match[1]}.${match[2]}.${Number(match[3]) + 1}` : "1.0.0"; }

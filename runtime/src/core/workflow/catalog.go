@@ -233,6 +233,20 @@ type DraftPreview struct {
 	Route          Route  `json:"route"`
 }
 
+type NodeDefinitionCreateRequest struct {
+	Scope                NodeDefinitionScope              `json:"scope"`
+	Owner                string                           `json:"owner"`
+	Name                 string                           `json:"name"`
+	Version              string                           `json:"version"`
+	DisplayName          string                           `json:"displayName"`
+	Description          string                           `json:"description"`
+	Inputs               map[Identifier]ValueDeclaration  `json:"inputs"`
+	Outputs              map[Identifier]OutputDeclaration `json:"outputs"`
+	ConfigurationSchema  json.RawMessage                  `json:"configurationSchema"`
+	Implementation       NodeImplementationKind           `json:"implementation"`
+	RequiredCapabilities []CapabilityReference            `json:"requiredCapabilities"`
+}
+
 // Graph is a deterministic, presentation-neutral projection of a definition.
 type Graph struct {
 	Workflow WorkflowIdentity  `json:"workflow"`
@@ -258,6 +272,7 @@ type Catalog struct {
 	source       workflowstore.Source
 	store        workflowstore.Store
 	capabilities registryport.Registry
+	definitions  *NodeDefinitionLibrary
 	now          func() time.Time
 }
 
@@ -266,11 +281,17 @@ func (c *Catalog) WithCapabilityRegistry(registry registryport.Registry) *Catalo
 	return c
 }
 
+func (c *Catalog) WithNodeDefinitionLibrary(library *NodeDefinitionLibrary) *Catalog {
+	c.definitions = library
+	return c
+}
+
 func NewCatalog(source workflowstore.Source, store workflowstore.Store) (*Catalog, error) {
 	if source == nil || store == nil {
 		return nil, errors.New("workflow catalog requires a source and store")
 	}
-	return &Catalog{source: source, store: store, now: time.Now}, nil
+	definitions, _ := NewNodeDefinitionLibrary()
+	return &Catalog{source: source, store: store, definitions: definitions, now: time.Now}, nil
 }
 
 // Canonicalize validates an authored JSON workflow and returns its canonical
@@ -510,6 +531,189 @@ func (c *Catalog) ArchiveVersion(ctx context.Context, name, version string) (wor
 	return value, err
 }
 
+func (c *Catalog) NodeDefinitions(ctx context.Context, filter NodeDefinitionFilter) ([]NodeDefinition, error) {
+	library, err := c.nodeDefinitionLibrary(ctx)
+	if err != nil {
+		return nil, err
+	}
+	values := library.Search(filter)
+	installed, err := c.store.InstalledVersions(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	definitions := make([]Definition, 0, len(installed))
+	for _, item := range installed {
+		definition, _, _, err := Canonicalize(item.Document)
+		if err == nil {
+			definitions = append(definitions, Definition{Version: versionSummary(item), Document: definition})
+		}
+	}
+	for index := range values {
+		values[index].Usage = DefinitionUsage(values[index].Ref, definitions)
+	}
+	return values, nil
+}
+
+func (c *Catalog) PublishNodeDefinition(ctx context.Context, value NodeDefinition) (NodeDefinition, error) {
+	store, ok := c.store.(workflowstore.NodeDefinitionStore)
+	if !ok {
+		return NodeDefinition{}, errors.New("node definition persistence is unavailable")
+	}
+	sealed, err := sealNodeDefinition(value)
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	scope, owner, err := definitionOwner(sealed.Ref.Ref)
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	document, err := json.Marshal(sealed)
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	record, _, err := store.InstallNodeDefinition(ctx, workflowstore.NodeDefinitionRecord{Scope: scope, Owner: owner, Name: sealed.Ref.Ref.DefinitionName(), Version: sealed.Ref.Ref.DefinitionVersion(), Digest: sealed.Ref.Digest, Document: document, CreatedAt: sealed.CreatedAt})
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	return decodeStoredNodeDefinition(record)
+}
+
+func (c *Catalog) CreateNodeDefinition(ctx context.Context, input NodeDefinitionCreateRequest) (NodeDefinition, error) {
+	var ref NodeDefinitionRef
+	switch input.Scope {
+	case NodeDefinitionProject:
+		ref = ProjectNodeDefinitionRef{ProjectID: input.Owner, Name: input.Name, Version: input.Version}
+	case NodeDefinitionUser:
+		ref = UserNodeDefinitionRef{UserID: input.Owner, Name: input.Name, Version: input.Version}
+	default:
+		return NodeDefinition{}, ErrNodeDefinitionImmutable
+	}
+	return c.PublishNodeDefinition(ctx, NodeDefinition{
+		Ref: ResolvedNodeDefinitionRef{Ref: ref}, DisplayName: input.DisplayName, Description: input.Description,
+		Compatibility: APIVersionV1Alpha3, Inputs: input.Inputs, Outputs: input.Outputs,
+		ConfigurationSchema: input.ConfigurationSchema, Implementation: input.Implementation,
+		RequiredCapabilities: input.RequiredCapabilities, Lifecycle: NodeDefinitionActive, CreatedAt: c.now().UTC().Round(0),
+	})
+}
+
+func (c *Catalog) DuplicateNodeDefinition(ctx context.Context, source ResolvedNodeDefinitionRef, scope NodeDefinitionScope, owner, name, version string) (NodeDefinition, error) {
+	library, err := c.nodeDefinitionLibrary(ctx)
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	var target NodeDefinitionRef
+	switch scope {
+	case NodeDefinitionProject:
+		target = ProjectNodeDefinitionRef{ProjectID: owner, Name: name, Version: version}
+	case NodeDefinitionUser:
+		target = UserNodeDefinitionRef{UserID: owner, Name: name, Version: version}
+	default:
+		return NodeDefinition{}, ErrNodeDefinitionImmutable
+	}
+	value, err := library.Duplicate(source, target, c.now().UTC().Round(0))
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	return c.PublishNodeDefinition(ctx, value)
+}
+
+func (c *Catalog) VersionNodeDefinition(ctx context.Context, source ResolvedNodeDefinitionRef, version string) (NodeDefinition, error) {
+	library, err := c.nodeDefinitionLibrary(ctx)
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	value, err := library.Version(source, version, c.now().UTC().Round(0))
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	return c.PublishNodeDefinition(ctx, value)
+}
+
+func (c *Catalog) ArchiveNodeDefinition(ctx context.Context, ref ResolvedNodeDefinitionRef) (NodeDefinition, error) {
+	scope, owner, err := definitionOwner(ref.Ref)
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	store, ok := c.store.(workflowstore.NodeDefinitionStore)
+	if !ok {
+		return NodeDefinition{}, errors.New("node definition persistence is unavailable")
+	}
+	record, _, err := store.ArchiveNodeDefinition(ctx, scope, owner, ref.Ref.DefinitionName(), ref.Ref.DefinitionVersion(), c.now().UTC().Round(0))
+	if err != nil {
+		return NodeDefinition{}, err
+	}
+	if record.Digest != ref.Digest {
+		return NodeDefinition{}, ErrNodeDefinitionNotFound
+	}
+	return decodeStoredNodeDefinition(record)
+}
+
+func (c *Catalog) nodeDefinitionLibrary(ctx context.Context) (*NodeDefinitionLibrary, error) {
+	current := c.definitions.Search(NodeDefinitionFilter{})
+	builtins := []NodeDefinition{}
+	for _, value := range current {
+		if value.Ref.Ref.definitionScope() == NodeDefinitionBuiltIn {
+			builtins = append(builtins, value)
+		}
+	}
+	library, err := NewNodeDefinitionLibrary(builtins...)
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range current {
+		if value.Ref.Ref.definitionScope() != NodeDefinitionBuiltIn {
+			if _, err := library.Publish(value); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if store, ok := c.store.(workflowstore.NodeDefinitionStore); ok {
+		records, err := store.NodeDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, record := range records {
+			value, err := decodeStoredNodeDefinition(record)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := library.Publish(value); err != nil {
+				return nil, err
+			}
+			if record.ArchivedAt != nil {
+				_, _ = library.Archive(value.Ref)
+			}
+		}
+	}
+	return library, nil
+}
+
+func decodeStoredNodeDefinition(record workflowstore.NodeDefinitionRecord) (NodeDefinition, error) {
+	var value NodeDefinition
+	if err := json.Unmarshal(record.Document, &value); err != nil {
+		return value, err
+	}
+	if value.Ref.Digest != record.Digest {
+		return value, ErrNodeDefinitionNotFound
+	}
+	if record.ArchivedAt != nil {
+		value.Lifecycle = NodeDefinitionArchived
+	}
+	return value, nil
+}
+func definitionOwner(ref NodeDefinitionRef) (workflowstore.DraftScope, string, error) {
+	switch value := ref.(type) {
+	case ProjectNodeDefinitionRef:
+		return workflowstore.DraftScopeProject, value.ProjectID, nil
+	case UserNodeDefinitionRef:
+		return workflowstore.DraftScopeUser, value.UserID, nil
+	case BuiltInNodeDefinitionRef:
+		return "", "", ErrNodeDefinitionImmutable
+	default:
+		return "", "", fmt.Errorf("unsupported node-definition ref %T", ref)
+	}
+}
+
 func (c *Catalog) CreateDraft(ctx context.Context, request DraftCreateRequest) (workflowstore.Draft, error) {
 	if err := validateDraftIdentity(request.Name, request.Scope, request.ScopeReference, request.IdempotencyKey); err != nil {
 		return workflowstore.Draft{}, err
@@ -661,6 +865,42 @@ func (c *Catalog) resolveCandidateSubworkflows(ctx context.Context, candidate wo
 	issues := make(ValidationErrors, 0)
 	rootKey := definition.Document.Metadata.Name + "\x00" + definition.Document.Metadata.Version
 	for _, nodeID := range sortedNodeIDs(definition.Document.Spec.Nodes) {
+		fields := definition.Document.Spec.Nodes[nodeID].Fields()
+		if fields.Definition != nil {
+			base := fmt.Sprintf("/spec/nodes/%s/definition", nodeID)
+			library, libraryErr := c.nodeDefinitionLibrary(ctx)
+			if libraryErr != nil {
+				issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: libraryErr.Error(), Location: base})
+				continue
+			}
+			resolved, resolveErr := library.Resolve(*fields.Definition)
+			if resolveErr != nil {
+				issues = append(issues, ValidationError{Code: ValidationReferenceMissing, Message: "exact reusable node definition is unavailable or its digest does not match", Location: base})
+				continue
+			}
+			if resolved.Compatibility != definition.Document.APIVersion {
+				issues = append(issues, ValidationError{Code: ValidationDefinitionInvalid, Message: fmt.Sprintf("node definition requires compatibility %s", resolved.Compatibility), Location: base + "/version"})
+			}
+			issues = append(issues, validateDefinitionPorts(fields, resolved, nodeID)...)
+			if c.capabilities != nil {
+				records, capabilityErr := c.capabilities.Snapshot(ctx)
+				if capabilityErr != nil {
+					issues = append(issues, ValidationError{Code: ValidationCapabilityMissing, Message: "required capability availability could not be verified", Location: base})
+					continue
+				}
+				available := map[CapabilityReference]bool{}
+				for _, record := range records {
+					if record.Availability == registryport.AvailabilityAvailable {
+						available[CapabilityReference{Kind: CapabilityKind(record.Kind), Name: record.Name}] = true
+					}
+				}
+				for _, required := range resolved.RequiredCapabilities {
+					if !available[required] {
+						issues = append(issues, ValidationError{Code: ValidationCapabilityMissing, Message: fmt.Sprintf("node definition requires unavailable %s %q", required.Kind, required.Name), Location: base})
+					}
+				}
+			}
+		}
 		node, ok := definition.Document.Spec.Nodes[nodeID].(SubworkflowNode)
 		if !ok {
 			continue
@@ -700,6 +940,24 @@ func (c *Catalog) resolveCandidateSubworkflows(ctx context.Context, candidate wo
 	}
 	definition, err = loadCandidate(workflowstore.Candidate{Scope: candidate.Scope, Reference: candidate.Reference, Content: resolved})
 	return definition, nil, err
+}
+
+func validateDefinitionPorts(fields NodeFields, definition NodeDefinition, nodeID Identifier) ValidationErrors {
+	issues := ValidationErrors{}
+	base := fmt.Sprintf("/spec/nodes/%s/definition", nodeID)
+	for id, expected := range definition.Inputs {
+		binding, ok := fields.Inputs[id]
+		if !ok || binding.ValueType() != expected.Type {
+			issues = append(issues, ValidationError{Code: ValidationBindingIncompatible, Message: fmt.Sprintf("definition input %q must be declared as %s", id, expected.Type), Location: base})
+		}
+	}
+	for id, expected := range definition.Outputs {
+		output, ok := fields.Outputs[id]
+		if !ok || output.Type != expected.Type || expected.Schema != "" && output.Schema != expected.Schema {
+			issues = append(issues, ValidationError{Code: ValidationBindingIncompatible, Message: fmt.Sprintf("definition output %q does not match its reusable contract", id), Location: base})
+		}
+	}
+	return issues
 }
 
 func (c *Catalog) validateInstalledCallGraph(ctx context.Context, definition Definition, stack map[string]bool, rootLocation string) ValidationErrors {

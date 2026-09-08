@@ -7,6 +7,11 @@ const key = (operation: string) => `dashboard-workflow-${operation}-${crypto.ran
 export const workflowEditorApi = {
   library: (signal?: AbortSignal) => apiClient.getWorkflowLibrary(signal),
   catalog: (signal?: AbortSignal) => apiClient.getWorkflowAuthoringCatalog(signal),
+  definitions: (query: { query?: string; scope?: "built_in" | "project" | "user"; lifecycle?: "active" | "archived" } = {}, signal?: AbortSignal) => apiClient.listNodeDefinitions(query, signal),
+  createDefinition: (body: Schemas["NodeDefinitionCreateRequest"], signal?: AbortSignal) => apiClient.createNodeDefinition(body, key("create-definition"), signal),
+  duplicateDefinition: (body: Schemas["NodeDefinitionDuplicateRequest"], signal?: AbortSignal) => apiClient.duplicateNodeDefinition(body, key("duplicate-definition"), signal),
+  versionDefinition: (body: Schemas["NodeDefinitionVersionRequest"], signal?: AbortSignal) => apiClient.versionNodeDefinition(body, key("version-definition"), signal),
+  archiveDefinition: (body: Schemas["NodeDefinitionArchiveRequest"], signal?: AbortSignal) => apiClient.archiveNodeDefinition(body, key("archive-definition"), signal),
   draft: (id: string, signal?: AbortSignal) => apiClient.getWorkflowDraft(id, signal),
   create: (body: Schemas["WorkflowDraftCreateRequest"], signal?: AbortSignal) => apiClient.createWorkflowDraft(body, key("create"), signal),
   duplicate: (body: Schemas["WorkflowDraftDuplicateRequest"], signal?: AbortSignal) => apiClient.duplicateWorkflowDraft(body, key("duplicate"), signal),

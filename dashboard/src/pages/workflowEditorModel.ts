@@ -3,7 +3,7 @@ import type { components } from "../api/schema.generated";
 type Schemas = components["schemas"];
 export type JsonObject = Record<string, unknown>;
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
-export type WorkflowNodeType = "reasoning" | "gate" | "command" | "approval" | "subworkflow" | "point_execution";
+export type WorkflowNodeType = "reasoning" | "gate" | "command" | "approval" | "subworkflow" | "point_execution" | "routing";
 export type WorkflowEdgeKind = "normal" | "conditional" | "bounded_repair" | "subworkflow";
 export type AuthoredTransitionKind = Exclude<WorkflowEdgeKind, "subworkflow">;
 export type EditorView = "canvas" | "structure";
@@ -54,7 +54,8 @@ export type NodeExecutor =
   | { type: "command"; argv: string[]; cwd?: string; timeoutSeconds?: number }
   | { type: "approval"; actor: string; externalCondition?: string; evidenceOutput?: string }
   | { type: "subworkflow"; workflow: { name: string; version: string; digest?: string; path?: string }; entry: string; terminals: string[]; inputs: Record<string, string>; outputs: Record<string, string> }
-  | { type: "point_execution"; planInput: string; approval: "none" | "every" | "risk" | "combined"; riskTags: string[]; validation: "each" | "combined" | "each_and_combined"; publishing: "after_story_validation" | "after_each_point" };
+  | { type: "point_execution"; planInput: string; approval: "none" | "every" | "risk" | "combined"; riskTags: string[]; validation: "each" | "combined" | "each_and_combined"; publishing: "after_story_validation" | "after_each_point" }
+  | { type: "routing"; agent: string; branches: Array<{ name: string; transition: string }>; routeOutput: string; rationaleOutput: string; adviceOutput: string; missingInformationOutput: string; assumptionsOutput: string; confirmationOutput: string };
 export type ValueType = "null" | "boolean" | "integer" | "number" | "string" | "array" | "object";
 export interface BindingConfig { id: string; from: string; pointer?: string; type: ValueType; required: boolean; default?: JsonValue; description?: string; raw?: JsonObject }
 export interface OutputConfig { id: string; type: ValueType; schema?: string; description?: string; required: boolean; raw?: JsonObject }
@@ -67,7 +68,8 @@ export interface ReadinessConfig {
   remedies: Array<{ code: string; target: string; action: "supply_input" | "revise_artifact" | "clarify_decision" | "install_capability" | "rerun_validation"; description: string; raw?: JsonObject }>;
   raw?: JsonObject;
 }
-export interface AuthoringNode { id: string; type: WorkflowNodeType; displayName: string; entry: boolean; terminal: boolean; checkpoint: CheckpointConfig; executor: NodeExecutor; inputs: BindingConfig[]; outputs: OutputConfig[]; validators: ValidatorConfig[]; retry?: RetryConfig; permissions: string[]; readiness?: ReadinessConfig; transitionMode: "exclusive" | "fanout"; join?: { mode: "one" | "all"; from: string[] } }
+export type NodeDefinitionRef = {scope:"built_in";name:string;version:string;digest:string}|{scope:"project"|"user";owner:string;name:string;version:string;digest:string};
+export interface AuthoringNode { id: string; type: WorkflowNodeType; displayName: string; entry: boolean; terminal: boolean; definition?: NodeDefinitionRef; checkpoint: CheckpointConfig; executor: NodeExecutor; inputs: BindingConfig[]; outputs: OutputConfig[]; validators: ValidatorConfig[]; retry?: RetryConfig; permissions: string[]; readiness?: ReadinessConfig; transitionMode: "exclusive" | "fanout"; join?: { mode: "one" | "all"; from: string[] } }
 export type SharedNodeChange =
   | { kind: "inputs"; value: BindingConfig[] }
   | { kind: "outputs"; value: OutputConfig[] }
@@ -97,7 +99,7 @@ export interface VisualNode {
 export interface VisualEdge { id: string; transitionId: string; from: string; to: string; kind: WorkflowEdgeKind; conditional: boolean; maxTraversals?: number }
 export interface EditorGraph { nodes: VisualNode[]; edges: VisualEdge[] }
 
-const nodeTypes: readonly WorkflowNodeType[] = ["reasoning", "gate", "command", "approval", "subworkflow", "point_execution"];
+const nodeTypes: readonly WorkflowNodeType[] = ["reasoning", "gate", "command", "approval", "subworkflow", "point_execution", "routing"];
 const identifier = /^[a-z][a-z0-9_]{0,63}$/;
 const workflowName = /^[a-z][a-z0-9._/-]{0,127}$/;
 const semanticVersion = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
@@ -122,6 +124,7 @@ export function nodeExecutorComplete(value: NodeExecutor): boolean {
       && Object.entries(value.inputs).every(([child, parent]) => identifier.test(child) && identifier.test(parent))
       && Object.entries(value.outputs).every(([parent, source]) => identifier.test(parent) && outputSource.test(source));
     case "point_execution": return identifier.test(value.planInput) && (value.approval !== "risk" || value.riskTags.length > 0 && value.riskTags.every((item) => item.trim() !== ""));
+    case "routing": return value.agent.trim() !== "" && value.branches.length > 0 && value.branches.every((branch) => identifier.test(branch.name) && identifier.test(branch.transition)) && new Set(value.branches.map((branch) => branch.name)).size === value.branches.length && new Set(value.branches.map((branch) => branch.transition)).size === value.branches.length && [value.routeOutput,value.rationaleOutput,value.adviceOutput,value.missingInformationOutput,value.assumptionsOutput,value.confirmationOutput].every((id)=>identifier.test(id));
   }
 }
 export function edgeIdentity(from: string, transitionId: string, to: string) { return `${from}\u001f${transitionId}\u001f${to}`; }
@@ -187,6 +190,7 @@ export function deriveEditorGraph(document: unknown, layoutValue: unknown, findi
 
 export function addNode(document: JsonObject, type: WorkflowNodeType, requestedId?: string): { document: JsonObject; nodeId: string } {
   const next = clone(document); const nodes = workflowNodes(next);
+  if (type === "routing") next.apiVersion = "darkstar.local/v1alpha3";
   const base = sanitizeIdentifier(requestedId || type); const nodeId = uniqueIdentifier(base, new Set(Object.keys(nodes)));
   nodes[nodeId] = createNode(type, humanizeIdentifier(nodeId));
   if (type === "point_execution") {
@@ -195,6 +199,14 @@ export function addNode(document: JsonObject, type: WorkflowNodeType, requestedI
     inputs[planInput] = { type: "object", description: "Implementation point plan" }; spec.inputs = inputs;
   }
   return { document: next, nodeId };
+}
+
+export function useNodeDefinition(document: JsonObject, nodeId: string, definition: NodeDefinitionRef): JsonObject {
+  const next = clone(document); const node = record(workflowNodes(next)[nodeId]);
+  if (!Object.keys(node).length || !decodeNodeDefinitionRef(definition)) return next;
+  next.apiVersion = "darkstar.local/v1alpha3";
+  node.definition = clone(definition);
+  return next;
 }
 
 export function removeNode(document: JsonObject, nodeId: string): JsonObject {
@@ -282,6 +294,7 @@ export function inspectNode(document: unknown, nodeId: string): AuthoringNode | 
     displayName: typeof raw.displayName === "string" ? raw.displayName : humanizeIdentifier(nodeId),
     entry: raw.entry === true,
     terminal: raw.terminal === true,
+    ...(decodeNodeDefinitionRef(raw.definition)?{definition:decodeNodeDefinitionRef(raw.definition)}:{}),
     checkpoint,
     inputs: decodeBindings(raw.inputs),
     outputs: decodeOutputs(raw.outputs),
@@ -317,6 +330,7 @@ export function inspectNode(document: unknown, nodeId: string): AuthoringNode | 
       const value = record(raw.points);
       return { ...common, executor: { type: "point_execution", planInput: stringValue(value.planInput), approval: enumValue(value.approval, ["none", "every", "risk", "combined"], "none"), riskTags: stringArray(value.riskTags), validation: enumValue(value.validation, ["each", "combined", "each_and_combined"], "combined"), publishing: enumValue(value.publishing, ["after_story_validation", "after_each_point"], "after_story_validation") } };
     }
+    case "routing": { const value=record(raw.routing); return { ...common, executor:{ type:"routing", agent:stringValue(value.agent), branches:(Array.isArray(value.branches)?value.branches:[]).map(record).map((branch)=>({name:stringValue(branch.name),transition:stringValue(branch.transition)})), routeOutput:stringValue(value.routeOutput), rationaleOutput:stringValue(value.rationaleOutput), adviceOutput:stringValue(value.adviceOutput), missingInformationOutput:stringValue(value.missingInformationOutput), assumptionsOutput:stringValue(value.assumptionsOutput), confirmationOutput:stringValue(value.confirmationOutput) } }; }
   }
 }
 
@@ -355,6 +369,7 @@ export function updateNodeExecutor(document: JsonObject, nodeId: string, executo
       node.points = { ...record(node.points), planInput: executor.planInput, approval: executor.approval, riskTags: executor.approval === "risk" ? uniqueStrings(executor.riskTags) : [], validation: executor.validation, publishing: executor.publishing };
       break;
     }
+    case "routing": node.routing={...record(node.routing),agent:executor.agent,branches:executor.branches.map((branch)=>({...branch})),routeOutput:executor.routeOutput,rationaleOutput:executor.rationaleOutput,adviceOutput:executor.adviceOutput,missingInformationOutput:executor.missingInformationOutput,assumptionsOutput:executor.assumptionsOutput,confirmationOutput:executor.confirmationOutput}; break;
   }
   return next;
 }
@@ -521,6 +536,7 @@ function createNode(type: WorkflowNodeType, displayName: string, flags: { entry?
     case "approval": return { ...common, approval: { actor: "workflow-owner" } };
     case "subworkflow": return { ...common, call: { workflow: { name: "workflow/name", version: "0.1.0" }, entry: "start", terminals: ["finish"], inputs: {}, outputs: {} } };
     case "point_execution": return { ...common, inputs: { plan: { from: "run.input.plan", type: "object", required: true } }, points: { planInput: "plan", approval: "none", riskTags: [], validation: "combined", publishing: "after_story_validation" } };
+    case "routing": return { ...common, outputs:{selected_route:{type:"string"},rationale:{type:"string"},advice:{type:"string"},missing_information:{type:"array"},assumptions:{type:"array"},confirmation_required:{type:"boolean"}}, routing:{agent:"authoring-agent",branches:[{name:"assessment",transition:"to_assessment"}],routeOutput:"selected_route",rationaleOutput:"rationale",adviceOutput:"advice",missingInformationOutput:"missing_information",assumptionsOutput:"assumptions",confirmationOutput:"confirmation_required"} };
   }
 }
 
@@ -558,6 +574,7 @@ function isJsonValue(value: unknown): value is JsonValue { if (value === null ||
 function stringValue(value: unknown) { return typeof value === "string" ? value : ""; }
 function stringArray(value: unknown) { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
 function stringRecord(value: unknown) { return Object.fromEntries(Object.entries(record(value)).filter((entry): entry is [string, string] => typeof entry[1] === "string")); }
+function decodeNodeDefinitionRef(value: unknown): NodeDefinitionRef|undefined { if(value===undefined)return undefined; const raw=record(value); if((raw.scope!=="built_in"&&raw.scope!=="project"&&raw.scope!=="user")||typeof raw.name!=="string"||!workflowName.test(raw.name)||typeof raw.version!=="string"||!semanticVersion.test(raw.version)||typeof raw.digest!=="string"||!/^[0-9a-f]{64}$/.test(raw.digest))return undefined; if(raw.scope==="built_in")return raw.owner===undefined&&hasOnlyKeys(raw,["scope","name","version","digest"])?raw as NodeDefinitionRef:undefined; return typeof raw.owner==="string"&&raw.owner.length>0&&hasOnlyKeys(raw,["scope","owner","name","version","digest"])?raw as NodeDefinitionRef:undefined; }
 function decodeBindings(value: unknown): BindingConfig[] { return Object.entries(record(value)).map(([id, candidate]) => { const raw = record(candidate); return { id, from: stringValue(raw.from), ...(typeof raw.pointer === "string" ? { pointer: raw.pointer } : {}), type: raw.type as ValueType, required: raw.required !== false, ...(raw.required === false && Object.hasOwn(raw, "default") && isJsonValue(raw.default) ? { default: raw.default } : {}), ...(typeof raw.description === "string" ? { description: raw.description } : {}), raw: clone(raw) }; }); }
 function decodeOutputs(value: unknown): OutputConfig[] { return Object.entries(record(value)).map(([id, candidate]) => { const raw = record(candidate); return { id, type: raw.type as ValueType, ...(typeof raw.schema === "string" ? { schema: raw.schema } : {}), ...(typeof raw.description === "string" ? { description: raw.description } : {}), required: raw.required !== false, raw: clone(raw) }; }); }
 function decodeValidators(value: unknown): ValidatorConfig[] { return (Array.isArray(value) ? value : []).map((candidate): ValidatorConfig => { const raw = record(candidate); if (Array.isArray(raw.command)) return { kind: "command", command: stringArray(raw.command), raw: clone(raw) }; return { kind: "schema", output: raw.output as string, schema: raw.schema as string, raw: clone(raw) }; }); }
@@ -574,7 +591,7 @@ function clampInteger(value: number, minimum: number, maximum: number) { return 
 function validUniqueIDs(values: readonly string[]) { return values.every((value) => identifier.test(value)) && new Set(values).size === values.length; }
 function supportedSharedSections(node: JsonObject) {
   const values = ["null", "boolean", "integer", "number", "string", "array", "object"];
-  if (!hasOnlyKeys(node, ["displayName", "type", "entry", "terminal", "inputs", "outputs", "readiness", "reasoning", "gate", "command", "approval", "call", "points", "validators", "retry", "checkpoint", "transitionMode", "join", "permissions", "transitions"])) return false;
+  if (!hasOnlyKeys(node, ["displayName", "type", "entry", "terminal", "inputs", "outputs", "readiness", "definition", "reasoning", "gate", "command", "approval", "call", "points", "routing", "validators", "retry", "checkpoint", "transitionMode", "join", "permissions", "transitions"])) return false;
   if (typeof node.entry !== "boolean" || typeof node.terminal !== "boolean" || node.displayName !== undefined && (typeof node.displayName !== "string" || node.displayName.length === 0)) return false;
   if (!isPlainRecord(node.inputs) || !Object.entries(node.inputs).every(([id, value]) => identifier.test(id) && isPlainRecord(value) && hasOnlyKeys(value, ["from", "pointer", "type", "required", "default", "description"]) && typeof value.from === "string" && /^(run\.input\.[a-z][a-z0-9_]{0,63}|node\.[a-z][a-z0-9_]{0,63}\.output\.[a-z][a-z0-9_]{0,63})$/.test(value.from) && values.includes(String(value.type)) && (value.required === undefined || typeof value.required === "boolean") && (value.pointer === undefined || typeof value.pointer === "string" && /^(?:|(?:\/(?:[^~/]|~[01])*)+)$/.test(value.pointer)) && (value.description === undefined || typeof value.description === "string") && (!Object.hasOwn(value, "default") || value.required === false && isJsonValue(value.default)))) return false;
   if (!isPlainRecord(node.outputs) || !Object.entries(node.outputs).every(([id, value]) => identifier.test(id) && isPlainRecord(value) && hasOnlyKeys(value, ["type", "schema", "description", "required"]) && values.includes(String(value.type)) && (value.required === undefined || typeof value.required === "boolean") && (value.schema === undefined || typeof value.schema === "string" && value.schema.length > 0) && (value.description === undefined || typeof value.description === "string"))) return false;
@@ -582,6 +599,7 @@ function supportedSharedSections(node: JsonObject) {
   const retryKinds = ["provider_unavailable", "provider_rate_limit", "process_failure", "validator_failure", "timeout", "interrupted"];
   if (node.retry !== undefined && (!isPlainRecord(node.retry) || !hasOnlyKeys(node.retry, ["maxAttempts", "on"]) || !positiveInteger(node.retry.maxAttempts) || Number(node.retry.maxAttempts) > 100 || !Array.isArray(node.retry.on) || !node.retry.on.every((value) => typeof value === "string" && retryKinds.includes(value)) || new Set(node.retry.on).size !== node.retry.on.length)) return false;
   if (node.readiness !== undefined && !supportedReadiness(node.readiness)) return false;
+  if (node.definition !== undefined && !decodeNodeDefinitionRef(node.definition)) return false;
   if (node.transitionMode !== undefined && node.transitionMode !== "exclusive" && node.transitionMode !== "fanout") return false;
   if (node.join !== undefined && (!isPlainRecord(node.join) || node.join.mode !== "one" && node.join.mode !== "all" || !Array.isArray(node.join.from) || node.join.from.length < 2 || !node.join.from.every((value) => typeof value === "string") || new Set(node.join.from).size !== node.join.from.length)) return false;
   if (node.permissions !== undefined && (!Array.isArray(node.permissions) || !node.permissions.every((value) => typeof value === "string") || new Set(node.permissions).size !== node.permissions.length)) return false;
@@ -589,7 +607,7 @@ function supportedSharedSections(node: JsonObject) {
   return true;
 }
 function supportedExecutor(node: JsonObject) {
-  const executorFields = ["reasoning", "gate", "command", "approval", "call", "points"];
+  const executorFields = ["reasoning", "gate", "command", "approval", "call", "points", "routing"];
   const expected = node.type === "subworkflow" ? "call" : node.type === "point_execution" ? "points" : String(node.type);
   if (executorFields.some((field) => field !== expected && node[field] !== undefined)) return false;
   switch (node.type) {
@@ -599,6 +617,7 @@ function supportedExecutor(node: JsonObject) {
     case "approval": { const value = node.approval; if (!isPlainRecord(value) || !hasOnlyKeys(value, ["actor", "externalCondition", "evidenceOutput"]) || typeof value.actor !== "string" || value.actor.length === 0) return false; return value.actor === "external" ? typeof value.externalCondition === "string" && value.externalCondition.length > 0 && typeof value.evidenceOutput === "string" && identifier.test(value.evidenceOutput) : value.externalCondition === undefined && value.evidenceOutput === undefined; }
     case "subworkflow": { const value = node.call; if (!isPlainRecord(value) || !hasOnlyKeys(value, ["workflow", "entry", "terminals", "inputs", "outputs"]) || !isPlainRecord(value.workflow) || !hasOnlyKeys(value.workflow, ["name", "version", "digest", "path"])) return false; const reference = value.workflow; return typeof reference.name === "string" && workflowName.test(reference.name) && typeof reference.version === "string" && semanticVersion.test(reference.version) && (reference.digest === undefined || typeof reference.digest === "string" && /^[0-9a-f]{64}$/.test(reference.digest)) && (reference.path === undefined || typeof reference.path === "string" && reference.path.length > 0) && typeof value.entry === "string" && identifier.test(value.entry) && Array.isArray(value.terminals) && value.terminals.length > 0 && value.terminals.every((item) => typeof item === "string" && identifier.test(item)) && new Set(value.terminals).size === value.terminals.length && isPlainRecord(value.inputs) && Object.entries(value.inputs).every(([key, item]) => identifier.test(key) && typeof item === "string" && identifier.test(item)) && isPlainRecord(value.outputs) && Object.entries(value.outputs).every(([key, item]) => identifier.test(key) && typeof item === "string" && outputSource.test(item)); }
     case "point_execution": { const value = node.points; return isPlainRecord(value) && hasOnlyKeys(value, ["planInput", "approval", "riskTags", "validation", "publishing"]) && typeof value.planInput === "string" && identifier.test(value.planInput) && record(node.inputs)[value.planInput] !== undefined && record(record(node.inputs)[value.planInput]).type === "object" && ["none", "every", "risk", "combined"].includes(String(value.approval)) && Array.isArray(value.riskTags) && value.riskTags.every((item) => typeof item === "string" && item.length > 0) && new Set(value.riskTags).size === value.riskTags.length && (value.approval === "risk" ? value.riskTags.length > 0 : value.riskTags.length === 0) && ["each", "combined", "each_and_combined"].includes(String(value.validation)) && ["after_story_validation", "after_each_point"].includes(String(value.publishing)); }
+    case "routing": { const value=record(node.routing); return hasOnlyKeys(value,["agent","branches","routeOutput","rationaleOutput","adviceOutput","missingInformationOutput","assumptionsOutput","confirmationOutput"]) && typeof value.agent==="string" && value.agent.length>0 && Array.isArray(value.branches) && value.branches.length>0 && value.branches.every((branch)=>isPlainRecord(branch)&&hasOnlyKeys(branch,["name","transition"])&&typeof branch.name==="string"&&identifier.test(branch.name)&&typeof branch.transition==="string"&&identifier.test(branch.transition)) && [value.routeOutput,value.rationaleOutput,value.adviceOutput,value.missingInformationOutput,value.assumptionsOutput,value.confirmationOutput].every((id)=>typeof id==="string"&&identifier.test(id)); }
     default: return false;
   }
 }

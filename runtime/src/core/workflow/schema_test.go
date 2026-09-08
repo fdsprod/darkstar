@@ -101,6 +101,15 @@ func TestPublishedEnumsMatchTypedContract(t *testing.T) {
 		string(workflow.NodeApproval), string(workflow.NodeSubworkflow),
 		string(workflow.NodePointExecution),
 	})
+	v3data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "schemas", "workflow-v1alpha3.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v3 map[string]any
+	if err := json.Unmarshal(v3data, &v3); err != nil {
+		t.Fatal(err)
+	}
+	assertStringSet(t, schemaEnum(t, v3, "$defs", "node", "properties", "type", "enum"), []string{string(workflow.NodeReasoning), string(workflow.NodeGate), string(workflow.NodeCommand), string(workflow.NodeApproval), string(workflow.NodeSubworkflow), string(workflow.NodePointExecution), string(workflow.NodeRouting)})
 	assertStringSet(t, schemaEnum(t, schema, "$defs", "valueType", "enum"), []string{
 		string(workflow.ValueNull), string(workflow.ValueBoolean), string(workflow.ValueInteger),
 		string(workflow.ValueNumber), string(workflow.ValueString), string(workflow.ValueArray),
