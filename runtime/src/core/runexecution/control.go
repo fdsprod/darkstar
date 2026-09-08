@@ -194,6 +194,20 @@ func (s *Service) Launch(ctx context.Context, request ControlRequest) (statestor
 			"logReference": strings.TrimPrefix(attemptID, "attempt_") + ".log", "priority": run.Priority,
 		}),
 	)
+	if s.queueEnabled {
+		// Authorization is durable before capacity is claimed. No provider attempt
+		// exists until the queue admits this run, including across restarts.
+		events = events[:len(events)-2]
+		committed, err := s.store.Append(ctx, events...)
+		if err != nil {
+			return statestore.RunProjection{}, err
+		}
+		value, err := s.store.Run(ctx, run.RunID)
+		if err != nil {
+			return statestore.RunProjection{}, err
+		}
+		return value, s.finishControl(ctx, action, request.IdempotencyKey, value, committed)
+	}
 	committed, err := s.store.Append(ctx, events...)
 	if err != nil {
 		return statestore.RunProjection{}, err

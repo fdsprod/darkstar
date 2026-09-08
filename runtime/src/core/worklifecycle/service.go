@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"darkstar/src/core/identity"
+	"darkstar/src/core/preparation"
 	"darkstar/src/core/runexecution"
 	"darkstar/src/ports/statestore"
 )
@@ -364,6 +365,9 @@ func (s *Service) facts(ctx context.Context, id string) (facts, error) {
 		return facts{}, assessErr
 	}
 	value.state = deriveState(work, *run, value.checkpoint)
+	if run.Status == statestore.RunReady && value.state == StateReview {
+		value.readiness = true
+	}
 	return value, nil
 }
 
@@ -386,8 +390,21 @@ func deriveState(work statestore.WorkItemProjection, run statestore.RunProjectio
 	case statestore.RunDraft:
 		return StateBacklog
 	case statestore.RunReady:
+		var snapshot struct {
+			Assessment *preparation.Assessment `json:"assessment"`
+		}
+		if json.Unmarshal([]byte(run.RouteSnapshot), &snapshot) == nil && snapshot.Assessment != nil {
+			if snapshot.Assessment.Readiness() == "confirmation_required" {
+				return StateReview
+			}
+			if snapshot.Assessment.Readiness() == "input_required" {
+				return StateWaiting
+			}
+		}
 		return StateReady
-	case statestore.RunQueued, statestore.RunRunning:
+	case statestore.RunQueued:
+		return StateReady
+	case statestore.RunRunning:
 		return StateRunning
 	case statestore.RunWaiting:
 		return StateWaiting

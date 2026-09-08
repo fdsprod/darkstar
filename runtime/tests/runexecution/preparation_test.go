@@ -156,6 +156,9 @@ func TestLaunchRejectsPolicyChangedAfterAssessment(t *testing.T) {
 
 func TestConfirmationRequiresExactDigestAndAuditsActor(t *testing.T) {
 	s, db, _ := newControlTestService(t, false)
+	if err := s.EnableQueue(func() (int, error) { return 3, nil }); err != nil {
+		t.Fatal(err)
+	}
 	_, work := seedWorkflowWork(t, db)
 	planner := workflowDispatchPlannerFor(workflow.NoCheckpoint{}, true)
 	_ = s.SetWorkflowPlanner(planner)
@@ -174,6 +177,13 @@ func TestConfirmationRequiresExactDigestAndAuditsActor(t *testing.T) {
 		t.Fatal(err)
 	}
 	control := ControlRequest{RunID: run.RunID, ExpectedResourceVersion: run.ResourceVersion, IdempotencyKey: "launch-no-confirm", Actor: statestore.Actor{Type: statestore.ActorUser, ID: "reviewer"}}
+	if err := s.DispatchQueue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	attempts, _ := db.AttemptsForRun(context.Background(), run.RunID)
+	if len(attempts) != 0 {
+		t.Fatal("queue bypassed route confirmation")
+	}
 	if _, err := s.Launch(context.Background(), control); err == nil {
 		t.Fatal("launched without digest")
 	}

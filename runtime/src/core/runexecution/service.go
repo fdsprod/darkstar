@@ -277,6 +277,9 @@ type Service struct {
 	mu                        sync.Mutex
 	workers                   map[string]*worker
 	wait                      sync.WaitGroup
+	queueEnabled              bool
+	queueLimit                func() (int, error)
+	queueMu                   sync.Mutex
 }
 
 // worker is the complete process-local ownership record for one provider
@@ -368,6 +371,21 @@ func (s *Service) SetAgentWorkspace(workspace string) error {
 // compatibility. New interactive clients should Prepare and then Launch so
 // the Ready state is durable and observable.
 func (s *Service) Create(ctx context.Context, request CreateRequest, idempotencyKey string) (statestore.RunProjection, error) {
+	if s.queueEnabled {
+		run, err := s.Prepare(ctx, request, idempotencyKey)
+		if err != nil || run.Status != statestore.RunReady {
+			return run, err
+		}
+		var route workflow.Route
+		if err := json.Unmarshal([]byte(run.RouteSnapshot), &route); err != nil {
+			return run, err
+		}
+		assessment, err := readPreparation(route)
+		if err != nil || (assessment != nil && assessment.Readiness() != "ready") {
+			return run, err
+		}
+		return s.Launch(ctx, ControlRequest{RunID: run.RunID, ExpectedResourceVersion: run.ResourceVersion, IdempotencyKey: "queue-create:" + run.RunID, Actor: statestore.Actor{Type: statestore.ActorUser, ID: "local-user"}})
+	}
 	return s.createWorkflowRun(ctx, request, idempotencyKey, true)
 }
 
@@ -1182,6 +1200,9 @@ func (s *Service) ResumeActive(ctx context.Context) error {
 		if run.Status != statestore.RunQueued || run.WorkflowDigest == "" {
 			continue
 		}
+		if s.queueEnabled {
+			continue // Unclaimed queue entries are admitted by the queue loop.
+		}
 		attempts, readErr := s.store.AttemptsForRun(ctx, run.RunID)
 		if readErr != nil {
 			return readErr
@@ -1322,6 +1343,28 @@ func (s *Service) launch(attempt statestore.AttemptProjection) error {
 	if _, exists := s.workers[attempt.AttemptID]; exists {
 		s.mu.Unlock()
 		return nil
+	}
+	if s.queueEnabled {
+		current, err := s.store.Attempt(s.ctx, attempt.AttemptID)
+		if err != nil {
+			s.mu.Unlock()
+			return err
+		}
+		run, err := s.store.Run(s.ctx, attempt.RunID)
+		if err != nil {
+			s.mu.Unlock()
+			return err
+		}
+		if current.Status.Terminal() || (run.Status != statestore.RunQueued && run.Status != statestore.RunRunning) {
+			s.mu.Unlock()
+			return nil
+		}
+		attempt = current
+		capacity, err := s.hasRunCapacityLocked(s.ctx, attempt.RunID)
+		if err != nil || !capacity {
+			s.mu.Unlock()
+			return err // Remains durably queued; the loop retries when a slot opens.
+		}
 	}
 	if err := s.ctx.Err(); err != nil {
 		s.mu.Unlock()

@@ -564,6 +564,9 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return closeArtifactSetup(err)
 	}
 	service.executions = executions
+	if err := executions.EnableQueue(func() (int, error) { return configuredQueueLimit(service.paths, service.projectRoot) }); err != nil {
+		return closeArtifactSetup(err)
+	}
 	if report.SchedulingAllowed() {
 		if err := executions.ResumeActive(ctx); err != nil {
 			_ = executions.Close()
@@ -573,6 +576,7 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 			return fmt.Errorf("resume active runs: %w", err)
 		}
 	}
+	executions.StartQueue()
 	if err := service.server.SetRuns(executions); err != nil {
 		_ = executions.Close()
 		_ = database.Close()

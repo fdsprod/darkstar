@@ -279,6 +279,12 @@ type Catalog struct {
 
 var supportedSettings = []SettingDescriptor{
 	{
+		Key: "scheduler.maxConcurrentRuns", Title: "Maximum concurrent runs", Description: "Ready items start automatically when a slot opens. Waiting and review items release their slot. Changes apply without restarting; lowering the limit lets active runs finish.",
+		Type: SettingInteger, Default: IntegerValue(3), Constraints: Constraints{Required: true, Minimum: integerBound(1), Maximum: integerBound(32)},
+		Sensitivity: SensitivityPublic, AllowedScopes: []MutationScopeKind{MutationScopeUser}, Restart: RestartNone,
+		Actions: []SettingAction{SettingActionPreview, SettingActionApply, SettingActionRestore},
+	},
+	{
 		Key: "provider.codex.actionAvailability", Title: "Codex action availability", Description: "Controls whether workflows may select Codex actions for this scope.",
 		Type: SettingEnum, Default: EnumValue("enabled"), Constraints: Constraints{Required: true, AllowedValues: []string{"enabled", "disabled"}},
 		Sensitivity: SensitivityPublic, AllowedScopes: []MutationScopeKind{MutationScopeUser, MutationScopeProject}, Restart: RestartDaemon,
@@ -302,6 +308,8 @@ func SupportedCatalog() Catalog {
 	settings := append([]SettingDescriptor(nil), supportedSettings...)
 	return Catalog{SchemaVersion: 1, Settings: settings}
 }
+
+func integerBound(value int64) *int64 { return &value }
 
 func LookupSetting(key string) (SettingDescriptor, bool) {
 	for _, setting := range supportedSettings {

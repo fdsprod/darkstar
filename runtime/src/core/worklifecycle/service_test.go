@@ -13,6 +13,23 @@ import (
 
 var testTime = time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
 
+func TestBoardSeparatesQueueFromRouteApproval(t *testing.T) {
+	for _, tc := range []struct {
+		status   statestore.RunStatus
+		snapshot string
+		want     State
+	}{
+		{statestore.RunQueued, `{}`, StateReady},
+		{statestore.RunReady, `{"assessment":{"questions":[],"confirmationReasons":[]}}`, StateReady},
+		{statestore.RunReady, `{"assessment":{"questions":[],"confirmationReasons":["Review scope"]}}`, StateReview},
+		{statestore.RunReady, `{"assessment":{"questions":[{"id":"q","prompt":"Which target?"}]}}`, StateWaiting},
+	} {
+		if got := deriveState(statestore.WorkItemProjection{}, statestore.RunProjection{Status: tc.status, RouteSnapshot: statestore.JSONSnapshot(tc.snapshot)}, false); got != tc.want {
+			t.Fatalf("%s: got %s, want %s", tc.status, got, tc.want)
+		}
+	}
+}
+
 type memoryStore struct {
 	statestore.Store
 	project     statestore.ProjectProjection
@@ -231,7 +248,7 @@ func TestApplyBacklogToReadyAndReadyToRunningAreReplaySafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if running.Before.State != StateReady || running.After.State != StateRunning || running.After.ResourceVersion != 4 || replayedRunning.Effect != EffectStarted || runtime.launchCalls != 1 || runtime.launchKey != runningRequest.IdempotencyKey || runtime.launchVersion != 2 {
+	if running.Before.State != StateReady || running.After.State != StateReady || running.After.ResourceVersion != 4 || replayedRunning.Effect != EffectStarted || runtime.launchCalls != 1 || runtime.launchKey != runningRequest.IdempotencyKey || runtime.launchVersion != 2 {
 		t.Fatalf("running=(%#v, %#v), calls=%d", running, replayedRunning, runtime.launchCalls)
 	}
 }

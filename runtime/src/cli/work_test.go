@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/worklifecycle"
@@ -96,7 +97,13 @@ func TestProjectAndWorkCLICommandsUseStableMachineResults(t *testing.T) {
 		t.Fatalf("run page = %#v", page)
 	}
 	var runView runexecution.View
-	runCLIJSON(t, []string{"run", "show", started.RunID, "--json"}, &runView)
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		runCLIJSON(t, []string{"run", "show", started.RunID, "--json"}, &runView)
+		if len(runView.Attempts) > 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	if runView.Run.RunID != started.RunID || len(runView.Nodes) != 1 || runView.Nodes[0].NodeID != "finish" || len(runView.Attempts) != 1 ||
 		runView.Attempts[0].NodeID != "finish" || runView.Attempts[0].Scenario != runexecution.ScenarioWorkflow || runView.Attempts[0].Provider != runexecution.ProviderCodex {
 		t.Fatalf("run view = %#v", runView)

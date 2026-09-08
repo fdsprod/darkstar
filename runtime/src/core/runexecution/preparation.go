@@ -71,7 +71,7 @@ func (s *Service) assessPreparation(ctx context.Context, request CreateRequest, 
 }
 
 func (s *Service) resolvePreparationPolicy(ctx context.Context, project statestore.ProjectProjection, document workflow.Document) (preparation.Policy, error) {
-	policy := preparation.Policy{Version: "smallest-safe-v2", RequiredNodes: []workflow.Identifier{}, ConsequentialNodes: []workflow.Identifier{}, AllowedAssumptions: []string{}}
+	policy := preparation.Policy{Version: "smallest-safe-v3", RequiredNodes: []workflow.Identifier{}, ConsequentialNodes: []workflow.Identifier{}, AllowedAssumptions: []string{}}
 	s.mu.Lock()
 	policyResolver := s.preparationPolicyResolver
 	s.mu.Unlock()
@@ -86,7 +86,7 @@ func (s *Service) resolvePreparationPolicy(ctx context.Context, project statesto
 	// project requirements and cannot force irrelevant branches into the route.
 	for id, node := range document.Spec.Nodes {
 		fields := node.Fields()
-		if node.Type() == workflow.NodeCommand || node.Type() == workflow.NodeApproval || node.Type() == workflow.NodePointExecution || len(fields.Permissions) > 0 {
+		if policy.Version != "smallest-safe-v3" && (node.Type() == workflow.NodeCommand || node.Type() == workflow.NodeApproval || node.Type() == workflow.NodePointExecution || len(fields.Permissions) > 0) {
 			policy.ConsequentialNodes = append(policy.ConsequentialNodes, id)
 		}
 	}

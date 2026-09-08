@@ -40,3 +40,18 @@ func TestCatalogDescribesScopesSensitivityRestartAndActions(t *testing.T) {
 		t.Fatalf("secret descriptor = %#v", secret)
 	}
 }
+
+func TestQueueLimitIsBoundedAndLive(t *testing.T) {
+	d, ok := config.LookupSetting("scheduler.maxConcurrentRuns")
+	if !ok || d.Default.Value() != int64(3) || d.Restart != config.RestartNone || len(d.AllowedScopes) != 1 || d.AllowedScopes[0] != config.MutationScopeUser {
+		t.Fatalf("queue descriptor: %#v", d)
+	}
+	for _, value := range []int64{0, -1, 33} {
+		if d.ValidateValue(config.IntegerValue(value)) == nil {
+			t.Fatalf("accepted limit %d", value)
+		}
+	}
+	if err := d.ValidateValue(config.IntegerValue(3)); err != nil {
+		t.Fatal(err)
+	}
+}
