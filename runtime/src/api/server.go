@@ -71,6 +71,7 @@ type Server struct {
 // AttentionService exposes the derived, unified operator Checkpoints queue.
 type AttentionService interface {
 	List(context.Context, attention.ListRequest) (attention.Page, error)
+	Decide(context.Context, attention.DecisionRequest) (attention.Resolution, error)
 }
 
 // SetAttention installs the unified Checkpoints projection before Start.
@@ -555,7 +556,7 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		s.serveApprovals(response, request, requestID)
 		return
 	}
-	if path.Clean(request.URL.Path) == "/api/v1/attention" || path.Clean(request.URL.Path) == "/api/v1/attention/v2" {
+	if clean := path.Clean(request.URL.Path); clean == "/api/v1/attention" || clean == "/api/v1/attention/v2" || strings.HasPrefix(clean, "/api/v1/attention/") {
 		s.mu.RLock()
 		service := s.attention
 		s.mu.RUnlock()
@@ -563,12 +564,16 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 			writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "ATTENTION_SERVICE_UNAVAILABLE", Message: "The unified Checkpoints projection is not configured.", RequestID: requestID, Retryable: true})
 			return
 		}
-		if request.Method != http.MethodGet && request.Method != http.MethodHead {
-			response.Header().Set("Allow", "GET, HEAD")
-			writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
+		if clean == "/api/v1/attention" || clean == "/api/v1/attention/v2" {
+			if request.Method != http.MethodGet && request.Method != http.MethodHead {
+				response.Header().Set("Allow", "GET, HEAD")
+				writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
+				return
+			}
+			s.serveAttentionCheckpoints(response, request, requestID, service)
 			return
 		}
-		s.serveAttentionCheckpoints(response, request, requestID, service)
+		s.serveAttentionDecision(response, request, requestID, service)
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/review-sessions" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/review-sessions/") {

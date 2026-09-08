@@ -249,7 +249,12 @@ darkstar review feedback-set submit <approval-id> --file <feedback-set.json> [--
 darkstar review resume <approval-id> --attempt <attempt-id>
 darkstar review respond <approval-id> --attempt <attempt-id> --outcome <revised|failed|cancelled> [--artifact <artifact-id> --version <n> --next-approval <approval-id>]
 darkstar review approve|reject <approval-id> [--comment <text>]
+darkstar attention decide <workflow_control|external_delivery> <approval-id> <approve|deny|cancel> [--comment <text>] [--idempotency-key <key>]
 ```
+
+`attention decide` retrieves the exact unresolved queue item before it writes.
+It submits the server-provided resource version, scope digest, and policy digest,
+and fails without posting when the item is stale or the action is unavailable.
 
 `feedback-set create` prints a client-owned draft in JSON mode. Save that JSON,
 add an overall instruction and zero or more annotations, then submit the same

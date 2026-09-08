@@ -60,6 +60,7 @@ Commands:
   api        Inspect the autostarted local API
   artifact   Ingest, bind, inspect, derive, lint, and revise artifacts
   approval   Inspect and decide artifact review approvals
+  attention  Resolve workflow-control and external-delivery attention
   checkpoint List and inspect artifact review checkpoints
   configuration Inspect, preview, apply, and restore typed settings
   daemon     Run and control the per-user daemon
@@ -124,6 +125,7 @@ Approval and checkpoint commands:
   checkpoint approve <approval-id> [--message <text>] [--json]
   checkpoint request-changes|reject <approval-id> --message <text> [--json]
   checkpoint answer <input-id> --file <answers.json> [--json]
+  attention decide <workflow_control|external_delivery> <approval-id> <approve|deny|cancel> [--comment <text>] [--idempotency-key <key>] [--json]
 
 Review-session commands:
   review show <approval-id> [--json]
@@ -248,6 +250,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runAgent(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "approval":
 		return runApproval(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "attention":
+		return runAttention(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "artifact":
 		return runArtifact(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "checkpoint":

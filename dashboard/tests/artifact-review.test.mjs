@@ -125,7 +125,7 @@ test("review workspace is routed, reconnect-safe, escaped, and keeps separate au
     readFile(new URL("../src/pages/ArtifactReviewPage.tsx", import.meta.url), "utf8"), readFile(new URL("../src/app/router.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/CheckpointsPage.tsx", import.meta.url), "utf8"), readFile(new URL("../src/api/client.ts", import.meta.url), "utf8"), readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
   ]);
-  assert.match(router, /\/checkpoints\/:approvalId\/review/); assert.match(checkpoints, /Open review workspace/);
+  assert.match(router, /\/checkpoints\/:approvalId\/review/); assert.match(checkpoints, /Read exact candidate/);
   for (const value of ["current", "prior", "inline", "split"]) assert.ok(page.includes(`"${value}"`));
   assert.match(page, /state\.cursor/); assert.match(page, /setFeedback/); assert.match(page, /cause\.status === 409 \|\| cause\.status === 412/);
   assert.match(page, /readingExactCandidate/); assert.match(page, /aria-live="off"/); assert.match(page, /Provider permissions/); assert.match(page, /Required input/);

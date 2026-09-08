@@ -1,5 +1,42 @@
 export type CheckpointAction = "approve" | "request_changes" | "reject";
 export type CheckpointState = "pending" | "approved" | "changes_requested" | "rejected";
+export type AttentionWorkspaceKind = "workflow_checkpoint" | "input_required" | "provider_permission" | "workflow_control" | "external_delivery";
+export type AttentionFilter = "all" | "approvals" | "input" | "permissions" | "controls" | "delivery";
+
+export type AttentionWorkspacePresentation =
+  | { kind: "workflow_checkpoint"; filter: "approvals"; label: "Approval"; documentLabel: "Document"; annotationLabel: "Annotations"; description: string }
+  | { kind: "input_required"; filter: "input"; label: "Input"; documentLabel: "Questions"; annotationLabel: "Response"; description: string }
+  | { kind: "provider_permission"; filter: "permissions"; label: "Permission"; documentLabel: "Authority request"; annotationLabel: "Decision"; description: string }
+  | { kind: "workflow_control"; filter: "controls"; label: "Control"; documentLabel: "Control proposal"; annotationLabel: "Decision"; description: string }
+  | { kind: "external_delivery"; filter: "delivery"; label: "Delivery"; documentLabel: "Delivery proposal"; annotationLabel: "Decision"; description: string };
+
+export const attentionFilters: readonly AttentionFilter[] = ["all", "approvals", "input", "permissions", "controls", "delivery"];
+
+export function attentionKindForFilter(filter: AttentionFilter): AttentionWorkspaceKind | undefined {
+  switch (filter) {
+    case "all": return undefined;
+    case "approvals": return "workflow_checkpoint";
+    case "input": return "input_required";
+    case "permissions": return "provider_permission";
+    case "controls": return "workflow_control";
+    case "delivery": return "external_delivery";
+  }
+}
+
+export function attentionFilterForKind(kind?: AttentionWorkspaceKind): AttentionFilter {
+  if (!kind) return "all";
+  return attentionWorkspacePresentation(kind).filter;
+}
+
+export function attentionWorkspacePresentation(kind: AttentionWorkspaceKind): AttentionWorkspacePresentation {
+  switch (kind) {
+    case "workflow_checkpoint": return { kind, filter: "approvals", label: "Approval", documentLabel: "Document", annotationLabel: "Annotations", description: "Review one immutable candidate and its exact decision binding." };
+    case "input_required": return { kind, filter: "input", label: "Input", documentLabel: "Questions", annotationLabel: "Response", description: "Answer the recorded questions without granting unrelated authority." };
+    case "provider_permission": return { kind, filter: "permissions", label: "Permission", documentLabel: "Authority request", annotationLabel: "Decision", description: "Inspect and decide only the recorded provider interaction scope." };
+    case "workflow_control": return { kind, filter: "controls", label: "Control", documentLabel: "Control proposal", annotationLabel: "Decision", description: "Inspect one exact proposed workflow control operation." };
+    case "external_delivery": return { kind, filter: "delivery", label: "Delivery", documentLabel: "Delivery proposal", annotationLabel: "Decision", description: "Inspect one exact external delivery operation before authorizing it." };
+  }
+}
 
 export interface ArtifactVersionReference { artifactId: string; version: number }
 export interface CheckpointActor { type: "user" | "system" | "provider" | "external"; id: string }

@@ -93,7 +93,7 @@ func (service *Service) preparationInputs(ctx context.Context, request ListReque
 			continue
 		}
 		items = append(items, PreparationInputRequired{
-			Envelope:       Envelope{Kind: KindInputRequired, ID: run.RunID, Context: contextValue, Urgency: urgency, CreatedAt: run.CreatedAt, ResourceVersion: run.ResourceVersion, Summary: "Preparation input required for " + contextValue.WorkTitle, DeepLink: "/work/" + url.PathEscape(run.WorkItemID)},
+			Envelope:       Envelope{Kind: KindInputRequired, ID: run.RunID, Context: contextValue, Urgency: urgency, CreatedAt: run.CreatedAt, UpdatedAt: sourceUpdatedAt(run.CreatedAt, run.UpdatedAt), ResourceVersion: run.ResourceVersion, Summary: "Preparation input required for " + contextValue.WorkTitle, DeepLink: "/work/" + url.PathEscape(run.WorkItemID)},
 			Subject:        PreparationInputSubject{AssessmentDigest: assessment.Digest, Questions: assessment.Questions},
 			AllowedActions: []PreparationInputAction{PreparationInputPrepare},
 		})

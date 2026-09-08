@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestAttentionCheckpointAPIForwardsFiltersPaginationAndTypedItems(t *testing
 	}
 	defer closeTestServer(t, server)
 	endpoint, _ := server.Endpoint()
-	request, _ := http.NewRequest(http.MethodGet, endpoint.BaseURL()+"/api/v1/attention?kind=workflow_control&kind=input_required&projectId=project_1&workItemId=work_1&runId=run_1&limit=7&cursor=resume", nil)
+	request, _ := http.NewRequest(http.MethodGet, endpoint.BaseURL()+"/api/v1/attention?kind=workflow_control&kind=input_required&itemId=approval_1&projectId=project_1&workItemId=work_1&runId=run_1&limit=7", nil)
 	request.Header.Set("Authorization", endpoint.AuthorizationHeader())
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -40,7 +41,7 @@ func TestAttentionCheckpointAPIForwardsFiltersPaginationAndTypedItems(t *testing
 	if response.StatusCode != http.StatusOK || len(page.Items) != 1 || page.NextCursor != "next" {
 		t.Fatalf("response=%d page=%#v", response.StatusCode, page)
 	}
-	if service.request.Limit != 7 || service.request.ProjectID != "project_1" || service.request.WorkItemID != "work_1" || service.request.RunID != "run_1" || service.request.Cursor != "resume" || len(service.request.Kinds) != 2 {
+	if service.request.Limit != 7 || service.request.ItemID != "approval_1" || service.request.ProjectID != "project_1" || service.request.WorkItemID != "work_1" || service.request.RunID != "run_1" || len(service.request.Kinds) != 2 {
 		t.Fatalf("request = %#v", service.request)
 	}
 }
@@ -68,6 +69,42 @@ func TestAttentionCheckpointAPIRejectsUnknownFiltersAndKinds(t *testing.T) {
 		}
 		assertAPIError(t, response, http.StatusBadRequest, "VALIDATION_FAILED")
 		_ = response.Body.Close()
+	}
+}
+
+func TestAttentionDecisionAPIForwardsExactAuthorityBinding(t *testing.T) {
+	server, err := NewServer(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &recordingAttentionService{}
+	if err := server.SetAttention(service); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Start(context.Background(), 1234, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestServer(t, server)
+	endpoint, _ := server.Endpoint()
+	id := "approval_00000000000000000000000000"
+	body := `{"action":"deny","scopeDigest":"` + strings.Repeat("a", 64) + `","policyDigest":"` + strings.Repeat("b", 64) + `","comment":"Unsafe."}`
+	request, _ := http.NewRequest(http.MethodPost, endpoint.BaseURL()+"/api/v1/attention/workflow_control/"+id+"/decisions", strings.NewReader(body))
+	request.Header.Set("Authorization", endpoint.AuthorizationHeader())
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("If-Match", `"4"`)
+	request.Header.Set("Idempotency-Key", "deny-control")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	var resolution attention.Resolution
+	if err := json.NewDecoder(response.Body).Decode(&resolution); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || response.Header.Get("ETag") != `"5"` || resolution.Action != attention.DecisionDeny ||
+		service.decision.ID != id || service.decision.Kind != attention.KindWorkflowControl || service.decision.ExpectedResourceVersion != 4 || service.decision.IdempotencyKey != "deny-control" {
+		t.Fatalf("status=%d resolution=%#v decision=%#v", response.StatusCode, resolution, service.decision)
 	}
 }
 
@@ -139,8 +176,9 @@ func TestAttentionServiceDoesNotChangeLegacyCheckpointCollection(t *testing.T) {
 }
 
 type recordingAttentionService struct {
-	page    attention.Page
-	request attention.ListRequest
+	page     attention.Page
+	request  attention.ListRequest
+	decision attention.DecisionRequest
 }
 
 func (service *recordingAttentionService) List(_ context.Context, request attention.ListRequest) (attention.Page, error) {
@@ -149,4 +187,9 @@ func (service *recordingAttentionService) List(_ context.Context, request attent
 		return attention.Page{}, attention.ErrInvalidRequest
 	}
 	return service.page, nil
+}
+
+func (service *recordingAttentionService) Decide(_ context.Context, request attention.DecisionRequest) (attention.Resolution, error) {
+	service.decision = request
+	return attention.Resolution{Kind: request.Kind, ID: request.ID, Action: request.Action, ResourceVersion: request.ExpectedResourceVersion + 1, Actor: request.Actor, DecidedAt: time.Now().UTC()}, nil
 }

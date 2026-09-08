@@ -172,7 +172,7 @@ func (s *Server) serveCheckpoints(response http.ResponseWriter, request *http.Re
 func (s *Server) serveAttentionCheckpoints(response http.ResponseWriter, request *http.Request, requestID string, service AttentionService) {
 	query := request.URL.Query()
 	for key, values := range query {
-		if key != "kind" && key != "projectId" && key != "workItemId" && key != "runId" && key != "limit" && key != "cursor" {
+		if key != "kind" && key != "itemId" && key != "projectId" && key != "workItemId" && key != "runId" && key != "limit" && key != "cursor" {
 			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Checkpoint filters contain an unknown field.", RequestID: requestID})
 			return
 		}
@@ -198,7 +198,7 @@ func (s *Server) serveAttentionCheckpoints(response http.ResponseWriter, request
 		}
 		kinds = append(kinds, attention.Kind(raw))
 	}
-	page, err := service.List(request.Context(), attention.ListRequest{IncludePreparation: strings.HasSuffix(request.URL.Path, "/v2"), Kinds: kinds, ProjectID: query.Get("projectId"), WorkItemID: query.Get("workItemId"), RunID: query.Get("runId"), Limit: limit, Cursor: query.Get("cursor")})
+	page, err := service.List(request.Context(), attention.ListRequest{IncludePreparation: strings.HasSuffix(request.URL.Path, "/v2"), Kinds: kinds, ItemID: query.Get("itemId"), ProjectID: query.Get("projectId"), WorkItemID: query.Get("workItemId"), RunID: query.Get("runId"), Limit: limit, Cursor: query.Get("cursor")})
 	if err != nil {
 		if errors.Is(err, attention.ErrInvalidRequest) || errors.Is(err, attention.ErrInvalidCursor) {
 			writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: err.Error(), RequestID: requestID})
@@ -211,6 +211,64 @@ func (s *Server) serveAttentionCheckpoints(response http.ResponseWriter, request
 		page.SchemaVersion = 2
 	}
 	writeJSON(response, http.StatusOK, page)
+}
+
+type attentionDecisionBody struct {
+	Action       attention.DecisionAction `json:"action"`
+	ScopeDigest  string                   `json:"scopeDigest"`
+	PolicyDigest string                   `json:"policyDigest"`
+	Comment      string                   `json:"comment,omitempty"`
+}
+
+func (s *Server) serveAttentionDecision(response http.ResponseWriter, request *http.Request, requestID string, service AttentionService) {
+	if request.Method != http.MethodPost {
+		response.Header().Set("Allow", "POST")
+		writeAPIError(response, http.StatusMethodNotAllowed, apiError{SchemaVersion: 1, Code: "METHOD_NOT_ALLOWED", Message: "The HTTP method is not supported for this resource.", RequestID: requestID})
+		return
+	}
+	if request.URL.RawQuery != "" {
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "Attention decisions do not accept query parameters.", RequestID: requestID})
+		return
+	}
+	segments := strings.Split(strings.TrimPrefix(path.Clean(request.URL.Path), "/api/v1/attention/"), "/")
+	if len(segments) != 3 || segments[2] != "decisions" ||
+		(segments[0] != string(attention.KindWorkflowControl) && segments[0] != string(attention.KindExternalDelivery)) || !approvalIDPattern.MatchString(segments[1]) {
+		writeAPIError(response, http.StatusNotFound, apiError{SchemaVersion: 1, Code: "NOT_FOUND", Message: "The requested attention command was not found.", RequestID: requestID})
+		return
+	}
+	key, ok := requireIdempotencyKey(response, request, requestID)
+	if !ok {
+		return
+	}
+	expected, err := parseIfMatch(request.Header.Get("If-Match"))
+	if err != nil {
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: err.Error(), RequestID: requestID})
+		return
+	}
+	decoder := json.NewDecoder(io.LimitReader(request.Body, 8193))
+	decoder.DisallowUnknownFields()
+	var body attentionDecisionBody
+	if err := decoder.Decode(&body); err != nil || decoder.Decode(new(any)) != io.EOF {
+		writeAPIError(response, http.StatusBadRequest, apiError{SchemaVersion: 1, Code: "VALIDATION_FAILED", Message: "The attention decision must be one valid JSON object.", RequestID: requestID})
+		return
+	}
+	result, err := service.Decide(request.Context(), attention.DecisionRequest{
+		Kind: attention.Kind(segments[0]), ID: segments[1], ExpectedResourceVersion: expected,
+		Action: body.Action, ScopeDigest: body.ScopeDigest, PolicyDigest: body.PolicyDigest, Comment: body.Comment,
+		IdempotencyKey: key, Actor: statestore.Actor{Type: statestore.ActorUser, ID: "local-user"},
+	})
+	if err != nil {
+		status, code := http.StatusConflict, "ATTENTION_STALE"
+		if errors.Is(err, attention.ErrInvalidRequest) {
+			status, code = http.StatusBadRequest, "VALIDATION_FAILED"
+		} else if errors.Is(err, statestore.ErrNotFound) {
+			status, code = http.StatusNotFound, "NOT_FOUND"
+		}
+		writeAPIError(response, status, apiError{SchemaVersion: 1, Code: code, Message: err.Error(), RequestID: requestID})
+		return
+	}
+	response.Header().Set("ETag", `"`+strconv.FormatUint(result.ResourceVersion, 10)+`"`)
+	writeJSON(response, http.StatusOK, result)
 }
 
 func parseIfMatch(value string) (uint64, error) {

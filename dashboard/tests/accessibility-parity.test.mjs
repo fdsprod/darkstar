@@ -84,7 +84,7 @@ function relativeLuminance(hex) {
 }
 
 test("every dashboard write has an OpenAPI, CLI, and durable event mapping", async () => {
-  const [client, docs, openapiText, workService, runService, artifactService, runControl, readinessControl, checkpointService, inputService, permissionService, configurationService] = await Promise.all([
+  const [client, docs, openapiText, workService, runService, artifactService, runControl, readinessControl, checkpointService, attentionService, inputService, permissionService, configurationService] = await Promise.all([
     read("../src/api/client.ts"),
     read("../../runtime/docs/cli.md"),
     read("../../schemas/openapi-v1alpha1.json"),
@@ -94,11 +94,12 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
     read("../../runtime/src/core/runexecution/control.go"),
     read("../../runtime/src/core/readinesscontrol/service.go"),
     read("../../runtime/src/core/artifactcheckpoint/service.go"),
+    read("../../runtime/src/core/attention/service.go"),
     read("../../runtime/src/core/runexecution/inputs.go"),
     read("../../runtime/src/core/runexecution/permissions.go"),
     read("../../runtime/src/core/configmutation/service.go"),
   ]);
-  const eventSources = [workService, runService, artifactService, runControl, readinessControl, checkpointService, inputService, permissionService, configurationService].join("\n");
+  const eventSources = [workService, runService, artifactService, runControl, readinessControl, checkpointService, attentionService, inputService, permissionService, configurationService].join("\n");
   const pageDirectory = new URL("../src/pages/", import.meta.url);
   const pageFiles = (await readdir(pageDirectory)).filter((name) => name.endsWith(".tsx"));
   const pageSource = (await Promise.all(pageFiles.map((name) => read(`../src/pages/${name}`)))).join("\n");
@@ -117,7 +118,8 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
     ["prepareRun", "prepareRun", "darkstar run prepare", "run.created"],
     ["decideRunReadiness", "decideRunReadiness", "darkstar run readiness decide", "readiness.decision_recorded"],
     ["decideApproval", "decideApproval", "darkstar approval decide", "approval.decided"],
-    ["submitCheckpointFeedback", "submitCheckpointFeedback", "darkstar review feedback", "approval.feedback_submitted"],
+    ["submitCheckpointFeedbackSet", "submitCheckpointFeedbackSet", "darkstar review feedback-set submit", "approval.feedback_submitted"],
+    ["decideAttention", "decideAttention", "darkstar attention decide", "approval.decided"],
     ["decideCheckpointReviewSession", "decideCheckpointReviewSession", "darkstar review approve|reject", "approval.decided"],
     ["answerInputRequest", "answerInputRequest", "darkstar input answer", "input.answer_recorded"],
     ["retryInputDelivery", "retryInputRequestDelivery", "darkstar input retry", "input.answer_delivered"],
@@ -133,12 +135,12 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
     ["writeConfigurationSecret", "writeConfigurationSecret", "darkstar configuration secret-set", "configuration.change_recorded"],
   ];
   const expectedWrites = new Set(mappings.map(([method]) => method));
-  const readOnlyPostOperations = new Set(["previewWorkflowRoute", "assessArtifactImpact", "previewConfigurationMutation"]);
+  const nonDurablePostOperations = new Set(["previewWorkflowRoute", "assessArtifactImpact", "previewConfigurationMutation", "createCheckpointFeedbackSet"]);
   const usedWrites = new Set();
   for (const method of usedMethods) {
     const escaped = method.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const operation = new RegExp(`${escaped}\\([^\\n]*?this\\.operation\\(\"([^\"]+)\"`).exec(client)?.[1];
-    if (operation && operations.get(operation) !== "get" && !readOnlyPostOperations.has(operation)) usedWrites.add(method);
+    if (operation && operations.get(operation) !== "get" && !nonDurablePostOperations.has(operation)) usedWrites.add(method);
   }
   assert.deepEqual([...usedWrites].sort(), [...expectedWrites].sort(), "dashboard writes changed without updating the parity inventory");
   for (const [method, operation, command, event] of mappings) {

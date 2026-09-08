@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { buildCheckpointDecisionRequest, buildInputAnswerRequest, checkpointActionKey, checkpointActionPresentation, checkpointRoundChanged, orderedCheckpointHistory, parseJSONAnswer, selectedCheckpointRound } from "../src/pages/checkpointModel.ts";
+import { attentionFilterForKind, attentionFilters, attentionKindForFilter, attentionWorkspacePresentation, buildCheckpointDecisionRequest, buildInputAnswerRequest, checkpointActionKey, checkpointActionPresentation, checkpointRoundChanged, orderedCheckpointHistory, parseJSONAnswer, selectedCheckpointRound } from "../src/pages/checkpointModel.ts";
 
 function round(overrides = {}) {
   return { approvalId: "approval_1", checkpointId: "checkpoint_1", revision: 1, state: "pending", allowedActions: ["approve", "request_changes", "reject"], scopeDigest: "scope", policyDigest: "policy", resourceVersion: 3, ...overrides };
@@ -85,6 +85,23 @@ test("checkpoint page consumes one exhaustive server projection and refreshes fr
   assert.match(router, /case "checkpoints": return <CheckpointsPage/);
 });
 
+test("attention filters map exactly to exhaustive class-specific workspaces", () => {
+  assert.deepEqual(attentionFilters, ["all", "approvals", "input", "permissions", "controls", "delivery"]);
+  assert.equal(attentionKindForFilter("all"), undefined);
+  const pairs = [
+    ["approvals", "workflow_checkpoint", "Document", "Annotations"],
+    ["input", "input_required", "Questions", "Response"],
+    ["permissions", "provider_permission", "Authority request", "Decision"],
+    ["controls", "workflow_control", "Control proposal", "Decision"],
+    ["delivery", "external_delivery", "Delivery proposal", "Decision"],
+  ];
+  for (const [filter, kind, documentLabel, annotationLabel] of pairs) {
+    assert.equal(attentionKindForFilter(filter), kind);
+    assert.equal(attentionFilterForKind(kind), filter);
+    assert.deepEqual({ documentLabel: attentionWorkspacePresentation(kind).documentLabel, annotationLabel: attentionWorkspacePresentation(kind).annotationLabel }, { documentLabel, annotationLabel });
+  }
+});
+
 test("unified attention schema is a closed five-member discriminated union", async () => {
   const [generated, client] = await Promise.all([
     readFile(new URL("../src/api/schema.generated.ts", import.meta.url), "utf8"),
@@ -94,5 +111,9 @@ test("unified attention schema is a closed five-member discriminated union", asy
   assert.match(generated, /"listAttention": \{ method: "GET"; path: "\/api\/v1\/attention"/);
   assert.match(generated, /"AttentionCheckpointV2"[^\n]*PreparationInputRequiredAttention/);
   assert.match(generated, /"getAttentionV2": \{ method: "GET"; path: "\/api\/v1\/attention\/v2"/);
-  assert.match(client, /listAttention\([^\n]*this\.operation\("getAttentionV2"/);
+  assert.match(generated, /"AttentionPageV2"[^\n]*"totalCount": number/);
+  assert.match(generated, /"WorkflowControlAttention"[^\n]*"updatedAt": string/);
+  assert.match(generated, /"decideAttention": \{ method: "POST"; path: "\/api\/v1\/attention\/\{kind\}\/\{approvalId\}\/decisions"/);
+  assert.match(client, /listAttention\([^\n]*itemId\?: string[^\n]*this\.operation\("getAttentionV2"/);
+  assert.match(client, /decideAttention\([^\n]*this\.operation\("decideAttention"/);
 });

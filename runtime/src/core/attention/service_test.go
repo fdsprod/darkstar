@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -201,6 +202,87 @@ func TestCheckpointUnionRejectsUnknownVariant(t *testing.T) {
 	}
 }
 
+func TestDecideResolvesAuthoritativeControlWithExactBinding(t *testing.T) {
+	when := time.Date(2026, 9, 7, 20, 0, 0, 0, time.UTC)
+	scope, policy := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	source := &decisionAttentionSource{
+		attentionSource: &attentionSource{},
+		approval:        statestore.ApprovalProjection{ApprovalID: "approval_control", RunID: "run_1", Class: statestore.ApprovalWorkflowControl, Status: statestore.ApprovalPending, ScopeDigest: scope, PolicyDigest: policy, ResourceVersion: 3},
+		events:          map[string]statestore.Event{},
+	}
+	service, _ := New(source)
+	service.now = func() time.Time { return when }
+	request := DecisionRequest{Kind: KindWorkflowControl, ID: "approval_control", ExpectedResourceVersion: 3, Action: DecisionDeny, ScopeDigest: scope, PolicyDigest: policy, Comment: "Unsafe operation.", IdempotencyKey: "deny-control", Actor: statestore.Actor{Type: statestore.ActorUser, ID: "operator"}}
+	resolution, err := service.Decide(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.Action != DecisionDeny || resolution.ResourceVersion != 4 || len(source.appended) != 1 || source.appended[0].Kind != "approval.decided" || source.appended[0].ExpectedRevision != 3 {
+		t.Fatalf("resolution=%#v event=%#v", resolution, source.appended)
+	}
+	if !strings.Contains(string(source.appended[0].Data), `"action":"deny"`) || !strings.Contains(string(source.appended[0].Data), scope) {
+		t.Fatalf("decision payload = %s", source.appended[0].Data)
+	}
+
+	stale := request
+	stale.IdempotencyKey = "stale"
+	stale.ScopeDigest = strings.Repeat("c", 64)
+	if _, err := service.Decide(context.Background(), stale); err == nil {
+		t.Fatal("stale scope binding resolved control")
+	}
+	wrongClass := request
+	wrongClass.IdempotencyKey = "wrong-class"
+	source.approval.Class = statestore.ApprovalWorkflowCheckpoint
+	if _, err := service.Decide(context.Background(), wrongClass); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("wrong class error = %v", err)
+	}
+}
+
+func TestListReportsStableTotalAndRecentSourceActivity(t *testing.T) {
+	created := time.Date(2026, 9, 7, 18, 0, 0, 0, time.UTC)
+	updated := created.Add(10 * time.Minute)
+	source := attentionSource{
+		projects: map[string]statestore.ProjectProjection{"project_1": {ProjectID: "project_1", Name: "Darkstar"}},
+		works:    map[string]statestore.WorkItemProjection{"work_1": {WorkItemID: "work_1", ProjectID: "project_1", Title: "Queue", Priority: 1}},
+		runs:     map[string]statestore.RunProjection{"run_1": {RunID: "run_1", WorkItemID: "work_1"}},
+		approvals: []statestore.ApprovalProjection{
+			{ApprovalID: "approval_a", RunID: "run_1", Class: statestore.ApprovalWorkflowControl, Status: statestore.ApprovalPending, ScopeDigest: "scope", PolicyDigest: "policy", ResourceVersion: 1, CreatedAt: created, UpdatedAt: updated},
+			{ApprovalID: "approval_b", RunID: "run_1", Class: statestore.ApprovalExternalDelivery, Status: statestore.ApprovalPending, ScopeDigest: "scope", PolicyDigest: "policy", ResourceVersion: 1, CreatedAt: created.Add(time.Second)},
+		},
+		inputs: map[statestore.InputRequestStatus][]statestore.InputRequestProjection{},
+	}
+	service, _ := New(&source)
+	page, err := service.List(context.Background(), ListRequest{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.TotalCount != 2 || len(page.Items) != 1 || page.Items[0].Common().UpdatedAt != updated {
+		t.Fatalf("page = %#v", page)
+	}
+}
+
+func TestListFindsExactUnresolvedItemOutsideFirstPage(t *testing.T) {
+	when := time.Date(2026, 9, 7, 18, 0, 0, 0, time.UTC)
+	source := attentionSource{
+		projects: map[string]statestore.ProjectProjection{"project_1": {ProjectID: "project_1", Name: "Darkstar"}},
+		works:    map[string]statestore.WorkItemProjection{"work_1": {WorkItemID: "work_1", ProjectID: "project_1", Title: "Queue", Priority: 1}},
+		runs:     map[string]statestore.RunProjection{"run_1": {RunID: "run_1", WorkItemID: "work_1"}},
+		approvals: []statestore.ApprovalProjection{
+			{ApprovalID: "approval_first", RunID: "run_1", Class: statestore.ApprovalWorkflowControl, Status: statestore.ApprovalPending, ScopeDigest: "scope", PolicyDigest: "policy", ResourceVersion: 1, CreatedAt: when},
+			{ApprovalID: "approval_target", RunID: "run_1", Class: statestore.ApprovalExternalDelivery, Status: statestore.ApprovalPending, ScopeDigest: "scope", PolicyDigest: "policy", ResourceVersion: 1, CreatedAt: when.Add(time.Second)},
+		},
+		inputs: map[statestore.InputRequestStatus][]statestore.InputRequestProjection{},
+	}
+	service, _ := New(&source)
+	page, err := service.List(context.Background(), ListRequest{ItemID: "approval_target", Limit: 1})
+	if err != nil || page.TotalCount != 1 || len(page.Items) != 1 || page.Items[0].Common().ID != "approval_target" {
+		t.Fatalf("page=%#v error=%v", page, err)
+	}
+	if _, err := service.List(context.Background(), ListRequest{ItemID: "approval_target", Cursor: "cursor"}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("item/cursor error = %v", err)
+	}
+}
+
 func approval(id string, class statestore.ApprovalClass, when time.Time) statestore.ApprovalProjection {
 	return approvalForRun(id, class, "run_1", when)
 }
@@ -221,6 +303,38 @@ type attentionSource struct {
 	attempts    map[string]statestore.AttemptProjection
 	works       map[string]statestore.WorkItemProjection
 	projects    map[string]statestore.ProjectProjection
+}
+
+type decisionAttentionSource struct {
+	*attentionSource
+	approval statestore.ApprovalProjection
+	appended []statestore.PendingEvent
+	events   map[string]statestore.Event
+}
+
+func (source *decisionAttentionSource) Approval(_ context.Context, id string) (statestore.ApprovalProjection, error) {
+	if id != source.approval.ApprovalID {
+		return statestore.ApprovalProjection{}, statestore.ErrNotFound
+	}
+	return source.approval, nil
+}
+
+func (source *decisionAttentionSource) Append(_ context.Context, pending ...statestore.PendingEvent) ([]statestore.Event, error) {
+	source.appended = append(source.appended, pending...)
+	result := make([]statestore.Event, len(pending))
+	for index, item := range pending {
+		result[index] = statestore.Event{SchemaVersion: item.SchemaVersion, ID: item.ID, AggregateType: item.AggregateType, AggregateID: item.AggregateID, AggregateRevision: item.ExpectedRevision + 1, Kind: item.Kind, OccurredAt: item.OccurredAt, RecordedAt: item.OccurredAt, CorrelationID: item.CorrelationID, CommandID: item.CommandID, Actor: item.Actor, Data: item.Data, Metadata: item.Metadata}
+		source.events[item.CommandID] = result[index]
+	}
+	return result, nil
+}
+
+func (source *decisionAttentionSource) EventByCommand(_ context.Context, aggregateID, commandID string) (statestore.Event, error) {
+	value, ok := source.events[commandID]
+	if !ok || value.AggregateID != aggregateID {
+		return statestore.Event{}, statestore.ErrNotFound
+	}
+	return value, nil
 }
 
 func (source *attentionSource) Approvals(context.Context, statestore.ApprovalStatus) ([]statestore.ApprovalProjection, error) {
