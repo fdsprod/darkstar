@@ -288,11 +288,13 @@ test("server transition array findings map to stable composite editor edges", ()
 });
 
 test("editor source exposes direct URL state, keyboard parity, conflict retention, and mobile outline", async () => {
-  const [page, inspector, styles, client] = await Promise.all([
+  const [page, graphCanvas, inspector, styles, client, manifest] = await Promise.all([
     readFile(new URL("../src/pages/WorkflowsPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/WorkflowPortGraph.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/WorkflowAuthoringInspector.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
     readFile(new URL("../src/api/client.ts", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   for (const parameter of ["item", "view", "selection"]) assert.match(page, new RegExp(`params\\.get\\("${parameter}"\\)`));
   const source = `${page}\n${inspector}`;
@@ -306,6 +308,10 @@ test("editor source exposes direct URL state, keyboard parity, conflict retentio
   assert.match(inspector, /node\.inputs\.some\(\(input\) => input\.id === value\.planInput && input\.type === "object"\)/);
   assert.match(page, /result\.sourceValidationDigest !== request\.semanticDigest/);
   assert.doesNotMatch(page, /endsWith\(field\.dataset\.workflowField/);
+  assert.equal(JSON.parse(manifest).dependencies["@xyflow/react"], "^12.11.6");
+  for (const integration of ["ReactFlow", "ReactFlowProvider", "Handle", "MiniMap", "isValidConnection={validConnection}", "screenToFlowPosition", "onNodeDragStop"]) assert.ok(graphCanvas.includes(integration), `missing React Flow integration ${integration}`);
+  assert.doesNotMatch(graphCanvas, /<svg\b/);
+  assert.match(page, /draggable=\{availability\.available\}/);
   assert.match(styles, /@media \(max-width: 820px\)[^{]*\{[^}]*\.workflow-editor-shell/s);
   assert.match(styles, /\.workflow-view-tabs button:first-child \{ display: none; \}/);
   assert.doesNotMatch(styles, /@media \(max-width: 820px\)[^{]*\{[^}]*\.node-palette \{ display: none; \}/s);
