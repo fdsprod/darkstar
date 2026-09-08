@@ -13,7 +13,7 @@ export interface PortFinding { nodeId: string; field: string; code: string; mess
 export interface PortGraph { ports: Port[]; edges: PortEdge[]; findings: PortFinding[] }
 const record = (value: unknown): JsonObject => value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
 const valueTypes = new Set(["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "template", "markdown", "open_items", "decision_log"]);
-const compatible = (source: ValueType, target: ValueType) => valueTypes.has(source) && valueTypes.has(target) && (source === target || source === "integer" && target === "number");
+const compatible = (source: ValueType, target: ValueType) => (valueTypes.has(source) || /^schema:[a-z][a-z0-9_]*$/.test(source)) && (valueTypes.has(target) || /^schema:[a-z][a-z0-9_]*$/.test(target)) && (source === target || source === "integer" && target === "number");
 export const portKey = (port: Port) => JSON.stringify(port.kind === "run_input" ? [port.kind, port.portId] : [port.kind, port.nodeId, port.direction, port.portId]);
 export const portLabel = (port: Port) => port.kind === "run_input" ? `Resource ${port.portId} (${port.valueType})` : `${port.nodeId}.${port.portId}${port.kind === "data" ? ` (${port.valueType}${port.required ? ", required" : ", optional"})` : " (execution)"}`;
 export const sourceReference = (port: Exclude<Port, { kind: "execution" }>) => port.kind === "run_input" ? `run.input.${port.portId}` : `node.${port.nodeId}.output.${port.portId}`;
@@ -156,4 +156,4 @@ export const portColors: Record<ValueType | "execution", string> = {
  execution:"#e5e7eb", task:"#60a5fa", repository:"#fb923c", template:"#c084fc", markdown:"#4ade80",
  open_items:"#facc15", decision_log:"#f472b6", string:"#2dd4bf", boolean:"#f87171", integer:"#22d3ee", number:"#38bdf8", object:"#a5b4fc", array:"#d4a373", null:"#94a3b8"
 };
-export function portColor(port:Port):string {return port.kind==="execution"?portColors.execution:port.kind==="data"&&port.portId==="$new"?"#94a3b8":portColors[port.valueType]??"#94a3b8";}
+export function portColor(port:Port):string {return port.kind==="execution"?portColors.execution:port.kind==="data"&&port.portId==="$new"?"#94a3b8":portColors[port.valueType]??"#a5b4fc";}

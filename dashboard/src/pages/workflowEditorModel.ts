@@ -56,7 +56,7 @@ export type NodeExecutor =
   | { type: "subworkflow"; workflow: { name: string; version: string; digest?: string; path?: string }; entry: string; terminals: string[]; inputs: Record<string, string>; outputs: Record<string, string> }
   | { type: "point_execution"; planInput: string; approval: "none" | "every" | "risk" | "combined"; riskTags: string[]; validation: "each" | "combined" | "each_and_combined"; publishing: "after_story_validation" | "after_each_point" }
   | { type: "routing"; agent: string; branches: Array<{ name: string; transition: string }>; routeOutput: string; rationaleOutput: string; adviceOutput: string; missingInformationOutput: string; assumptionsOutput: string; confirmationOutput: string };
-export type ValueType = "null" | "boolean" | "integer" | "number" | "string" | "array" | "object" | "task" | "repository" | "template" | "markdown" | "open_items" | "decision_log";
+export type ValueType = `schema:${string}` | "null" | "boolean" | "integer" | "number" | "string" | "array" | "object" | "task" | "repository" | "template" | "markdown" | "open_items" | "decision_log";
 export interface BindingConfig { id: string; from: string; pointer?: string; type: ValueType; required: boolean; default?: JsonValue; description?: string; raw?: JsonObject }
 export interface OutputConfig { id: string; type: ValueType; schema?: string; description?: string; required: boolean; raw?: JsonObject }
 export type ValidatorConfig = { kind: "schema"; output: string; schema: string; raw?: JsonObject } | { kind: "command"; command: string[]; raw?: JsonObject };

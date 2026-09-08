@@ -28,8 +28,15 @@ test("published canvas versions preserve identity, edit typed resources, and pub
  await page.getByRole("textbox",{name:"Template",exact:true}).fill("# Design\n## Approach\nExplain alternatives.");await page.getByRole("button",{name:"Apply",exact:true}).click();
  await expect.poll(()=>saves.at(-1)?.document.spec.inputs.design_template.resource.content).toContain("Explain alternatives");
  await page.keyboard.press("Escape");await expect(page.getByRole("complementary",{name:"Contextual inspector"})).toHaveCount(0);
- const canvas=page.locator(".workflow-canvas");await canvas.focus();await page.keyboard.press("Insert");await page.getByRole("dialog",{name:"Add node"}).getByRole("button",{name:"constant",exact:true}).click();
- await page.getByRole("combobox",{name:"Value type",exact:true}).selectOption("object");await page.getByLabel("Value (JSON)").fill('{"ready":true}');await page.getByRole("button",{name:"Apply",exact:true}).click();
+ const canvas=page.locator(".workflow-canvas");
+ await canvas.focus();await page.keyboard.press("Insert");await page.getByRole("dialog",{name:"Add node"}).getByRole("button",{name:"Markdown file",exact:true}).click();
+ const filenameDialog=page.getByRole("dialog",{name:"New Markdown file"});await expect(filenameDialog.getByRole("button",{name:"Add Markdown file"})).toBeDisabled();
+ await filenameDialog.getByRole("textbox",{name:"Filename"}).fill("folder/design.md");await expect(filenameDialog.getByRole("button",{name:"Add Markdown file"})).toBeDisabled();
+ await filenameDialog.getByRole("textbox",{name:"Filename"}).fill("notes.md");await filenameDialog.getByRole("button",{name:"Add Markdown file"}).click();
+ await expect.poll(()=>saves.at(-1)?.document.spec.inputs.artifact?.resource.filename).toBe("notes.md");
+ await page.keyboard.press("Escape");
+await canvas.focus();await page.keyboard.press("Insert");await page.getByRole("dialog",{name:"Add node"}).getByRole("button",{name:"constant",exact:true}).click();
+ await page.getByRole("combobox",{name:"Value type",exact:true}).selectOption("schema:record");await page.getByLabel("Schema name",{exact:true}).fill("readiness");await page.getByLabel("JSON Schema",{exact:true}).fill(JSON.stringify({type:"object",properties:{ready:{type:"boolean"}},required:["ready"],additionalProperties:false}));await page.getByLabel("Value (JSON)").fill('{"ready":true}');await page.getByRole("button",{name:"Apply",exact:true}).click();
  await expect.poll(()=>saves.at(-1)?.document.spec.inputs.constant?.resource.value.ready).toBe(true);
  await page.getByRole("button",{name:"Zoom to fit"}).click();
  await page.locator('.react-flow__node[data-id="$input:constant"] .workflow-flow-port--output').click();
