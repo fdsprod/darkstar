@@ -5,6 +5,7 @@ package reasoning
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,6 +86,13 @@ func (a Advisor) Assess(ctx context.Context, input routeadvisor.Request) (routea
 	}
 	if decoder.Decode(new(any)) != io.EOF {
 		return advice, errors.New("route advice must be one JSON object")
+	}
+	for i := range advice.Candidates {
+		for j := range advice.Candidates[i].Questions {
+			q := &advice.Candidates[i].Questions[j]
+			digest := sha256.Sum256([]byte(q.Prompt))
+			q.ID = fmt.Sprintf("question_%x", digest[:12])
+		}
 	}
 	return advice, nil
 }
