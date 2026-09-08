@@ -17,6 +17,52 @@ import (
 	"darkstar/src/ports/workflowstore"
 )
 
+func TestVersioningShippedWorkflowKeepsIdentityAndAdvancesDefault(t *testing.T) {
+	ctx := t.Context()
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "versions.db"), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	catalog, err := workflow.NewCatalog(&workflowCandidates{}, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed, err := catalog.Install(ctx, workflowstore.Candidate{Scope: workflowstore.ScopeDefault, Reference: "shipped", Content: json.RawMessage(testWorkflow("shipped"))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := catalog.DuplicateDraft(ctx, installed.Version.Name, installed.Version.Version, installed.Version.Name, workflowstore.DraftScopeUser, "local-user", "version-shipped-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Name != installed.Version.Name || draft.BaseVersion != installed.Version.Version {
+		t.Fatal("version fork lost its identity")
+	}
+	published, err := catalog.PublishDraft(ctx, workflow.DraftPublishRequest{ID: draft.ID, ExpectedRevision: draft.Revision, Version: "2.0.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := catalog.Definition(ctx, draft.Name, "")
+	if err != nil || current.Version.Digest != published.Published.Digest {
+		t.Fatalf("current = %+v %v", current.Version, err)
+	}
+	original, err := catalog.Definition(ctx, draft.Name, installed.Version.Version)
+	if err != nil || original.Version.Digest != installed.Version.Digest {
+		t.Fatal("shipped version changed")
+	}
+	if _, err := catalog.PublishDraft(ctx, workflow.DraftPublishRequest{ID: draft.ID, ExpectedRevision: draft.Revision, Version: "1.5.0"}); err == nil {
+		t.Fatal("older version became current")
+	}
+	if _, err := catalog.ArchiveVersion(ctx, draft.Name, "2.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	current, err = catalog.Definition(ctx, draft.Name, "")
+	if err != nil || current.Version.Version != installed.Version.Version {
+		t.Fatal("archived version selected for a new run")
+	}
+}
+
 func TestWorkflowInstallationAndRunSnapshotsAreImmutable(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

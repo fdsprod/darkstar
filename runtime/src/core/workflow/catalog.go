@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"darkstar/src/core/config"
@@ -269,6 +270,7 @@ type RoutePreview struct {
 
 // Catalog coordinates scope-aware loading, version installation, and run snapshots.
 type Catalog struct {
+	publishMu    sync.Mutex
 	source       workflowstore.Source
 	store        workflowstore.Store
 	capabilities registryport.Registry
@@ -1097,6 +1099,8 @@ func sortedStringMapKeys(values map[Identifier]string) []Identifier {
 }
 
 func (c *Catalog) PublishDraft(ctx context.Context, request DraftPublishRequest) (DraftPublishResult, error) {
+	c.publishMu.Lock()
+	defer c.publishMu.Unlock()
 	draft, err := c.store.Draft(ctx, request.ID)
 	if err != nil {
 		return DraftPublishResult{}, err
@@ -1110,6 +1114,18 @@ func (c *Catalog) PublishDraft(ctx context.Context, request DraftPublishRequest)
 	}
 	if len(issues) != 0 {
 		return DraftPublishResult{}, issues
+	}
+	if !semanticVersionPattern.MatchString(request.Version) {
+		return DraftPublishResult{}, errors.New("invalid semantic version")
+	}
+	versions, err := c.store.InstalledVersions(ctx, draft.Name)
+	if err != nil {
+		return DraftPublishResult{}, err
+	}
+	for _, version := range versions {
+		if semanticVersionLess(request.Version, version.Version) {
+			return DraftPublishResult{}, fmt.Errorf("%w: publish a version newer than %s", workflowstore.ErrVersionConflict, version.Version)
+		}
 	}
 	publishedDocument, err := rewriteWorkflowMetadata(validated.Document, draft.Name, request.Version)
 	if err != nil {
@@ -1223,6 +1239,24 @@ func (c *Catalog) Definition(ctx context.Context, name, version string) (Definit
 		if listErr != nil {
 			return Definition{}, listErr
 		}
+		archives, archiveErr := c.store.Archives(ctx)
+		if archiveErr != nil {
+			return Definition{}, archiveErr
+		}
+		active := versions[:0]
+		for _, candidate := range versions {
+			archived := false
+			for _, entry := range archives {
+				if entry.Name == candidate.Name && entry.Version == candidate.Version {
+					archived = true
+					break
+				}
+			}
+			if !archived {
+				active = append(active, candidate)
+			}
+		}
+		versions = active
 		if len(versions) == 0 {
 			return Definition{}, fmt.Errorf("%w: workflow %s", workflowstore.ErrNotFound, name)
 		}

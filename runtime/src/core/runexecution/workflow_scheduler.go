@@ -218,6 +218,11 @@ func chooseTransition(nodeID workflow.Identifier, node workflow.Node, route work
 }
 
 func prepareWorkflowAdvance(dispatch AttemptRequestContext, output map[workflow.Identifier]json.RawMessage) (workflowAdvance, error) {
+	for id, value := range output {
+		if err := workflow.ValidateDeliverable(dispatch.Node, id, value, dispatch.NodeInputs); err != nil {
+			return workflowAdvance{}, err
+		}
+	}
 	storedForNode, alreadyStored := dispatch.AcceptedOutputs[workflow.Identifier(dispatch.Attempt.NodeID)]
 	if alreadyStored && rawMapsEqual(storedForNode, output) {
 		if identifierIn(dispatch.FrozenRoute.Terminals, workflow.Identifier(dispatch.Attempt.NodeID)) {
@@ -304,7 +309,7 @@ func builtinGateOutput(node workflow.GateNode, inputs, runInputs map[workflow.Id
 
 func builtinValidationOutput(ctx context.Context, workflowName, workflowVersion, nodeID, workspace string, node workflow.CommandNode) (json.RawMessage, error) {
 	want := []string{"darkstar-project", "validate", "--json"}
-	if workflowName != DefaultWorkflowID || workflowVersion != DefaultWorkflowVersion || nodeID != "s6_validation" || !reflect.DeepEqual(node.Executor.Argv, want) || node.Executor.CWD != "" {
+	if workflowName != DefaultWorkflowID || nodeID != "s6_validation" || !reflect.DeepEqual(node.Executor.Argv, want) || node.Executor.CWD != "" {
 		return nil, errors.New("command node is not an explicitly supported deterministic builtin")
 	}
 	timeout := 30 * time.Second

@@ -30,7 +30,7 @@ const (
 	createScope                  = "runs.create"
 	prepareScope                 = "runs.prepare"
 	DefaultWorkflowID            = "darkstar/story-execution"
-	DefaultWorkflowVersion       = "1.4.0"
+	DefaultWorkflowVersion       = "2.0.0"
 	compatibilityWorkflowID      = "darkstar/mvp-walking-skeleton"
 	compatibilityWorkflowVersion = "1.0.0"
 	nodeID                       = "technical_design"
@@ -468,7 +468,7 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 		if work.RoutingIntent.Mode == statestore.WorkRoutingOverride {
 			request.WorkflowID, request.WorkflowVersion = work.RoutingIntent.WorkflowID, work.RoutingIntent.WorkflowVersion
 		} else {
-			request.WorkflowID, request.WorkflowVersion = DefaultWorkflowID, DefaultWorkflowVersion
+			request.WorkflowID, request.WorkflowVersion = DefaultWorkflowID, ""
 		}
 	}
 	if request.WorkflowID == "" {
@@ -487,9 +487,29 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	if planner == nil {
 		return statestore.RunProjection{}, ErrWorkflowUnavailable
 	}
+	if request.WorkflowVersion == "" {
+		if reader, ok := planner.(WorkflowDefinitionReader); ok {
+			definition, readErr := reader.Definition(ctx, request.WorkflowID, "")
+			if readErr != nil {
+				return statestore.RunProjection{}, readErr
+			}
+			request.WorkflowVersion = definition.Version.Version
+		}
+	}
 	routeContext, err := derivedRouteContext(ctx, planner, request, work, project)
 	if err != nil {
 		return statestore.RunProjection{}, err
+	}
+	if resolver, ok := s.requestBuilder.(interface {
+		ResolveWorkflowConfig(context.Context, string, string, string) (map[workflow.Identifier]json.RawMessage, error)
+	}); ok {
+		values, resolveErr := resolver.ResolveWorkflowConfig(ctx, request.WorkflowID, request.WorkflowVersion, project.ProjectID)
+		if resolveErr != nil {
+			return statestore.RunProjection{}, resolveErr
+		}
+		for id, value := range values {
+			routeContext.RunInputs[id] = value
+		}
 	}
 	var preview workflow.RoutePreview
 	var issues workflow.ValidationErrors
@@ -724,6 +744,36 @@ func derivedRouteContext(ctx context.Context, planner WorkflowPlanner, request C
 			return workflow.RouteContext{}, fmt.Errorf("encode derived story input: %w", err)
 		}
 		inputs["story"] = encoded
+	}
+	for id, declaration := range definition.Document.Spec.Inputs {
+		if declaration.Resource == nil {
+			continue
+		}
+		var value any
+		switch source := declaration.Resource.Source.(type) {
+		case workflow.TaskResource:
+			value = map[string]any{"id": work.WorkItemID, "projectId": work.ProjectID, "title": work.Title, "details": work.Details, "evidence": work.Evidence}
+		case workflow.RepositoryResource:
+			value = map[string]any{"projectId": project.ProjectID, "name": project.Name, "sourceHash": project.SourceHash}
+		case workflow.TemplateResource:
+			value = source
+		case workflow.ConstantResource:
+			value = source.Value
+		case workflow.OpenItemsResource:
+			value = map[string]any{"kind": "open_items", "resourceId": id}
+		case workflow.DecisionLogResource:
+			value = map[string]any{"kind": "decision_log", "resourceId": id}
+		case workflow.ConfigResource:
+			// Config resources are supplied by the resolved run configuration boundary.
+			continue
+		default:
+			return workflow.RouteContext{}, fmt.Errorf("unsupported resource %s", id)
+		}
+		encoded, encodeErr := json.Marshal(value)
+		if encodeErr != nil {
+			return workflow.RouteContext{}, encodeErr
+		}
+		inputs[id] = encoded
 	}
 	if request.Preparation != nil {
 		for id, value := range request.Preparation.RunInputs {

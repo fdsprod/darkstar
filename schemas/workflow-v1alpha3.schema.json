@@ -4,12 +4,25 @@
   "title": "DARKSTAR workflow v1alpha3",
   "type": "object",
   "additionalProperties": false,
-  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
   "properties": {
-    "apiVersion": {"const": "darkstar.local/v1alpha3"},
-    "kind": {"const": "Workflow"},
-    "metadata": {"$ref": "#/$defs/metadata"},
-    "spec": {"$ref": "#/$defs/spec"}
+    "apiVersion": {
+      "const": "darkstar.local/v1alpha3"
+    },
+    "kind": {
+      "const": "Workflow"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/spec"
+    }
   },
   "$defs": {
     "identifier": {
@@ -17,12 +30,23 @@
       "pattern": "^[a-z][a-z0-9_]{0,63}$"
     },
     "valueType": {
-      "enum": ["null", "boolean", "integer", "number", "string", "array", "object"]
+      "enum": [
+        "null",
+        "boolean",
+        "integer",
+        "number",
+        "string",
+        "array",
+        "object"
+      ]
     },
     "metadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -32,60 +56,106 @@
           "type": "string",
           "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
         },
-        "displayName": {"type": "string", "minLength": 1},
-        "description": {"type": "string"}
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        }
       }
     },
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["routeDefaults", "nodes"],
+      "required": [
+        "routeDefaults",
+        "nodes"
+      ],
       "properties": {
         "inputs": {
           "type": "object",
-          "propertyNames": {"$ref": "#/$defs/identifier"},
-          "additionalProperties": {"$ref": "#/$defs/valueDeclaration"},
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/valueDeclaration"
+          },
           "default": {}
         },
         "routeDefaults": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["entry", "terminals"],
+          "required": [
+            "entry",
+            "terminals"
+          ],
           "properties": {
-            "entry": {"$ref": "#/$defs/identifier"},
+            "entry": {
+              "$ref": "#/$defs/identifier"
+            },
             "terminals": {
               "type": "array",
               "minItems": 1,
               "uniqueItems": true,
-              "items": {"$ref": "#/$defs/identifier"}
+              "items": {
+                "$ref": "#/$defs/identifier"
+              }
             }
           }
         },
         "profiles": {
           "type": "object",
-          "propertyNames": {"$ref": "#/$defs/identifier"},
-          "additionalProperties": {"$ref": "#/$defs/routeProfile"},
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/routeProfile"
+          },
           "default": {}
         },
         "nodes": {
           "type": "object",
           "minProperties": 1,
-          "propertyNames": {"$ref": "#/$defs/identifier"},
-          "additionalProperties": {"$ref": "#/$defs/node"}
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/node"
+          }
         }
       }
     },
     "routeProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["description", "entry", "terminals", "inputDefaults"],
+      "required": [
+        "description",
+        "entry",
+        "terminals",
+        "inputDefaults"
+      ],
       "properties": {
-        "description": {"type": "string", "minLength": 1},
-        "entry": {"$ref": "#/$defs/identifier"},
-        "terminals": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entry": {
+          "$ref": "#/$defs/identifier"
+        },
+        "terminals": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
         "inputDefaults": {
           "type": "object",
-          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          },
           "additionalProperties": true
         }
       }
@@ -93,17 +163,35 @@
     "valueDeclaration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
-        "type": {"$ref": "#/$defs/valueType"},
-        "schema": {"type": "string", "minLength": 1},
-        "description": {"type": "string"}
+        "type": {
+          "$ref": "#/$defs/valueType"
+        },
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "resource": {
+          "$ref": "#/$defs/resource"
+        },
+        "schemaDefinition": {
+          "type": "object"
+        }
       }
     },
     "binding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["from", "type"],
+      "required": [
+        "from",
+        "type"
+      ],
       "properties": {
         "from": {
           "type": "string",
@@ -113,38 +201,95 @@
           "type": "string",
           "pattern": "^(|/(?:[^~/]|~[01])*)?(?:/(?:[^~/]|~[01])*)*$"
         },
-        "type": {"$ref": "#/$defs/valueType"},
-        "required": {"type": "boolean", "default": true},
+        "type": {
+          "$ref": "#/$defs/valueType"
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
         "default": true,
-        "description": {"type": "string"}
+        "description": {
+          "type": "string"
+        }
       },
       "allOf": [
         {
           "if": {
-            "properties": {"required": {"const": false}},
-            "required": ["required"]
+            "properties": {
+              "required": {
+                "const": false
+              }
+            },
+            "required": [
+              "required"
+            ]
           },
-          "else": {"not": {"required": ["default"]}}
+          "else": {
+            "not": {
+              "required": [
+                "default"
+              ]
+            }
+          }
         }
       ]
     },
     "outputDeclaration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
-        "type": {"$ref": "#/$defs/valueType"},
-        "schema": {"type": "string", "minLength": 1},
-        "description": {"type": "string"},
-        "required": {"type": "boolean", "default": true}
+        "type": {
+          "$ref": "#/$defs/valueType"
+        },
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
+        "schemaDefinition": {
+          "type": "object"
+        },
+        "artifact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filename"
+          ],
+          "properties": {
+            "filename": {
+              "type": "string",
+              "pattern": "^[^/\\\\:]+$"
+            },
+            "templateInput": {
+              "$ref": "#/$defs/identifier"
+            }
+          }
+        }
       }
     },
     "retry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["maxAttempts", "on"],
+      "required": [
+        "maxAttempts",
+        "on"
+      ],
       "properties": {
-        "maxAttempts": {"type": "integer", "minimum": 1, "maximum": 100},
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
         "on": {
           "type": "array",
           "uniqueItems": true,
@@ -163,45 +308,90 @@
     },
     "checkpoint": {
       "oneOf": [
-        {"enum": ["none", "acknowledge", "approve"]},
         {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["mode"],
-          "properties": {"mode": {"const": "none"}}
+          "enum": [
+            "none",
+            "acknowledge",
+            "approve"
+          ]
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mode"],
-          "properties": {"mode": {"const": "acknowledge"}}
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["mode"],
+          "required": [
+            "mode"
+          ],
           "properties": {
-            "mode": {"const": "approve"},
-            "maxRevisions": {"type": "integer", "minimum": 0, "maximum": 100}
+            "mode": {
+              "const": "none"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mode", "when"],
+          "required": [
+            "mode"
+          ],
           "properties": {
-            "mode": {"const": "approve_on_change"},
-            "when": {"$ref": "#/$defs/predicate"},
-            "maxRevisions": {"type": "integer", "minimum": 0, "maximum": 100}
+            "mode": {
+              "const": "acknowledge"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mode", "externalCondition"],
+          "required": [
+            "mode"
+          ],
           "properties": {
-            "mode": {"const": "external"},
-            "externalCondition": {"type": "string", "minLength": 1}
+            "mode": {
+              "const": "approve"
+            },
+            "maxRevisions": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "when"
+          ],
+          "properties": {
+            "mode": {
+              "const": "approve_on_change"
+            },
+            "when": {
+              "$ref": "#/$defs/predicate"
+            },
+            "maxRevisions": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "externalCondition"
+          ],
+          "properties": {
+            "mode": {
+              "const": "external"
+            },
+            "externalCondition": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       ]
@@ -209,134 +399,444 @@
     "join": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "from"],
+      "required": [
+        "mode",
+        "from"
+      ],
       "properties": {
-        "mode": {"enum": ["one", "all"]},
+        "mode": {
+          "enum": [
+            "one",
+            "all"
+          ]
+        },
         "from": {
           "type": "array",
           "minItems": 2,
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/identifier"}
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
         }
       }
     },
     "reasoningExecutor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["agent"],
+      "required": [
+        "agent"
+      ],
       "properties": {
-        "agent": {"type": "string", "minLength": 1},
-        "skills": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
-        "tools": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skills": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "instructions": {
+          "type": "string"
+        }
       }
     },
     "gateExecutor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["policy", "condition"],
+      "required": [
+        "policy",
+        "condition"
+      ],
       "properties": {
-        "policy": {"type": "string", "minLength": 1},
-        "condition": {"$ref": "#/$defs/predicate"}
+        "policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "condition": {
+          "$ref": "#/$defs/predicate"
+        }
       }
     },
     "commandExecutor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["argv"],
+      "required": [
+        "argv"
+      ],
       "properties": {
         "argv": {
           "type": "array",
           "minItems": 1,
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         },
-        "cwd": {"type": "string"},
-        "timeoutSeconds": {"type": "integer", "minimum": 1}
+        "cwd": {
+          "type": "string"
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "pointExecutionExecutor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["planInput", "approval", "riskTags", "validation", "publishing"],
+      "required": [
+        "planInput",
+        "approval",
+        "riskTags",
+        "validation",
+        "publishing"
+      ],
       "properties": {
-        "planInput": {"$ref": "#/$defs/identifier"},
-        "approval": {"enum": ["none", "every", "risk", "combined"]},
-        "riskTags": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "validation": {"enum": ["each", "combined", "each_and_combined"]},
-        "publishing": {"enum": ["after_story_validation", "after_each_point"]}
+        "planInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "approval": {
+          "enum": [
+            "none",
+            "every",
+            "risk",
+            "combined"
+          ]
+        },
+        "riskTags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "validation": {
+          "enum": [
+            "each",
+            "combined",
+            "each_and_combined"
+          ]
+        },
+        "publishing": {
+          "enum": [
+            "after_story_validation",
+            "after_each_point"
+          ]
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"approval": {"const": "risk"}}, "required": ["approval"]},
-          "then": {"properties": {"riskTags": {"minItems": 1}}},
-          "else": {"properties": {"riskTags": {"maxItems": 0}}}
+          "if": {
+            "properties": {
+              "approval": {
+                "const": "risk"
+              }
+            },
+            "required": [
+              "approval"
+            ]
+          },
+          "then": {
+            "properties": {
+              "riskTags": {
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "riskTags": {
+                "maxItems": 0
+              }
+            }
+          }
         }
       ]
     },
     "nodeDefinitionRef": {
       "oneOf": [
-        {"type":"object","additionalProperties":false,"required":["scope","name","version","digest"],"properties":{"scope":{"const":"built_in"},"name":{"type":"string","pattern":"^[a-z][a-z0-9._/-]{0,127}$"},"version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"},"digest":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},
-        {"type":"object","additionalProperties":false,"required":["scope","owner","name","version","digest"],"properties":{"scope":{"const":"project"},"owner":{"type":"string","minLength":1},"name":{"type":"string","pattern":"^[a-z][a-z0-9._/-]{0,127}$"},"version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"},"digest":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},
-        {"type":"object","additionalProperties":false,"required":["scope","owner","name","version","digest"],"properties":{"scope":{"const":"user"},"owner":{"type":"string","minLength":1},"name":{"type":"string","pattern":"^[a-z][a-z0-9._/-]{0,127}$"},"version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"},"digest":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "name",
+            "version",
+            "digest"
+          ],
+          "properties": {
+            "scope": {
+              "const": "built_in"
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9._/-]{0,127}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "owner",
+            "name",
+            "version",
+            "digest"
+          ],
+          "properties": {
+            "scope": {
+              "const": "project"
+            },
+            "owner": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9._/-]{0,127}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "owner",
+            "name",
+            "version",
+            "digest"
+          ],
+          "properties": {
+            "scope": {
+              "const": "user"
+            },
+            "owner": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9._/-]{0,127}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
       ]
     },
     "routingExecutor": {
-      "type":"object","additionalProperties":false,
-      "required":["agent","branches","routeOutput","rationaleOutput","adviceOutput","missingInformationOutput","assumptionsOutput","confirmationOutput"],
-      "properties":{
-        "agent":{"type":"string","minLength":1},
-        "branches":{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"required":["name","transition"],"properties":{"name":{"$ref":"#/$defs/identifier"},"transition":{"$ref":"#/$defs/identifier"}}}},
-        "routeOutput":{"$ref":"#/$defs/identifier"},"rationaleOutput":{"$ref":"#/$defs/identifier"},"adviceOutput":{"$ref":"#/$defs/identifier"},"missingInformationOutput":{"$ref":"#/$defs/identifier"},"assumptionsOutput":{"$ref":"#/$defs/identifier"},"confirmationOutput":{"$ref":"#/$defs/identifier"}
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent",
+        "branches",
+        "routeOutput",
+        "rationaleOutput",
+        "adviceOutput",
+        "missingInformationOutput",
+        "assumptionsOutput",
+        "confirmationOutput"
+      ],
+      "properties": {
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branches": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "transition"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/identifier"
+              },
+              "transition": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          }
+        },
+        "routeOutput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "rationaleOutput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "adviceOutput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "missingInformationOutput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "assumptionsOutput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "confirmationOutput": {
+          "$ref": "#/$defs/identifier"
+        }
       }
     },
     "approvalExecutor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["actor"],
+      "required": [
+        "actor"
+      ],
       "properties": {
-        "actor": {"type": "string", "minLength": 1},
-        "externalCondition": {"type": "string", "minLength": 1},
-        "evidenceOutput": {"$ref": "#/$defs/identifier"}
+        "actor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "externalCondition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceOutput": {
+          "$ref": "#/$defs/identifier"
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"actor": {"const": "external"}}, "required": ["actor"]},
-          "then": {"required": ["externalCondition", "evidenceOutput"]},
-          "else": {"not": {"anyOf": [{"required": ["externalCondition"]}, {"required": ["evidenceOutput"]}]}}
+          "if": {
+            "properties": {
+              "actor": {
+                "const": "external"
+              }
+            },
+            "required": [
+              "actor"
+            ]
+          },
+          "then": {
+            "required": [
+              "externalCondition",
+              "evidenceOutput"
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "externalCondition"
+                  ]
+                },
+                {
+                  "required": [
+                    "evidenceOutput"
+                  ]
+                }
+              ]
+            }
+          }
         }
       ]
     },
     "workflowRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "properties": {
-        "name": {"type": "string", "minLength": 1},
-        "version": {"type": "string", "minLength": 1},
-        "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "path": {"type": "string", "minLength": 1}
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "subworkflowCall": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["workflow", "entry", "terminals", "inputs", "outputs"],
+      "required": [
+        "workflow",
+        "entry",
+        "terminals",
+        "inputs",
+        "outputs"
+      ],
       "properties": {
-        "workflow": {"$ref": "#/$defs/workflowRef"},
-        "entry": {"$ref": "#/$defs/identifier"},
+        "workflow": {
+          "$ref": "#/$defs/workflowRef"
+        },
+        "entry": {
+          "$ref": "#/$defs/identifier"
+        },
         "terminals": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/identifier"}
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
         },
         "inputs": {
           "type": "object",
-          "propertyNames": {"$ref": "#/$defs/identifier"},
-          "additionalProperties": {"$ref": "#/$defs/identifier"}
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/identifier"
+          }
         },
         "outputs": {
           "type": "object",
-          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          },
           "additionalProperties": {
             "type": "string",
             "pattern": "^node\\.[a-z][a-z0-9_]{0,63}\\.output\\.[a-z][a-z0-9_]{0,63}$"
@@ -347,17 +847,30 @@
     "readiness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["recommendedEvidence", "policyGates", "invariants", "remedies"],
+      "required": [
+        "recommendedEvidence",
+        "policyGates",
+        "invariants",
+        "remedies"
+      ],
       "properties": {
         "recommendedEvidence": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["role", "description"],
+            "required": [
+              "role",
+              "description"
+            ],
             "properties": {
-              "role": {"$ref": "#/$defs/identifier"},
-              "description": {"type": "string", "minLength": 1}
+              "role": {
+                "$ref": "#/$defs/identifier"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
@@ -366,30 +879,68 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["policy", "enforcement", "description"],
+            "required": [
+              "policy",
+              "enforcement",
+              "description"
+            ],
             "properties": {
-              "policy": {"$ref": "#/$defs/identifier"},
-              "enforcement": {"enum": ["advisory", "blocking", "external"]},
-              "description": {"type": "string", "minLength": 1}
+              "policy": {
+                "$ref": "#/$defs/identifier"
+              },
+              "enforcement": {
+                "enum": [
+                  "advisory",
+                  "blocking",
+                  "external"
+                ]
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
         "invariants": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1}
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "remedies": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["code", "target", "action", "description"],
+            "required": [
+              "code",
+              "target",
+              "action",
+              "description"
+            ],
             "properties": {
-              "code": {"$ref": "#/$defs/identifier"},
-              "target": {"$ref": "#/$defs/identifier"},
-              "action": {"enum": ["supply_input", "revise_artifact", "clarify_decision", "install_capability", "rerun_validation"]},
-              "description": {"type": "string", "minLength": 1}
+              "code": {
+                "$ref": "#/$defs/identifier"
+              },
+              "target": {
+                "$ref": "#/$defs/identifier"
+              },
+              "action": {
+                "enum": [
+                  "supply_input",
+                  "revise_artifact",
+                  "clarify_decision",
+                  "install_capability",
+                  "rerun_validation"
+                ]
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         }
@@ -398,144 +949,548 @@
     "node": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "entry", "terminal", "inputs", "outputs"],
+      "required": [
+        "type",
+        "entry",
+        "terminal",
+        "inputs",
+        "outputs"
+      ],
       "properties": {
-        "displayName": {"type": "string", "minLength": 1},
-        "type": {"enum": ["reasoning", "gate", "command", "approval", "subworkflow", "point_execution", "routing"]},
-        "definition": {"$ref":"#/$defs/nodeDefinitionRef"},
-        "entry": {"type": "boolean"},
-        "terminal": {"type": "boolean"},
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "reasoning",
+            "gate",
+            "command",
+            "approval",
+            "subworkflow",
+            "point_execution",
+            "routing"
+          ]
+        },
+        "definition": {
+          "$ref": "#/$defs/nodeDefinitionRef"
+        },
+        "entry": {
+          "type": "boolean"
+        },
+        "terminal": {
+          "type": "boolean"
+        },
         "inputs": {
           "type": "object",
-          "propertyNames": {"$ref": "#/$defs/identifier"},
-          "additionalProperties": {"$ref": "#/$defs/binding"}
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/binding"
+          }
         },
         "outputs": {
           "type": "object",
-          "propertyNames": {"$ref": "#/$defs/identifier"},
-          "additionalProperties": {"$ref": "#/$defs/outputDeclaration"}
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/outputDeclaration"
+          }
         },
-        "readiness": {"$ref": "#/$defs/readiness"},
-        "reasoning": {"$ref": "#/$defs/reasoningExecutor"},
-        "gate": {"$ref": "#/$defs/gateExecutor"},
-        "command": {"$ref": "#/$defs/commandExecutor"},
-        "approval": {"$ref": "#/$defs/approvalExecutor"},
-        "call": {"$ref": "#/$defs/subworkflowCall"},
-        "points": {"$ref": "#/$defs/pointExecutionExecutor"},
-        "routing": {"$ref": "#/$defs/routingExecutor"},
+        "readiness": {
+          "$ref": "#/$defs/readiness"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/reasoningExecutor"
+        },
+        "gate": {
+          "$ref": "#/$defs/gateExecutor"
+        },
+        "command": {
+          "$ref": "#/$defs/commandExecutor"
+        },
+        "approval": {
+          "$ref": "#/$defs/approvalExecutor"
+        },
+        "call": {
+          "$ref": "#/$defs/subworkflowCall"
+        },
+        "points": {
+          "$ref": "#/$defs/pointExecutionExecutor"
+        },
+        "routing": {
+          "$ref": "#/$defs/routingExecutor"
+        },
         "validators": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "output": {"$ref": "#/$defs/identifier"},
-              "schema": {"type": "string", "minLength": 1},
-              "command": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+              "output": {
+                "$ref": "#/$defs/identifier"
+              },
+              "schema": {
+                "type": "string",
+                "minLength": 1
+              },
+              "command": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              }
             },
             "oneOf": [
-              {"required": ["output", "schema"]},
-              {"required": ["command"]}
+              {
+                "required": [
+                  "output",
+                  "schema"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              }
             ]
           },
           "default": []
         },
-        "retry": {"$ref": "#/$defs/retry"},
-        "checkpoint": {"$ref": "#/$defs/checkpoint"},
-        "transitionMode": {"enum": ["exclusive", "fanout"], "default": "exclusive"},
-        "join": {"$ref": "#/$defs/join"},
+        "retry": {
+          "$ref": "#/$defs/retry"
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/checkpoint"
+        },
+        "transitionMode": {
+          "enum": [
+            "exclusive",
+            "fanout"
+          ],
+          "default": "exclusive"
+        },
+        "join": {
+          "$ref": "#/$defs/join"
+        },
         "permissions": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "default": []
         },
         "transitions": {
           "type": "array",
-          "items": {"$ref": "#/$defs/transition"},
+          "items": {
+            "$ref": "#/$defs/transition"
+          },
           "default": []
         }
       },
       "oneOf": [
         {
           "properties": {
-            "type": {"const": "reasoning"},
-            "reasoning": {"$ref": "#/$defs/reasoningExecutor"}
+            "type": {
+              "const": "reasoning"
+            },
+            "reasoning": {
+              "$ref": "#/$defs/reasoningExecutor"
+            }
           },
-          "required": ["reasoning"],
-          "not": {"anyOf": [{"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["points"]}, {"required": ["routing"]}]}
+          "required": [
+            "reasoning"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              }
+            ]
+          }
         },
         {
           "properties": {
-            "type": {"const": "gate"},
-            "gate": {"$ref": "#/$defs/gateExecutor"}
+            "type": {
+              "const": "gate"
+            },
+            "gate": {
+              "$ref": "#/$defs/gateExecutor"
+            }
           },
-          "required": ["gate"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["points"]}, {"required": ["routing"]}]}
+          "required": [
+            "gate"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              }
+            ]
+          }
         },
         {
           "properties": {
-            "type": {"const": "command"},
-            "command": {"$ref": "#/$defs/commandExecutor"}
+            "type": {
+              "const": "command"
+            },
+            "command": {
+              "$ref": "#/$defs/commandExecutor"
+            }
           },
-          "required": ["command"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["points"]}, {"required": ["routing"]}]}
+          "required": [
+            "command"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              }
+            ]
+          }
         },
         {
           "properties": {
-            "type": {"const": "approval"},
-            "approval": {"$ref": "#/$defs/approvalExecutor"}
+            "type": {
+              "const": "approval"
+            },
+            "approval": {
+              "$ref": "#/$defs/approvalExecutor"
+            }
           },
-          "required": ["approval"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["call"]}, {"required": ["points"]}, {"required": ["routing"]}]}
+          "required": [
+            "approval"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              }
+            ]
+          }
         },
         {
           "properties": {
-            "type": {"const": "subworkflow"},
-            "call": {"$ref": "#/$defs/subworkflowCall"}
+            "type": {
+              "const": "subworkflow"
+            },
+            "call": {
+              "$ref": "#/$defs/subworkflowCall"
+            }
           },
-          "required": ["call"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["points"]}, {"required": ["routing"]}]}
+          "required": [
+            "call"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              }
+            ]
+          }
         },
         {
           "properties": {
-            "type": {"const": "point_execution"},
-            "points": {"$ref": "#/$defs/pointExecutionExecutor"}
+            "type": {
+              "const": "point_execution"
+            },
+            "points": {
+              "$ref": "#/$defs/pointExecutionExecutor"
+            }
           },
-          "required": ["points"],
-          "not": {"anyOf": [{"required": ["reasoning"]}, {"required": ["gate"]}, {"required": ["command"]}, {"required": ["approval"]}, {"required": ["call"]}, {"required": ["routing"]}]}
+          "required": [
+            "points"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              }
+            ]
+          }
         },
         {
-          "properties": {"type":{"const":"routing"},"routing":{"$ref":"#/$defs/routingExecutor"}},
-          "required":["routing"],
-          "not":{"anyOf":[{"required":["reasoning"]},{"required":["gate"]},{"required":["command"]},{"required":["approval"]},{"required":["call"]},{"required":["points"]}]}
+          "properties": {
+            "type": {
+              "const": "routing"
+            },
+            "routing": {
+              "$ref": "#/$defs/routingExecutor"
+            }
+          },
+          "required": [
+            "routing"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              }
+            ]
+          }
         }
       ]
     },
     "transition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "to"],
+      "required": [
+        "id",
+        "to"
+      ],
       "properties": {
-        "id": {"$ref": "#/$defs/identifier"},
-        "to": {"$ref": "#/$defs/identifier"},
-        "when": {"$ref": "#/$defs/predicate"},
-        "kind": {"enum": ["normal", "bounded"], "default": "normal"},
-        "maxTraversals": {"type": "integer", "minimum": 1, "maximum": 10000},
-        "enabledByDefault": {"type": "boolean", "default": true}
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "to": {
+          "$ref": "#/$defs/identifier"
+        },
+        "when": {
+          "$ref": "#/$defs/predicate"
+        },
+        "kind": {
+          "enum": [
+            "normal",
+            "bounded"
+          ],
+          "default": "normal"
+        },
+        "maxTraversals": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "enabledByDefault": {
+          "type": "boolean",
+          "default": true
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"kind": {"const": "bounded"}}, "required": ["kind"]},
-          "then": {"required": ["maxTraversals"]},
-          "else": {"not": {"required": ["maxTraversals"]}}
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "bounded"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "maxTraversals"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "maxTraversals"
+              ]
+            }
+          }
         }
       ]
     },
     "referenceOperand": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
         "ref": {
           "type": "string",
@@ -546,13 +1501,21 @@
     "literalOperand": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["literal"],
-      "properties": {"literal": true}
+      "required": [
+        "literal"
+      ],
+      "properties": {
+        "literal": true
+      }
     },
     "operand": {
       "oneOf": [
-        {"$ref": "#/$defs/referenceOperand"},
-        {"$ref": "#/$defs/literalOperand"}
+        {
+          "$ref": "#/$defs/referenceOperand"
+        },
+        {
+          "$ref": "#/$defs/literalOperand"
+        }
       ]
     },
     "predicate": {
@@ -560,52 +1523,209 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["const"],
-          "properties": {"const": {"type": "boolean"}}
+          "required": [
+            "const"
+          ],
+          "properties": {
+            "const": {
+              "type": "boolean"
+            }
+          }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["op", "args"],
+          "required": [
+            "op",
+            "args"
+          ],
           "properties": {
-            "op": {"enum": ["eq", "ne", "lt", "lte", "gt", "gte"]},
+            "op": {
+              "enum": [
+                "eq",
+                "ne",
+                "lt",
+                "lte",
+                "gt",
+                "gte"
+              ]
+            },
             "args": {
               "type": "array",
               "minItems": 2,
               "maxItems": 2,
-              "items": {"$ref": "#/$defs/operand"}
+              "items": {
+                "$ref": "#/$defs/operand"
+              }
             }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["op", "arg"],
+          "required": [
+            "op",
+            "arg"
+          ],
           "properties": {
-            "op": {"const": "present"},
-            "arg": {"$ref": "#/$defs/referenceOperand"}
+            "op": {
+              "const": "present"
+            },
+            "arg": {
+              "$ref": "#/$defs/referenceOperand"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["op", "args"],
+          "required": [
+            "op",
+            "args"
+          ],
           "properties": {
-            "op": {"enum": ["all", "any"]},
+            "op": {
+              "enum": [
+                "all",
+                "any"
+              ]
+            },
             "args": {
               "type": "array",
               "minItems": 1,
-              "items": {"$ref": "#/$defs/predicate"}
+              "items": {
+                "$ref": "#/$defs/predicate"
+              }
             }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["op", "arg"],
+          "required": [
+            "op",
+            "arg"
+          ],
           "properties": {
-            "op": {"const": "not"},
-            "arg": {"$ref": "#/$defs/predicate"}
+            "op": {
+              "const": "not"
+            },
+            "arg": {
+              "$ref": "#/$defs/predicate"
+            }
+          }
+        }
+      ]
+    },
+    "resource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "task"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "repository"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "open_items"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "decision_log"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "content",
+            "version"
+          ],
+          "properties": {
+            "kind": {
+              "const": "template"
+            },
+            "content": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "requiredHeadings": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "constant"
+            },
+            "value": {}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "key"
+          ],
+          "properties": {
+            "kind": {
+              "const": "config"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       ]

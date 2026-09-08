@@ -161,6 +161,8 @@ type UserInputRequest struct {
 
 // AttemptRequest freezes everything an adapter may use for a new attempt.
 type AttemptRequest struct {
+	DynamicTools          []ToolDefinition
+	ToolHandler           ToolHandler `json:"-"`
 	AttemptID             string
 	RunID                 string
 	NodeID                string
@@ -181,6 +183,17 @@ type AttemptRequest struct {
 	CancellationGrace     time.Duration
 	UsageLimits           UsageLimits
 	CapabilityFingerprint string
+}
+
+type ToolDefinition struct {
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"inputSchema"`
+}
+
+type ToolHandler interface {
+	Call(context.Context, string, string, json.RawMessage) (json.RawMessage, error)
 }
 
 type InputKind string

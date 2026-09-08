@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	"darkstar/src/adapters/provider/codex"
+	"darkstar/src/adapters/workflowtools"
 	"darkstar/src/core/config"
+	"darkstar/src/core/configmutation"
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/workflow"
 	daemonconfiguration "darkstar/src/daemon/configuration"
@@ -25,10 +27,13 @@ import (
 // selected production provider. A failed or ambiguous Codex selection remains
 // explicit so fake scenarios still run while real attempts fail closed.
 type daemonProviderWiring struct {
+	configuration   *configmutation.Service
+	workflows       *workflow.Catalog
 	configuredCodex string
 	executable      string
 	selectionErr    error
 	projectRoot     string
+	toolDatabase    string
 	evidence        codex.EvidenceRecorder
 }
 
@@ -48,6 +53,7 @@ func resolveDaemonProviderWiring(paths platformport.Paths, projectRoot string, r
 	if wiring.selectionErr != nil {
 		return wiring, nil
 	}
+	wiring.toolDatabase = filepath.Join(paths.Data, "workflow-tools.db")
 	wiring.evidence, err = codex.NewDirectoryEvidenceRecorder(filepath.Join(paths.Data, "provider-evidence", "codex"))
 	if err != nil {
 		return nil, fmt.Errorf("configure Codex provider evidence: %w", err)
@@ -118,7 +124,15 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 	if err != nil {
 		return providerport.AttemptRequest{}, fmt.Errorf("observe Codex capabilities for workflow attempt: %w", err)
 	}
-	return buildWorkflowAttemptRequest(request, wiring.projectRoot, manifest.Fingerprint)
+	built, err := buildWorkflowAttemptRequest(request, wiring.projectRoot, manifest.Fingerprint)
+	if err != nil {
+		return built, err
+	}
+	session := &workflowtools.Session{Database: wiring.toolDatabase, RunID: request.Run.RunID, AttemptID: request.Attempt.AttemptID, Node: request.Node, Inputs: request.NodeInputs}
+	built.DynamicTools = session.Definitions()
+	built.ToolHandler = session
+	built.Prompt += " Use read_input to inspect connected inputs and templates. Submit each deliverable with submit_output and correct any validation errors before finishing. Use the connected journal tools to record or resolve items; journal history is append-only. Your final JSON must repeat the complete submitted deliverable values."
+	return built, nil
 }
 
 func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, workspace, capabilityFingerprint string) (providerport.AttemptRequest, error) {
@@ -134,6 +148,7 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 	instruction := "Execute this exact installed workflow reasoning node."
 	switch node := request.Node.(type) {
 	case workflow.ReasoningNode:
+		instruction += " " + node.Executor.Instructions
 		agent, skills, tools = node.Executor.Agent, append([]string(nil), node.Executor.Skills...), append([]string(nil), node.Executor.Tools...)
 		if len(fields.Permissions) != 0 {
 			return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q names permission policies that are not configured: %s", request.Attempt.NodeID, strings.Join(fields.Permissions, ", "))
@@ -166,13 +181,14 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 		ProjectID       string                                                          `json:"projectId"`
 		ProjectName     string                                                          `json:"projectName"`
 		RunInputs       map[workflow.Identifier]json.RawMessage                         `json:"runInputs"`
+		Deliverables    map[workflow.Identifier]workflow.OutputDeclaration              `json:"deliverables"`
 		NodeInputs      map[workflow.Identifier]json.RawMessage                         `json:"nodeInputs"`
 		AcceptedOutputs map[workflow.Identifier]map[workflow.Identifier]json.RawMessage `json:"acceptedOutputs,omitempty"`
 	}{
 		WorkflowName: request.Workflow.Version.Name, WorkflowVersion: request.Workflow.Version.Version, WorkflowDigest: request.Workflow.Version.Digest,
 		NodeID: request.Attempt.NodeID, NodeType: string(request.Node.Type()), Agent: agent, Skills: skills, Tools: tools,
 		WorkItemID: request.WorkItem.WorkItemID, WorkTitle: request.WorkItem.Title, ProjectID: request.Project.ProjectID, ProjectName: request.Project.Name,
-		RunInputs: request.RunInputs, NodeInputs: request.NodeInputs, AcceptedOutputs: request.AcceptedOutputs,
+		Deliverables: fields.Outputs, RunInputs: request.RunInputs, NodeInputs: request.NodeInputs, AcceptedOutputs: request.AcceptedOutputs,
 	}
 	encodedContext, err := json.Marshal(promptContext)
 	if err != nil {
@@ -197,7 +213,7 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 		IdempotencyKey: "start:" + request.Attempt.AttemptID, Workspace: workspace,
 		Access: access, Network: providerport.NetworkDenied,
 		CommandPolicy: commandPolicy, FilePolicy: filePolicy, ToolPolicy: providerport.InteractionDeny,
-		Prompt: instruction + " Skills and tools are descriptive requirements only; do not assume unresolved capabilities. Return only JSON matching the supplied output schema. For implementation progress, set remaining_points to 0 only after the requested outcome is complete.\nContext: " + string(encodedContext),
+		Prompt: instruction + " Skills and tools are descriptive requirements only; do not assume unresolved capabilities. Produce every required deliverable separately under its exact output ID. For artifact outputs, the value is the complete Markdown content, not a path or summary. Follow the template supplied through artifact.templateInput for that output; do not mix templates or combine files. Return only JSON matching the supplied output schema. For implementation progress, set remaining_points to 0 only after the requested outcome is complete.\nContext: " + string(encodedContext),
 		Inputs: providerInputs, OutputSchema: outputSchema, CapabilityFingerprint: capabilityFingerprint,
 	}, nil
 }
@@ -227,6 +243,13 @@ func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]wo
 	for _, id := range ids {
 		declaration := outputs[workflow.Identifier(id)]
 		property := map[string]any{"type": string(declaration.Type)}
+		if len(declaration.SchemaDefinition) != 0 {
+			if err := json.Unmarshal(declaration.SchemaDefinition, &property); err != nil {
+				return nil, err
+			}
+			properties[id] = property
+			continue
+		}
 		if declaration.Description != "" {
 			property["description"] = declaration.Description
 		}
@@ -284,3 +307,55 @@ func (wiring *daemonProviderWiring) codexProvider() (providerport.Provider, erro
 
 var _ runexecution.WorkflowProviderFactory = (*daemonProviderWiring)(nil)
 var _ runexecution.AttemptRequestBuilder = (*daemonProviderWiring)(nil)
+
+func (wiring *daemonProviderWiring) ResolveWorkflowConfig(ctx context.Context, name, version, projectID string) (map[workflow.Identifier]json.RawMessage, error) {
+	result := map[workflow.Identifier]json.RawMessage{}
+	if wiring.workflows == nil {
+		return result, nil
+	}
+	definition, err := wiring.workflows.Definition(ctx, name, version)
+	if err != nil {
+		return nil, err
+	}
+	needed := map[workflow.Identifier]workflow.ConfigResource{}
+	for id, declaration := range definition.Document.Spec.Inputs {
+		if declaration.Resource != nil {
+			if resource, ok := declaration.Resource.Source.(workflow.ConfigResource); ok {
+				needed[id] = resource
+			}
+		}
+	}
+	if len(needed) == 0 {
+		return result, nil
+	}
+	if wiring.configuration == nil {
+		return nil, errors.New("configuration resolution unavailable")
+	}
+	scope, err := config.ProjectMutationScope(projectID)
+	if err != nil {
+		return nil, err
+	}
+	state, err := wiring.configuration.State(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	for id, resource := range needed {
+		found := false
+		for _, setting := range state.Effective {
+			if setting.Key == resource.Key && setting.Value.Type() != config.SettingSecretReference {
+				encoded, _ := json.Marshal(setting.Value.Value())
+				declaration := definition.Document.Spec.Inputs[id]
+				if err := workflow.ValidateSchemaValue(declaration.SchemaDefinition, encoded); err != nil {
+					return nil, err
+				}
+				result[id] = encoded
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("config key %q is unavailable or secret", resource.Key)
+		}
+	}
+	return result, nil
+}

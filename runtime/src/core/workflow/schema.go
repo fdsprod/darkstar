@@ -62,16 +62,20 @@ const (
 )
 
 type ValueDeclaration struct {
-	Type        ValueType `json:"type"`
-	Schema      string    `json:"schema,omitempty"`
-	Description string    `json:"description,omitempty"`
+	Resource         *Resource       `json:"resource,omitempty"`
+	SchemaDefinition json.RawMessage `json:"schemaDefinition,omitempty"`
+	Type             ValueType       `json:"type"`
+	Schema           string          `json:"schema,omitempty"`
+	Description      string          `json:"description,omitempty"`
 }
 
 type OutputDeclaration struct {
-	Type        ValueType `json:"type"`
-	Schema      string    `json:"schema,omitempty"`
-	Description string    `json:"description,omitempty"`
-	Required    *bool     `json:"required,omitempty"`
+	Artifact         *ArtifactContract `json:"artifact,omitempty"`
+	SchemaDefinition json.RawMessage   `json:"schemaDefinition,omitempty"`
+	Type             ValueType         `json:"type"`
+	Schema           string            `json:"schema,omitempty"`
+	Description      string            `json:"description,omitempty"`
+	Required         *bool             `json:"required,omitempty"`
 }
 
 type NodeType string
@@ -327,9 +331,10 @@ type PointExecutionExecutor struct {
 }
 
 type ReasoningExecutor struct {
-	Agent  string   `json:"agent"`
-	Skills []string `json:"skills,omitempty"`
-	Tools  []string `json:"tools,omitempty"`
+	Instructions string   `json:"instructions,omitempty"`
+	Agent        string   `json:"agent"`
+	Skills       []string `json:"skills,omitempty"`
+	Tools        []string `json:"tools,omitempty"`
 }
 
 // GateExecutor is the deterministic conditional executor. Reasoning-produced

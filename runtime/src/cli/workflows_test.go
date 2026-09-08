@@ -118,7 +118,7 @@ func TestWorkflowCLIInstallListGraphAndPreviewJSON(t *testing.T) {
 		SchemaVersion int                  `json:"schemaVersion"`
 		Result        *workflow.Definition `json:"result"`
 	}{Result: &shown})
-	if shown.Version.Name != "cli-workflow" || shown.Document.Metadata.Version != "1.1.0" {
+	if shown.Version.Name != "cli-workflow" || shown.Document.Metadata.Version != "1.0.0" {
 		t.Fatalf("show = %#v", shown)
 	}
 

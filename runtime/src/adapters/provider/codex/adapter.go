@@ -73,6 +73,8 @@ type codexAttempt struct {
 	startErr          error
 	handle            providerport.AttemptHandle
 	client            *AppServerClient
+	toolHandler       providerport.ToolHandler
+	toolNames         map[string]bool
 	outputValidator   attemptOutputValidator
 	normal            *EventNormalizer
 
@@ -158,14 +160,15 @@ type interactionRequest struct {
 }
 
 type threadStartParams struct {
-	CWD                   string   `json:"cwd"`
-	Ephemeral             bool     `json:"ephemeral"`
-	Sandbox               string   `json:"sandbox"`
-	ApprovalPolicy        string   `json:"approvalPolicy"`
-	ApprovalsReviewer     string   `json:"approvalsReviewer,omitempty"`
-	ThreadSource          string   `json:"threadSource"`
-	Model                 string   `json:"model,omitempty"`
-	RuntimeWorkspaceRoots []string `json:"runtimeWorkspaceRoots,omitempty"`
+	DynamicTools          []providerport.ToolDefinition `json:"dynamicTools,omitempty"`
+	CWD                   string                        `json:"cwd"`
+	Ephemeral             bool                          `json:"ephemeral"`
+	Sandbox               string                        `json:"sandbox"`
+	ApprovalPolicy        string                        `json:"approvalPolicy"`
+	ApprovalsReviewer     string                        `json:"approvalsReviewer,omitempty"`
+	ThreadSource          string                        `json:"threadSource"`
+	Model                 string                        `json:"model,omitempty"`
+	RuntimeWorkspaceRoots []string                      `json:"runtimeWorkspaceRoots,omitempty"`
 }
 
 type turnStartParams struct {
@@ -508,6 +511,11 @@ func (adapter *Adapter) startAttempt(ctx context.Context, state *codexAttempt, r
 		return providerport.AttemptHandle{}, err
 	}
 
+	state.toolHandler = request.ToolHandler
+	state.toolNames = map[string]bool{}
+	for _, tool := range request.DynamicTools {
+		state.toolNames[tool.Name] = true
+	}
 	threadParams := makeThreadStartParams(request)
 	thread, err := client.StartThread(ctx, threadParams)
 	if err != nil {
@@ -923,6 +931,34 @@ func (adapter *Adapter) GetResult(ctx context.Context, request providerport.Resu
 func (adapter *Adapter) pump(state *codexAttempt) {
 	defer close(state.pumpDone)
 	for message := range state.client.Messages() {
+		original := message
+		if request, ok := message.(ServerRequest); ok && request.Method == "item/tool/call" && state.toolHandler != nil {
+			var call struct {
+				ThreadID  string          `json:"threadId"`
+				TurnID    string          `json:"turnId"`
+				CallID    string          `json:"callId"`
+				Tool      string          `json:"tool"`
+				Arguments json.RawMessage `json:"arguments"`
+			}
+			if json.Unmarshal(request.Params, &call) == nil && state.toolNames[call.Tool] {
+				if call.ThreadID != state.handle.ProviderThreadID || call.TurnID != state.handle.ProviderTurnID {
+					adapter.failPump(state, ports.FailureProtocolDrift, "tool call belongs to another attempt", nil)
+					return
+				}
+				result, toolErr := state.toolHandler.Call(context.Background(), call.CallID, call.Tool, call.Arguments)
+				text := string(result)
+				if toolErr != nil {
+					text = toolErr.Error()
+				}
+				response := map[string]any{"success": toolErr == nil, "contentItems": []map[string]string{{"type": "inputText", "text": text}}}
+				if err := state.client.Respond(request.ID, response); err != nil {
+					adapter.failPump(state, ports.FailureUncertain, "workflow tool response failed", err)
+					return
+				}
+				payload, _ := json.Marshal(map[string]any{"threadId": call.ThreadID, "turnId": call.TurnID, "item": map[string]any{"type": "dynamicToolCall", "id": call.CallID, "tool": call.Tool, "output": response}})
+				message = ServerNotification{Method: "item/completed", Params: payload}
+			}
+		}
 		event, err := state.normal.Normalize(message)
 		if err != nil {
 			adapter.failPump(state, ports.FailureProtocolDrift, "Codex event normalization failed", err)
@@ -932,7 +968,7 @@ func (adapter *Adapter) pump(state *codexAttempt) {
 			adapter.failPump(state, ports.FailureProtocolDrift, "Codex interaction checkpoint tracking failed", err)
 			return
 		}
-		record, err := nativeEvidenceRecord(state.attemptID, event.Sequence, message)
+		record, err := nativeEvidenceRecord(state.attemptID, event.Sequence, original)
 		if err != nil {
 			adapter.failPump(state, ports.FailureProtocolDrift, "Codex event evidence encoding failed", err)
 			return
@@ -1021,6 +1057,13 @@ func (adapter *Adapter) finishTurn(state *codexAttempt, params map[string]json.R
 		_ = shutdownClient(state.client)
 		adapter.complete(state, providerport.FailedResult{AttemptResultMetadata: adapter.metadata(state), Failure: failure})
 		return
+	}
+	if validator, ok := state.toolHandler.(interface{ ValidateFinal(json.RawMessage) error }); ok {
+		if err := validator.ValidateFinal(output); err != nil {
+			_ = shutdownClient(state.client)
+			adapter.complete(state, providerport.FailedResult{AttemptResultMetadata: adapter.metadata(state), Failure: ports.Failure{Code: ports.FailureInternal, Message: err.Error()}})
+			return
+		}
 	}
 	if err := state.outputValidator.validate(output); err != nil {
 		failure := ports.Failure{Code: ports.FailureInvalidRequest, Message: "Codex structured output does not match the requested schema", Details: map[string]string{"phase": "output_validation"}}
@@ -1372,6 +1415,7 @@ func makeThreadStartParams(request providerport.AttemptRequest) threadStartParam
 	roots := append([]string{request.Workspace}, request.AdditionalRoots...)
 	sort.Strings(roots)
 	params := threadStartParams{
+		DynamicTools:          request.DynamicTools,
 		CWD:                   request.Workspace,
 		Ephemeral:             false,
 		Sandbox:               sandbox,

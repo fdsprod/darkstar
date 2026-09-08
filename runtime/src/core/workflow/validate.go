@@ -159,6 +159,7 @@ func (state *validationState) validate() {
 	state.validateCycles(nodeIDs)
 	state.validateDefaultRoute()
 	state.validateProfiles()
+	state.validateResources()
 }
 
 func (state *validationState) validateProfiles() {

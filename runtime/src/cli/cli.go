@@ -447,6 +447,8 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
+	providerWiring.configuration = configurationMutations
+	providerWiring.workflows = workflowCatalog
 	if err := service.server.SetConfigurationMutations(configurationMutations); err != nil {
 		_ = database.Close()
 		service.database = nil

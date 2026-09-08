@@ -299,9 +299,11 @@ func decodeValueDeclarations(data []byte) (map[Identifier]ValueDeclaration, erro
 			return nil, err
 		}
 		var wire struct {
-			Type        ValueType       `json:"type"`
-			Schema      json.RawMessage `json:"schema"`
-			Description string          `json:"description"`
+			Type             ValueType       `json:"type"`
+			SchemaDefinition json.RawMessage `json:"schemaDefinition"`
+			Schema           json.RawMessage `json:"schema"`
+			Description      string          `json:"description"`
+			Resource         *Resource       `json:"resource"`
 		}
 		if err := strictDecode(value, &wire); err != nil {
 			return nil, fmt.Errorf("%s: %w", name, prependDecodePath(name, err))
@@ -313,7 +315,7 @@ func decodeValueDeclarations(data []byte) (map[Identifier]ValueDeclaration, erro
 		if err != nil {
 			return nil, fmt.Errorf("%s.schema: %w", name, atDecodePath(name, atDecodePath("schema", err)))
 		}
-		result[id] = ValueDeclaration{Type: wire.Type, Schema: schema, Description: wire.Description}
+		result[id] = ValueDeclaration{Type: wire.Type, Schema: schema, Description: wire.Description, Resource: wire.Resource, SchemaDefinition: wire.SchemaDefinition}
 	}
 	return result, nil
 }
@@ -333,10 +335,12 @@ func decodeOutputDeclarations(data []byte) (map[Identifier]OutputDeclaration, er
 			return nil, err
 		}
 		var wire struct {
-			Type        ValueType       `json:"type"`
-			Schema      json.RawMessage `json:"schema"`
-			Description string          `json:"description"`
-			Required    *bool           `json:"required"`
+			Type             ValueType         `json:"type"`
+			SchemaDefinition json.RawMessage   `json:"schemaDefinition"`
+			Schema           json.RawMessage   `json:"schema"`
+			Description      string            `json:"description"`
+			Required         *bool             `json:"required"`
+			Artifact         *ArtifactContract `json:"artifact"`
 		}
 		if err := strictDecode(value, &wire); err != nil {
 			return nil, fmt.Errorf("%s: %w", name, prependDecodePath(name, err))
@@ -348,7 +352,7 @@ func decodeOutputDeclarations(data []byte) (map[Identifier]OutputDeclaration, er
 		if err != nil {
 			return nil, fmt.Errorf("%s.schema: %w", name, atDecodePath(name, atDecodePath("schema", err)))
 		}
-		result[id] = OutputDeclaration{Type: wire.Type, Schema: schema, Description: wire.Description, Required: wire.Required}
+		result[id] = OutputDeclaration{Type: wire.Type, Schema: schema, Description: wire.Description, Required: wire.Required, Artifact: wire.Artifact, SchemaDefinition: wire.SchemaDefinition}
 	}
 	return result, nil
 }
