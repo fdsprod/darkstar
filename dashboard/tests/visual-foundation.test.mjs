@@ -29,7 +29,8 @@ test("dashboard navigation exposes four operator areas and one shared page headi
   assert.equal(primaryBlock.match(/label: "/g)?.length, 4);
   for (const area of ["Board", "Checkpoints", "Workflows", "Settings"]) assert.match(primaryBlock, new RegExp(`label: "${area}"`));
   assert.doesNotMatch(primaryBlock, /label: "(?:Agents|Artifacts)"/);
-  assert.match(shell, /const contextualNavigation:[\s\S]*label: "Agents"[\s\S]*label: "Artifacts"/);
+  assert.match(shell, /function contextualDestinations\(route: AppRoute\)/);
+  for (const destination of ["Work evidence", "Work diagnostics", "Run agents", "Run evidence"]) assert.match(shell, new RegExp(`label: "${destination}"`));
   assert.doesNotMatch(shell, /\/board\?create=1/);
   assert.match(shell, /switching unavailable/);
   assert.equal(pageStructure.match(/<h1>/g)?.length, 1);

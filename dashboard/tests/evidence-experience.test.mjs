@@ -52,7 +52,8 @@ test("impact decoding is a closed proposal union and preserves coverage truth", 
 test("all six contextual target affordances use the shared evidence workflow", async () => {
   const sources = await Promise.all(["WorkDetailPage.tsx", "RunDetailPage.tsx", "CheckpointsPage.tsx", "ArtifactsPage.tsx"].map((name) => readFile(new URL(`../src/pages/${name}`, import.meta.url), "utf8")));
   const joined = sources.join("\n");
-  for (const kind of ["work", "run", "node", "checkpoint", "story", "implementation_point"]) assert.match(joined, new RegExp(`targetKind=${kind}`));
+  for (const kind of ["work", "run", "node", "checkpoint"]) assert.match(joined, new RegExp(`targetKind=${kind}`));
+  assert.match(sources[0], /ProducedArtifacts scopes=\{\[\{ kind: "work"[\s\S]*kind: "story" as const[\s\S]*kind: "implementation_point" as const/);
   assert.match(joined, /type="file"/);
   assert.match(joined, /role="tablist"/);
   assert.doesNotMatch(joined, /dangerouslySetInnerHTML/);
