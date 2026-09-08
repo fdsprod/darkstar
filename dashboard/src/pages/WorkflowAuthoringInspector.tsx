@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import type { components } from "../api/schema.generated";
 import { humanize } from "./runDetailModel";
 import {
-  defaultPredicate, inspectNode, inspectTransition, nodeExecutorComplete, previewNodeRemoval, previewNodeRename, updateNode, updateNodeCheckpoint, updateNodeExecutor, updateNodeShared, updateTransition,
+  defaultPredicate, isPlanValueType, inspectNode, inspectTransition, nodeExecutorComplete, previewNodeRemoval, previewNodeRename, updateNode, updateNodeCheckpoint, updateNodeExecutor, updateNodeShared, updateTransition,
   type AuthoringNode, type BindingConfig, type CheckpointConfig, type JsonObject, type JsonValue, type NodeExecutor, type OutputConfig, type PredicateOperand,
   type ReadinessConfig, type RetryConfig, type SharedNodeChange, type TransitionConfig, type ValidatorConfig, type ValueType, type VisualEdge, type VisualNode, type WorkflowPredicate,
 } from "./workflowEditorModel";
@@ -199,7 +199,7 @@ function incomingTransitionIDs(document: JsonObject, nodeId: string) {
 function knownStrings(group: Schemas["WorkflowStringReferenceGroup"] | undefined) { return group?.status === "known" ? group.items : []; }
 function capabilityNames(group: Schemas["WorkflowCapabilityReferenceGroup"] | undefined) { return group?.status === "known" ? group.items.filter((item) => item.availability === "available").map((item) => item.name) : []; }
 function executorReferencesComplete(value: NodeExecutor, node: AuthoringNode) {
-  if (value.type === "point_execution") return node.inputs.some((input) => input.id === value.planInput && input.type === "object");
+  if (value.type === "point_execution") return node.inputs.some((input) => input.id === value.planInput && isPlanValueType(input.type));
   if (value.type !== "subworkflow") return true;
   const inputs = new Set(node.inputs.map((input) => input.id)); const outputs = new Set(node.outputs.map((output) => output.id));
   const sameKeys = (left: Record<string, string>, right: Record<string, string>) => Object.keys(left).length === Object.keys(right).length && Object.keys(left).every((key) => Object.hasOwn(right, key));

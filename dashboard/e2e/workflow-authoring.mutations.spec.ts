@@ -24,6 +24,7 @@ test("published canvas versions preserve identity, edit typed resources, and pub
  await page.screenshot({path:testInfo.outputPath("published-canvas.png")});
  await page.getByRole("button",{name:"New version",exact:true}).click();await expect.poll(()=>duplicate?.newName).toBe("darkstar/example");
  await expect(page.getByText("Draft",{exact:true})).toBeVisible();await page.getByRole("button",{name:"Zoom to fit"}).click();
+ await page.locator('.react-flow__node[data-id="design"] .workflow-flow-node__body').click();await expect(page.getByText("Unsupported node",{exact:true})).toHaveCount(0);await expect(page.getByRole("complementary",{name:"Contextual inspector"})).toContainText("Instructions");await page.keyboard.press("Escape");
  await page.locator('.react-flow__node[data-id="$input:design_template"] .workflow-flow-node__body').click();
  await page.getByRole("textbox",{name:"Template",exact:true}).fill("# Design\n## Approach\nExplain alternatives.");await page.getByRole("button",{name:"Apply",exact:true}).click();
  await expect.poll(()=>saves.at(-1)?.document.spec.inputs.design_template.resource.content).toContain("Explain alternatives");

@@ -305,7 +305,7 @@ test("editor source exposes direct URL state, keyboard parity, conflict retentio
   for (const buffered of ["Apply mappings", "Apply node configuration", "onBlur={commit}", "Existing draft values remain visible and unchanged", "Configured reference unavailable"]) assert.ok(inspector.includes(buffered), `missing ${buffered}`);
   for (const exactField of ["outputs.${value.id}.${name}", "readiness.recommendedEvidence.${index}.role", "readiness.recommendedEvidence.${index}.description", "readiness.policyGates.${index}.policy", "readiness.remedies.${index}.target"]) assert.ok(inspector.includes(exactField), `missing exact field address ${exactField}`);
   assert.match(inspector, /sameKeys\(value\.inputs/);
-  assert.match(inspector, /node\.inputs\.some\(\(input\) => input\.id === value\.planInput && input\.type === "object"\)/);
+  assert.match(inspector, /node\.inputs\.some\(\(input\) => input\.id === value\.planInput && isPlanValueType\(input\.type\)\)/);
   assert.match(page, /result\.sourceValidationDigest !== request\.semanticDigest/);
   assert.doesNotMatch(page, /endsWith\(field\.dataset\.workflowField/);
   assert.equal(JSON.parse(manifest).dependencies["@xyflow/react"], "^12.11.6");
@@ -317,4 +317,16 @@ test("editor source exposes direct URL state, keyboard parity, conflict retentio
   assert.doesNotMatch(styles, /@media \(max-width: 820px\)[^{]*\{[^}]*\.node-palette \{ display: none; \}/s);
   for (const method of ["getWorkflowLibrary", "getWorkflowAuthoringCatalog", "createWorkflowDraft", "duplicateWorkflowDraft", "updateWorkflowDraft", "previewWorkflowDraft", "validateWorkflowDraft", "publishWorkflowDraft", "archiveWorkflowVersion"]) assert.match(client, new RegExp(`${method}\\(`));
   for (const method of ["listNodeDefinitions", "createNodeDefinition", "duplicateNodeDefinition", "versionNodeDefinition", "archiveNodeDefinition"]) assert.match(client, new RegExp(`${method}\\(`));
+});
+
+test("every shipped node is inspectable and output edits preserve its contracts", async () => {
+ for (const file of ["software-delivery", "story-execution"]) {
+  const document = JSON.parse(await readFile(new URL('../../examples/workflows/'+file+'.json', import.meta.url), 'utf8'));
+  for (const [id, raw] of Object.entries(document.spec.nodes)) {
+   const node = inspectNode(document,id); assert.ok(node, file+':'+id);
+   const edited = updateNodeShared(document,id,{kind:'outputs',value:node.outputs});
+   assert.deepEqual(edited.spec.nodes[id].outputs,Object.fromEntries(Object.entries(raw.outputs).map(([key,value])=>[key,{...value,required:value.required!==false}])));
+   if(node.type==='point_execution') {const changed=updateNodeExecutor(document,id,{...node.executor,validation:'each'});assert.equal(changed.spec.nodes[id].points.validation,'each');}
+  }
+ }
 });
