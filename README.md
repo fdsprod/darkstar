@@ -2,6 +2,12 @@
 
 DARKSTAR is a local-first orchestration runtime for durable, auditable software-delivery workflows. It keeps workflow control deterministic while allowing reasoning providers to produce structured assessments and artifacts.
 
+The daemon binds inputs, validates outputs, runs gates, manages worktrees and
+approvals, and advances or completes the workflow. An execution agent receives
+one task and its resolved inputs and output contract; it does not interpret or
+run the workflow graph. Workflow-authoring chat can edit drafts, but publishing
+is human-only. These implementation boundaries are summarized in [AGENTS.md](AGENTS.md).
+
 The project is currently in the contract and walking-skeleton phase. The repository contains the normative product and architecture specifications, executable workflow examples, a reference interpreter, and captured Codex host compatibility evidence.
 
 ## Start here

@@ -4,6 +4,9 @@ The dashboard is a thin React and TypeScript client for DARKSTAR's versioned
 local API. It owns presentation and browser interaction state; workflow and
 policy decisions remain in the runtime.
 
+See [Workflow authoring chat](workflow-chat.md) for draft editing, live updates,
+questions, conflict handling, and the human publishing boundary.
+
 ## Structure
 
 | Path | Responsibility |
@@ -97,3 +100,6 @@ Diagnostics.
 Run `npm run api:generate --workspace @darkstar/dashboard` after updating the
 OpenAPI document. Build and check commands run `api:check`, which fails when the
 committed generated surface is stale.
+
+Rich Markdown review UI and the pure-component boundaries are described in
+[Rich document review components](rich-documents.md).
