@@ -14,9 +14,24 @@ function fixture() {
 }
 const project = (document, layout = {}) => { const graph = deriveEditorGraph(document, layout); return { graph, ...derivePortGraph(document, graph) }; };
 
+test("layout refreshes for changed topology and Done follows default terminals", () => {
+  const document = fixture(), original = project(document);
+  const layout = autoLayoutGraph(normalizeLayout({}), original.graph, original.ports);
+  const moved = {...layout,nodes:{...layout.nodes,start:{x:987,y:654}}};
+  assert.equal(preparePortLayout(moved,project(document,moved).graph,original.ports),moved);
+  const changed = addNode(document,"implementation","implement").document;
+  changed.spec.routeDefaults.terminals = ["implement"];
+  const next = project(changed,moved);
+  const arranged = preparePortLayout(moved,next.graph,next.ports);
+  assert.ok(arranged.nodes.implement);
+  assert.notEqual(arranged.portLayoutSignature,layout.portLayoutSignature);
+  assert.deepEqual(next.edges.filter(edge=>edge.target.nodeId==="$done").map(edge=>edge.source.nodeId),["implement"]);
+  assert.equal(changed.spec.nodes.$done,undefined,"Done is a projection, never another executor");
+});
+
 test("typed projection separates execution, node outputs and run-input bindings using stable IDs", () => {
   const document = fixture(), before = structuredClone(document), result = project(document);
-  assert.deepEqual(result.edges.map((edge) => edge.kind), ["execution", "execution", "data", "data"]);
+  assert.deepEqual(result.edges.map((edge) => edge.kind), ["execution", "execution", "data", "data", "execution"]);
   assert.equal(result.edges[2].source.portId, "answer");
   assert.equal(result.edges[3].source.kind, "run_input");
   assert.deepEqual(result.findings, []);
@@ -77,7 +92,7 @@ test("auto-layout handles cycles and disconnected nodes without touching executi
   document = connectNodes(document, "finish", "start", "bounded_repair");
   const before = JSON.stringify(document), { graph, ports } = project(document), layout = normalizeLayout({ futureLayout: "kept" });
   const next = autoLayoutGraph(layout, graph, ports);
-  assert.equal(next.futureLayout, "kept"); assert.equal(Object.keys(next.nodes).length, 7);
+  assert.equal(next.futureLayout, "kept"); assert.equal(Object.keys(next.nodes).length, 8);
   assert.deepEqual(next, autoLayoutGraph(layout, graph, ports));
   assert.equal(JSON.stringify(document), before);
   assert.deepEqual(project(document, next).edges, project(document).edges);
@@ -87,10 +102,10 @@ test("auto-layout handles cycles and disconnected nodes without touching executi
   const start = next.nodes.start, finish = next.nodes.finish, isolated = next.nodes.isolated;
   assert.ok(finish.x - start.x >= 400, "connected layers have enough horizontal clearance for nodes and edges");
   assert.ok(Math.abs(start.y - isolated.y) >= 150, "nodes sharing a layer receive content-aware horizontal clearance");
-  assert.equal(next.portLayoutVersion, 7);
+  assert.equal(next.portLayoutVersion, 8);
   assert.equal(next.viewport.zoom, 0.85, "ordinary auto-layout keeps labels readable instead of fitting the whole graph");
   assert.deepEqual(preparePortLayout(next, graph, ports), next, "current layout coordinates remain authoritative");
-  assert.equal(preparePortLayout({ ...next, portLayoutVersion: 5 }, graph, ports).portLayoutVersion, 7, "legacy card coordinates migrate deterministically");
+  assert.equal(preparePortLayout({ ...next, portLayoutVersion: 5 }, graph, ports).portLayoutVersion, 8, "legacy card coordinates migrate deterministically");
 });
 
 test("software-delivery ranks forward control flow monotonically and leaves bounded repair pointing backward", () => {

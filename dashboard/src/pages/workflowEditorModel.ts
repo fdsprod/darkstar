@@ -3,7 +3,7 @@ import type { components } from "../api/schema.generated";
 type Schemas = components["schemas"];
 export type JsonObject = Record<string, unknown>;
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
-export type WorkflowNodeType = "reasoning" | "gate" | "command" | "approval" | "subworkflow" | "point_execution" | "routing";
+export type WorkflowNodeType = "workspace_prepare" | "workspace_validate" | "reasoning" | "implementation" | "gate" | "command" | "approval" | "subworkflow" | "point_execution" | "routing";
 export type WorkflowEdgeKind = "normal" | "conditional" | "bounded_repair" | "subworkflow";
 export type AuthoredTransitionKind = Exclude<WorkflowEdgeKind, "subworkflow">;
 export type EditorView = "canvas" | "structure";
@@ -49,6 +49,9 @@ export type CheckpointConfig =
   | { mode: "approve_on_change"; when: WorkflowPredicate; maxRevisions?: number }
   | { mode: "external"; externalCondition: string };
 export type NodeExecutor =
+  | {type:"workspace_prepare"; repositoryInput:string; checkout:{mode:"current_checkout"}|{mode:"new_worktree";baseRef:string;branch:string}}
+  | {type:"workspace_validate";workspaceInput:string;checks:string[][]}
+  | { type: "implementation"; taskInput: string; workspaceInput?: string; instructions: string }
   | { type: "reasoning"; agent: string; instructions?: string; skills: string[]; tools: string[] }
   | { type: "gate"; policy: string; condition: WorkflowPredicate }
   | { type: "command"; argv: string[]; cwd?: string; timeoutSeconds?: number }
@@ -56,7 +59,7 @@ export type NodeExecutor =
   | { type: "subworkflow"; workflow: { name: string; version: string; digest?: string; path?: string }; entry: string; terminals: string[]; inputs: Record<string, string>; outputs: Record<string, string> }
   | { type: "point_execution"; planInput: string; approval: "none" | "every" | "risk" | "combined"; riskTags: string[]; validation: "each" | "combined" | "each_and_combined"; publishing: "after_story_validation" | "after_each_point" }
   | { type: "routing"; agent: string; branches: Array<{ name: string; transition: string }>; routeOutput: string; rationaleOutput: string; adviceOutput: string; missingInformationOutput: string; assumptionsOutput: string; confirmationOutput: string };
-export type ValueType = `schema:${string}` | "null" | "boolean" | "integer" | "number" | "string" | "array" | "object" | "task" | "repository" | "template" | "markdown" | "open_items" | "decision_log";
+export type ValueType = `schema:${string}` | "null" | "boolean" | "integer" | "number" | "string" | "array" | "object" | "task" | "repository" | "workspace" | "template" | "markdown" | "open_items" | "decision_log";
 export interface BindingConfig { id: string; from: string; pointer?: string; type: ValueType; required: boolean; default?: JsonValue; description?: string; raw?: JsonObject }
 export interface OutputConfig { id: string; type: ValueType; schema?: string; description?: string; required: boolean; raw?: JsonObject }
 export type ValidatorConfig = { kind: "schema"; output: string; schema: string; raw?: JsonObject } | { kind: "command"; command: string[]; raw?: JsonObject };
@@ -97,9 +100,9 @@ export interface VisualNode {
   position: NodePosition;
 }
 export interface VisualEdge { id: string; transitionId: string; from: string; to: string; kind: WorkflowEdgeKind; conditional: boolean; maxTraversals?: number }
-export interface EditorGraph { nodes: VisualNode[]; edges: VisualEdge[]; entry?: string; bindings?: {source:string;target:string}[] }
+export interface EditorGraph { nodes: VisualNode[]; edges: VisualEdge[]; entry?: string; terminals?: string[]; bindings?: {source:string;target:string}[] }
 
-const nodeTypes: readonly WorkflowNodeType[] = ["reasoning", "gate", "command", "approval", "subworkflow", "point_execution", "routing"];
+const nodeTypes: readonly WorkflowNodeType[] = ["workspace_prepare", "workspace_validate", "reasoning", "implementation", "gate", "command", "approval", "subworkflow", "point_execution", "routing"];
 const identifier = /^[a-z][a-z0-9_]{0,63}$/;
 const workflowName = /^[a-z][a-z0-9._/-]{0,127}$/;
 const semanticVersion = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
@@ -115,6 +118,9 @@ export function nodeTypeAvailability(type: WorkflowNodeType, catalog?: Schemas["
 export function nodeExecutorComplete(value: NodeExecutor): boolean {
   switch (value.type) {
     case "reasoning": return value.agent.trim() !== "";
+    case "workspace_prepare": return identifier.test(value.repositoryInput) && (value.checkout.mode === "current_checkout" || Boolean(value.checkout.baseRef.trim() && value.checkout.branch.trim()));
+    case "workspace_validate": return identifier.test(value.workspaceInput) && value.checks.length > 0 && value.checks.every(argv=>argv.length>0 && Boolean(argv[0].trim()));
+    case "implementation": return identifier.test(value.taskInput) && (!value.workspaceInput || identifier.test(value.workspaceInput));
     case "gate": return value.policy.trim() !== "" && value.condition.kind !== "unsupported";
     case "command": return value.argv.length > 0 && value.argv.every((item) => item.trim() !== "");
     case "approval": return value.actor.trim() !== "" && (value.actor !== "external" || Boolean(value.externalCondition?.trim()) && identifier.test(value.evidenceOutput ?? ""));
@@ -185,14 +191,21 @@ export function deriveEditorGraph(document: unknown, layoutValue: unknown, findi
     }
     index += 1;
   }
-  return { nodes, edges, entry: String(record(record(record(document).spec).routeDefaults).entry ?? ""), bindings: Object.entries(workflowNodes(record(document))).flatMap(([id,raw]) => Object.values(record(record(raw).inputs)).map(binding=>({source:String(record(binding).from),target:id}))) };
+  return { nodes, edges, terminals: stringArray(record(record(record(document).spec).routeDefaults).terminals), entry: String(record(record(record(document).spec).routeDefaults).entry ?? ""), bindings: Object.entries(workflowNodes(record(document))).flatMap(([id,raw]) => Object.values(record(record(raw).inputs)).map(binding=>({source:String(record(binding).from),target:id}))) };
 }
 
 export function addNode(document: JsonObject, type: WorkflowNodeType, requestedId?: string): { document: JsonObject; nodeId: string } {
   const next = clone(document); const nodes = workflowNodes(next);
-  if (type === "routing") next.apiVersion = "darkstar.local/v1alpha3";
+  if (type === "routing" || type === "implementation" || type === "workspace_prepare" || type === "workspace_validate") next.apiVersion = "darkstar.local/v1alpha3";
   const base = sanitizeIdentifier(requestedId || type); const nodeId = uniqueIdentifier(base, new Set(Object.keys(nodes)));
   nodes[nodeId] = createNode(type, humanizeIdentifier(nodeId));
+  if (type === "implementation") {
+    const spec = record(next.spec), inputs = record(spec.inputs);
+    const task = Object.keys(inputs).find(id => record(inputs[id]).type === "task") ?? uniqueIdentifier("task", new Set(Object.keys(inputs)));
+    if (!inputs[task]) inputs[task] = { type: "task", resource: { kind: "task" } };
+    spec.inputs = inputs; const node = record(nodes[nodeId]); node.inputs = {workspace:{type:"workspace",from:"node.prepare.output.workspace",required:true}, task: { from: `run.input.${task}`, type: "task", required: true } };
+  }
+  if (type === "workspace_prepare") {const spec=record(next.spec),inputs=record(spec.inputs); const repository=Object.keys(inputs).find(id=>record(inputs[id]).type==="repository")??uniqueIdentifier("repository",new Set(Object.keys(inputs)));if(!inputs[repository])inputs[repository]={type:"repository",resource:{kind:"repository"}};spec.inputs=inputs;record(nodes[nodeId]).inputs={repository:{type:"repository",from:`run.input.${repository}`}};}
   if (type === "point_execution") {
     const spec = record(next.spec); const inputs = record(spec.inputs); const planInput = uniqueIdentifier("plan", new Set(Object.keys(inputs)));
     const point = record(nodes[nodeId]); point.inputs = { [planInput]: { from: `run.input.${planInput}`, type: "object", required: true } }; point.points = { ...record(point.points), planInput };
@@ -326,6 +339,9 @@ export function inspectNode(document: unknown, nodeId: string): AuthoringNode | 
       const value = record(raw.call); const workflow = record(value.workflow);
       return { ...common, executor: { type: "subworkflow", workflow: { name: stringValue(workflow.name), version: stringValue(workflow.version), ...(typeof workflow.digest === "string" ? { digest: workflow.digest } : {}), ...(typeof workflow.path === "string" ? { path: workflow.path } : {}) }, entry: stringValue(value.entry), terminals: stringArray(value.terminals), inputs: stringRecord(value.inputs), outputs: stringRecord(value.outputs) } };
     }
+    case "workspace_prepare": { const value=record(raw.workspacePrepare); return {...common,executor:{type:"workspace_prepare",repositoryInput:stringValue(value.repositoryInput),checkout:clone(value.checkout) as Extract<NodeExecutor,{type:"workspace_prepare"}>["checkout"]}}; }
+    case "workspace_validate": {const value=record(raw.workspaceValidate);return {...common,executor:{type:"workspace_validate",workspaceInput:stringValue(value.workspaceInput),checks:clone(value.checks) as string[][]}};}
+    case "implementation": { const value = record(raw.implementation); return { ...common, executor: { type: "implementation", taskInput: stringValue(value.taskInput), instructions: stringValue(value.instructions), ...(typeof value.workspaceInput === "string" ? {workspaceInput:value.workspaceInput} : {}) } }; }
     case "point_execution": {
       const value = record(raw.points);
       return { ...common, executor: { type: "point_execution", planInput: stringValue(value.planInput), approval: enumValue(value.approval, ["none", "every", "risk", "combined"], "none"), riskTags: stringArray(value.riskTags), validation: enumValue(value.validation, ["each", "combined", "each_and_combined"], "combined"), publishing: enumValue(value.publishing, ["after_story_validation", "after_each_point"], "after_story_validation") } };
@@ -350,6 +366,9 @@ export function updateNodeExecutor(document: JsonObject, nodeId: string, executo
   if (node.type !== executor.type) return next;
   switch (executor.type) {
     case "reasoning": node.reasoning = { ...record(node.reasoning), agent: executor.agent, instructions:executor.instructions ?? "", skills: uniqueStrings(executor.skills), tools: uniqueStrings(executor.tools) }; break;
+    case "workspace_prepare": node.workspacePrepare={repositoryInput:executor.repositoryInput,checkout:clone(executor.checkout)};break;
+    case "workspace_validate":node.workspaceValidate={workspaceInput:executor.workspaceInput,checks:clone(executor.checks)};break;
+    case "implementation": node.implementation = { taskInput: executor.taskInput, instructions: executor.instructions, ...(executor.workspaceInput ? {workspaceInput:executor.workspaceInput} : {}) }; break;
     case "gate": node.gate = { ...record(node.gate), policy: executor.policy, condition: encodePredicate(executor.condition) }; break;
     case "command": node.command = { ...record(node.command), argv: executor.argv, ...(executor.cwd ? { cwd: executor.cwd } : {}), ...(executor.timeoutSeconds ? { timeoutSeconds: executor.timeoutSeconds } : {}) }; removeEmptyOptional(record(node.command), "cwd", executor.cwd); removeEmptyOptional(record(node.command), "timeoutSeconds", executor.timeoutSeconds); break;
     case "approval": {
@@ -532,6 +551,9 @@ function createNode(type: WorkflowNodeType, displayName: string, flags: { entry?
   switch (type) {
     case "reasoning": return { ...common, reasoning: { agent: "authoring-agent" } };
     case "gate": return { ...common, outputs: { passed: { type: "boolean" }, gate_evidence: { type: "object" } }, gate: { policy: "authoring-policy", condition: { const: true } } };
+    case "workspace_prepare": return {...common,inputs:{repository:{type:"repository",from:"run.input.repository"}},outputs:{workspace:{type:"workspace"}},workspacePrepare:{repositoryInput:"repository",checkout:{mode:"current_checkout"}}};
+    case "workspace_validate":return {...common,inputs:{workspace:{type:"workspace",from:"node.prepare.output.workspace"}},outputs:{validation:{type:"object"}},workspaceValidate:{workspaceInput:"workspace",checks:[]}};
+    case "implementation": return { ...common, inputs: { task: { from: "run.input.task", type: "task", required: true } }, outputs: { changeset: { type: "object" } }, permissions: ["process.run", "workspace.write"], implementation: { taskInput: "task", workspaceInput:"workspace", instructions: "Perform the requested task in the repository and validate the actual changes." } };
     case "command": return { ...common, command: { argv: ["command"] } };
     case "approval": return { ...common, approval: { actor: "workflow-owner" } };
     case "subworkflow": return { ...common, call: { workflow: { name: "workflow/name", version: "0.1.0" }, entry: "start", terminals: ["finish"], inputs: {}, outputs: {} } };
@@ -591,8 +613,8 @@ function clampInteger(value: number, minimum: number, maximum: number) { return 
 function validUniqueIDs(values: readonly string[]) { return values.every((value) => identifier.test(value)) && new Set(values).size === values.length; }
 export function isPlanValueType(value: unknown): boolean { return value === "markdown" || value === "object" || typeof value === "string" && /^schema:[a-z][a-z0-9_]{0,63}$/.test(value); }
 function supportedSharedSections(node: JsonObject) {
-  const values = ["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "template", "markdown", "open_items", "decision_log"];
-  if (!hasOnlyKeys(node, ["displayName", "type", "entry", "terminal", "inputs", "outputs", "readiness", "definition", "reasoning", "gate", "command", "approval", "call", "points", "routing", "validators", "retry", "checkpoint", "transitionMode", "join", "permissions", "transitions"])) return false;
+  const values = ["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "workspace", "template", "markdown", "open_items", "decision_log"];
+  if (!hasOnlyKeys(node, ["displayName", "type", "entry", "terminal", "inputs", "outputs", "readiness", "definition", "reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate", "validators", "retry", "checkpoint", "transitionMode", "join", "permissions", "transitions"])) return false;
   if (typeof node.entry !== "boolean" || typeof node.terminal !== "boolean" || node.displayName !== undefined && (typeof node.displayName !== "string" || node.displayName.length === 0)) return false;
   if (!isPlainRecord(node.inputs) || !Object.entries(node.inputs).every(([id, value]) => identifier.test(id) && isPlainRecord(value) && hasOnlyKeys(value, ["from", "pointer", "type", "required", "default", "description"]) && typeof value.from === "string" && /^(run\.input\.[a-z][a-z0-9_]{0,63}|node\.[a-z][a-z0-9_]{0,63}\.output\.[a-z][a-z0-9_]{0,63})$/.test(value.from) && (values.includes(String(value.type)) || /^schema:[a-z][a-z0-9_]{0,63}$/.test(String(value.type))) && (value.required === undefined || typeof value.required === "boolean") && (value.pointer === undefined || typeof value.pointer === "string" && /^(?:|(?:\/(?:[^~/]|~[01])*)+)$/.test(value.pointer)) && (value.description === undefined || typeof value.description === "string") && (!Object.hasOwn(value, "default") || value.required === false && isJsonValue(value.default)))) return false;
   if (!isPlainRecord(node.outputs) || !Object.entries(node.outputs).every(([id, value]) => identifier.test(id) && isPlainRecord(value) && hasOnlyKeys(value, ["type", "schema", "description", "required", "artifact", "schemaDefinition"]) && (value.schemaDefinition === undefined || isPlainRecord(value.schemaDefinition)) && (value.artifact === undefined || isPlainRecord(value.artifact) && hasOnlyKeys(value.artifact, ["filename", "templateInput"]) && typeof value.artifact.filename === "string" && value.artifact.filename.length > 0 && (value.artifact.templateInput === undefined || typeof value.artifact.templateInput === "string" && identifier.test(value.artifact.templateInput))) && (values.includes(String(value.type)) || /^schema:[a-z][a-z0-9_]{0,63}$/.test(String(value.type))) && (value.required === undefined || typeof value.required === "boolean") && (value.schema === undefined || typeof value.schema === "string" && value.schema.length > 0) && (value.description === undefined || typeof value.description === "string"))) return false;
@@ -608,8 +630,8 @@ function supportedSharedSections(node: JsonObject) {
   return true;
 }
 function supportedExecutor(node: JsonObject) {
-  const executorFields = ["reasoning", "gate", "command", "approval", "call", "points", "routing"];
-  const expected = node.type === "subworkflow" ? "call" : node.type === "point_execution" ? "points" : String(node.type);
+  const executorFields = ["reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate"];
+  const expected = node.type === "workspace_prepare" ? "workspacePrepare" : node.type === "workspace_validate" ? "workspaceValidate" : node.type === "subworkflow" ? "call" : node.type === "point_execution" ? "points" : String(node.type);
   if (executorFields.some((field) => field !== expected && node[field] !== undefined)) return false;
   switch (node.type) {
     case "reasoning": { const value = node.reasoning; return isPlainRecord(value) && hasOnlyKeys(value, ["agent", "skills", "tools", "instructions"]) && typeof value.agent === "string" && value.agent.length > 0 && (value.skills === undefined || Array.isArray(value.skills) && value.skills.every((item) => typeof item === "string") && new Set(value.skills).size === value.skills.length) && (value.tools === undefined || Array.isArray(value.tools) && value.tools.every((item) => typeof item === "string") && new Set(value.tools).size === value.tools.length); }
@@ -617,6 +639,9 @@ function supportedExecutor(node: JsonObject) {
     case "command": { const value = node.command; return isPlainRecord(value) && hasOnlyKeys(value, ["argv", "cwd", "timeoutSeconds"]) && Array.isArray(value.argv) && value.argv.length > 0 && value.argv.every((item) => typeof item === "string") && (value.cwd === undefined || typeof value.cwd === "string") && (value.timeoutSeconds === undefined || positiveInteger(value.timeoutSeconds)); }
     case "approval": { const value = node.approval; if (!isPlainRecord(value) || !hasOnlyKeys(value, ["actor", "externalCondition", "evidenceOutput"]) || typeof value.actor !== "string" || value.actor.length === 0) return false; return value.actor === "external" ? typeof value.externalCondition === "string" && value.externalCondition.length > 0 && typeof value.evidenceOutput === "string" && identifier.test(value.evidenceOutput) : value.externalCondition === undefined && value.evidenceOutput === undefined; }
     case "subworkflow": { const value = node.call; if (!isPlainRecord(value) || !hasOnlyKeys(value, ["workflow", "entry", "terminals", "inputs", "outputs"]) || !isPlainRecord(value.workflow) || !hasOnlyKeys(value.workflow, ["name", "version", "digest", "path"])) return false; const reference = value.workflow; return typeof reference.name === "string" && workflowName.test(reference.name) && typeof reference.version === "string" && semanticVersion.test(reference.version) && (reference.digest === undefined || typeof reference.digest === "string" && /^[0-9a-f]{64}$/.test(reference.digest)) && (reference.path === undefined || typeof reference.path === "string" && reference.path.length > 0) && typeof value.entry === "string" && identifier.test(value.entry) && Array.isArray(value.terminals) && value.terminals.length > 0 && value.terminals.every((item) => typeof item === "string" && identifier.test(item)) && new Set(value.terminals).size === value.terminals.length && isPlainRecord(value.inputs) && Object.entries(value.inputs).every(([key, item]) => identifier.test(key) && typeof item === "string" && identifier.test(item)) && isPlainRecord(value.outputs) && Object.entries(value.outputs).every(([key, item]) => identifier.test(key) && typeof item === "string" && outputSource.test(item)); }
+    case "workspace_prepare": {const v=node.workspacePrepare;if(!isPlainRecord(v)||!hasOnlyKeys(v,["repositoryInput","checkout"])||typeof v.repositoryInput!=="string"||!isPlainRecord(v.checkout))return false;const c=v.checkout;return c.mode==="current_checkout"?hasOnlyKeys(c,["mode"]):c.mode==="new_worktree"&&hasOnlyKeys(c,["mode","baseRef","branch"])&&typeof c.baseRef==="string"&&typeof c.branch==="string";}
+    case "workspace_validate":{const v=node.workspaceValidate;return isPlainRecord(v)&&hasOnlyKeys(v,["workspaceInput","checks"])&&typeof v.workspaceInput==="string"&&Array.isArray(v.checks)&&v.checks.every(a=>Array.isArray(a)&&a.every(x=>typeof x==="string"));}
+    case "implementation": { const value = node.implementation; return isPlainRecord(value) && hasOnlyKeys(value, ["taskInput", "instructions", "workspaceInput"]) && (value.workspaceInput === undefined || typeof value.workspaceInput === "string") && typeof value.taskInput === "string" && identifier.test(value.taskInput) && (value.instructions === undefined || typeof value.instructions === "string"); }
     case "point_execution": { const value = node.points; return isPlainRecord(value) && hasOnlyKeys(value, ["planInput", "approval", "riskTags", "validation", "publishing"]) && typeof value.planInput === "string" && identifier.test(value.planInput) && record(node.inputs)[value.planInput] !== undefined && isPlanValueType(record(record(node.inputs)[value.planInput]).type) && ["none", "every", "risk", "combined"].includes(String(value.approval)) && Array.isArray(value.riskTags) && value.riskTags.every((item) => typeof item === "string" && item.length > 0) && new Set(value.riskTags).size === value.riskTags.length && (value.approval === "risk" ? value.riskTags.length > 0 : value.riskTags.length === 0) && ["each", "combined", "each_and_combined"].includes(String(value.validation)) && ["after_story_validation", "after_each_point"].includes(String(value.publishing)); }
     case "routing": { const value=record(node.routing); return hasOnlyKeys(value,["agent","branches","routeOutput","rationaleOutput","adviceOutput","missingInformationOutput","assumptionsOutput","confirmationOutput"]) && typeof value.agent==="string" && value.agent.length>0 && Array.isArray(value.branches) && value.branches.length>0 && value.branches.every((branch)=>isPlainRecord(branch)&&hasOnlyKeys(branch,["name","transition"])&&typeof branch.name==="string"&&identifier.test(branch.name)&&typeof branch.transition==="string"&&identifier.test(branch.transition)) && [value.routeOutput,value.rationaleOutput,value.adviceOutput,value.missingInformationOutput,value.assumptionsOutput,value.confirmationOutput].every((id)=>typeof id==="string"&&identifier.test(id)); }
     default: return false;

@@ -1,3 +1,4 @@
+import componentRequirements from "../../../runtime/src/core/workflow/component_requirements.json" with {type:"json"};
 import dagre from "@dagrejs/dagre";
 import type { EditorGraph, JsonObject, ValueType, WorkflowLayout } from "./workflowEditorModel";
 
@@ -12,7 +13,7 @@ export type PortEdge =
 export interface PortFinding { nodeId: string; field: string; code: string; message: string }
 export interface PortGraph { ports: Port[]; edges: PortEdge[]; findings: PortFinding[] }
 const record = (value: unknown): JsonObject => value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
-const valueTypes = new Set(["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "template", "markdown", "open_items", "decision_log"]);
+const valueTypes = new Set(["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "workspace", "template", "markdown", "open_items", "decision_log"]);
 const compatible = (source: ValueType, target: ValueType) => (valueTypes.has(source) || /^schema:[a-z][a-z0-9_]*$/.test(source)) && (valueTypes.has(target) || /^schema:[a-z][a-z0-9_]*$/.test(target)) && (source === target || source === "integer" && target === "number");
 export const portKey = (port: Port) => JSON.stringify(port.kind === "run_input" ? [port.kind, port.portId] : [port.kind, port.nodeId, port.direction, port.portId]);
 export const portLabel = (port: Port) => port.kind === "run_input" ? `Resource ${port.portId} (${port.valueType})` : `${port.nodeId}.${port.portId}${port.kind === "data" ? ` (${port.valueType}${port.required ? ", required" : ", optional"})` : " (execution)"}`;
@@ -31,6 +32,12 @@ export function derivePortGraph(document: JsonObject, graph: EditorGraph): PortG
   }
   const edges: PortEdge[] = graph.edges.map((edge) => ({ kind: "execution", id: edge.id, source: { kind: "execution", nodeId: edge.from, portId: record(nodes[edge.from]).type === "gate" ? gateBranch(record((record(nodes[edge.from]).transitions as JsonObject[]).find(t => t.id === edge.transitionId))) : "complete", direction: "output" }, target: { kind: "execution", nodeId: edge.to, portId: "execute", direction: "input" } }));
   const findings: PortFinding[] = [];
+  for (const node of graph.nodes) {const contract=componentRequirements[node.type as keyof typeof componentRequirements];if(!contract)continue;const raw=record(nodes[node.id]),executor=record(raw.workspacePrepare??raw.workspaceValidate??raw.implementation);for(const requirement of contract.connections){const rule=record(requirement),id=String(rule.id??executor[String(rule.field)]??"");const declaration=record(record(raw[rule.direction==="input"?"inputs":"outputs"])[id]);if(!id||declaration.type!==rule.type||declaration.required===false)findings.push({nodeId:node.id,field:`${rule.direction}s.${id}`,code:"WF_BINDING_INCOMPATIBLE",message:`Connect required ${rule.type} ${rule.direction} ${id||rule.field}.`});}}
+  for (const node of graph.nodes) {
+    const raw=record(nodes[node.id]);
+    if(node.type==="workspace_validate") {const checks=record(raw.workspaceValidate).checks;if(!Array.isArray(checks)||checks.length===0||checks.some(argv=>!Array.isArray(argv)||argv.length===0||!String(argv[0]).trim()))findings.push({nodeId:node.id,field:"workspaceValidate.checks",code:"WF_SCHEMA_INVALID",message:"Add at least one required validation command."});}
+    if(node.type==="workspace_prepare") {const checkout=record(record(raw.workspacePrepare).checkout);if(checkout.mode==="new_worktree"&&(!String(checkout.baseRef??"").trim()||!String(checkout.branch??"").trim()))findings.push({nodeId:node.id,field:"workspacePrepare.checkout",code:"WF_SCHEMA_INVALID",message:"Choose an explicit base ref and new branch."});}
+  }
   for (const edge of graph.edges) if (!Object.hasOwn(nodes, edge.to)) {
     const transitions = record(nodes[edge.from]).transitions;
     const index = Array.isArray(transitions) ? transitions.findIndex((raw) => record(raw).id === edge.transitionId && record(raw).to === edge.to) : -1;
@@ -51,12 +58,20 @@ export function derivePortGraph(document: JsonObject, graph: EditorGraph): PortG
   ports.push({kind:"execution",nodeId:"$start",portId:"complete",direction:"output"});
   const entry = String(record(spec.routeDefaults).entry);
   if (entry && nodes[entry]) edges.unshift({kind:"execution",id:"$start",source:{kind:"execution",nodeId:"$start",portId:"complete",direction:"output"},target:{kind:"execution",nodeId:entry,portId:"execute",direction:"input"}});
+  for (const terminal of graph.terminals ?? []) {
+    if (!nodes[terminal]) continue;
+    const target: Port = {kind:"execution",nodeId:"$done",portId:"execute",direction:"input"};
+    if (!ports.some(port => port.kind === "execution" && port.nodeId === "$done")) ports.push(target);
+    for (const source of ports.filter((port): port is Extract<Port,{kind:"execution"}> => port.kind === "execution" && port.nodeId === terminal && port.direction === "output"))
+      edges.push({kind:"execution",id:`$done:${terminal}:${source.portId}`,source,target});
+  }
   return { ports, edges, findings };
 }
 
 export function connectionError(source: Port, target: Port): string | undefined {
   if (source.direction !== "output" || target.direction !== "input") return "Connections must run from an output port to an input port.";
   if (source.kind === "execution" || target.kind === "execution") {
+    if (target.kind === "execution" && target.nodeId === "$done") return "Done is derived from the workflow's default terminals. Change the terminal setting in the inspector.";
     if (source.kind !== "execution" || target.kind !== "execution") return "Execution ports cannot connect to data ports.";
     return source.nodeId === target.nodeId ? "Self transitions require a bounded repair path in Structure view." : undefined;
   }
@@ -98,7 +113,7 @@ export function bindPorts(document: JsonObject, source: Port, target: Port, avai
 export const GRAPH_NODE_WIDTH = 340;
 export const GRAPH_NODE_HEADER_HEIGHT = 78;
 export const GRAPH_PORT_ROW_HEIGHT = 34;
-export const PORT_LAYOUT_VERSION = 7;
+export const PORT_LAYOUT_VERSION = 8;
 export const READABLE_GRAPH_VIEWPORT = { x: -24, y: 48, zoom: 0.85 } as const;
 
 export function graphNodeWidth(ports: readonly Port[], node: Pick<EditorGraph["nodes"][number], "id" | "displayName" | "type">) {
@@ -129,7 +144,7 @@ export function autoLayoutGraph(layout: WorkflowLayout, graph: EditorGraph, port
   const resourceSize={width:280,height:150};
   for(const port of ports) {
     if(port.kind==="run_input")ranked.setNode("$input:"+port.portId,{...resourceSize});
-    else if(port.kind==="data"&&port.direction==="output") { const id="$output:"+port.nodeId+":"+port.portId;ranked.setNode(id,{...resourceSize});ranked.setEdge(port.nodeId,id,{weight:1},"produce:"+id); }
+    else if(port.kind==="data"&&port.direction==="output") { const id="$output:"+port.nodeId+":"+port.portId;ranked.setNode(id,{width:280,height:210});ranked.setEdge(port.nodeId,id,{weight:1},"produce:"+id); }
   }
   const reaches=(source:string,target:string)=>{const seen=new Set<string>();const todo=[source];while(todo.length){const id=todo.pop()!;if(id===target)return true;if(seen.has(id))continue;seen.add(id);for(const edge of forwardEdges)if(edge.from===id)todo.push(edge.to);}return false;};
   for(const [index,binding]of (graph.bindings??[]).entries()) {
@@ -139,21 +154,29 @@ export function autoLayoutGraph(layout: WorkflowLayout, graph: EditorGraph, port
   ranked.setNode("$start",{width:240,height:150});
   const entry=graph.entry??graph.nodes.find(node=>node.entry)?.id;
   if(entry&&ranked.hasNode(entry))ranked.setEdge("$start",entry,{weight:5},"start");
+  for (const terminal of graph.terminals ?? []) if (ranked.hasNode(terminal)) {
+    ranked.setNode("$done",{width:240,height:150});
+    ranked.setEdge(terminal,"$done",{weight:5},"done:"+terminal);
+  }
   dagre.layout(ranked);
   const nodes = Object.fromEntries(ranked.nodes().map(id=>{const placed=ranked.node(id) as {x:number;y:number;width:number;height:number};return [id,{x:Math.round(placed.x-placed.width/2),y:Math.round(placed.y-placed.height/2)}];}));
   const start=nodes.$start;
-  return {...layout,portLayoutVersion:PORT_LAYOUT_VERSION,viewport:{x:40-start.x*.85,y:100-start.y*.85,zoom:.85},nodes};
+  return {...layout,portLayoutVersion:PORT_LAYOUT_VERSION,portLayoutSignature:layoutSignature(graph,ports),viewport:{x:40-start.x*.85,y:100-start.y*.85,zoom:.85},nodes};
+}
+
+function layoutSignature(graph: EditorGraph, ports: readonly Port[]) {
+  return JSON.stringify([graph.entry, graph.terminals, graph.nodes.map(node => [node.id,node.type,node.displayName]),graph.edges,graph.bindings,ports]);
 }
 
 /** Replaces coordinates written for earlier, smaller cards with the current ranked layout. */
 export function preparePortLayout(layout: WorkflowLayout, graph: EditorGraph, ports: readonly Port[]): WorkflowLayout {
-  return layout.portLayoutVersion === PORT_LAYOUT_VERSION ? layout : autoLayoutGraph(layout, graph, ports);
+  return layout.portLayoutVersion === PORT_LAYOUT_VERSION && layout.portLayoutSignature === layoutSignature(graph,ports) ? layout : autoLayoutGraph(layout, graph, ports);
 }
 
 function gateBranch(transition: JsonObject): string { const args=record(transition.when).args; if(Array.isArray(args)){ const literal=args.map(record).find(a=>typeof a.literal === "boolean"); if(literal)return String(literal.literal); }return "true"; }
 
 export const portColors: Record<ValueType | "execution", string> = {
- execution:"#e5e7eb", task:"#60a5fa", repository:"#fb923c", template:"#c084fc", markdown:"#4ade80",
+ execution:"#e5e7eb", task:"#60a5fa", repository:"#fb923c", workspace:"#34d399", template:"#c084fc", markdown:"#4ade80",
  open_items:"#facc15", decision_log:"#f472b6", string:"#2dd4bf", boolean:"#f87171", integer:"#22d3ee", number:"#38bdf8", object:"#a5b4fc", array:"#d4a373", null:"#94a3b8"
 };
 export function portColor(port:Port):string {return port.kind==="execution"?portColors.execution:port.kind==="data"&&port.portId==="$new"?"#94a3b8":portColors[port.valueType]??"#a5b4fc";}

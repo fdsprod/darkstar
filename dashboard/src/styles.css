@@ -421,6 +421,27 @@ select:focus-visible, textarea:focus-visible, .field input:focus-visible { outli
 /* Visual workflow authoring */
 .workflow-authoring-page { max-width: 1800px; }
 .editor-save-state { display: inline-flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid #344156; border-radius: 99px; color: #c0c9d7; font-size: var(--font-caption); }
+.workflow-chat-layout { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.workflow-chat { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--surface, #101722); border: 1px solid var(--border); border-radius: 10px; max-height: calc(100dvh - 170px); overflow: auto; }
+.workflow-chat > header, .workflow-chat footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.workflow-chat p { margin: 0; line-height: 1.5; }
+.workflow-chat-log { min-height: 150px; max-height: 45dvh; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
+.workflow-chat-message { padding: 10px; border-radius: 8px; background: #161f2d; overflow-wrap: anywhere; }
+.workflow-chat-message--user { background: #1b3044; }
+.workflow-chat-message p { white-space: pre-wrap; margin-top: 5px; }
+.workflow-chat-options { display: flex; flex-direction: column; gap: 6px; }
+.workflow-chat textarea { width: 100%; resize: vertical; }
+.workflow-chat-composer { padding: 10px; border: 1px solid var(--border); border-radius: 18px; background: #161f2d; }
+.workflow-chat-composer:focus-within { border-color: #81aaff; }
+.workflow-chat-composer textarea { display: block; border: 0; background: transparent; box-shadow: none; outline: none; resize: none; min-height: 90px; padding: 4px; }
+.workflow-chat-composer footer { margin-top: 8px; align-items: flex-end; }
+.workflow-chat-generation { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.workflow-chat-generation select { min-width: 0; max-width: 145px; border: 0; border-radius: 6px; padding: 5px 18px 5px 4px; background-color: transparent; font-size: var(--font-caption); }
+.workflow-chat-send { flex: 0 0 32px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #dbe7ff; color: var(--bg); font-size: 22px; font-weight: 700; cursor: pointer; }
+.workflow-chat-send:disabled { opacity: .35; cursor: default; }
+.workflow-chat-send:focus-visible { outline: 2px solid #81aaff; outline-offset: 3px; }
+.workflow-chat-retry { border: 0; padding: 0; color: #a9c5ff; background: none; text-decoration: underline; cursor: pointer; }
+@media (max-width: 1000px) { .workflow-chat-layout { grid-template-columns: minmax(0, 1fr); } .workflow-chat { max-height: none; } .workflow-chat-log { max-height: 250px; } }
 .editor-save-state::before { width: 7px; height: 7px; border-radius: 50%; background: #8290a5; content: ""; }
 .editor-save-state--clean::before { background: #68bd8a; }.editor-save-state--dirty::before, .editor-save-state--saving::before { background: #d8ad60; }.editor-save-state--conflict::before, .editor-save-state--error::before, .editor-save-state--offline::before { background: #e17972; }
 .workflow-editor-shell { display: grid; min-height: max(720px, calc(100dvh - 185px)); grid-template-columns: 260px minmax(500px, 1fr) 270px; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: #0a0f17; }
@@ -845,6 +866,9 @@ div.settings-boundary p { flex-basis: 100%; margin: 2px 0 0; }
 .workflow-resource-inspector textarea { width:100%; resize:vertical; }
 .workflow-flow-node--event { border-color:#b54d67; background:#251720; }
 .workflow-flow-node--artifact { border-color:#ae8d45; }
+.workflow-flow-node--start { border-color:#4ade80; background:#102a20; }
+.workflow-flow-node--start .workflow-flow-node__body span { color:#86efac; }
+.workflow-flow-node--done { border-color:#4ade80; background:#102a20; }
 .workflow-flow-node--gate { border-color:#9281d0; }
 
 /* Pin labels and wires share the same nominal type color. */
