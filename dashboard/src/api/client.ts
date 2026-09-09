@@ -93,7 +93,8 @@ export class DarkstarApiClient {
   listProjects(signal?: AbortSignal) { return this.operation("listProjects", { signal }); }
   registerProject(body: Schemas["ProjectRegistration"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("registerProject", { body, idempotencyKey, signal }); }
   getProject(projectId: string, signal?: AbortSignal) { return this.operation("getProject", { path: { projectId }, signal }); }
-  listWorkItems(projectId?: string, signal?: AbortSignal) { return this.operation("listWorkItems", { query: { projectId }, signal }); }
+  deleteWorkItem(workItemId: string, resourceVersion: number, idempotencyKey: string) { return this.operation("deleteWorkItem", { path: { workItemId }, resourceVersion, idempotencyKey }); }
+  listWorkItems(projectId?: string, signal?: AbortSignal, includeDeleted?: boolean) { return this.operation("listWorkItems", { query: { projectId, includeDeleted }, signal }); }
   listRuns(query: { after?: string; limit?: number } = {}, signal?: AbortSignal) { return this.operation("listRuns", { query, signal }); }
   getRun(runId: string, signal?: AbortSignal) { return this.operation("getRun", { path: { runId }, signal }); }
   getRunReadiness(runId: string, signal?: AbortSignal) { return this.operation("getRunReadiness", { path: { runId }, signal }); }

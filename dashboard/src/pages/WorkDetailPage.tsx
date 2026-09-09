@@ -9,6 +9,7 @@ import { PageHeader, type BreadcrumbItem } from "../components/PageStructure";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { humanize, shortIdentifier, statusTone } from "./runDetailModel";
 import { ProducedArtifacts } from "./ProducedArtifacts";
+import { DeleteWorkButton } from "./DeleteWorkButton";
 import { WorkRoutePreparation } from "./WorkRoutePreparation";
 import { contextLocation, latestRun, parseWorkContextTab, type WorkContextTab, workNextAction } from "./workContextModel";
 
@@ -50,6 +51,7 @@ export function WorkDetailPage() {
     <div className="page detail-page">
       <PageHeader className="detail-header" eyebrow={`${project?.name ?? "Work item"} · Priority ${view.work.priority}`} title={view.work.title} description="One work context for outcome, current execution, evidence, and durable history." breadcrumbs={[{ label: "Board", to: "/board" }, { label: "Work item" }]} status={<StatusPill status={currentRun?.status ?? view.work.status} />} actions={currentRun ? <AppLink className="navigation-action" to={`/work/${encodeURIComponent(view.work.id)}/run/${encodeURIComponent(currentRun.id)}`}>{next.label}</AppLink> : <button className="button button--primary" type="button" onClick={() => navigate(contextLocation(path, params, next.tab))}>{next.label}</button>} />
 
+      <DeleteWorkButton work={view.work} onChanged={refresh} />
       <ContextTabs tabs={tabs} active={tab} onSelect={(value) => navigate(contextLocation(path, params, value))} />
 
       <ContextPanel id="overview" active={tab === "overview"}><section className="detail-summary" aria-label="Work item summary">
@@ -59,7 +61,7 @@ export function WorkDetailPage() {
         <SummaryFact label="Next action" value={next.label} />
       </section>{currentRun ? <section className="detail-section current-run-card"><SectionHeader eyebrow="Current execution" title={currentRun.workflowId} meta={<StatusPill status={currentRun.status} />} /><p>Updated {formatDate(currentRun.updatedAt)} · workflow version {currentRun.workflowVersion}</p><AppLink className="navigation-action" to={`/work/${encodeURIComponent(view.work.id)}/run/${encodeURIComponent(currentRun.id)}`}>Open current run context →</AppLink></section> : <EmptyDetail title="No current run" message="Assess a route below before starting provider work." />}
 
-      <WorkRoutePreparation work={view.work} run={currentRun} onChanged={refresh} />
+      {!view.work.deletion && <WorkRoutePreparation work={view.work} run={currentRun} onChanged={refresh} />}
 
       <section className="detail-section work-plan-evidence">
         <SectionHeader eyebrow="Accepted-plan targets" title={<>Stories &amp; implementation points</>} meta={<span className="section-count">{view.stories.length} / {view.points.length}</span>} />

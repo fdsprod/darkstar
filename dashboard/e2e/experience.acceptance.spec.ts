@@ -21,10 +21,10 @@ test("Board exposes safe create, filtering, drag status, and keyboard or touch l
   await expect(card).toHaveAttribute("draggable", "true");
   await card.dragTo(page.locator("article[data-lifecycle='running']"));
   expect(transitions).toBe(0);
-  await card.dragTo(page.locator("article[data-lifecycle='ready']"));
+  await card.getByRole("button", { name: "Ship safe board", exact: true }).dragTo(page.locator("article[data-lifecycle='ready']"));
   await expect.poll(() => transitions).toBe(1);
-  await card.getByRole("button", { name: "Quick view" }).click();
-  await expect(page.getByRole("complementary", { name: "Ship safe board" })).toContainText("Next legal actions");
+  await card.getByRole("button", { name: "Ship safe board", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "Ship safe board" })).toContainText("Delete work item");
   await page.getByPlaceholder("Search work…").fill("missing");
   await expect(page.getByRole("heading", { name: "No work matches these filters" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Clear filters" })).toBeVisible();

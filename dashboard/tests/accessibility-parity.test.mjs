@@ -83,7 +83,7 @@ function relativeLuminance(hex) {
 }
 
 test("every dashboard write has an OpenAPI, CLI, and durable event mapping", async () => {
-  const [client, docs, openapiText, workService, runService, artifactService, runControl, readinessControl, checkpointService, attentionService, inputService, permissionService, configurationService] = await Promise.all([
+  const [client, docs, openapiText, workService, runService, artifactService, runControl, readinessControl, checkpointService, attentionService, inputService, permissionService, configurationService, deletionService] = await Promise.all([
     read("../src/api/client.ts"),
     read("../../runtime/docs/cli.md"),
     read("../../schemas/openapi-v1alpha1.json"),
@@ -97,8 +97,9 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
     read("../../runtime/src/core/runexecution/inputs.go"),
     read("../../runtime/src/core/runexecution/permissions.go"),
     read("../../runtime/src/core/configmutation/service.go"),
+    read("../../runtime/src/core/runexecution/work_deletion.go"),
   ]);
-  const eventSources = [workService, runService, artifactService, runControl, readinessControl, checkpointService, attentionService, inputService, permissionService, configurationService].join("\n");
+  const eventSources = [workService, runService, artifactService, runControl, readinessControl, checkpointService, attentionService, inputService, permissionService, configurationService, deletionService].join("\n");
   const pageDirectory = new URL("../src/pages/", import.meta.url);
   const pageFiles = (await readdir(pageDirectory)).filter((name) => name.endsWith(".tsx"));
   const pageSource = (await Promise.all(pageFiles.map((name) => read(`../src/pages/${name}`)))).join("\n");
@@ -112,6 +113,7 @@ test("every dashboard write has an OpenAPI, CLI, and durable event mapping", asy
   }
   const mappings = [
     ["registerProject", "registerProject", "darkstar project register", "project.created"],
+    ["deleteWorkItem", "deleteWorkItem", "darkstar work delete", "work.deletion_requested"],
     ["createWorkItem", "createWorkItem", "darkstar work create", "work.created"],
     ["applyWorkItemTransition", "applyWorkItemTransition", "darkstar work transition apply", "run.created"],
     ["prepareRun", "prepareRun", "darkstar run prepare", "run.created"],

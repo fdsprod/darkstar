@@ -312,7 +312,7 @@ test("board movement uses only the work lifecycle plan and apply operations", as
   assert.match(page, /Advanced routing/);
   assert.match(page, /draggable=/);
   assert.match(page, /data-drop-available=/);
-  assert.match(page, /<details className="move-menu">/);
+  assert.doesNotMatch(page, /<details className="move-menu">/);
   assert.doesNotMatch(page, /role="(?:menu|menuitem|dialog)"/);
   assert.match(page, /<aside className="work-quick-panel" aria-labelledby=/);
   assert.match(page, /draggedCard=\{boardCards\.find/);

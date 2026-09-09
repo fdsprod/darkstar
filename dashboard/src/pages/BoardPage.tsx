@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 
+import { DeleteWorkButton } from "./DeleteWorkButton";
 import { apiClient, ApiRequestError } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
@@ -35,6 +36,8 @@ export function BoardPage() {
   const { search } = useRouter();
   const createDialog = useRef<HTMLDialogElement>(null);
   const [workflows, setWorkflows] = useState<Schemas["WorkflowVersionSummary"][]>([]);
+  const [deletedItems, setDeletedItems] = useState<Schemas["WorkItem"][]>([]);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [view, setView] = useState<BoardView>("all");
   const [projectId, setProjectId] = useState("");
   const [workflowId, setWorkflowId] = useState("");
@@ -45,11 +48,17 @@ export function BoardPage() {
   const [selectedWorkId, setSelectedWorkId] = useState("");
   const [draggedWorkId, setDraggedWorkId] = useState("");
 
-  const allCards = useMemo(() => deriveBoardCards(state.snapshot), [state.snapshot]);
+  useEffect(() => {
+    if (!showDeleted) return;
+    let live = true;
+    void apiClient.listWorkItems(undefined, undefined, true).then((items) => { if (live) setDeletedItems(items.filter((item) => item.deletion === "deleted")); }).catch(() => { if (live) setActionMessage({kind:"error", text:"Deleted history could not be loaded. Try again."}); });
+    return () => { live = false; };
+  }, [showDeleted, state.lastSynchronizedAt]);
+  const allCards = useMemo(() => deriveBoardCards({ ...state.snapshot, workItems: [...state.snapshot.workItems, ...(showDeleted ? deletedItems.filter((item) => !state.snapshot.workItems.some((current) => current.id === item.id)) : [])] }), [state.snapshot, showDeleted, deletedItems]);
   const boardCards = useMemo(() => applyTransitionPlans(allCards, transitionPlans), [allCards, transitionPlans]);
   const cards = useMemo(
-    () => filterBoardCards(boardCards, { projectId: projectId || undefined, workflowId: workflowId || undefined, query, view }),
-    [boardCards, projectId, query, view, workflowId],
+    () => filterBoardCards(boardCards.filter((card) => showDeleted || card.work.deletion !== "deleted"), { projectId: projectId || undefined, workflowId: workflowId || undefined, query, view }),
+    [boardCards, projectId, query, view, workflowId, showDeleted],
   );
   const workflowNames = useMemo(
     () => [...new Set([...workflows.map((workflow) => workflow.name), ...state.snapshot.runs.map((run) => run.workflowId)])].sort((left, right) => left.localeCompare(right)),
@@ -108,10 +117,10 @@ export function BoardPage() {
 
       <div className="board-toolbar" aria-label="Board controls">
         <div className="view-tabs" aria-label="Board view">
-          <button className="view-tab" type="button" aria-pressed={view === "all"} onClick={() => setView("all")}>All work <span>{allCards.length}</span></button>
+          <button className="view-tab" type="button" aria-pressed={view === "all"} onClick={() => setView("all")}>All work <span>{allCards.filter((card) => card.work.deletion !== "deleted").length}</span></button>
           <button className="view-tab" type="button" aria-pressed={view === "attention"} onClick={() => setView("attention")}>Needs attention</button>
         </div>
-        <div className="board-filters">
+        <div className="board-filters"><label><input type="checkbox" checked={showDeleted} onChange={(event) => setShowDeleted(event.target.checked)} /> Show deleted</label>
           <label><span className="sr-only">Search work</span><span className="board-search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search work…" /></span></label>
           <label><span className="sr-only">Filter by project</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">All projects</option>{state.snapshot.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
           <label><span className="sr-only">Filter by workflow</span><select value={workflowId} onChange={(event) => setWorkflowId(event.target.value)}><option value="">All workflows</option>{workflowNames.map((workflow) => <option key={workflow} value={workflow}>{workflow}</option>)}</select></label>
@@ -123,11 +132,12 @@ export function BoardPage() {
       {pendingAction && <AsyncPanel compact state="loading" title="Lifecycle command pending" message={<>Moving <code>{pendingAction.workId}</code> to {lifecycleLabels[pendingAction.target]}. The card stays in its authoritative column until the daemon accepts the command.</>} />}
       {actionMessage && <AsyncPanel compact state={actionMessage.kind} title={actionMessage.kind === "success" ? "Command accepted" : "Command failed"} message={actionMessage.text} />}
 
-      <div className="board-operational-layout">
+      <p id="board-drag-help" className="sr-only">Drag a card to an allowed column. With a card focused, press Space to pick it up, Left or Right to choose a column, Enter to drop, or Escape to cancel.</p>
+      <div className={`board-operational-layout${selectedCard ? " board-operational-layout--detail" : ""}`}>
         <section className="board-preview" aria-label="Work lifecycle" aria-busy={loading || state.hydration === "refreshing"}>
-          {LIFECYCLE_COLUMNS.map((lifecycle) => <BoardColumn key={lifecycle} lifecycle={lifecycle} cards={cards.filter((card) => card.lifecycle === lifecycle)} count={counts[lifecycle]} loading={loading} pendingAction={pendingAction} plans={transitionPlans} draggedCard={boardCards.find((card) => card.work.id === draggedWorkId)} onSelect={setSelectedWorkId} onDrag={setDraggedWorkId} onMove={runTransition} onCreate={() => createDialog.current?.showModal()} />)}
+          {LIFECYCLE_COLUMNS.map((lifecycle) => <BoardColumn key={lifecycle} lifecycle={lifecycle} cards={cards.filter((card) => card.lifecycle === lifecycle)} count={counts[lifecycle]} loading={loading} pendingAction={pendingAction} plans={transitionPlans} draggedCard={boardCards.find((card) => card.work.id === draggedWorkId)} onChanged={refresh} onSelect={setSelectedWorkId} onDrag={setDraggedWorkId} onMove={runTransition} onCreate={() => createDialog.current?.showModal()} />)}
         </section>
-        {selectedCard && <WorkQuickPanel card={selectedCard} plan={transitionPlans[selectedCard.work.id]} events={state.recentEvents} pending={pendingAction?.workId === selectedCard.work.id} onClose={() => setSelectedWorkId("")} onMove={runTransition} />}
+        {selectedCard && <WorkQuickPanel onChanged={refresh} card={selectedCard} plan={transitionPlans[selectedCard.work.id]} events={state.recentEvents} pending={pendingAction?.workId === selectedCard.work.id} onClose={() => setSelectedWorkId("")} onMove={runTransition} />}
       </div>
 
       {!loading && cards.length === 0 && filtered && <EmptyState compact kind="filtered" title="No work matches these filters" message="The active project, workflow, search, or attention filters exclude every work item." action={<button type="button" className="button" onClick={() => { setProjectId(""); setWorkflowId(""); setQuery(""); setView("all"); }}>Clear filters</button>} />}
@@ -137,48 +147,44 @@ export function BoardPage() {
   );
 }
 
-function BoardColumn({ lifecycle, cards, count, loading, pendingAction, plans, draggedCard, onSelect, onDrag, onMove, onCreate }: { lifecycle: BoardLifecycle; cards: BoardCard[]; count: number; loading: boolean; pendingAction?: { workId: string; target: BoardLifecycle }; plans: Record<string, Schemas["WorkTransitionPlan"]>; draggedCard?: BoardCard; onSelect(workId: string): void; onDrag(workId: string): void; onMove(card: BoardCard, target: BoardLifecycle, source: WorkTransitionSource): Promise<void>; onCreate(): void }) {
+function BoardColumn({ lifecycle, cards, count, loading, pendingAction, plans, draggedCard, onSelect, onDrag, onMove, onCreate, onChanged }: { onChanged(): Promise<void>; lifecycle: BoardLifecycle; cards: BoardCard[]; count: number; loading: boolean; pendingAction?: { workId: string; target: BoardLifecycle }; plans: Record<string, Schemas["WorkTransitionPlan"]>; draggedCard?: BoardCard; onSelect(workId: string): void; onDrag(workId: string): void; onMove(card: BoardCard, target: BoardLifecycle, source: WorkTransitionSource): Promise<void>; onCreate(): void }) {
   const legalDrop = Boolean(draggedCard && legalTransitionTargets(plans[draggedCard.work.id]).includes(lifecycle));
   return <article className="board-column" data-lifecycle={lifecycle} data-drop-available={draggedCard ? String(legalDrop) : undefined}
-    onDragOver={(event) => { if (legalDrop) event.preventDefault(); }}
+    onDragOver={(event) => { event.dataTransfer.dropEffect = legalDrop ? "move" : "none"; if (legalDrop) event.preventDefault(); }}
     onDrop={(event) => { event.preventDefault(); onDrag(""); if (draggedCard && legalDrop) void onMove(draggedCard, lifecycle, "drag"); }}>
     <header className="board-column__header"><span className={`state-dot state-dot--${lifecycle}`} aria-hidden="true" /><h2>{lifecycleLabels[lifecycle]}</h2><span className="board-column__count" aria-label={`${count} work items`}>{count}</span></header>
-    <div className="board-column__cards">
+    <div className="board-column__cards">{draggedCard && <p className="board-drop-hint" role="status">{legalDrop ? `Drop to move to ${lifecycleLabels[lifecycle]}` : disabledTransitionReason(plans[draggedCard.work.id], lifecycle)}</p>}
       {loading && [0, 1].map((key) => <div className="work-card work-card--loading" key={key} aria-hidden="true"><span /><span /><span /></div>)}
-      {!loading && cards.map((card) => <WorkCard key={card.work.id} card={card} plan={plans[card.work.id]} pending={pendingAction?.workId === card.work.id} onSelect={onSelect} onDrag={onDrag} onMove={onMove} />)}
+      {!loading && cards.map((card) => <WorkCard key={card.work.id} card={card} plan={plans[card.work.id]} pending={pendingAction?.workId === card.work.id} onChanged={onChanged} onSelect={onSelect} onDrag={onDrag} onMove={onMove} />)}
       {!loading && cards.length === 0 && lifecycle === "backlog" && <button className="board-empty-card" type="button" onClick={onCreate}><span className="board-empty-card__icon"><Icon name="spark" /></span><strong>No backlog work</strong><span>Create a work item to begin.</span></button>}
       {!loading && cards.length === 0 && lifecycle !== "backlog" && <div className="board-column__empty"><span>No {lifecycleLabels[lifecycle].toLowerCase()} work</span></div>}
     </div>
   </article>;
 }
 
-function WorkCard({ card, plan, pending, onSelect, onDrag, onMove }: { card: BoardCard; plan?: Schemas["WorkTransitionPlan"]; pending: boolean; onSelect(workId: string): void; onDrag(workId: string): void; onMove(card: BoardCard, target: BoardLifecycle, source: WorkTransitionSource): Promise<void> }) {
+function WorkCard({ card, plan, pending, onSelect, onDrag, onMove, onChanged }: { onChanged(): Promise<void>; card: BoardCard; plan?: Schemas["WorkTransitionPlan"]; pending: boolean; onSelect(workId: string): void; onDrag(workId: string): void; onMove(card: BoardCard, target: BoardLifecycle, source: WorkTransitionSource): Promise<void> }) {
+  const [keyboardTarget, setKeyboardTarget] = useState<number>();
   const projectName = card.project?.name ?? "Unknown project";
-  return <article className="work-card" draggable={!pending && legalTransitionTargets(plan).length > 0}
+  return <article className="work-card" draggable={true} tabIndex={0} aria-describedby="board-drag-help"
+    onKeyDown={(event) => {
+      if (event.target !== event.currentTarget) return;
+      if (event.key === " " && keyboardTarget === undefined) { event.preventDefault(); setKeyboardTarget(LIFECYCLE_COLUMNS.indexOf(card.lifecycle)); onDrag(card.work.id); }
+      else if (keyboardTarget !== undefined && (event.key === "ArrowRight" || event.key === "ArrowLeft")) { event.preventDefault(); const index = Math.max(0, Math.min(7, keyboardTarget + (event.key === "ArrowRight" ? 1 : -1))); setKeyboardTarget(index); event.currentTarget.closest(".board-preview")?.querySelector('[data-lifecycle="'+LIFECYCLE_COLUMNS[index]+'"]')?.scrollIntoView({block:"nearest", inline:"nearest"}); }
+      else if (keyboardTarget !== undefined && event.key === "Enter") { event.preventDefault(); const target = LIFECYCLE_COLUMNS[keyboardTarget]; if (!pending && (plan && transitionDecision(plan, target))?.availability === "enabled") { void onMove(card, target, "keyboard"); setKeyboardTarget(undefined); onDrag(""); } }
+      else if (event.key === "Escape") { setKeyboardTarget(undefined); onDrag(""); }
+    }} onBlur={(event) => { if (keyboardTarget !== undefined && !event.currentTarget.contains(event.relatedTarget)) { setKeyboardTarget(undefined); onDrag(""); } }}
     aria-label={`${card.work.title}, ${lifecycleLabels[card.lifecycle]}`}
-    onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", card.work.id); onDrag(card.work.id); }}
+    onDragStart={(event) => { setKeyboardTarget(undefined); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", card.work.id); onDrag(card.work.id); }}
     onDragEnd={() => onDrag("")}>
-    <div className="work-card__project"><span aria-hidden="true">{initials(projectName)}</span><span>{projectName}</span></div>
-    <button className="work-card__title" type="button" onClick={() => onSelect(card.work.id)}>{card.work.title}</button>
-    <div className="work-card__metadata"><span title={card.work.id}>{compactId(card.work.id)}</span><span>Priority {card.work.priority}</span></div>
+    <div aria-live="polite" className="sr-only">{keyboardTarget !== undefined && `${lifecycleLabels[LIFECYCLE_COLUMNS[keyboardTarget]]}: ${disabledTransitionReason(plan, LIFECYCLE_COLUMNS[keyboardTarget])}`}</div><div className="work-card__project"><span aria-hidden="true">{initials(projectName)}</span><span>{projectName}</span></div>
+    <button className="work-card__title" draggable={true} type="button" onClick={() => onSelect(card.work.id)}>{card.work.title}</button>
+    <div className="work-card__metadata"><span>Priority {card.work.priority}</span></div>
     {card.run ? <div className="work-card__run"><AppLink to={`/work/${encodeURIComponent(card.work.id)}/run/${encodeURIComponent(card.run.id)}`}>{card.run.workflowId} · v{card.run.workflowVersion}</AppLink><span className={`run-status run-status--${card.lifecycle}`}><span aria-hidden="true" />{humanize(card.run.status)}</span></div> : <p className="work-card__unrouted">Route not selected</p>}
-    <div className="work-card__actions" aria-label={`Actions for ${card.work.title}`}><MoveMenu card={card} plan={plan} pending={pending} onMove={onMove} /><button className="card-action" type="button" onClick={() => onSelect(card.work.id)}>Quick view</button></div>
+    <div className="work-card__actions" aria-label={`Actions for ${card.work.title}`}><DeleteWorkButton work={card.work} onChanged={onChanged} /></div>
   </article>;
 }
 
-function MoveMenu({ card, plan, pending, onMove }: { card: BoardCard; plan?: Schemas["WorkTransitionPlan"]; pending: boolean; onMove(card: BoardCard, target: BoardLifecycle, source: WorkTransitionSource): Promise<void> }) {
-  const menuLabel = "Move";
-  return <details className="move-menu"><summary className="card-action" aria-label={`${menuLabel} ${card.work.title}`}>{pending ? "Working…" : menuLabel}</summary><div className="move-menu__items" aria-label={`${menuLabel} ${card.work.title}`}>
-    {LIFECYCLE_COLUMNS.map((target) => {
-      if (card.lifecycle === "ready" && target === "running") return null;
-      const enabled = plan ? transitionDecision(plan, target)?.availability === "enabled" : false;
-      const reason = disabledTransitionReason(plan, target);
-      return <button key={target} type="button" disabled={!enabled || pending} title={enabled ? undefined : reason} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void onMove(card, target, "menu"); }}><span>{target === "running" && card.lifecycle === "ready" ? "Start run" : `Move to ${lifecycleLabels[target]}`}</span><small>{enabled ? "Available" : reason}</small></button>;
-    })}
-  </div></details>;
-}
-
-function WorkQuickPanel({ card, plan, events, pending, onClose, onMove }: { card: BoardCard; plan?: Schemas["WorkTransitionPlan"]; events: readonly { aggregateId: string; kind: string; occurredAt: string; globalPosition: number }[]; pending: boolean; onClose(): void; onMove(card: BoardCard, target: BoardLifecycle, source: WorkTransitionSource): Promise<void> }) {
+function WorkQuickPanel({ card, plan, events, onClose, onChanged }: { onChanged(): Promise<void>; card: BoardCard; plan?: Schemas["WorkTransitionPlan"]; events: readonly { aggregateId: string; kind: string; occurredAt: string; globalPosition: number }[]; pending: boolean; onClose(): void; onMove(card: BoardCard, target: BoardLifecycle, source: WorkTransitionSource): Promise<void> }) {
   const activity = events.filter((event) => event.aggregateId === card.work.id || event.aggregateId === card.run?.id).slice(-5).reverse();
   const blockers = plan?.targets.flatMap((target) => target.disabledReasons).filter((reason) => !["current_state", "unsupported_target", "run_not_ready", "active_run", "terminal_work"].includes(reason)) ?? [];
   return <aside className="work-quick-panel" aria-labelledby="quick-panel-title">
@@ -186,7 +192,7 @@ function WorkQuickPanel({ card, plan, events, pending, onClose, onMove }: { card
     <section><h3>Requested outcome</h3><p>{card.work.details || card.work.title}</p></section>
     <section><h3>Blocker</h3><p>{blockers.length ? [...new Set(blockers)].map((reason) => DISABLED_REASON_LABELS[reason]).join("; ") : "No blocking condition is reported by the lifecycle plan."}</p></section>
     <section><h3>Readiness</h3><p>{readinessSummary(card, plan)}</p>{card.run && <AppLink to={`/work/${encodeURIComponent(card.work.id)}/run/${encodeURIComponent(card.run.id)}/readiness`}>Open readiness →</AppLink>}</section>
-    <section><h3>Next legal actions</h3><MoveMenu card={card} plan={plan} pending={pending} onMove={onMove} /></section>
+    <section><h3>Work item</h3><DeleteWorkButton work={card.work} onChanged={onChanged} /></section>
     <section><h3>Recent activity</h3>{activity.length ? <ol className="quick-activity">{activity.map((event) => <li key={event.globalPosition}><strong>{humanize(event.kind)}</strong><time dateTime={event.occurredAt}>{new Date(event.occurredAt).toLocaleString()}</time></li>)}</ol> : <p>No recent streamed activity for this work item.</p>}</section>
     <footer><AppLink to={`/work/${encodeURIComponent(card.work.id)}`}>Open full work context →</AppLink>{card.run && <AppLink to={`/work/${encodeURIComponent(card.work.id)}/run/${encodeURIComponent(card.run.id)}`}>Open run →</AppLink>}<AppLink to={`/artifacts?targetKind=work&targetId=${encodeURIComponent(card.work.id)}&ingest=1`}>Add evidence →</AppLink></footer>
   </aside>;
@@ -238,6 +244,5 @@ function CreateWorkDialog({ dialogRef, projects, workflows, onCreated }: { dialo
 
 function countByLifecycle(cards: readonly BoardCard[]) { const counts = Object.fromEntries(LIFECYCLE_COLUMNS.map((lifecycle) => [lifecycle, 0])) as Record<BoardLifecycle, number>; for (const card of cards) counts[card.lifecycle] += 1; return counts; }
 function safeActionError(error: unknown) { if (error instanceof ApiRequestError) { if (error.status === 412) return "This item changed before the action completed. The board was refreshed; try again."; if (error.code === "WORK_TRANSITION_FAILED") return error.message; if (error.status === 409) return "This action is not available in the item’s current state. The board was refreshed."; if (error.status === 400) return "The daemon rejected this action because it is not valid for the current state."; } return "The action could not be completed. Check daemon health and try again."; }
-function compactId(value: string) { return value.length < 16 ? value : `${value.slice(0, 8)}…${value.slice(-4)}`; }
 function initials(value: string) { return value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase(); }
 function humanize(value: string) { return value.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase()); }
