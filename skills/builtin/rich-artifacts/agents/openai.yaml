@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rich Artifacts"
+  short_description: "Author portable rich Markdown documents"
+  default_prompt: "Use $rich-artifacts to write readable Markdown with appropriate structured components."

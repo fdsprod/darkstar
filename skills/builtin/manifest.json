@@ -88,6 +88,20 @@
       "permissions": []
     },
     {
+      "name": "darkstar:rich-artifacts",
+      "kind": "skill",
+      "class": "guaranteed",
+      "version": "1.0.0",
+      "path": "rich-artifacts/SKILL.md",
+      "source": {
+        "type": "builtin_skill",
+        "locator": "rich-artifacts/SKILL.md"
+      },
+      "fingerprint": "b96ad3c908a1f5b145f5fe981d26f4754b682554b39ae8204459fdefcb909476",
+      "dependencies": [],
+      "permissions": []
+    },
+    {
       "name": "darkstar:route-assessment",
       "kind": "skill",
       "class": "guaranteed",
