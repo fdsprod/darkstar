@@ -45,7 +45,8 @@
             "template",
             "markdown",
             "open_items",
-            "decision_log"
+            "decision_log",
+            "workspace"
           ]
         },
         {
@@ -983,7 +984,10 @@
             "approval",
             "subworkflow",
             "point_execution",
-            "routing"
+            "routing",
+            "implementation",
+            "workspace_prepare",
+            "workspace_validate"
           ]
         },
         "definition": {
@@ -1104,6 +1108,15 @@
             "$ref": "#/$defs/transition"
           },
           "default": []
+        },
+        "implementation": {
+          "$ref": "#/$defs/implementation"
+        },
+        "workspacePrepare": {
+          "$ref": "#/$defs/workspacePrepare"
+        },
+        "workspaceValidate": {
+          "$ref": "#/$defs/workspaceValidate"
         }
       },
       "oneOf": [
@@ -1149,6 +1162,21 @@
               {
                 "required": [
                   "routing"
+                ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
                 ]
               }
             ]
@@ -1197,6 +1225,21 @@
                 "required": [
                   "routing"
                 ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
+                ]
               }
             ]
           }
@@ -1243,6 +1286,21 @@
               {
                 "required": [
                   "routing"
+                ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
                 ]
               }
             ]
@@ -1291,6 +1349,21 @@
                 "required": [
                   "routing"
                 ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
+                ]
               }
             ]
           }
@@ -1337,6 +1410,21 @@
               {
                 "required": [
                   "routing"
+                ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
                 ]
               }
             ]
@@ -1385,6 +1473,21 @@
                 "required": [
                   "routing"
                 ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
+                ]
               }
             ]
           }
@@ -1431,6 +1534,207 @@
               {
                 "required": [
                   "points"
+                ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "implementation"
+            },
+            "implementation": {
+              "$ref": "#/$defs/implementation"
+            }
+          },
+          "required": [
+            "implementation"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "workspace_prepare"
+            },
+            "workspacePrepare": {
+              "$ref": "#/$defs/workspacePrepare"
+            }
+          },
+          "required": [
+            "workspacePrepare"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "workspace_validate"
+            },
+            "workspaceValidate": {
+              "$ref": "#/$defs/workspaceValidate"
+            }
+          },
+          "required": [
+            "workspaceValidate"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
                 ]
               }
             ]
@@ -1764,6 +2068,105 @@
           }
         }
       ]
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskInput"
+      ],
+      "properties": {
+        "taskInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "workspaceInput": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "workspacePrepare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryInput",
+        "checkout"
+      ],
+      "properties": {
+        "repositoryInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "checkout": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "current_checkout"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "baseRef",
+                "branch"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "new_worktree"
+                },
+                "baseRef": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "branch": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "workspaceValidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceInput",
+        "checks"
+      ],
+      "properties": {
+        "workspaceInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "prefixItems": [
+              {
+                "type": "string",
+                "minLength": 1
+              }
+            ]
+          }
+        }
+      }
     }
   }
 }

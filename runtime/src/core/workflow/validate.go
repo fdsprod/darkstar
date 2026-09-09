@@ -226,6 +226,8 @@ func (state *validationState) validateNodes(nodeIDs []Identifier) {
 		state.validateReadiness(nodeID, fields)
 		state.validateApproval(nodeID, node, fields)
 		state.validatePointExecution(nodeID, node, fields)
+		state.validateImplementation(nodeID, node, fields)
+		state.validateWorkspace(nodeID, node, fields)
 		state.validateRouting(nodeID, node, fields)
 		state.validateNodeDefinition(nodeID, fields)
 		state.validateValidators(nodeID, fields)
@@ -284,6 +286,32 @@ func (state *validationState) validatePointExecution(nodeID Identifier, node Nod
 	}
 	if binding.ValueType() != ValueMarkdown && binding.ValueType().StorageType() != ValueObject {
 		state.add(ValidationBindingIncompatible, fmt.Sprintf("point execution plan input %q must be a Markdown plan", pointNode.Executor.PlanInput), location, nil)
+	}
+}
+
+func (state *validationState) validateImplementation(id Identifier, node Node, fields NodeFields) {
+	implementation, ok := node.(ImplementationNode)
+	if !ok {
+		return
+	}
+	location := fmt.Sprintf("/spec/nodes/%s", id)
+	binding, exists := fields.Inputs[implementation.Executor.TaskInput]
+	if !exists {
+		state.add(ValidationReferenceMissing, "Implementation requires its connected task input", location+"/implementation/taskInput", nil)
+	} else {
+		_, required := binding.(RequiredBinding)
+		if !required || (binding.ValueType() != ValueTask && binding.ValueType().StorageType() != ValueString && binding.ValueType().StorageType() != ValueObject) {
+			state.add(ValidationBindingIncompatible, "Implementation task must be a required task, Markdown, string, or object input", location+"/inputs", nil)
+		}
+	}
+	output, exists := fields.Outputs["changeset"]
+	if !exists || output.Type != ValueObject || (output.Required != nil && !*output.Required) {
+		state.add(ValidationSchemaInvalid, "Implementation requires an object changeset output", location+"/outputs/changeset", nil)
+	}
+	permissions := append([]string(nil), fields.Permissions...)
+	sort.Strings(permissions)
+	if len(permissions) != 2 || permissions[0] != "process.run" || permissions[1] != "workspace.write" {
+		state.add(ValidationSchemaInvalid, "Implementation requires exactly process.run and workspace.write permissions", location+"/permissions", nil)
 	}
 }
 

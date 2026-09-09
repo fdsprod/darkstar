@@ -523,8 +523,8 @@ func (c *Catalog) AuthoringCatalog(ctx context.Context) (AuthoringCatalog, error
 		}
 	}
 	return AuthoringCatalog{SchemaVersion: 1,
-		NodeTypes:       []NodeType{NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution},
-		ValueTypes:      []ValueType{ValueTask, ValueRepository, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog, ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject},
+		NodeTypes:       []NodeType{NodeWorkspacePrepare, NodeWorkspaceValidate, NodeReasoning, NodeImplementation, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution},
+		ValueTypes:      []ValueType{ValueTask, ValueRepository, ValueWorkspace, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog, ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject},
 		CheckpointModes: []CheckpointMode{CheckpointNone, CheckpointAcknowledge, CheckpointApprove, CheckpointApproveOnChange, CheckpointExternal},
 		PredicateOps:    []string{"const", "eq", "ne", "lt", "lte", "gt", "gte", "present", "all", "any", "not"},
 		Agents:          unavailableStrings, Policies: unavailableStrings, Schemas: unavailableStrings, Skills: skills, Tools: tools, Workflows: workflows}, nil
@@ -808,6 +808,10 @@ func (c *Catalog) ValidateDraft(ctx context.Context, id string, expectedRevision
 		return DraftValidationReport{}, fmt.Errorf("%w: draft %s is revision %d, expected %d", workflowstore.ErrDraftConflict, id, draft.Revision, expectedRevision)
 	}
 	report := c.validateResolvedCandidate(ctx, workflowstore.Candidate{Scope: draftScope(draft.Scope), Reference: draft.ScopeReference, Content: draft.Document})
+	report.Issues = append(report.Issues, draftConnectionIssues(draft.Document)...)
+	if len(report.Issues) > 0 {
+		report.Digest = ""
+	}
 	findings := make([]AuthoringFinding, len(report.Issues))
 	for index, issue := range report.Issues {
 		findings[index] = authoringFinding(issue, draft.Document)
@@ -1116,6 +1120,9 @@ func (c *Catalog) PublishDraft(ctx context.Context, request DraftPublishRequest)
 	}
 	if len(issues) != 0 {
 		return DraftPublishResult{}, issues
+	}
+	if connectionIssues := draftConnectionIssues(draft.Document); len(connectionIssues) > 0 {
+		return DraftPublishResult{}, connectionIssues
 	}
 	if !semanticVersionPattern.MatchString(request.Version) {
 		return DraftPublishResult{}, errors.New("invalid semantic version")

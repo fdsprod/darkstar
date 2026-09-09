@@ -391,28 +391,31 @@ func decodeNodes(data []byte, apiVersion string) (map[Identifier]Node, error) {
 
 func decodeNode(data []byte, apiVersion string) (Node, error) {
 	type nodeWire struct {
-		DisplayName    json.RawMessage   `json:"displayName"`
-		Type           NodeType          `json:"type"`
-		Entry          *bool             `json:"entry"`
-		Terminal       *bool             `json:"terminal"`
-		Inputs         json.RawMessage   `json:"inputs"`
-		Outputs        json.RawMessage   `json:"outputs"`
-		Readiness      json.RawMessage   `json:"readiness"`
-		Reasoning      json.RawMessage   `json:"reasoning"`
-		Gate           json.RawMessage   `json:"gate"`
-		Command        json.RawMessage   `json:"command"`
-		Approval       json.RawMessage   `json:"approval"`
-		Call           json.RawMessage   `json:"call"`
-		Points         json.RawMessage   `json:"points"`
-		Routing        json.RawMessage   `json:"routing"`
-		Definition     json.RawMessage   `json:"definition"`
-		Validators     []json.RawMessage `json:"validators"`
-		Retry          json.RawMessage   `json:"retry"`
-		Checkpoint     json.RawMessage   `json:"checkpoint"`
-		TransitionMode TransitionMode    `json:"transitionMode"`
-		Join           json.RawMessage   `json:"join"`
-		Permissions    []string          `json:"permissions"`
-		Transitions    []json.RawMessage `json:"transitions"`
+		DisplayName       json.RawMessage   `json:"displayName"`
+		Type              NodeType          `json:"type"`
+		Entry             *bool             `json:"entry"`
+		Terminal          *bool             `json:"terminal"`
+		Inputs            json.RawMessage   `json:"inputs"`
+		Outputs           json.RawMessage   `json:"outputs"`
+		Readiness         json.RawMessage   `json:"readiness"`
+		Reasoning         json.RawMessage   `json:"reasoning"`
+		Gate              json.RawMessage   `json:"gate"`
+		Command           json.RawMessage   `json:"command"`
+		Approval          json.RawMessage   `json:"approval"`
+		Call              json.RawMessage   `json:"call"`
+		Points            json.RawMessage   `json:"points"`
+		WorkspacePrepare  json.RawMessage   `json:"workspacePrepare"`
+		WorkspaceValidate json.RawMessage   `json:"workspaceValidate"`
+		Implementation    json.RawMessage   `json:"implementation"`
+		Routing           json.RawMessage   `json:"routing"`
+		Definition        json.RawMessage   `json:"definition"`
+		Validators        []json.RawMessage `json:"validators"`
+		Retry             json.RawMessage   `json:"retry"`
+		Checkpoint        json.RawMessage   `json:"checkpoint"`
+		TransitionMode    TransitionMode    `json:"transitionMode"`
+		Join              json.RawMessage   `json:"join"`
+		Permissions       []string          `json:"permissions"`
+		Transitions       []json.RawMessage `json:"transitions"`
 	}
 	var wire nodeWire
 	if err := strictDecode(data, &wire); err != nil {
@@ -423,6 +426,9 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 	}
 	if apiVersion == APIVersionV1Alpha1 && (len(wire.Readiness) != 0 || len(wire.Points) != 0 || wire.Type == NodePointExecution) {
 		return nil, errors.New("readiness and point execution require apiVersion darkstar.local/v1alpha2")
+	}
+	if apiVersion != APIVersionV1Alpha3 && (len(wire.Implementation) != 0 || wire.Type == NodeImplementation || wire.Type == NodeWorkspacePrepare || wire.Type == NodeWorkspaceValidate || len(wire.WorkspacePrepare) != 0 || len(wire.WorkspaceValidate) != 0) {
+		return nil, errors.New("implementation requires apiVersion darkstar.local/v1alpha3")
 	}
 	if apiVersion != APIVersionV1Alpha3 && (len(wire.Routing) != 0 || len(wire.Definition) != 0 || wire.Type == NodeRouting) {
 		return nil, errors.New("reusable definitions and routing require apiVersion darkstar.local/v1alpha3")
@@ -492,7 +498,7 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 	executors := []struct {
 		kind NodeType
 		raw  json.RawMessage
-	}{{NodeReasoning, wire.Reasoning}, {NodeGate, wire.Gate}, {NodeCommand, wire.Command}, {NodeApproval, wire.Approval}, {NodeSubworkflow, wire.Call}, {NodePointExecution, wire.Points}, {NodeRouting, wire.Routing}}
+	}{{NodeReasoning, wire.Reasoning}, {NodeGate, wire.Gate}, {NodeCommand, wire.Command}, {NodeApproval, wire.Approval}, {NodeSubworkflow, wire.Call}, {NodePointExecution, wire.Points}, {NodeRouting, wire.Routing}, {NodeImplementation, wire.Implementation}, {NodeWorkspacePrepare, wire.WorkspacePrepare}, {NodeWorkspaceValidate, wire.WorkspaceValidate}}
 	for _, executor := range executors {
 		kind, raw := executor.kind, executor.raw
 		if kind != wire.Type && len(raw) != 0 {
@@ -547,6 +553,27 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 			return nil, fmt.Errorf("points: %w", err)
 		}
 		return PointExecutionNode{Common: common, Executor: executor}, nil
+	case NodeWorkspacePrepare:
+		var executor WorkspacePrepareExecutor
+		if err := strictDecode(wire.WorkspacePrepare, &executor); err != nil {
+			return nil, err
+		}
+		return WorkspacePrepareNode{Common: common, Executor: executor}, nil
+	case NodeWorkspaceValidate:
+		var executor WorkspaceValidateExecutor
+		if err := strictDecode(wire.WorkspaceValidate, &executor); err != nil {
+			return nil, err
+		}
+		return WorkspaceValidateNode{Common: common, Executor: executor}, nil
+	case NodeImplementation:
+		var executor ImplementationExecutor
+		if err := strictDecode(wire.Implementation, &executor); err != nil {
+			return nil, fmt.Errorf("implementation: %w", err)
+		}
+		if !identifierPattern.MatchString(string(executor.TaskInput)) {
+			return nil, errors.New("implementation.taskInput must name an input")
+		}
+		return ImplementationNode{Common: common, Executor: executor}, nil
 	case NodeRouting:
 		executor, err := decodeRouting(wire.Routing)
 		if err != nil {
@@ -1296,7 +1323,7 @@ func validateValueType(value ValueType) error {
 		return validateIdentifier(Identifier(strings.TrimPrefix(string(value), "schema:")))
 	}
 	switch value {
-	case ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject, ValueTask, ValueRepository, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog:
+	case ValueWorkspace, ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject, ValueTask, ValueRepository, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog:
 		return nil
 	default:
 		return fmt.Errorf("unsupported value type %q", value)
@@ -1305,7 +1332,7 @@ func validateValueType(value ValueType) error {
 
 func validNodeType(value NodeType) bool {
 	switch value {
-	case NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution, NodeRouting:
+	case NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution, NodeRouting, NodeImplementation, NodeWorkspacePrepare, NodeWorkspaceValidate:
 		return true
 	default:
 		return false
@@ -1439,6 +1466,9 @@ func (node SubworkflowNode) MarshalJSON() ([]byte, error) {
 }
 func (node PointExecutionNode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nodeObject(node.Common, node.Type(), "points", node.Executor))
+}
+func (node ImplementationNode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(nodeObject(node.Common, node.Type(), "implementation", node.Executor))
 }
 func (node RoutingNode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nodeObject(node.Common, node.Type(), "routing", node.Executor))

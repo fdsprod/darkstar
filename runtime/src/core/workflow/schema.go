@@ -57,6 +57,7 @@ type ValueType string
 const (
 	ValueTask        ValueType = "task"
 	ValueRepository  ValueType = "repository"
+	ValueWorkspace   ValueType = "workspace"
 	ValueTemplate    ValueType = "template"
 	ValueMarkdown    ValueType = "markdown"
 	ValueOpenItems   ValueType = "open_items"
@@ -71,7 +72,7 @@ func (value ValueType) StorageType() ValueType {
 	switch value {
 	case ValueMarkdown:
 		return ValueString
-	case ValueTask, ValueRepository, ValueTemplate, ValueOpenItems, ValueDecisionLog:
+	case ValueTask, ValueRepository, ValueWorkspace, ValueTemplate, ValueOpenItems, ValueDecisionLog:
 		return ValueObject
 	default:
 		return value
@@ -108,13 +109,16 @@ type OutputDeclaration struct {
 type NodeType string
 
 const (
-	NodeReasoning      NodeType = "reasoning"
-	NodeGate           NodeType = "gate"
-	NodeCommand        NodeType = "command"
-	NodeApproval       NodeType = "approval"
-	NodeSubworkflow    NodeType = "subworkflow"
-	NodePointExecution NodeType = "point_execution"
-	NodeRouting        NodeType = "routing"
+	NodeReasoning         NodeType = "reasoning"
+	NodeGate              NodeType = "gate"
+	NodeCommand           NodeType = "command"
+	NodeApproval          NodeType = "approval"
+	NodeSubworkflow       NodeType = "subworkflow"
+	NodePointExecution    NodeType = "point_execution"
+	NodeImplementation    NodeType = "implementation"
+	NodeWorkspacePrepare  NodeType = "workspace_prepare"
+	NodeWorkspaceValidate NodeType = "workspace_validate"
+	NodeRouting           NodeType = "routing"
 )
 
 // Node is a closed executor union. Each concrete node carries exactly one
@@ -238,6 +242,22 @@ type ReasoningNode struct {
 	Common   NodeFields
 	Executor ReasoningExecutor
 }
+
+// Implementation is a workspace executor. Supporting plans and Markdown are
+// ordinary optional bindings, not a prerequisite baked into the executor.
+type ImplementationNode struct {
+	Common   NodeFields
+	Executor ImplementationExecutor
+}
+type ImplementationExecutor struct {
+	TaskInput      Identifier `json:"taskInput"`
+	WorkspaceInput Identifier `json:"workspaceInput,omitempty"`
+	Instructions   string     `json:"instructions,omitempty"`
+}
+
+func (ImplementationNode) Type() NodeType       { return NodeImplementation }
+func (n ImplementationNode) Fields() NodeFields { return n.Common }
+func (ImplementationNode) isNode()              {}
 
 func (ReasoningNode) Type() NodeType       { return NodeReasoning }
 func (n ReasoningNode) Fields() NodeFields { return n.Common }

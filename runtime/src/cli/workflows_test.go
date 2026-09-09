@@ -80,7 +80,7 @@ func TestWorkflowCLIInstallListGraphAndPreviewJSON(t *testing.T) {
 		SchemaVersion int                        `json:"schemaVersion"`
 		Result        *workflow.AuthoringCatalog `json:"result"`
 	}{Result: &authoringCatalog})
-	if authoringCatalog.SchemaVersion != 1 || len(authoringCatalog.NodeTypes) != 6 || authoringCatalog.Workflows.Status != workflow.ReferenceKnown || len(authoringCatalog.Workflows.Items) != 1 || authoringCatalog.Agents.Status != workflow.ReferenceUnavailable || authoringCatalog.Skills.Status != workflow.ReferenceKnown {
+	if authoringCatalog.SchemaVersion != 1 || len(authoringCatalog.NodeTypes) != 9 || authoringCatalog.Workflows.Status != workflow.ReferenceKnown || len(authoringCatalog.Workflows.Items) != 1 || authoringCatalog.Agents.Status != workflow.ReferenceUnavailable || authoringCatalog.Skills.Status != workflow.ReferenceKnown {
 		t.Fatalf("authoring catalog = %#v", authoringCatalog)
 	}
 
