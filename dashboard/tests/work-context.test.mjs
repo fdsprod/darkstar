@@ -37,11 +37,11 @@ test("full work view keeps diagnostics routes while removing global registries f
   assert.doesNotMatch(shell, /const contextualNavigation/);
   assert.match(shell, /contextualDestinations/);
   assert.match(work, /parseWorkContextTab/);
-  assert.match(run, /parseRunContextTab/);
-  assert.match(run, /RunAgentWorkspace/);
-  assert.match(run, /ProducedArtifacts/);
+  assert.match(run, /RunLive/);
+  assert.doesNotMatch(run, /RunAgentWorkspace/);
+  assert.match(run, /Run details/);
   assert.match(run, /availableCardActions/);
-  assert.match(run, /filter\(\(control\) => control !== "prepare"\)/);
+  assert.match(run, /control !== "prepare"/);
   assert.match(run, /transitionPlan\.resourceVersion/);
   assert.match(run, /decision\.confirmation === "required"/);
   assert.doesNotMatch(run, /function runControls/);

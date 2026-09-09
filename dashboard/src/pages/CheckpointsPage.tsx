@@ -213,11 +213,11 @@ function AuthorityDecisionActions({ item, refresh }: { item: Schemas["WorkflowCo
   </form>;
 }
 
-function isPreparationAttention(item: AttentionItem): item is Schemas["PreparationInputRequiredAttention"] {
+export function isPreparationAttention(item: AttentionItem): item is Schemas["PreparationInputRequiredAttention"] {
   return item.kind === "input_required" && "source" in item.subject && item.subject.source === "route_preparation";
 }
 
-function PreparationQuestions({ item, refresh }: { item: Schemas["PreparationInputRequiredAttention"]; refresh(): Promise<void> }) {
+export function PreparationQuestions({ item, refresh }: { item: Schemas["PreparationInputRequiredAttention"]; refresh(): Promise<void> }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [inputText, setInputText] = useState("");
   const [busy, setBusy] = useState(false);
