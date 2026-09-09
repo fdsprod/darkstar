@@ -21,6 +21,7 @@ import (
 	configurationfilesystem "darkstar/src/adapters/configurationstore/filesystem"
 	"darkstar/src/adapters/contentprocessor/common"
 	"darkstar/src/adapters/contentprocessor/commonimage"
+	"darkstar/src/adapters/provider/codex"
 	routeartifacts "darkstar/src/adapters/routeadvisor/artifacts"
 	routeadvice "darkstar/src/adapters/routeadvisor/reasoning"
 	"darkstar/src/adapters/statestore/sqlite"
@@ -410,6 +411,9 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return fmt.Errorf("configure daemon providers: %w", err)
 	}
 	providerAdapter, err := providerWiring.doctorProvider()
+	if err := service.server.SetWorkflowChat(codex.WorkflowChat{Executable: providerWiring.executable}); err != nil {
+		return err
+	}
 	if err != nil {
 		_ = database.Close()
 		service.database = nil

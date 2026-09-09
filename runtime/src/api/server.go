@@ -20,6 +20,7 @@ import (
 	"darkstar/src/core/health"
 	"darkstar/src/core/readinesscontrol"
 	"darkstar/src/core/workflow"
+	"darkstar/src/core/workflowchat"
 	"darkstar/src/core/worklifecycle"
 	"darkstar/src/dashboardassets"
 	"darkstar/src/ports/workflowstore"
@@ -62,6 +63,7 @@ type Server struct {
 	attention      AttentionService
 	readiness      ReadinessService
 	workflows      WorkflowService
+	workflowChat   workflowchat.Runner
 	dashboard      fs.FS
 
 	streamPollInterval      time.Duration
@@ -595,6 +597,14 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/workflows" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/workflows/") {
+		if path.Clean(request.URL.Path) == "/api/v1/workflows/chat" {
+			s.serveWorkflowChat(response, request, requestID)
+			return
+		}
+		if path.Clean(request.URL.Path) == "/api/v1/workflows/chat/models" {
+			s.serveWorkflowChatModels(response, request, requestID)
+			return
+		}
 		s.serveWorkflows(response, request, requestID)
 		return
 	}
