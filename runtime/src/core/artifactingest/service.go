@@ -35,6 +35,8 @@ type CapabilityResolver interface {
 // Request is one logical immutable ingestion. SourceKind is a closed choice;
 // source-specific helpers populate it for files, pastes, and stdin.
 type Request struct {
+	GeneratedBy *artifactregistry.AttemptProvenance
+
 	ArtifactID              string
 	ExpectedPreviousVersion *uint64
 	OperationID             string
@@ -123,6 +125,12 @@ func (s *Service) Ingest(ctx context.Context, request Request) (Result, error) {
 	if createdAt.IsZero() {
 		return Result{}, errors.New("artifact store returned no durable storage time")
 	}
+	var provenance artifactregistry.Provenance = artifactregistry.OperationProvenance{OperationID: request.OperationID}
+	if request.GeneratedBy != nil {
+		origin := *request.GeneratedBy
+		origin.OperationID = request.OperationID
+		provenance = origin
+	}
 	artifact, created, err := s.registry.Register(ctx, artifactregistry.RegisterRequest{
 		ArtifactID: request.ArtifactID, ExpectedPreviousVersion: request.ExpectedPreviousVersion, IdempotencyKey: request.IdempotencyKey,
 		SourceKind: request.SourceKind, SourceName: request.SourceName,
@@ -131,7 +139,7 @@ func (s *Service) Ingest(ctx context.Context, request Request) (Result, error) {
 		Creator: request.Creator, Status: status,
 		Producer: artifactregistry.Producer{Name: producerName, Version: producerVersion},
 		Roles:    request.Roles, Tags: request.Tags, Metadata: metadata,
-		Provenance: artifactregistry.OperationProvenance{OperationID: request.OperationID},
+		Provenance: provenance,
 		CreatedAt:  createdAt,
 	})
 	if err != nil {
@@ -219,6 +227,13 @@ func normalizeRequest(request Request) (Request, error) {
 	}
 	switch request.SourceKind {
 	case artifactregistry.SourceFile, artifactregistry.SourcePaste, artifactregistry.SourceStdin:
+		if request.GeneratedBy != nil {
+			return request, errors.New("supplied content cannot name a generating attempt")
+		}
+	case artifactregistry.SourceGenerated:
+		if request.GeneratedBy == nil || request.GeneratedBy.RunID == "" || request.GeneratedBy.NodeID == "" || request.GeneratedBy.AttemptID == "" {
+			return request, errors.New("generated content requires an exact producing attempt")
+		}
 	default:
 		return request, fmt.Errorf("unsupported supplied artifact source kind %q", request.SourceKind)
 	}

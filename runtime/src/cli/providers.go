@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	valueschemaadapter "darkstar/src/adapters/valueschema/jsonschema"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,6 +38,11 @@ type daemonProviderWiring struct {
 	toolDatabase    string
 	evidence        codex.EvidenceRecorder
 }
+
+// richArtifactSkill is generated from skills/builtin/rich-artifacts/SKILL.md.
+//
+//go:embed rich-artifacts.md
+var richArtifactSkill string
 
 const fakeProviderName = "fake"
 
@@ -125,14 +131,33 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 	if err != nil {
 		return providerport.AttemptRequest{}, fmt.Errorf("observe Codex capabilities for workflow attempt: %w", err)
 	}
+	request.NodeInputs = agentNodeInputs(request)
 	built, err := buildWorkflowAttemptRequest(request, wiring.projectRoot, manifest.Fingerprint)
 	if err != nil {
 		return built, err
 	}
 	session := &workflowtools.Session{Database: wiring.toolDatabase, RunID: request.Run.RunID, AttemptID: request.Attempt.AttemptID, Node: request.Node, Inputs: request.NodeInputs}
+	if request.Node.Type() == workflow.NodeImplementation {
+		if node := request.Node.(workflow.ImplementationNode); node.Executor.WorkspaceInput != "" {
+			prepared, resolveErr := wiring.resolvePreparedWorkspace(ctx, request, request.NodeInputs[node.Executor.WorkspaceInput])
+			if resolveErr != nil {
+				return providerport.AttemptRequest{}, resolveErr
+			}
+			built.Workspace = prepared.Path
+			built.Prompt += " Use only the connected prepared workspace. Do not switch branches or create another worktree."
+		}
+		session.Workspace = built.Workspace
+		if err := session.PrepareWorkspace(ctx); err != nil {
+			return providerport.AttemptRequest{}, fmt.Errorf("capture implementation baseline: %w", err)
+		}
+	}
+	session.Workspace = built.Workspace
+	if err := session.PrepareMarkdown(ctx); err != nil {
+		return providerport.AttemptRequest{}, fmt.Errorf("capture Markdown baseline: %w", err)
+	}
 	built.DynamicTools = session.Definitions()
 	built.ToolHandler = session
-	built.Prompt += " Use read_input to inspect connected inputs and templates. Submit each deliverable with submit_output and correct any validation errors before finishing. Use the connected journal tools to record or resolve items; journal history is append-only. Your final JSON must repeat the complete submitted deliverable values."
+	built.Prompt += " Use read_input to inspect connected inputs and templates. Submit each deliverable with submit_output and correct any validation errors before finishing. Use journal tools only when they are present in your tool list. After submitting all required outputs, finish with a concise human-readable summary. Do not repeat document contents or a JSON output envelope; the daemon assembles the validated submissions."
 	return built, nil
 }
 
@@ -142,11 +167,12 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 	if workspace == "." || !filepath.IsAbs(workspace) || request.Project.Status != statestore.ProjectActive || request.Project.SourceHash != workspaceDigest {
 		return providerport.AttemptRequest{}, fmt.Errorf("workflow project %q is not authorized for daemon workspace %q", request.Project.ProjectID, workspace)
 	}
+	request.NodeInputs = agentNodeInputs(request)
 	fields := request.Node.Fields()
 	agent, skills, tools := "", []string(nil), []string(nil)
 	access := providerport.AccessReadOnly
 	commandPolicy, filePolicy := providerport.InteractionDeny, providerport.InteractionDeny
-	instruction := "Execute this exact installed workflow reasoning node."
+	instruction := "Complete the following task using only the supplied inputs."
 	switch node := request.Node.(type) {
 	case workflow.ReasoningNode:
 		instruction += " " + node.Executor.Instructions
@@ -155,42 +181,43 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 			return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q names permission policies that are not configured: %s", request.Attempt.NodeID, strings.Join(fields.Permissions, ", "))
 		}
 	case workflow.PointExecutionNode:
-		if !samePermissionSet(fields.Permissions, []string{"process.run", "workspace.write"}) {
-			return providerport.AttemptRequest{}, fmt.Errorf("point-execution node %q requires exactly process.run and workspace.write permissions", request.Attempt.NodeID)
-		}
-		agent, access = "implementation-point", providerport.AccessWorkspaceWrite
-		commandPolicy, filePolicy = providerport.InteractionAllow, providerport.InteractionAllow
+		agent = "implementation-point"
 		instruction = "Read the connected Markdown implementation plan and carry out its points. Implement the requested work item in the supplied workspace. Make only the necessary repository changes. Do not claim completion unless the requested outcome exists on disk. Return changeset with summary, files, and validation; return progress with completed_points and remaining_points."
+	case workflow.ImplementationNode:
+		agent = "implementation"
+		instruction = "Implement the task in the connected input " + string(node.Executor.TaskInput) + " in the supplied workspace. Read optional connected Markdown instructions and supporting inputs when present; a plan is not required. Modify the actual files and run relevant checks. Preserve unrelated work. Do not commit, push, publish, or deploy. Use inspect_workspace_changes to see file changes relative to this attempt's durable baseline. Return changeset with disposition (changed, unchanged, or blocked), summary, files (exact relative paths reported by inspect_workspace_changes), and validation (checks actually run and results). Use unchanged only if the request is already satisfied and no files changed. Use blocked to report a blocker; blocked is not a successful completion. The runtime verifies files against the workspace; merely returning proposed content does not implement the task. " + node.Executor.Instructions
 	default:
 		return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q is %s; it is not a Codex-backed executor", request.Attempt.NodeID, request.Node.Type())
+	}
+	// Both workspace executors share one permission boundary. Point execution
+	// adds its plan semantics; ordinary implementation needs only its task.
+	if request.Node.Type() == workflow.NodeImplementation || request.Node.Type() == workflow.NodePointExecution {
+		if !samePermissionSet(fields.Permissions, []string{"process.run", "workspace.write"}) {
+			return providerport.AttemptRequest{}, fmt.Errorf("%s node %q requires exactly process.run and workspace.write permissions", request.Node.Type(), request.Attempt.NodeID)
+		}
+		access = providerport.AccessWorkspaceWrite
+		commandPolicy, filePolicy = providerport.InteractionAllow, providerport.InteractionAllow
+	}
+	// Load trusted authoring guidance, never scheduler state, for Markdown outputs.
+	for _, output := range fields.Outputs {
+		if output.Type == workflow.ValueMarkdown || (output.Artifact != nil && strings.HasSuffix(strings.ToLower(output.Artifact.Filename), ".md")) {
+			instruction += "\nLoaded authoring skill (applies to Markdown deliverables only):\n" + richArtifactSkill + "\nEnd of authoring skill.\n"
+			break
+		}
 	}
 	outputSchema, err := workflowOutputSchema(request.Node, fields.Outputs)
 	if err != nil {
 		return providerport.AttemptRequest{}, err
 	}
+	// Execution context is deliberately narrower than scheduler state. Do not add
+	// run inputs, other nodes' outputs, routing, or workflow metadata here.
 	promptContext := struct {
-		WorkflowName    string                                                          `json:"workflowName"`
-		WorkflowVersion string                                                          `json:"workflowVersion"`
-		WorkflowDigest  string                                                          `json:"workflowDigest"`
-		NodeID          string                                                          `json:"nodeId"`
-		NodeType        string                                                          `json:"nodeType"`
-		Agent           string                                                          `json:"agent"`
-		Skills          []string                                                        `json:"skills"`
-		Tools           []string                                                        `json:"tools"`
-		WorkItemID      string                                                          `json:"workItemId"`
-		WorkTitle       string                                                          `json:"workTitle"`
-		ProjectID       string                                                          `json:"projectId"`
-		ProjectName     string                                                          `json:"projectName"`
-		RunInputs       map[workflow.Identifier]json.RawMessage                         `json:"runInputs"`
-		Deliverables    map[workflow.Identifier]workflow.OutputDeclaration              `json:"deliverables"`
-		NodeInputs      map[workflow.Identifier]json.RawMessage                         `json:"nodeInputs"`
-		AcceptedOutputs map[workflow.Identifier]map[workflow.Identifier]json.RawMessage `json:"acceptedOutputs,omitempty"`
-	}{
-		WorkflowName: request.Workflow.Version.Name, WorkflowVersion: request.Workflow.Version.Version, WorkflowDigest: request.Workflow.Version.Digest,
-		NodeID: request.Attempt.NodeID, NodeType: string(request.Node.Type()), Agent: agent, Skills: skills, Tools: tools,
-		WorkItemID: request.WorkItem.WorkItemID, WorkTitle: request.WorkItem.Title, ProjectID: request.Project.ProjectID, ProjectName: request.Project.Name,
-		Deliverables: fields.Outputs, RunInputs: request.RunInputs, NodeInputs: request.NodeInputs, AcceptedOutputs: request.AcceptedOutputs,
-	}
+		Agent        string                                             `json:"agent"`
+		Skills       []string                                           `json:"skills,omitempty"`
+		Tools        []string                                           `json:"tools,omitempty"`
+		Deliverables map[workflow.Identifier]workflow.OutputDeclaration `json:"deliverables"`
+		Inputs       []string                                           `json:"availableInputs"`
+	}{Agent: agent, Skills: skills, Tools: tools, Deliverables: fields.Outputs, Inputs: sortedInputNames(request.NodeInputs)}
 	encodedContext, err := json.Marshal(promptContext)
 	if err != nil {
 		return providerport.AttemptRequest{}, fmt.Errorf("encode workflow attempt context: %w", err)
@@ -203,10 +230,11 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 	sort.Strings(inputIDs)
 	for _, id := range inputIDs {
 		value := request.NodeInputs[workflow.Identifier(id)]
-		digest := sha256.Sum256(value)
+		inputText := "Connected input " + id + ":\n" + string(value)
+		digest := sha256.Sum256([]byte(inputText))
 		providerInputs = append(providerInputs, providerport.Input{
 			Kind: providerport.InputText, Name: id, MediaType: "application/json",
-			Locator: "workflow-input:" + id, Digest: fmt.Sprintf("%x", digest), Text: string(value),
+			Locator: "workflow-input:" + id, Digest: fmt.Sprintf("%x", digest), Text: inputText,
 		})
 	}
 	return providerport.AttemptRequest{
@@ -214,7 +242,7 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 		IdempotencyKey: "start:" + request.Attempt.AttemptID, Workspace: workspace,
 		Access: access, Network: providerport.NetworkDenied,
 		CommandPolicy: commandPolicy, FilePolicy: filePolicy, ToolPolicy: providerport.InteractionDeny,
-		Prompt: instruction + " Skills and tools are descriptive requirements only; do not assume unresolved capabilities. Produce every required deliverable separately under its exact output ID. For artifact outputs, the value is the complete Markdown content, not a path or summary. Follow the template supplied through artifact.templateInput for that output; do not mix templates or combine files. Return only JSON matching the supplied output schema. For implementation progress, set remaining_points to 0 only after the requested outcome is complete.\nContext: " + string(encodedContext),
+		Prompt: instruction + " Skills and tools are descriptive requirements only; do not assume unresolved capabilities. Produce every required deliverable separately under its exact output ID. For artifact outputs, the value is the complete Markdown content, not a path or summary. Follow the template supplied through artifact.templateInput for that output; do not mix templates or combine files. Submit values matching their output contracts with submit_output. If a point-progress output is declared, set remaining_points to 0 only after the requested outcome is complete.\nContext: " + string(encodedContext),
 		Inputs: providerInputs, OutputSchema: outputSchema, CapabilityFingerprint: capabilityFingerprint,
 	}, nil
 }
@@ -264,7 +292,7 @@ func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]wo
 		}
 		properties[id] = property
 	}
-	if _, point := node.(workflow.PointExecutionNode); point {
+	if node.Type() == workflow.NodePointExecution || node.Type() == workflow.NodeImplementation {
 		if _, exists := properties["changeset"]; exists {
 			properties["changeset"] = map[string]any{
 				"type": "object", "additionalProperties": false,
@@ -275,8 +303,13 @@ func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]wo
 				},
 				"required": []string{"summary", "files", "validation"},
 			}
+			if node.Type() == workflow.NodeImplementation {
+				change := properties["changeset"].(map[string]any)
+				change["properties"].(map[string]any)["disposition"] = map[string]any{"type": "string", "enum": []string{"changed", "unchanged", "blocked"}}
+				change["required"] = []string{"disposition", "summary", "files", "validation"}
+			}
 		}
-		if _, exists := properties["progress"]; exists {
+		if _, exists := properties["progress"]; exists && node.Type() == workflow.NodePointExecution {
 			properties["progress"] = map[string]any{
 				"type": "object", "additionalProperties": false,
 				"properties": map[string]any{
@@ -359,4 +392,35 @@ func (wiring *daemonProviderWiring) ResolveWorkflowConfig(ctx context.Context, n
 		}
 	}
 	return result, nil
+}
+
+// Preserve canonical work records in the daemon; expose task content to the model.
+func agentNodeInputs(request runexecution.AttemptRequestContext) map[workflow.Identifier]json.RawMessage {
+	inputs := make(map[workflow.Identifier]json.RawMessage, len(request.NodeInputs))
+	for id, value := range request.NodeInputs {
+		binding, declared := request.Node.Fields().Inputs[id]
+		if !declared {
+			continue
+		}
+		if declared && binding.ValueType() == workflow.ValueTask {
+			var task map[string]json.RawMessage
+			if json.Unmarshal(value, &task) == nil {
+				delete(task, "id")
+				delete(task, "projectId")
+				if encoded, err := json.Marshal(task); err == nil {
+					value = encoded
+				}
+			}
+		}
+		inputs[id] = value
+	}
+	return inputs
+}
+func sortedInputNames(inputs map[workflow.Identifier]json.RawMessage) []string {
+	names := make([]string, 0, len(inputs))
+	for id := range inputs {
+		names = append(names, string(id))
+	}
+	sort.Strings(names)
+	return names
 }

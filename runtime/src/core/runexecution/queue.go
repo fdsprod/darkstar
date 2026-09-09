@@ -35,6 +35,8 @@ func (s *Service) StartQueue() {
 			case <-s.ctx.Done():
 				return
 			case <-ticker.C:
+				_ = s.ReconcileWorkDeletions(s.ctx)
+				_ = s.ReconcileArtifactReviews(s.ctx)
 				_ = s.DispatchQueue(s.ctx)
 			}
 		}

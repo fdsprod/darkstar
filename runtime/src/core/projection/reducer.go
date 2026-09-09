@@ -11,7 +11,7 @@ import (
 )
 
 // ReducerVersion changes whenever replay semantics change incompatibly.
-const ReducerVersion = "10"
+const ReducerVersion = "11"
 
 // UnsupportedSchemaVersionError means replay cannot safely interpret an event.
 type UnsupportedSchemaVersionError struct {
@@ -188,6 +188,32 @@ func ReduceRun(current *statestore.RunProjection, event statestore.Event) (state
 		next.WorkflowDigest, next.RouteDigest = data.WorkflowDigest, data.RouteDigest
 		next.RouteSnapshot = statestore.JSONSnapshot(string(data.RouteSnapshot))
 		next.Status = statestore.RunQueued
+	case "run.guidance_requested":
+		if err := requireRunState(current, event, statestore.RunRunning); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		var data struct {
+			ID        string `json:"id"`
+			Message   string `json:"message"`
+			AttemptID string `json:"attemptId"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		if data.ID == "" || data.Message == "" || data.AttemptID == "" {
+			return statestore.RunProjection{}, true, errors.New("guidance requires a message and attempt")
+		}
+	case "run.guidance_delivery":
+		var data struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.RunProjection{}, true, err
+		}
+		if data.ID == "" || (data.Status != "accepted" && data.Status != "unconfirmed") {
+			return statestore.RunProjection{}, true, errors.New("guidance delivery requires an explicit outcome")
+		}
 	case "run.completed":
 		if err := requireRunState(current, event, statestore.RunRunning); err != nil {
 			return statestore.RunProjection{}, true, err
@@ -452,6 +478,20 @@ func ReduceAttempt(current *statestore.AttemptProjection, event statestore.Event
 			return statestore.AttemptProjection{}, true, err
 		}
 		next.Status = statestore.AttemptFailed
+	case "attempt.cancellation_reconciled":
+		if current.Status != statestore.AttemptReconcileRequired {
+			return statestore.AttemptProjection{}, true, invalidTransition("attempt", current.AttemptID, string(current.Status), event.Kind)
+		}
+		var data struct {
+			Disposition string `json:"disposition"`
+		}
+		if err := decodeData(event, &data); err != nil {
+			return statestore.AttemptProjection{}, true, err
+		}
+		if data.Disposition != "graceful" && data.Disposition != "forced" && data.Disposition != "already_terminal" {
+			return statestore.AttemptProjection{}, true, errors.New("cancellation reconciliation requires confirmed provider evidence")
+		}
+		next.Status = statestore.AttemptCancelled
 	case "attempt.cancelled":
 		if current.Status.Terminal() {
 			return statestore.AttemptProjection{}, true, invalidTransition("attempt", current.AttemptID, string(current.Status), event.Kind)
@@ -549,12 +589,13 @@ func ReduceApproval(current *statestore.ApprovalProjection, event statestore.Eve
 			data.CheckpointRevision != 0 || data.CandidateArtifactID != "" || data.CandidateArtifactVersion != 0 ||
 			data.CandidateDigest != "" || data.CheckpointMode != "" || data.MaxRevisions != nil
 		if checkpointFields {
+			controlSubject := data.Class == statestore.ApprovalWorkflowControl && data.VisitID != "" && data.NodeID != "" && data.AttemptID != "" && data.CheckpointID == "" && data.CheckpointRevision == 0 && data.CandidateArtifactID == "" && data.CandidateArtifactVersion == 0 && data.CandidateDigest == "" && data.CheckpointMode == "" && data.MaxRevisions == nil
 			complete := data.Class == statestore.ApprovalWorkflowCheckpoint && data.CheckpointID != "" && data.VisitID != "" &&
 				data.NodeID != "" && data.AttemptID != "" && data.CheckpointRevision > 0 && data.CandidateArtifactID != "" &&
 				data.CandidateArtifactVersion > 0 && data.CandidateDigest != "" &&
 				(data.CheckpointMode == "approve" || data.CheckpointMode == "approve_on_change") &&
 				(data.MaxRevisions == nil || *data.MaxRevisions > 0)
-			if !complete {
+			if !complete && !controlSubject {
 				return statestore.ApprovalProjection{}, true, errors.New("artifact checkpoint approval.requested requires one complete checkpoint subject")
 			}
 		}

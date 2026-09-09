@@ -148,6 +148,7 @@ CREATE TABLE work_item_projection (
   source_hash TEXT NOT NULL CHECK (length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'),
   priority INTEGER NOT NULL CHECK (priority >= 0),
   status TEXT NOT NULL CHECK (status IN ('open', 'active', 'completed', 'cancelled')),
+  deletion TEXT NOT NULL DEFAULT '' CHECK (deletion IN ('', 'deleting', 'deleted')),
   resource_version INTEGER NOT NULL CHECK (resource_version >= 1),
   last_global_position INTEGER NOT NULL CHECK (last_global_position >= 0),
   created_at TEXT NOT NULL,
@@ -275,6 +276,7 @@ CREATE TABLE approval_projection (
   CHECK (
     (checkpoint_id = '' AND visit_id = '' AND node_id = '' AND attempt_id = '' AND checkpoint_revision = 0 AND
       candidate_artifact_id = '' AND candidate_artifact_version = 0 AND candidate_digest = '' AND checkpoint_mode = '' AND max_revisions IS NULL) OR
+    (class = 'workflow_control' AND checkpoint_id = '' AND visit_id GLOB 'visit_*' AND node_id <> '' AND attempt_id GLOB 'attempt_*' AND checkpoint_revision = 0 AND candidate_artifact_id = '' AND candidate_artifact_version = 0 AND candidate_digest = '' AND checkpoint_mode = '' AND max_revisions IS NULL) OR
     (class = 'workflow_checkpoint' AND checkpoint_id GLOB 'checkpoint_*' AND visit_id GLOB 'visit_*' AND node_id <> '' AND
       attempt_id GLOB 'attempt_*' AND checkpoint_revision > 0 AND candidate_artifact_id GLOB 'artifact_*' AND
       candidate_artifact_version > 0 AND length(candidate_digest) = 64 AND candidate_digest NOT GLOB '*[^0-9a-f]*' AND

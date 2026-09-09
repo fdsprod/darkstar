@@ -174,7 +174,7 @@ type threadStartParams struct {
 type turnStartParams struct {
 	ThreadID     string          `json:"threadId"`
 	Input        []turnInput     `json:"input"`
-	OutputSchema json.RawMessage `json:"outputSchema"`
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 	Model        string          `json:"model,omitempty"`
 	Effort       string          `json:"effort,omitempty"`
 }
@@ -960,8 +960,26 @@ func (adapter *Adapter) pump(state *codexAttempt) {
 					adapter.failPump(state, ports.FailureUncertain, "workflow tool response failed", err)
 					return
 				}
-				payload, _ := json.Marshal(map[string]any{"threadId": call.ThreadID, "turnId": call.TurnID, "item": map[string]any{"type": "dynamicToolCall", "id": call.CallID, "tool": call.Tool, "output": response}})
+				payload, _ := json.Marshal(map[string]any{"threadId": call.ThreadID, "turnId": call.TurnID, "item": map[string]any{"type": "dynamicToolCall", "id": call.CallID, "tool": call.Tool, "arguments": call.Arguments, "output": response}})
 				message = ServerNotification{Method: "item/completed", Params: payload}
+			}
+		}
+		if notification, ok := message.(ServerNotification); ok && notification.Method == "item/completed" {
+			if capture, ok := state.toolHandler.(interface {
+				CaptureMarkdown(context.Context, string) error
+			}); ok {
+				var params struct {
+					Item struct {
+						ID   string `json:"id"`
+						Type string `json:"type"`
+					} `json:"item"`
+				}
+				if json.Unmarshal(notification.Params, &params) == nil && (params.Item.Type == "commandExecution" || params.Item.Type == "fileChange") {
+					if err := capture.CaptureMarkdown(context.Background(), params.Item.ID); err != nil {
+						adapter.failPump(state, ports.FailureInternal, "Markdown artifact snapshot could not be saved", err)
+						return
+					}
+				}
 			}
 		}
 		event, err := state.normal.Normalize(message)
@@ -1057,6 +1075,15 @@ func (adapter *Adapter) finishTurn(state *codexAttempt, params map[string]json.R
 	state.mu.Lock()
 	output := cloneRaw(state.latestOutput)
 	state.mu.Unlock()
+	if resolver, ok := state.toolHandler.(providerport.SubmittedOutputResolver); ok {
+		var err error
+		output, err = resolver.ResolveSubmittedOutputs(context.Background())
+		if err != nil {
+			_ = shutdownClient(state.client)
+			adapter.complete(state, providerport.FailedResult{AttemptResultMetadata: adapter.metadata(state), Failure: ports.Failure{Code: ports.FailureInvalidRequest, Message: err.Error()}})
+			return
+		}
+	}
 	if len(bytes.TrimSpace(output)) == 0 || !json.Valid(output) {
 		failure := ports.Failure{Code: ports.FailureInvalidRequest, Message: "Codex structured output is not valid JSON", Details: map[string]string{"phase": "output_validation"}}
 		_ = shutdownClient(state.client)
@@ -1449,10 +1476,14 @@ func makeTurnStartParams(request providerport.AttemptRequest, threadID string) (
 			return turnStartParams{}, adapterFailure(ports.FailureUnsupported, "unsupported Codex input kind", false)
 		}
 	}
+	wireSchema := cloneRaw(request.OutputSchema)
+	if _, ok := request.ToolHandler.(providerport.SubmittedOutputResolver); ok {
+		wireSchema = nil
+	}
 	return turnStartParams{
 		ThreadID:     threadID,
 		Input:        inputs,
-		OutputSchema: cloneRaw(request.OutputSchema),
+		OutputSchema: wireSchema,
 		Model:        request.ModelHint,
 		Effort:       request.ReasoningHint,
 	}, nil

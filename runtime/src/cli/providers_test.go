@@ -102,7 +102,7 @@ func TestWorkflowAttemptBuilderUsesExactContextAndFailClosedPolicies(t *testing.
 	if built.Access != providerport.AccessReadOnly || built.Network != providerport.NetworkDenied || built.CommandPolicy != providerport.InteractionDeny || built.FilePolicy != providerport.InteractionDeny || built.ToolPolicy != providerport.InteractionDeny {
 		t.Fatalf("attempt policy = %#v", built)
 	}
-	if len(built.Inputs) != 0 || !strings.Contains(built.Prompt, `"skills":["design"]`) || !strings.Contains(built.Prompt, `"tools":["repository-search"]`) || !strings.Contains(built.Prompt, `"workflowDigest":"`+strings.Repeat("a", 64)+`"`) {
+	if len(built.Inputs) != 0 || !strings.Contains(built.Prompt, `"skills":["design"]`) || !strings.Contains(built.Prompt, `"tools":["repository-search"]`) || strings.Contains(built.Prompt, `"workflowDigest"`) {
 		t.Fatalf("prompt/input context = %q / %#v", built.Prompt, built.Inputs)
 	}
 	var schema struct {
@@ -133,7 +133,7 @@ func TestWorkflowAttemptBuilderDigestsPreparedNodeInputs(t *testing.T) {
 	workspace := t.TempDir()
 	workspaceDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(workspace))))
 	story := json.RawMessage(`{"title":"Create README"}`)
-	node := workflow.ReasoningNode{Common: workflow.NodeFields{Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"summary": {Type: workflow.ValueString}}}, Executor: workflow.ReasoningExecutor{Agent: "reader"}}
+	node := workflow.ReasoningNode{Common: workflow.NodeFields{Inputs: map[workflow.Identifier]workflow.Binding{"story": workflow.RequiredBinding{Type: workflow.ValueTask}}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"summary": {Type: workflow.ValueString}}}, Executor: workflow.ReasoningExecutor{Agent: "reader"}}
 	request := runexecution.AttemptRequestContext{
 		Attempt: statestore.AttemptProjection{AttemptID: "attempt-1", RunID: "run-1", NodeID: "read"},
 		Run:     statestore.RunProjection{RunID: "run-1"}, WorkItem: statestore.WorkItemProjection{WorkItemID: "work-1", Title: "Create README"},
@@ -145,8 +145,8 @@ func TestWorkflowAttemptBuilderDigestsPreparedNodeInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantDigest := fmt.Sprintf("%x", sha256.Sum256(story))
-	if len(built.Inputs) != 1 || built.Inputs[0].Name != "story" || built.Inputs[0].Digest != wantDigest || built.Inputs[0].Text != string(story) {
+	wantDigest := fmt.Sprintf("%x", sha256.Sum256([]byte("Connected input story:\n"+string(story))))
+	if len(built.Inputs) != 1 || built.Inputs[0].Name != "story" || built.Inputs[0].Digest != wantDigest || built.Inputs[0].Text != "Connected input story:\n"+string(story) {
 		t.Fatalf("prepared inputs = %#v", built.Inputs)
 	}
 }
@@ -178,4 +178,56 @@ func TestPointExecutionOutputSchemaIsStrictAtEveryObjectBoundary(t *testing.T) {
 
 func providerTestPaths(root string) platformport.Paths {
 	return platformport.Paths{Config: filepath.Join(root, "config"), Data: filepath.Join(root, "data"), Cache: filepath.Join(root, "cache"), Logs: filepath.Join(root, "logs"), Runtime: filepath.Join(root, "runtime")}
+}
+
+func TestMarkdownAttemptLoadsGenericRichArtifactSkill(t *testing.T) {
+	workspace := t.TempDir()
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(workspace))))
+	for _, tc := range []struct {
+		name   string
+		output workflow.OutputDeclaration
+		loaded bool
+	}{
+		{"markdown", workflow.OutputDeclaration{Type: workflow.ValueMarkdown}, true},
+		{"artifact", workflow.OutputDeclaration{Type: workflow.ValueString, Artifact: &workflow.ArtifactContract{Filename: "plan.md"}}, true},
+		{"revision", workflow.OutputDeclaration{Type: workflow.ValueString, Artifact: &workflow.ArtifactContract{Filename: "research.MD"}}, true},
+		{"ordinary", workflow.OutputDeclaration{Type: workflow.ValueString}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := runexecution.AttemptRequestContext{Project: statestore.ProjectProjection{SourceHash: digest, Status: statestore.ProjectActive}, Node: workflow.ReasoningNode{Common: workflow.NodeFields{Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"result": tc.output}}, Executor: workflow.ReasoningExecutor{Agent: "writer"}}}
+			built, err := buildWorkflowAttemptRequest(request, workspace, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(built.Prompt, "# Rich Artifacts") != tc.loaded {
+				t.Fatal("incorrect authoring skill selection")
+			}
+			if tc.loaded && (!strings.Contains(built.Prompt, "### ApiSpec fence") || strings.Contains(strings.ToLower(built.Prompt), "forge") || strings.Contains(built.Prompt, "{plugin-root}")) {
+				t.Fatal("skill missing content or contains product-specific instructions")
+			}
+			if built.Access != providerport.AccessReadOnly {
+				t.Fatal("authoring skill changed executor authority")
+			}
+		})
+	}
+}
+
+func TestAttemptContextContainsOnlyDeclaredInputContentOnce(t *testing.T) {
+	workspace := t.TempDir()
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(workspace))))
+	request := runexecution.AttemptRequestContext{Project: statestore.ProjectProjection{SourceHash: digest, Status: statestore.ProjectActive}, Node: workflow.ReasoningNode{Common: workflow.NodeFields{Inputs: map[workflow.Identifier]workflow.Binding{"task": workflow.RequiredBinding{Type: workflow.ValueTask}}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"summary": {Type: workflow.ValueString}}}}, NodeInputs: map[workflow.Identifier]json.RawMessage{"task": json.RawMessage(`{"id":"work-internal","projectId":"project-internal","title":"Unique task content","details":"Only this task"}`), "unconnected": json.RawMessage(`"secret unrelated node"`)}}
+	built, err := buildWorkflowAttemptRequest(request, workspace, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := built.Prompt
+	for _, input := range built.Inputs {
+		combined += input.Text
+	}
+	if len(built.Inputs) != 1 || strings.Count(combined, "Unique task content") != 1 || strings.Contains(combined, "work-internal") || strings.Contains(combined, "project-internal") || strings.Contains(combined, "secret unrelated") {
+		t.Fatalf("context boundary failed: %s", combined)
+	}
+	if !strings.Contains(string(request.NodeInputs["task"]), "work-internal") {
+		t.Fatal("canonical task was mutated")
+	}
 }

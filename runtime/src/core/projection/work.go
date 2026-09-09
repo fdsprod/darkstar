@@ -106,7 +106,20 @@ func ReduceWorkItem(current *statestore.WorkItemProjection, event statestore.Eve
 	}
 	next := *current
 	switch event.Kind {
+	case "work.deletion_requested":
+		if current.Deletion != statestore.WorkRetained {
+			return statestore.WorkItemProjection{}, true, errors.New("work deletion already requested")
+		}
+		next.Deletion = statestore.WorkDeleting
+	case "work.deleted":
+		if current.Deletion != statestore.WorkDeleting {
+			return statestore.WorkItemProjection{}, true, errors.New("work deletion was not requested")
+		}
+		next.Deletion = statestore.WorkDeleted
 	case "work.started":
+		if current.Deletion != statestore.WorkRetained {
+			return statestore.WorkItemProjection{}, true, errors.New("work is being deleted")
+		}
 		if current.Status != statestore.WorkItemOpen {
 			return statestore.WorkItemProjection{}, true, invalidTransition("work item", current.WorkItemID, string(current.Status), event.Kind)
 		}

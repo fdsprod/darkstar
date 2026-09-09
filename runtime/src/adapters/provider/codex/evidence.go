@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -21,6 +23,50 @@ type EvidenceRecord struct {
 	Kind      string
 	MediaType string
 	Data      []byte
+}
+
+// ReadPayloads recovers old transcript payloads from immutable observations. No
+// client path is accepted; names and hashes are verified beneath the owned root.
+func (recorder *DirectoryEvidenceRecorder) ReadPayloads(ctx context.Context, attempt string, sequences []uint64) (map[uint64]json.RawMessage, error) {
+	result := map[uint64]json.RawMessage{}
+	if safePathPart(attempt) != attempt {
+		return result, errors.New("invalid attempt identity")
+	}
+	directory := filepath.Join(recorder.root, attempt)
+	entries, err := os.ReadDir(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return result, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	wanted := map[uint64]bool{}
+	for _, seq := range sequences {
+		wanted[seq] = true
+	}
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		name := entry.Name()
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || len(name) < 40 || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		seq, err := strconv.ParseUint(name[:20], 10, 64)
+		if err != nil || !wanted[seq] {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(directory, name))
+		if err != nil {
+			return nil, err
+		}
+		digest := fmt.Sprintf("%x", sha256.Sum256(raw))
+		if !strings.HasSuffix(name, "-"+digest[:16]+".json") || !json.Valid(raw) {
+			return nil, errors.New("transcript observation integrity check failed")
+		}
+		result[seq] = json.RawMessage(raw)
+	}
+	return result, nil
 }
 
 // EvidenceRecorder persists raw provider observations before they are exposed

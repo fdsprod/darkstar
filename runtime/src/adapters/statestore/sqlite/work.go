@@ -59,13 +59,13 @@ func (d *Database) Projects(ctx context.Context) ([]statestore.ProjectProjection
 	return values, rows.Err()
 }
 
-const workItemSelect = `SELECT work_item_id, project_id, title, details, evidence_json, routing_intent_json, source_hash, priority, status,
+const workItemSelect = `SELECT work_item_id, project_id, title, details, evidence_json, routing_intent_json, source_hash, priority, status, deletion,
 	resource_version, last_global_position, created_at, updated_at FROM work_item_projection`
 
 func scanWorkItemProjection(row interface{ Scan(...any) error }) (statestore.WorkItemProjection, error) {
 	var value statestore.WorkItemProjection
 	var createdAt, updatedAt, evidenceJSON, routingIntentJSON string
-	err := row.Scan(&value.WorkItemID, &value.ProjectID, &value.Title, &value.Details, &evidenceJSON, &routingIntentJSON, &value.SourceHash, &value.Priority, &value.Status,
+	err := row.Scan(&value.WorkItemID, &value.ProjectID, &value.Title, &value.Details, &evidenceJSON, &routingIntentJSON, &value.SourceHash, &value.Priority, &value.Status, &value.Deletion,
 		&value.ResourceVersion, &value.LastGlobalPosition, &createdAt, &updatedAt)
 	if err != nil {
 		return statestore.WorkItemProjection{}, err
@@ -299,11 +299,11 @@ func writeWorkItemProjection(ctx context.Context, tx *sql.Tx, value statestore.W
 	if err != nil {
 		return fmt.Errorf("encode work routing intent: %w", err)
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO work_item_projection(work_item_id, project_id, title, source_hash, priority, status, resource_version, last_global_position, created_at, updated_at, details, evidence_json, routing_intent_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(work_item_id) DO UPDATE SET status=excluded.status, resource_version=excluded.resource_version,
+	_, err = tx.ExecContext(ctx, `INSERT INTO work_item_projection(work_item_id, project_id, title, source_hash, priority, status, resource_version, last_global_position, created_at, updated_at, details, evidence_json, routing_intent_json, deletion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(work_item_id) DO UPDATE SET status=excluded.status, deletion=excluded.deletion, resource_version=excluded.resource_version,
 		last_global_position=excluded.last_global_position, updated_at=excluded.updated_at`, value.WorkItemID, value.ProjectID,
 		value.Title, value.SourceHash, value.Priority, value.Status, value.ResourceVersion, value.LastGlobalPosition,
-		formatTime(value.CreatedAt), formatTime(value.UpdatedAt), value.Details, string(evidenceJSON), string(routingIntentJSON))
+		formatTime(value.CreatedAt), formatTime(value.UpdatedAt), value.Details, string(evidenceJSON), string(routingIntentJSON), value.Deletion)
 	return projectionWriteError("work item", value.WorkItemID, err)
 }
 

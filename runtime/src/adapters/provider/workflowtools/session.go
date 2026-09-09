@@ -29,6 +29,11 @@ func (s *Session) ValidateFinal(raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &outputs); err != nil {
 		return err
 	}
+	if s.Node.Type() == workflow.NodeImplementation {
+		if err := s.validateWorkspaceResult(context.Background(), outputs["changeset"]); err != nil {
+			return err
+		}
+	}
 	db, err := s.open(context.Background())
 	if err != nil {
 		return err
@@ -59,6 +64,7 @@ func (s *Session) ValidateFinal(raw json.RawMessage) error {
 }
 
 type Session struct {
+	Workspace        string
 	Database         string
 	RunID, AttemptID string
 	Node             workflow.Node
@@ -73,7 +79,10 @@ func (s *Session) Definitions() []provider.ToolDefinition {
 	text := map[string]any{"type": "string"}
 	tools := []provider.ToolDefinition{
 		makeTool("read_input", "Read an input or template by its exact input ID.", map[string]any{"id": text}, []string{"id"}),
-		makeTool("submit_output", "Validate and stage one output. Correct any reported errors and submit again. The final response must contain the same complete output values.", map[string]any{"id": text, "value": map[string]any{}}, []string{"id", "value"}),
+		makeTool("submit_output", "Validate and stage one output. Correct any reported errors and submit again. The daemon collects validated submissions; do not repeat their contents in your final message.", map[string]any{"id": text, "value": map[string]any{}}, []string{"id", "value"}),
+	}
+	if s.Node.Type() == workflow.NodeImplementation {
+		tools = append(tools, makeTool("inspect_workspace_changes", "Read the actual added, modified, and deleted files since this attempt began. Use these exact paths in changeset.files. This does not modify or publish anything.", map[string]any{}, []string{}))
 	}
 	ids := make([]string, 0, len(s.Inputs))
 	for id := range s.Inputs {
@@ -133,6 +142,13 @@ func (s *Session) Call(ctx context.Context, callID, name string, raw json.RawMes
 	if len(raw) > 1024*1024 {
 		return nil, errors.New("tool arguments exceed 1 MiB")
 	}
+	if name == "inspect_workspace_changes" && s.Node.Type() == workflow.NodeImplementation {
+		changes, err := s.workspaceChanges(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{"files": changes})
+	}
 	if name == "read_input" {
 		var args struct {
 			ID workflow.Identifier `json:"id"`
@@ -156,6 +172,11 @@ func (s *Session) Call(ctx context.Context, callID, name string, raw json.RawMes
 		}
 		if err := workflow.ValidateDeliverable(s.Node, args.ID, args.Value, s.Inputs, valueschemaadapter.Validator{}); err != nil {
 			return nil, err
+		}
+		if s.Node.Type() == workflow.NodeImplementation && args.ID == "changeset" {
+			if err := s.validateWorkspaceResult(ctx, args.Value); err != nil {
+				return nil, err
+			}
 		}
 		return s.append(ctx, "output:"+s.AttemptID+":"+string(args.ID), "submit", string(args.ID), callID, string(args.Value), false)
 	}
@@ -261,4 +282,38 @@ func (s *Session) read(ctx context.Context, resource string) (json.RawMessage, e
 		return nil, err
 	}
 	return json.Marshal(map[string]string{"markdown": md.String()})
+}
+
+// ResolveSubmittedOutputs uses durable tool submissions as the sole output authority.
+// Final assistant prose is transcript content, not a second competing result.
+func (s *Session) ResolveSubmittedOutputs(ctx context.Context) (json.RawMessage, error) {
+	db, err := s.open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	outputs := map[workflow.Identifier]json.RawMessage{}
+	for id, declaration := range s.Node.Fields().Outputs {
+		var staged string
+		err = db.QueryRowContext(ctx, "SELECT content FROM workflow_tool_events WHERE run_id=? AND attempt_id=? AND resource=? ORDER BY sequence DESC LIMIT 1", s.RunID, s.AttemptID, "output:"+s.AttemptID+":"+string(id)).Scan(&staged)
+		if errors.Is(err, sql.ErrNoRows) && declaration.Required != nil && !*declaration.Required {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("required output %s has no validated submission: %w", id, err)
+		}
+		value := json.RawMessage(staged)
+		if err = workflow.ValidateDeliverable(s.Node, id, value, s.Inputs, valueschemaadapter.Validator{}); err != nil {
+			return nil, err
+		}
+		outputs[id] = value
+	}
+	raw, err := json.Marshal(outputs)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.ValidateFinal(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
 }

@@ -89,6 +89,7 @@ Work commands:
   work import <source-ref> [--project <project-id>] [--title <title>] [--priority <n>] [--idempotency-key <key>] [--json]
   work list [--project <project-id>] [--json]
   work show <work-id> [--json]
+  work delete <work-id> --if-match <version> --confirm [--idempotency-key <key>] [--json]
   work transition plan <work-id> --to <state> [--workflow <name> --version <version>] [--profile <profile>] [--json]
   work transition apply <work-id> --to <state> --if-match <version> [--workflow <name> --version <version>] [--profile <profile>] [--confirm] [--idempotency-key <key>] [--json]
 
@@ -410,10 +411,10 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return fmt.Errorf("configure daemon providers: %w", err)
 	}
-	providerAdapter, err := providerWiring.doctorProvider()
 	if err := service.server.SetWorkflowChat(codex.WorkflowChat{Executable: providerWiring.executable}); err != nil {
 		return err
 	}
+	providerAdapter, err := providerWiring.doctorProvider()
 	if err != nil {
 		_ = database.Close()
 		service.database = nil
@@ -571,16 +572,7 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	if err := executions.EnableQueue(func() (int, error) { return configuredQueueLimit(service.paths, service.projectRoot) }); err != nil {
 		return closeArtifactSetup(err)
 	}
-	if report.SchedulingAllowed() {
-		if err := executions.ResumeActive(ctx); err != nil {
-			_ = executions.Close()
-			_ = database.Close()
-			service.database = nil
-			service.executions = nil
-			return fmt.Errorf("resume active runs: %w", err)
-		}
-	}
-	executions.StartQueue()
+
 	if err := service.server.SetRuns(executions); err != nil {
 		_ = executions.Close()
 		_ = database.Close()
@@ -635,10 +627,26 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	if err := service.server.SetApprovals(checkpoints); err != nil {
 		return closeArtifactSetup(err)
 	}
+	executions.SetArtifactReviews(artifacts, checkpoints)
+	if err := executions.ReconcileArtifactReviews(ctx); err != nil {
+		return closeArtifactSetup(err)
+	}
+	if report.SchedulingAllowed() {
+		if err := executions.ResumeActive(ctx); err != nil {
+			_ = executions.Close()
+			_ = database.Close()
+			service.database = nil
+			service.executions = nil
+			return fmt.Errorf("resume active runs: %w", err)
+		}
+	}
+
+	executions.StartQueue()
 	attentionProjection, err := attention.New(database)
 	if err != nil {
 		return closeArtifactSetup(err)
 	}
+	attentionProjection.SetDecisionHandler(executions.ApplyWorkflowCheckpointDecision)
 	if err := service.server.SetAttention(attentionProjection); err != nil {
 		return closeArtifactSetup(err)
 	}

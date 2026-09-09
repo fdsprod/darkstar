@@ -407,3 +407,9 @@ type RecoveryMetadata struct {
 	Resumable        bool
 	EvidenceRef      string
 }
+
+// SubmittedOutputResolver assembles a tool-backed result without trusting final prose.
+// Adapters retain OutputSchema validation for the assembled result.
+type SubmittedOutputResolver interface {
+	ResolveSubmittedOutputs(context.Context) (json.RawMessage, error)
+}

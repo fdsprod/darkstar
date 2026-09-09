@@ -1205,3 +1205,48 @@ func isSuccessfulWorkflowResult(result providerport.AttemptResult) bool {
 	_, ok := result.(providerport.SucceededResult)
 	return ok
 }
+
+type submittedToolStub struct {
+	workflowToolStub
+	failure bool
+}
+
+func (s *submittedToolStub) ResolveSubmittedOutputs(context.Context) (json.RawMessage, error) {
+	if s.failure {
+		return nil, errors.New("missing submission")
+	}
+	return json.RawMessage(`{"answer":"from durable tool"}`), nil
+}
+func TestToolBackedAttemptUsesSubmissionsNotFinalProse(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			script := newAppServerScript("A human readable final summary, not JSON", false)
+			script.dynamic = true
+			adapter := newTestAdapter(t, script)
+			request := testAttemptRequest(t.TempDir())
+			request.ToolHandler = &submittedToolStub{failure: fail}
+			request.DynamicTools = []providerport.ToolDefinition{{Type: "function", Name: "submit_output", Description: "Submit", InputSchema: json.RawMessage(`{"type":"object"}`)}}
+			params, err := makeTurnStartParams(request, "thread")
+			if err != nil || len(params.OutputSchema) != 0 {
+				t.Fatal("tool-backed model must not receive a final JSON schema")
+			}
+			handle, err := adapter.StartAttempt(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			<-script.threadParams
+			collectEvents(t, adapter, handle, nil)
+			result := getResult(t, adapter, handle)
+			success, ok := result.(providerport.SucceededResult)
+			if fail && ok {
+				t.Fatal("missing submission succeeded")
+			}
+			if !fail && (!ok || string(success.StructuredOutput) != `{"answer":"from durable tool"}`) {
+				t.Fatalf("result %#v", result)
+			}
+			if err := <-script.done; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

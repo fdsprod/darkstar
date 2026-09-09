@@ -181,6 +181,24 @@ From a card, the user can:
 - see why the work is blocked and supply requested input; and
 - view cost-like usage data where a provider exposes it, without requiring it for correctness.
 
+### Work item deletion
+
+A human may delete a work item from its board card or work context. Deletion is
+separate from the execution outcome: `deleting` records durable intent and blocks
+new preparation, dispatch, retries, and continuation; `deleted` removes it from
+normal collections only after all runs are terminal and cancellation is confirmed.
+The daemon reconciles pending deletion across restart. Unconfirmed cancellation
+keeps the work visible with status and a retry action. History, transcripts,
+artifact revisions, files, branches, and external deliveries are retained. The
+board offers Show deleted and existing detail URLs remain readable.
+
+Every board card is draggable. Drop availability comes from the daemon's transition
+plan, and invalid drops perform no command. Allowed drops use version checks and
+retain required confirmations. Keyboard movement uses Space, arrow keys, Enter,
+and Escape. Cards omit work identifiers and redundant Quick view and Move controls;
+the title opens the existing work panel. The board uses available width and scrolls
+horizontally when its eight readable columns cannot fit.
+
 ### 5.4 Resume after interruption
 
 On restart, the daemon reconstructs run state from durable storage. Attempts left in `starting` or `running` are reconciled against their recorded process/session information. DARKSTAR either reattaches when supported, marks the attempt interrupted and retries according to policy, or pauses for the user. No completed node is rerun merely because the daemon restarted.

@@ -259,6 +259,8 @@ type LogSink interface {
 
 // Service owns provider workers for one daemon lifetime.
 type Service struct {
+	artifactReviews *artifactReviewBridge
+
 	valueSchemas              valueschema.Validator
 	advisor                   routeadvisor.Advisor
 	evidenceResolver          routeadvisor.EvidenceResolver
@@ -280,6 +282,8 @@ type Service struct {
 	queueEnabled              bool
 	queueLimit                func() (int, error)
 	queueMu                   sync.Mutex
+	checkpointMu              sync.Mutex
+	runEventMu                sync.Mutex
 }
 
 // worker is the complete process-local ownership record for one provider
@@ -455,7 +459,7 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	if err != nil {
 		return statestore.RunProjection{}, err
 	}
-	if work.Status.Terminal() {
+	if work.Status.Terminal() || work.Deletion != statestore.WorkRetained {
 		return statestore.RunProjection{}, fmt.Errorf("%w: work item %s is %s", ErrInvalidRequest, work.WorkItemID, work.Status)
 	}
 	previousRuns, err := s.store.RunsForWorkItem(ctx, work.WorkItemID)
@@ -1070,7 +1074,15 @@ func (s *Service) Start(ctx context.Context, request StartRequest, idempotencyKe
 
 // Get reads only persisted projections.
 func (s *Service) Get(ctx context.Context, runID string) (View, error) {
-	evidence, err := s.store.RunEvidence(ctx, runID)
+	var evidence statestore.RunEvidence
+	var err error
+	if reader, ok := s.store.(interface {
+		RunSummaryEvidence(context.Context, string) (statestore.RunEvidence, error)
+	}); ok {
+		evidence, err = reader.RunSummaryEvidence(ctx, runID)
+	} else {
+		evidence, err = s.store.RunEvidence(ctx, runID)
+	}
 	if err != nil {
 		return View{}, err
 	}
@@ -1197,6 +1209,11 @@ func (s *Service) ResumeActive(ctx context.Context) error {
 		return err
 	}
 	for _, run := range runs {
+		if run.Status == statestore.RunWaiting && run.WorkflowDigest != "" {
+			if err := s.repairWorkflowCheckpoints(ctx, run); err != nil {
+				return err
+			}
+		}
 		if run.Status != statestore.RunQueued || run.WorkflowDigest == "" {
 			continue
 		}
@@ -1322,7 +1339,7 @@ func (s *Service) workflowAttemptContext(ctx context.Context, attempt statestore
 	if err != nil {
 		return AttemptRequestContext{}, fmt.Errorf("resolve durable workflow node inputs: %w", err)
 	}
-	return AttemptRequestContext{Attempt: attempt, Run: run, WorkItem: work, Project: project, Workflow: definition, Node: node, FrozenRoute: route, RunInputs: runInputs, AcceptedOutputs: acceptedOutputs, NodeInputs: nodeInputs, ExecutionContext: executionContext, FrameSnapshot: frameSnapshot}, nil
+	return s.reviewAttemptContext(ctx, AttemptRequestContext{Attempt: attempt, Run: run, WorkItem: work, Project: project, Workflow: definition, Node: node, FrozenRoute: route, RunInputs: runInputs, AcceptedOutputs: acceptedOutputs, NodeInputs: nodeInputs, ExecutionContext: executionContext, FrameSnapshot: frameSnapshot})
 }
 
 func validateBuiltAttemptRequest(request provider.AttemptRequest, attempt statestore.AttemptProjection) error {
@@ -1339,6 +1356,17 @@ func validateBuiltAttemptRequest(request provider.AttemptRequest, attempt states
 }
 
 func (s *Service) launch(attempt statestore.AttemptProjection) error {
+	runForDeletion, readErr := s.store.Run(s.ctx, attempt.RunID)
+	if readErr != nil {
+		return readErr
+	}
+	workForDeletion, readErr := s.store.WorkItem(s.ctx, runForDeletion.WorkItemID)
+	if readErr == nil && workForDeletion.Deletion != statestore.WorkRetained {
+		return nil
+	}
+	if readErr != nil && !errors.Is(readErr, statestore.ErrNotFound) {
+		return readErr
+	}
 	s.mu.Lock()
 	if _, exists := s.workers[attempt.AttemptID]; exists {
 		s.mu.Unlock()
@@ -1407,6 +1435,10 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 			return
 		}
 		if _, builtin := dispatchContext.Node.(workflow.GateNode); builtin {
+			s.executeBuiltinWorkflowAttempt(ctx, attempt, dispatchContext)
+			return
+		}
+		if dispatchContext.Node.Type() == workflow.NodeWorkspacePrepare || dispatchContext.Node.Type() == workflow.NodeWorkspaceValidate {
 			s.executeBuiltinWorkflowAttempt(ctx, attempt, dispatchContext)
 			return
 		}
@@ -1583,7 +1615,9 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 		payloadDigest := fmt.Sprintf("%x", sha256.Sum256(event.Payload))
 		data := map[string]any{
 			"sequence": event.Sequence, "kind": event.Kind, "provider": event.Provider,
-			"providerVersion": event.ProviderVersion, "payloadDigest": payloadDigest, "redacted": true,
+			"providerVersion": event.ProviderVersion, "payloadDigest": payloadDigest,
+			"payload": json.RawMessage(event.Payload), "providerThreadId": event.ProviderThreadID,
+			"providerTurnId": event.ProviderTurnID, "providerItemId": event.ProviderItemID,
 			"logReference": current.LogReference,
 		}
 		events := []statestore.PendingEvent{pendingEvent("attempt.provider_event", statestore.AggregateAttempt, current.AttemptID,
@@ -1680,6 +1714,9 @@ func (s *Service) completeAttempt(ctx context.Context, attemptID, runID string, 
 		}
 		data["output"] = json.RawMessage(value.StructuredOutput)
 	case provider.FailedResult:
+		if handled, _ := s.failReviewAttempt(ctx, attempt, run, node, value.Failure.Message); handled {
+			return
+		}
 		attemptKind, nodeKind, runKind, data["failure"] = "attempt.failed", "visit.failed", "run.failed", value.Failure
 		runData["code"], runData["message"] = value.Failure.Code, value.Failure.Message
 	case provider.CancelledResult:
@@ -1733,6 +1770,9 @@ func (s *Service) failAttemptWithCode(attemptID, runID, code string, cause error
 	}
 	node, nodeErr := s.store.Node(context.Background(), attempt.VisitID)
 	if nodeErr != nil {
+		return
+	}
+	if handled, _ := s.failReviewAttempt(context.Background(), attempt, run, node, cause.Error()); handled {
 		return
 	}
 	events := make([]statestore.PendingEvent, 0, 3)

@@ -321,8 +321,14 @@ type Source interface {
 }
 
 type Service struct {
-	source Source
-	now    func() time.Time
+	source          Source
+	now             func() time.Time
+	decisionHandler func(context.Context, statestore.ApprovalProjection, statestore.PendingEvent) ([]statestore.Event, bool, error)
+}
+
+// SetDecisionHandler binds execution checkpoints to the scheduler before serving requests.
+func (service *Service) SetDecisionHandler(handler func(context.Context, statestore.ApprovalProjection, statestore.PendingEvent) ([]statestore.Event, bool, error)) {
+	service.decisionHandler = handler
 }
 
 func New(source Source) (*Service, error) {
@@ -426,6 +432,18 @@ func (service *Service) List(ctx context.Context, request ListRequest) (Page, er
 			}
 		}
 	}
+	// Deleted work retains raw requests, but they no longer ask the user to act.
+	retained := make(Checkpoints, 0, len(items))
+	for _, item := range items {
+		work, err := service.source.WorkItem(ctx, item.Common().Context.WorkItemID)
+		if err != nil {
+			return Page{}, err
+		}
+		if work.Deletion == statestore.WorkRetained {
+			retained = append(retained, item)
+		}
+	}
+	items = retained
 	if request.ItemID != "" {
 		exact := make(Checkpoints, 0, 1)
 		for _, item := range items {
@@ -495,12 +513,20 @@ func (service *Service) Decide(ctx context.Context, request DecisionRequest) (Re
 	if approval.ResourceVersion != request.ExpectedResourceVersion || approval.ScopeDigest != request.ScopeDigest || approval.PolicyDigest != request.PolicyDigest {
 		return Resolution{}, fmt.Errorf("attention decision binding is stale")
 	}
-	events, err := source.Append(ctx, statestore.PendingEvent{
+	pending := statestore.PendingEvent{
 		SchemaVersion: 1, ID: identity.Random("event_"), AggregateType: statestore.AggregateApproval,
 		AggregateID: request.ID, ExpectedRevision: approval.ResourceVersion, Kind: eventKind,
 		OccurredAt: service.now().UTC().Round(0), CorrelationID: approval.RunID,
 		CommandID: request.IdempotencyKey, Actor: request.Actor, Data: payload, Metadata: json.RawMessage(`{}`),
-	})
+	}
+	var events []statestore.Event
+	handled := false
+	if service.decisionHandler != nil {
+		events, handled, err = service.decisionHandler(ctx, approval, pending)
+	}
+	if !handled && err == nil {
+		events, err = source.Append(ctx, pending)
+	}
 	if err != nil {
 		return Resolution{}, fmt.Errorf("resolve attention approval: %w", err)
 	}

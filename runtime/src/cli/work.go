@@ -154,6 +154,8 @@ func runWork(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 		}
 		human := fmt.Sprintf("%s %s: %s (%d runs, %d stories).", result.Work.WorkItemID, result.Work.Status, result.Work.Title, len(result.Runs), len(result.Stories))
 		return writeWorkResult(result, human, jsonOutput, stdout, stderr, command)
+	case "delete":
+		return runWorkDelete(args[1:], jsonOutput, stdout, stderr)
 	case "transition":
 		return runWorkTransition(args[1:], jsonOutput, stdout, stderr)
 	default:
@@ -512,4 +514,60 @@ func writeWorkResult(result any, human string, jsonOutput bool, stdout, stderr i
 
 func workArgumentError(stdout, stderr io.Writer, jsonOutput bool, command string, err error) int {
 	return writeCommandError(stdout, stderr, jsonOutput, command, "ARGUMENT_INVALID", err.Error(), false, ExitInvalidInput)
+}
+
+func runWorkDelete(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
+	const command = "darkstar work delete"
+	invalid := func() int {
+		return workArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected work delete <work-id> --if-match <version> --confirm [--idempotency-key <key>]"))
+	}
+	if len(args) == 0 || !workIdentityPattern.MatchString(args[0]) {
+		return invalid()
+	}
+	expected, key, confirmed := uint64(0), "", false
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--confirm":
+			if confirmed {
+				return invalid()
+			}
+			confirmed = true
+		case "--if-match":
+			if expected != 0 || i+1 >= len(args) {
+				return invalid()
+			}
+			i++
+			var err error
+			expected, err = strconv.ParseUint(args[i], 10, 64)
+			if err != nil || expected == 0 {
+				return invalid()
+			}
+		case "--idempotency-key":
+			if key != "" || i+1 >= len(args) {
+				return invalid()
+			}
+			i++
+			key = args[i]
+		default:
+			return invalid()
+		}
+	}
+	if expected == 0 || !confirmed {
+		return invalid()
+	}
+	if key == "" {
+		key = "delete-work-" + args[0] + "-" + strconv.FormatUint(expected, 10)
+	}
+	if len(key) < 8 || len(key) > 128 || strings.TrimSpace(key) != key {
+		return invalid()
+	}
+	session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+	if session == nil {
+		return code
+	}
+	var result statestore.WorkItemProjection
+	if err := session.DoJSON(context.Background(), http.MethodDelete, "work-items/"+args[0], nil, &result, clientapi.WithHeader("If-Match", fmt.Sprintf("\"%d\"", expected)), clientapi.WithHeader("Idempotency-Key", key)); err != nil {
+		return writeClientError(stdout, stderr, jsonOutput, command, err)
+	}
+	return writeWorkResult(result, fmt.Sprintf("%s: %s. History retained.", result.Title, result.Deletion), jsonOutput, stdout, stderr, command)
 }

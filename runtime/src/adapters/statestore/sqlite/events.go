@@ -176,6 +176,20 @@ func (d *Database) EventsAfter(ctx context.Context, position uint64, limit int) 
 	return scanEvents(rows)
 }
 
+// RunEventsAfter pages the complete run history without a global scan or a
+// dashboard retention window. The event log remains the source of truth.
+func (d *Database) RunEventsAfter(ctx context.Context, runID string, position uint64, limit int) ([]statestore.Event, error) {
+	if limit < 1 || limit > 1000 {
+		return nil, fmt.Errorf("event limit must be between 1 and 1000")
+	}
+	rows, err := d.sql.QueryContext(ctx, eventSelect+` WHERE (correlation_id = ? OR aggregate_id = ?) AND global_position > ? ORDER BY global_position LIMIT ?`, runID, runID, position, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanEvents(rows)
+}
+
 // EventBounds returns the inclusive range retained by the authoritative event
 // log. The MVP never compacts events, but exposing the range keeps replay
 // behavior explicit when retention is introduced later.
@@ -279,6 +293,15 @@ func (d *Database) queryAttempts(ctx context.Context, suffix string, args ...any
 // RunEvidence reads the run projection, every correlated event, and command
 // evidence from one SQLite snapshot so an export cannot mix revisions.
 func (d *Database) RunEvidence(ctx context.Context, id string) (evidence statestore.RunEvidence, err error) {
+	return d.runEvidence(ctx, id, false)
+}
+
+// RunSummaryEvidence avoids materializing provider payloads on status refresh.
+func (d *Database) RunSummaryEvidence(ctx context.Context, id string) (statestore.RunEvidence, error) {
+	return d.runEvidence(ctx, id, true)
+}
+
+func (d *Database) runEvidence(ctx context.Context, id string, summary bool) (evidence statestore.RunEvidence, err error) {
 	tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return statestore.RunEvidence{}, fmt.Errorf("begin run evidence snapshot: %w", err)
@@ -296,7 +319,11 @@ func (d *Database) RunEvidence(ctx context.Context, id string) (evidence statest
 	if err != nil {
 		return statestore.RunEvidence{}, fmt.Errorf("read run projection: %w", err)
 	}
-	rows, err := tx.QueryContext(ctx, eventSelect+` WHERE correlation_id = ? OR aggregate_id = ? ORDER BY global_position`, id, id)
+	selection := eventSelect
+	if summary {
+		selection = strings.Replace(selection, "data_json, metadata_json", `CASE WHEN kind LIKE 'run.%' THEN data_json ELSE '{}' END, '{}'`, 1)
+	}
+	rows, err := tx.QueryContext(ctx, selection+` WHERE correlation_id = ? OR aggregate_id = ? ORDER BY global_position`, id, id)
 	if err != nil {
 		return statestore.RunEvidence{}, fmt.Errorf("query run events: %w", err)
 	}
@@ -714,7 +741,95 @@ func insertEvent(ctx context.Context, tx *sql.Tx, event statestore.Event) error 
 	return nil
 }
 
+func requireRetainedWork(ctx context.Context, tx *sql.Tx, id string) error {
+	work, err := readWorkItemProjection(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if work.Deletion != statestore.WorkRetained {
+		return errors.New("work item is being deleted")
+	}
+	return nil
+}
+
 func applyProjection(ctx context.Context, tx *sql.Tx, event statestore.Event) error {
+	interactionRun := ""
+	switch event.Kind {
+	case "input.answer_recorded":
+		value, err := readInputRequestProjection(ctx, tx, event.AggregateID)
+		if err != nil {
+			return err
+		}
+		interactionRun = value.RunID
+	case "permission.decision_recorded":
+		value, err := readProviderPermissionProjection(ctx, tx, event.AggregateID)
+		if err != nil {
+			return err
+		}
+		interactionRun = value.RunID
+	case "approval.decided":
+		value, err := readApprovalProjection(ctx, tx, event.AggregateID)
+		if err != nil {
+			return err
+		}
+		interactionRun = value.RunID
+	}
+	if interactionRun != "" {
+		run, err := readRunProjection(ctx, tx, interactionRun)
+		if err == nil {
+			if err := requireRetainedWork(ctx, tx, run.WorkItemID); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+
+	if event.Kind == "attempt.created" || event.Kind == "attempt.resources_acquired" || event.Kind == "attempt.started" || event.Kind == "attempt.resumed" {
+		runID := ""
+		if event.Kind == "attempt.created" {
+			var data struct {
+				RunID string `json:"runId"`
+			}
+			if err := json.Unmarshal(event.Data, &data); err != nil {
+				return err
+			}
+			runID = data.RunID
+		} else {
+			attempt, err := readAttemptProjection(ctx, tx, event.AggregateID)
+			if err != nil {
+				return err
+			}
+			runID = attempt.RunID
+		}
+		run, err := readRunProjection(ctx, tx, runID)
+		if err == nil {
+			if err := requireRetainedWork(ctx, tx, run.WorkItemID); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	if event.Kind == "work.deleted" {
+		var count int
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM run_projection WHERE work_item_id = ? AND status NOT IN ('completed', 'cancelled')", event.AggregateID).Scan(&count); err != nil {
+			return err
+		}
+		if count != 0 {
+			return errors.New("cannot delete work with unfinished runs")
+		}
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM attempt_projection a JOIN run_projection r ON r.run_id = a.run_id WHERE r.work_item_id = ? AND a.status IN ('created','starting','running','validating','reconcile_required')", event.AggregateID).Scan(&count); err != nil {
+			return err
+		}
+		if count != 0 {
+			return errors.New("cannot delete work with unreconciled attempts")
+		}
+	}
+
 	if event.SchemaVersion != 1 {
 		return &projection.UnsupportedSchemaVersionError{EventID: event.ID, Version: event.SchemaVersion}
 	}
@@ -782,6 +897,12 @@ func applyProjection(ctx context.Context, tx *sql.Tx, event statestore.Event) er
 		next, applies, err := projection.ReduceRun(existing, event)
 		if err != nil || !applies {
 			return err
+		}
+		switch event.Kind {
+		case "run.created", "run.route_frozen", "run.started", "run.resumed", "run.retried", "run.continued", "run.visit_ready":
+			if err := requireRetainedWork(ctx, tx, next.WorkItemID); err != nil {
+				return err
+			}
 		}
 		return writeRunProjection(ctx, tx, next)
 	case statestore.AggregateVisit:

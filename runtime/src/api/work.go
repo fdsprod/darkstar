@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 
+	"darkstar/src/core/runexecution"
 	"darkstar/src/core/worklifecycle"
 	"darkstar/src/core/workmanagement"
 	"darkstar/src/ports/statestore"
@@ -53,6 +54,7 @@ func (s *Server) serveProjects(response http.ResponseWriter, request *http.Reque
 				writeWorkError(response, requestID, err)
 				return
 			}
+
 			writeJSON(response, http.StatusOK, values)
 		case http.MethodPost:
 			key, ok := requireIdempotencyKey(response, request, requestID)
@@ -124,6 +126,10 @@ func (s *Server) serveWorkItems(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	clean := path.Clean(request.URL.Path)
+	if request.Method == http.MethodDelete {
+		s.serveWorkDeletion(response, request, requestID, clean)
+		return
+	}
 	if strings.HasSuffix(clean, "/transition-plan") {
 		s.serveWorkTransitionPlan(response, request, requestID, strings.TrimSuffix(clean, "/transition-plan"))
 		return
@@ -159,7 +165,16 @@ func (s *Server) serveWorkItems(response http.ResponseWriter, request *http.Requ
 		switch request.Method {
 		case http.MethodGet, http.MethodHead:
 			query := request.URL.Query()
-			if len(query) > 1 || (len(query) == 1 && (!query.Has("projectId") || len(query["projectId"]) != 1)) {
+			invalidQuery := false
+			for key, values := range query {
+				if (key != "projectId" && key != "includeDeleted") || len(values) != 1 {
+					invalidQuery = true
+				}
+			}
+			if query.Has("includeDeleted") && query.Get("includeDeleted") != "true" && query.Get("includeDeleted") != "false" {
+				invalidQuery = true
+			}
+			if invalidQuery {
 				writeWorkError(response, requestID, workmanagement.ErrInvalidRequest)
 				return
 			}
@@ -172,6 +187,15 @@ func (s *Server) serveWorkItems(response http.ResponseWriter, request *http.Requ
 			if err != nil {
 				writeWorkError(response, requestID, err)
 				return
+			}
+			if query.Get("includeDeleted") != "true" {
+				visible := make([]statestore.WorkItemProjection, 0, len(values))
+				for _, value := range values {
+					if value.Deletion != statestore.WorkDeleted {
+						visible = append(visible, value)
+					}
+				}
+				values = visible
 			}
 			writeJSON(response, http.StatusOK, values)
 		case http.MethodPost:
@@ -383,4 +407,46 @@ func writeWorkError(response http.ResponseWriter, requestID string, err error) {
 		return
 	}
 	writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "WORK_COMMAND_FAILED", Message: err.Error(), RequestID: requestID})
+}
+
+func (s *Server) serveWorkDeletion(response http.ResponseWriter, request *http.Request, requestID, resource string) {
+	id, ok := transitionWorkID(resource)
+	if !ok {
+		writeWorkNotFound(response, requestID, "work item")
+		return
+	}
+	if request.URL.RawQuery != "" {
+		writeWorkError(response, requestID, workmanagement.ErrInvalidRequest)
+		return
+	}
+	key, ok := requireIdempotencyKey(response, request, requestID)
+	if !ok {
+		return
+	}
+	expected, err := parseIfMatch(request.Header.Get("If-Match"))
+	if err != nil {
+		writeWorkError(response, requestID, workmanagement.ErrInvalidRequest)
+		return
+	}
+	s.mu.RLock()
+	service, ok := s.runs.(interface {
+		DeleteWork(context.Context, string, uint64, string) (statestore.WorkItemProjection, error)
+	})
+	s.mu.RUnlock()
+	if !ok {
+		writeAPIError(response, 503, apiError{SchemaVersion: 1, Code: "WORK_SERVICE_UNAVAILABLE", Message: "Work deletion is unavailable.", RequestID: requestID})
+		return
+	}
+	value, err := service.DeleteWork(request.Context(), id, expected, key)
+	if err != nil {
+		var conflict *runexecution.ControlConflictError
+		if errors.As(err, &conflict) {
+			writeAPIError(response, 412, apiError{SchemaVersion: 1, Code: "WORK_VERSION_CONFLICT", Message: err.Error(), RequestID: requestID})
+			return
+		}
+		writeWorkError(response, requestID, err)
+		return
+	}
+	response.Header().Set("ETag", fmt.Sprintf("\"%d\"", value.ResourceVersion))
+	writeJSON(response, http.StatusAccepted, value)
 }

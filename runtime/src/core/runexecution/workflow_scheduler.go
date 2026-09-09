@@ -391,6 +391,17 @@ func (s *Service) executeBuiltinWorkflowAttempt(ctx context.Context, attempt sta
 	}
 	var output json.RawMessage
 	switch node := dispatch.Node.(type) {
+	case workflow.WorkspacePrepareNode, workflow.WorkspaceValidateNode:
+		s.mu.Lock()
+		executor, ok := s.requestBuilder.(interface {
+			ExecuteWorkspaceNode(context.Context, AttemptRequestContext) (json.RawMessage, error)
+		})
+		s.mu.Unlock()
+		if !ok {
+			err = errors.New("workspace execution is not configured")
+		} else {
+			output, err = executor.ExecuteWorkspaceNode(ctx, dispatch)
+		}
 	case workflow.GateNode:
 		output, err = builtinGateOutput(node, dispatch.NodeInputs, dispatch.RunInputs)
 	case workflow.CommandNode:
@@ -415,9 +426,21 @@ func (s *Service) executeBuiltinWorkflowAttempt(ctx context.Context, attempt sta
 }
 
 func (s *Service) completeWorkflowSucceeded(ctx context.Context, attempt statestore.AttemptProjection, run statestore.RunProjection, visit statestore.NodeProjection, result provider.SucceededResult) error {
+	// Guidance can be acknowledged as a turn finishes. Serialize its run events
+	// with completion, then re-read the revision rather than failing a good result.
+	s.runEventMu.Lock()
+	defer s.runEventMu.Unlock()
+	currentRun, readErr := s.store.Run(ctx, run.RunID)
+	if readErr != nil {
+		return readErr
+	}
+	run = currentRun
 	dispatch, err := s.workflowAttemptContext(ctx, attempt, run)
 	if err != nil {
 		return &workflowAdmissionError{code: "WORKFLOW_DEFINITION_MISMATCH", message: err.Error()}
+	}
+	if handled, reviewErr := s.completeReviewAttempt(ctx, dispatch, attempt, run, visit, result); handled {
+		return reviewErr
 	}
 	outputs, err := decodeNodeOutputs(dispatch.Node, result.StructuredOutput)
 	if err != nil {
@@ -461,14 +484,21 @@ func (s *Service) completeWorkflowSucceeded(ctx context.Context, attempt statest
 		pendingEvent("visit.result_received", statestore.AggregateVisit, visit.VisitID, visit.ResourceVersion, run.RunID, "result:"+visit.VisitID+":"+attempt.AttemptID, statestore.ActorProvider, attempt.Provider, now, data),
 	}
 	if waiting {
-		events = append(events,
+		dispatch.ExecutionContext = saved
+		events = append(events, s.workflowCheckpointEvent(dispatch, attempt, visit),
 			pendingEvent("visit.waiting_checkpoint", statestore.AggregateVisit, visit.VisitID, visit.ResourceVersion+1, run.RunID, "checkpoint:"+visit.VisitID+":"+attempt.AttemptID, statestore.ActorSystem, "daemon", now, data),
 			pendingEvent("run.waiting", statestore.AggregateRun, run.RunID, run.ResourceVersion, run.RunID, "checkpoint:"+run.RunID+":"+attempt.AttemptID, statestore.ActorSystem, "daemon", now, map[string]any{"attemptId": attempt.AttemptID}),
 		)
 		_, err = s.store.Append(ctx, events...)
 		return err
 	}
-	events = append(events, pendingEvent("visit.succeeded", statestore.AggregateVisit, visit.VisitID, visit.ResourceVersion+1, run.RunID, "terminal:"+visit.VisitID+":"+attempt.AttemptID, statestore.ActorSystem, "daemon", now, data))
+	return s.finishWorkflowAdvance(ctx, dispatch, attempt, run, visit, saved, advance, events, visit.ResourceVersion+1, data)
+}
+
+func (s *Service) finishWorkflowAdvance(ctx context.Context, dispatch AttemptRequestContext, attempt statestore.AttemptProjection, run statestore.RunProjection, visit statestore.NodeProjection, saved statestore.RunExecutionContext, advance workflowAdvance, events []statestore.PendingEvent, visitRevision uint64, data map[string]any) error {
+	now := s.now()
+	var err error
+	events = append(events, pendingEvent("visit.succeeded", statestore.AggregateVisit, visit.VisitID, visitRevision, run.RunID, "terminal:"+visit.VisitID+":"+attempt.AttemptID, statestore.ActorSystem, "daemon", now, data))
 	if advance.terminal {
 		events = append(events, pendingEvent("run.completed", statestore.AggregateRun, run.RunID, run.ResourceVersion, run.RunID, "terminal:"+run.RunID+":"+attempt.AttemptID, statestore.ActorSystem, "daemon", now, map[string]any{"attemptId": attempt.AttemptID}))
 		work, workErr := s.store.WorkItem(ctx, run.WorkItemID)
@@ -491,7 +521,7 @@ func (s *Service) completeWorkflowSucceeded(ctx context.Context, attempt statest
 	attemptID := stableID("attempt_", fmt.Sprintf("%s\x00%s\x00%d", run.RunID, advance.successor, activation))
 	providerName := ProviderCodex
 	switch successorNode.(type) {
-	case workflow.GateNode, workflow.CommandNode:
+	case workflow.GateNode, workflow.CommandNode, workflow.WorkspacePrepareNode, workflow.WorkspaceValidateNode:
 		providerName = ProviderBuiltin
 	}
 	events = append(events,

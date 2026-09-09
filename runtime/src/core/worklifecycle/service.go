@@ -229,7 +229,7 @@ func normalize(request PlanRequest) (PlanRequest, error) {
 
 func (s *Service) reasons(value facts, target State, request PlanRequest) []DisabledReason {
 	reasons := []DisabledReason{}
-	if value.work.Status.Terminal() {
+	if value.work.Status.Terminal() || value.work.Deletion != statestore.WorkRetained {
 		return []DisabledReason{ReasonTerminalWork}
 	}
 	if value.projectArchived {

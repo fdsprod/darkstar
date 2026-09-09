@@ -3,6 +3,7 @@ package runexecution
 import (
 	"context"
 	"crypto/sha256"
+	cp "darkstar/src/ports/artifactcheckpoint"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -276,6 +277,15 @@ func (s *Service) Resume(ctx context.Context, request ControlRequest) (statestor
 	if err != nil {
 		return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, err)
 	}
+	visits, err := s.store.NodesForRun(ctx, run.RunID)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	for _, visit := range visits {
+		if visit.Status == statestore.NodeWaitingCheckpoint {
+			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, fmt.Errorf("%w: resolve the workflow checkpoint before resuming", ErrInvalidControl))
+		}
+	}
 	committed, err := s.store.Append(ctx, controlEvent(eventKind, run, request, map[string]any{}, s.now()))
 	if err != nil {
 		return statestore.RunProjection{}, err
@@ -459,6 +469,8 @@ func routeHasInputRequirements(snapshot statestore.JSONSnapshot) bool {
 // Cancel quiesces active work, asks the provider to terminate when a live
 // handle exists, and atomically closes every active child plus the run.
 func (s *Service) Cancel(ctx context.Context, request ControlRequest) (statestore.RunProjection, error) {
+	s.checkpointMu.Lock()
+	defer s.checkpointMu.Unlock()
 	request = normalizeControlRequest(request)
 	const action, eventKind = "cancel", "run.cancelled"
 	replayed, done, err := s.beginControl(ctx, action, eventKind, request, map[string]any{})
@@ -483,12 +495,20 @@ func (s *Service) Cancel(ctx context.Context, request ControlRequest) (statestor
 	cancelledVisits := map[string]bool{}
 	reconcileRequired := false
 	for _, attempt := range attempts {
-		if attempt.Status.Terminal() {
+		cancellationKind := "attempt.cancelled"
+		if attempt.Status == statestore.AttemptReconcileRequired {
+			observation := cancelEvidence[attempt.AttemptID]
+			if observation.Uncertain || observation.Disposition == "" {
+				return statestore.RunProjection{}, errors.New("provider cancellation remains unconfirmed")
+			}
+			cancellationKind = "attempt.cancellation_reconciled"
+		} else if attempt.Status.Terminal() {
 			continue
 		}
 		data := map[string]any{"reason": "user", "logReference": attempt.LogReference}
 		observation := cancelEvidence[attempt.AttemptID]
 		if observation.Disposition != "" {
+			data["disposition"] = observation.Disposition
 			data["providerCancellation"] = map[string]any{"disposition": observation.Disposition}
 		}
 		if observation.Uncertain {
@@ -497,7 +517,7 @@ func (s *Service) Cancel(ctx context.Context, request ControlRequest) (statestor
 				run.RunID, request.IdempotencyKey, statestore.ActorSystem, "daemon", now, map[string]any{"reason": "provider_cancellation_unconfirmed"}))
 			continue
 		}
-		events = append(events, pendingEvent("attempt.cancelled", statestore.AggregateAttempt, attempt.AttemptID, attempt.ResourceVersion,
+		events = append(events, pendingEvent(cancellationKind, statestore.AggregateAttempt, attempt.AttemptID, attempt.ResourceVersion,
 			run.RunID, request.IdempotencyKey, request.Actor.Type, request.Actor.ID, now, data))
 		if attempt.VisitID != "" && !cancelledVisits[attempt.VisitID] {
 			node, nodeErr := s.store.Node(ctx, attempt.VisitID)
@@ -512,6 +532,32 @@ func (s *Service) Cancel(ctx context.Context, request ControlRequest) (statestor
 		}
 	}
 	finalEventKind := eventKind
+	visits, err := s.store.NodesForRun(ctx, run.RunID)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	for _, visit := range visits {
+		if visit.Status != statestore.NodeWaitingCheckpoint || cancelledVisits[visit.VisitID] {
+			continue
+		}
+		events = append(events, pendingEvent("visit.cancelled", statestore.AggregateVisit, visit.VisitID, visit.ResourceVersion, run.RunID, request.IdempotencyKey, request.Actor.Type, request.Actor.ID, now, map[string]any{"reason": "user"}))
+		approval, readErr := s.store.Approval(ctx, executionApprovalID(visit.VisitID))
+		if readErr != nil && !errors.Is(readErr, statestore.ErrNotFound) {
+			return statestore.RunProjection{}, readErr
+		}
+		if readErr == nil && approval.Status == statestore.ApprovalPending {
+			events = append(events, pendingEvent("approval.cancelled", statestore.AggregateApproval, approval.ApprovalID, approval.ResourceVersion, run.RunID, request.IdempotencyKey, request.Actor.Type, request.Actor.ID, now, map[string]any{"reason": "run_stopped"}))
+		}
+	}
+	if s.artifactReviews != nil {
+		approvals, reviewErr := s.store.(cp.Store).CheckpointApprovals(ctx, run.RunID, statestore.ApprovalPending)
+		if reviewErr != nil {
+			return statestore.RunProjection{}, reviewErr
+		}
+		for _, a := range approvals {
+			events = append(events, pendingEvent("approval.cancelled", statestore.AggregateApproval, a.ApprovalID, a.ResourceVersion, run.RunID, request.IdempotencyKey, request.Actor.Type, request.Actor.ID, now, map[string]any{"reason": "run_stopped"}))
+		}
+	}
 	if reconcileRequired {
 		finalEventKind = "run.reconcile_required"
 	}
@@ -569,6 +615,15 @@ func (s *Service) controlRun(ctx context.Context, request ControlRequest, action
 	run, err := s.store.Run(ctx, request.RunID)
 	if err != nil {
 		return statestore.RunProjection{}, err
+	}
+	if action != "cancel" {
+		work, err := s.store.WorkItem(ctx, run.WorkItemID)
+		if err != nil && !errors.Is(err, statestore.ErrNotFound) {
+			return statestore.RunProjection{}, err
+		}
+		if work.Deletion != statestore.WorkRetained {
+			return statestore.RunProjection{}, fmt.Errorf("%w: work item is being deleted", ErrInvalidControl)
+		}
 	}
 	if run.ResourceVersion != request.ExpectedResourceVersion {
 		return statestore.RunProjection{}, &ControlConflictError{RunID: run.RunID, Expected: request.ExpectedResourceVersion, Current: run.ResourceVersion}
@@ -666,13 +721,22 @@ func (s *Service) quiesceRun(ctx context.Context, runID string, terminate bool, 
 	if terminate {
 		attempts, _ := s.store.AttemptsForRun(ctx, runID)
 		for _, attempt := range attempts {
-			if attempt.Status != statestore.AttemptRunning {
+			if attempt.Status != statestore.AttemptRunning && attempt.Status != statestore.AttemptStarting && attempt.Status != statestore.AttemptReconcileRequired {
 				continue
 			}
 			if _, live := stopped[attempt.AttemptID]; live {
 				continue
 			}
-			adapter, err := s.factory.Provider(attempt.Scenario, attempt.AttemptID, true)
+			var adapter provider.Provider
+			var err error
+			if attempt.Scenario == ScenarioWorkflow && s.workflowFactory != nil {
+				adapter, err = s.workflowFactory.Provider(ctx, ProviderRequest{Provider: attempt.Provider, Scenario: attempt.Scenario, AttemptID: attempt.AttemptID, Resume: true})
+			} else if s.factory != nil {
+				adapter, err = s.factory.Provider(attempt.Scenario, attempt.AttemptID, true)
+			} else {
+				err = errors.New("provider unavailable for cancellation")
+			}
+
 			if err != nil {
 				evidence[attempt.AttemptID] = cancelObservation{Disposition: provider.CancelUncertain, Uncertain: true}
 				continue
@@ -690,17 +754,18 @@ func (s *Service) quiesceRun(ctx context.Context, runID string, terminate bool, 
 			if err != nil {
 				evidence[attemptID] = cancelObservation{Disposition: provider.CancelUncertain, Uncertain: true}
 			} else {
-				evidence[attemptID] = cancelObservation{Disposition: result.Disposition, Uncertain: result.Disposition == provider.CancelUncertain}
+				evidence[attemptID] = cancelObservation{Disposition: result.Disposition, Uncertain: result.Disposition != provider.CancelGraceful && result.Disposition != provider.CancelForced && result.Disposition != provider.CancelAlreadyDone}
 			}
 		}
 	}
-	for _, active := range stopped {
+	for attemptID, active := range stopped {
 		if active.done == nil {
 			continue
 		}
 		select {
 		case <-active.done:
 		case <-ctx.Done():
+			evidence[attemptID] = cancelObservation{Disposition: provider.CancelUncertain, Uncertain: true}
 			return evidence
 		}
 	}

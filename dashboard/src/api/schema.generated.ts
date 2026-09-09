@@ -3,6 +3,18 @@
 
 export interface components {
   schemas: {
+    "WorkflowChatModel": { "id": string; "name": string; "efforts": Array<string>; "defaultEffort": string; "isDefault": boolean; };
+    "WorkflowChatGeneration": { "model": string; "effort": string; };
+    "WorkflowChatTarget": { "kind": "new"; } | { "kind": "draft"; "id": string; "revision": number; } | { "kind": "version"; "name": string; "version": string; };
+    "WorkflowChatMessage": { "role": "user" | "assistant"; "text": string; };
+    "WorkflowChatRequest": { "target": components["schemas"]["WorkflowChatTarget"]; "messages": Array<components["schemas"]["WorkflowChatMessage"]>; "generation"?: components["schemas"]["WorkflowChatGeneration"]; };
+    "WorkflowChatEvent": { "kind": "status"; "payload": { "message": string; }; } | { "kind": "error"; "payload": { "message": string; }; } | { "kind": "done"; "payload": { "message": string; }; } | { "kind": "text"; "payload": { "text": string; }; } | { "kind": "draft"; "payload": components["schemas"]["WorkflowDraft"]; } | { "kind": "validation"; "payload": components["schemas"]["WorkflowDraftValidationReport"]; } | { "kind": "question"; "payload": { "question": string; "options": Array<string>; }; } | { "kind": "conflict"; "payload": { "message": string; "remote": components["schemas"]["WorkflowDraft"]; }; };
+    "RunTranscriptEvent": { "position": number; "time": string; "kind": string; "subject": string; "data": {  }; };
+    "RunTranscriptPage": { "events": Array<components["schemas"]["RunTranscriptEvent"]>; "next": number; "hasMore": boolean; };
+    "RunArtifactRecord": { "sequence": number; "attemptId": string; "resource": string; "entryId": string; "operation": string; "content": string; };
+    "RunArtifactPage": { "records": Array<components["schemas"]["RunArtifactRecord"]>; "next": number; "hasMore": boolean; };
+    "RunGuidanceResult": { "id": string; "status": "accepted" | "unconfirmed"; "message"?: string; };
+    "RunGuidanceRequest": { "message": string; };
     "ApiError": { "schemaVersion": 1; "code": string; "message": string; "requestId": string; "retryable": boolean; "resourceVersion"?: number; "details"?: Array<{ "field": string; "code": string; "message"?: string; }>; "workTransitionPlan"?: {  }; };
     "RecoveryStatus": { "reconciled": number; "reconcileRequired": number; };
     "Health": { "schemaVersion": 1; "status": "ok"; "apiVersions": Array<"v1">; "recovery"?: components["schemas"]["RecoveryStatus"]; };
@@ -25,7 +37,7 @@ export interface components {
     "AutomaticWorkRoutingIntent": { "mode": "automatic"; };
     "OverrideWorkRoutingIntent": { "mode": "override"; "workflowId": string; "workflowVersion"?: string; "entryNodeId"?: string; "terminalNodeIds"?: Array<string>; };
     "ImportWorkItemRequest": { "projectId": string; "sourceReference": string; "title"?: string; "priority"?: number; };
-    "WorkItem": { "id": string; "projectId": string; "title": string; "details"?: string; "evidence": Array<string>; "routingIntent": components["schemas"]["WorkRoutingIntent"]; "sourceHash": string; "priority": number; "status": "open" | "active" | "completed" | "cancelled"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
+    "WorkItem": { "deletion"?: "deleting" | "deleted"; "id": string; "projectId": string; "title": string; "details"?: string; "evidence": Array<string>; "routingIntent": components["schemas"]["WorkRoutingIntent"]; "sourceHash": string; "priority": number; "status": "open" | "active" | "completed" | "cancelled"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
     "WorkLifecycleState": "backlog" | "ready" | "running" | "waiting" | "blocked" | "review" | "failed" | "done";
     "WorkTransitionPreparation": { "workflowId": string; "workflowVersion": string; "profile"?: string; };
     "WorkTransitionTargetDecision": { "target": components["schemas"]["WorkLifecycleState"]; "availability": "enabled" | "disabled"; "disabledReasons": Array<"current_state" | "unsupported_target" | "preparation_required" | "project_archived" | "terminal_work" | "active_run" | "unresolved_checkpoint" | "readiness_required" | "policy_blocked" | "concurrency_conflict" | "run_not_ready">; "confirmation": "none" | "required"; };
@@ -46,7 +58,7 @@ export interface components {
     "NodeDefinitionVersionRequest": { "source": components["schemas"]["NodeDefinitionRef"]; "version": string; };
     "NodeDefinitionArchiveRequest": { "ref": components["schemas"]["NodeDefinitionRef"]; };
     "WorkflowLibrary": { "versions": Array<components["schemas"]["WorkflowVersionSummary"]>; "drafts": Array<components["schemas"]["WorkflowDraft"]>; "archives": Array<components["schemas"]["WorkflowArchive"]>; };
-    "WorkflowAuthoringCatalog": { "schemaVersion": 1; "nodeTypes": Array<"reasoning" | "gate" | "command" | "approval" | "subworkflow" | "point_execution">; "valueTypes": Array<"null" | "boolean" | "integer" | "number" | "string" | "array" | "object">; "checkpointModes": Array<"none" | "acknowledge" | "approve" | "approve_on_change" | "external">; "predicateOps": Array<"const" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "present" | "all" | "any" | "not">; "agents": components["schemas"]["WorkflowStringReferenceGroup"]; "policies": components["schemas"]["WorkflowStringReferenceGroup"]; "schemas": components["schemas"]["WorkflowStringReferenceGroup"]; "skills": components["schemas"]["WorkflowCapabilityReferenceGroup"]; "tools": components["schemas"]["WorkflowCapabilityReferenceGroup"]; "workflows": components["schemas"]["WorkflowInstalledReferenceGroup"]; };
+    "WorkflowAuthoringCatalog": { "schemaVersion": 1; "nodeTypes": Array<"reasoning" | "implementation" | "gate" | "command" | "approval" | "subworkflow" | "point_execution" | "workspace_prepare" | "workspace_validate">; "valueTypes": Array<"null" | "boolean" | "integer" | "number" | "string" | "array" | "object">; "checkpointModes": Array<"none" | "acknowledge" | "approve" | "approve_on_change" | "external">; "predicateOps": Array<"const" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "present" | "all" | "any" | "not">; "agents": components["schemas"]["WorkflowStringReferenceGroup"]; "policies": components["schemas"]["WorkflowStringReferenceGroup"]; "schemas": components["schemas"]["WorkflowStringReferenceGroup"]; "skills": components["schemas"]["WorkflowCapabilityReferenceGroup"]; "tools": components["schemas"]["WorkflowCapabilityReferenceGroup"]; "workflows": components["schemas"]["WorkflowInstalledReferenceGroup"]; };
     "WorkflowStringReferenceGroup": { "status": "known"; "items": Array<string>; } | { "status": "unavailable"; "reason": "not_configured" | "discovery_unsupported" | "read_failed"; };
     "WorkflowCapabilityReference": { "name": string; "kind": "skill" | "tool"; "class": "guaranteed" | "registered" | "inherited" | "unsupported_discovery"; "version"?: string; "fingerprint": string; "availability": "available" | "unavailable" | "unhealthy"; };
     "WorkflowCapabilityReferenceGroup": { "status": "known"; "items": Array<components["schemas"]["WorkflowCapabilityReference"]>; } | { "status": "unavailable"; "reason": "not_configured" | "discovery_unsupported" | "read_failed"; };
@@ -68,7 +80,7 @@ export interface components {
     "WorkflowInstallResult": { "version": components["schemas"]["WorkflowVersionSummary"]; "disposition": "created" | "already_installed"; };
     "WorkflowDefinition": { "version": components["schemas"]["WorkflowVersionSummary"]; "document": components["schemas"]["WorkflowDocument"]; };
     "WorkflowIdentity": { "name": string; "version": string; "digest": string; };
-    "WorkflowGraph": { "workflow": components["schemas"]["WorkflowIdentity"]; "nodes": Array<{ "id": string; "type": "reasoning" | "gate" | "command" | "approval" | "subworkflow" | "point_execution"; "entry"?: boolean; "terminal"?: boolean; }>; "edges": Array<{ "id": string; "from": string; "to": string; }>; };
+    "WorkflowGraph": { "workflow": components["schemas"]["WorkflowIdentity"]; "nodes": Array<{ "id": string; "type": "reasoning" | "implementation" | "gate" | "command" | "approval" | "subworkflow" | "point_execution" | "workspace_prepare" | "workspace_validate"; "entry"?: boolean; "terminal"?: boolean; }>; "edges": Array<{ "id": string; "from": string; "to": string; }>; };
     "WorkflowPreviewRequest": { "range": { "from"?: string; "until"?: Array<string>; }; "context": { "runInputs"?: { [key: string]: unknown; }; "acceptedOutputs"?: { [key: string]: unknown; }; "requiredNodes"?: Array<string>; }; };
     "WorkflowRoutePreview": { "workflow": components["schemas"]["WorkflowIdentity"]; "route": components["schemas"]["FrozenRoute"]; };
     "ArtifactVersionRef": { "artifactId": string; "version": number; };
@@ -211,6 +223,11 @@ export interface components {
 }
 
 export interface ApiOperations {
+    "listWorkflowChatModels": { method: "GET"; path: "/api/v1/workflows/chat/models"; response: Array<components["schemas"]["WorkflowChatModel"]>; body: never; };
+    "chatWorkflow": { method: "POST"; path: "/api/v1/workflows/chat"; response: unknown; body: components["schemas"]["WorkflowChatRequest"]; };
+    "getRunTranscript": { method: "GET"; path: "/api/v1/runs/{runId}/transcript"; response: components["schemas"]["RunTranscriptPage"]; body: never; };
+    "getRunArtifacts": { method: "GET"; path: "/api/v1/runs/{runId}/artifacts"; response: components["schemas"]["RunArtifactPage"]; body: never; };
+    "sendRunMessage": { method: "POST"; path: "/api/v1/runs/{runId}/messages"; response: components["schemas"]["RunGuidanceResult"]; body: components["schemas"]["RunGuidanceRequest"]; };
     "getHealth": { method: "GET"; path: "/api/v1/health"; response: components["schemas"]["Health"]; body: never; };
     "getApiRoot": { method: "GET"; path: "/api/v1/"; response: components["schemas"]["ApiRoot"]; body: never; };
     "getDoctorReport": { method: "GET"; path: "/api/v1/doctor"; response: components["schemas"]["DoctorReport"]; body: never; };
@@ -228,6 +245,7 @@ export interface ApiOperations {
     "createWorkItem": { method: "POST"; path: "/api/v1/work-items"; response: components["schemas"]["WorkItem"]; body: components["schemas"]["CreateWorkItemRequest"]; };
     "importWorkItem": { method: "POST"; path: "/api/v1/work-items/import"; response: components["schemas"]["WorkItem"]; body: components["schemas"]["ImportWorkItemRequest"]; };
     "getWorkItem": { method: "GET"; path: "/api/v1/work-items/{workItemId}"; response: components["schemas"]["WorkItemView"]; body: never; };
+    "deleteWorkItem": { method: "DELETE"; path: "/api/v1/work-items/{workItemId}"; response: components["schemas"]["WorkItem"]; body: never; };
     "planWorkItemTransition": { method: "GET"; path: "/api/v1/work-items/{workItemId}/transition-plan"; response: components["schemas"]["WorkTransitionPlan"]; body: never; };
     "applyWorkItemTransition": { method: "POST"; path: "/api/v1/work-items/{workItemId}/transitions"; response: components["schemas"]["WorkTransitionResult"]; body: components["schemas"]["WorkTransitionApplyRequest"]; };
     "listRuns": { method: "GET"; path: "/api/v1/runs"; response: components["schemas"]["RunPage"]; body: never; };
@@ -313,6 +331,11 @@ export interface ApiOperations {
 export type ApiOperationId = keyof ApiOperations;
 
 export const operationDefinitions: Record<ApiOperationId, { method: string; path: string }> = {
+  "listWorkflowChatModels": { method: "GET", path: "/api/v1/workflows/chat/models" },
+  "chatWorkflow": { method: "POST", path: "/api/v1/workflows/chat" },
+  "getRunTranscript": { method: "GET", path: "/api/v1/runs/{runId}/transcript" },
+  "getRunArtifacts": { method: "GET", path: "/api/v1/runs/{runId}/artifacts" },
+  "sendRunMessage": { method: "POST", path: "/api/v1/runs/{runId}/messages" },
   "getHealth": { method: "GET", path: "/api/v1/health" },
   "getApiRoot": { method: "GET", path: "/api/v1/" },
   "getDoctorReport": { method: "GET", path: "/api/v1/doctor" },
@@ -330,6 +353,7 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "createWorkItem": { method: "POST", path: "/api/v1/work-items" },
   "importWorkItem": { method: "POST", path: "/api/v1/work-items/import" },
   "getWorkItem": { method: "GET", path: "/api/v1/work-items/{workItemId}" },
+  "deleteWorkItem": { method: "DELETE", path: "/api/v1/work-items/{workItemId}" },
   "planWorkItemTransition": { method: "GET", path: "/api/v1/work-items/{workItemId}/transition-plan" },
   "applyWorkItemTransition": { method: "POST", path: "/api/v1/work-items/{workItemId}/transitions" },
   "listRuns": { method: "GET", path: "/api/v1/runs" },

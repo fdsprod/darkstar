@@ -389,3 +389,11 @@ can offer distinct design-only and delivery outcomes. The assessment records
 terminal sets in the alternatives considered and preserves explicit terminal
 constraints. Semantic advice must establish that the selected boundary satisfies
 the requested outcome before deterministic validation admits the route.
+
+`darkstar work delete <work-id> --if-match <work-resource-version> --confirm [--idempotency-key <key>] [--json]`
+requests daemon-owned deletion. The response reports `deleting` until cancellation
+is confirmed, then `deleted`. Historical runs, transcripts, artifacts, repository
+files, branches, and external deliveries remain available. Deletion blocks new
+execution. The daemon resumes pending deletion after restart; uncertain provider
+cancellation keeps the item visible. Work detail remains readable by ID, and the
+board's Show deleted filter exposes retained history.

@@ -60,6 +60,14 @@ func (s *Server) serveRuns(response http.ResponseWriter, request *http.Request, 
 	}
 	relative := strings.TrimPrefix(clean, "/api/v1/runs/")
 	segments := strings.Split(relative, "/")
+	if len(segments) == 2 && segments[1] == "messages" {
+		s.serveRunGuidance(response, request, requestID, runs, segments[0])
+		return
+	}
+	if len(segments) == 2 && (segments[1] == "transcript" || segments[1] == "artifacts") {
+		s.serveRunHistory(response, request, requestID, runs, segments[0], segments[1])
+		return
+	}
 	if len(segments) == 2 && segments[1] == "readiness" {
 		s.serveRunReadiness(response, request, requestID, segments[0])
 		return

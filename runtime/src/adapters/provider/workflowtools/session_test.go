@@ -63,3 +63,31 @@ func TestMultipleTemplatedOutputsAndAppendOnlyJournal(t *testing.T) {
 		t.Fatal("journal leaked between runs")
 	}
 }
+
+func TestSubmittedOutputsAreDurableAndRequiredWithoutFinalEcho(t *testing.T) {
+	optional := false
+	node := workflow.ReasoningNode{Common: workflow.NodeFields{Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"research": {Type: workflow.ValueMarkdown}, "design": {Type: workflow.ValueMarkdown}, "optional": {Type: workflow.ValueString, Required: &optional}}}}
+	session := &Session{Database: filepath.Join(t.TempDir(), "tools.db"), RunID: "run", AttemptID: "attempt", Node: node}
+	if _, err := session.ResolveSubmittedOutputs(t.Context()); err == nil {
+		t.Fatal("missing deliverables accepted")
+	}
+	for _, id := range []string{"research", "design"} {
+		body, _ := json.Marshal(map[string]any{"id": id, "value": "# " + id + "\n\nBody"})
+		if _, err := session.Call(t.Context(), id, "submit_output", body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recovered := &Session{Database: session.Database, RunID: "run", AttemptID: "attempt", Node: node}
+	raw, err := recovered.ResolveSubmittedOutputs(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]string
+	if err = json.Unmarshal(raw, &result); err != nil || len(result) != 2 || result["design"] != "# design\n\nBody" {
+		t.Fatalf("bad durable result %s: %v", raw, err)
+	}
+	recovered.AttemptID = "other"
+	if _, err = recovered.ResolveSubmittedOutputs(t.Context()); err == nil {
+		t.Fatal("other attempt's submissions leaked")
+	}
+}

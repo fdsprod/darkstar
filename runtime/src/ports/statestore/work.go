@@ -57,11 +57,21 @@ func (status WorkItemStatus) Terminal() bool {
 	return status == WorkItemCompleted || status == WorkItemCancelled
 }
 
+// WorkDeletionState is independent of the retained execution outcome.
+type WorkDeletionState string
+
+const (
+	WorkRetained WorkDeletionState = ""
+	WorkDeleting WorkDeletionState = "deleting"
+	WorkDeleted  WorkDeletionState = "deleted"
+)
+
 // WorkItemProjection is the rebuildable current state of one project outcome.
 type WorkItemProjection struct {
 	WorkItemID         string            `json:"id"`
 	ProjectID          string            `json:"projectId"`
 	Title              string            `json:"title"`
+	Deletion           WorkDeletionState `json:"deletion,omitempty"`
 	Details            string            `json:"details,omitempty"`
 	Evidence           []string          `json:"evidence"`
 	RoutingIntent      WorkRoutingIntent `json:"routingIntent"`

@@ -41,6 +41,8 @@ var ErrDiffStorage = errors.New("artifact diff storage verification failed")
 var errDiffUnsupported = errors.New("artifact representation is not supported for text diff")
 
 type IngestInput struct {
+	GeneratedBy *artifactregistry.AttemptProvenance `json:"-"`
+
 	ArtifactID  string                       `json:"artifactId,omitempty"`
 	SourceKind  artifactregistry.SourceKind  `json:"sourceKind"`
 	SourceName  string                       `json:"sourceName"`
@@ -269,7 +271,7 @@ func (service *Service) ingest(ctx context.Context, input IngestInput, idempoten
 	}
 	result, err := service.ingestion.Ingest(ctx, artifactingest.Request{
 		ArtifactID: input.ArtifactID, ExpectedPreviousVersion: expectedPreviousVersion, OperationID: stableID("operation_", "ingest\x00"+idempotencyKey), IdempotencyKey: idempotencyKey,
-		SourceKind: input.SourceKind, SourceName: input.SourceName, DeclaredMediaType: input.MediaType,
+		GeneratedBy: input.GeneratedBy, SourceKind: input.SourceKind, SourceName: input.SourceName, DeclaredMediaType: input.MediaType,
 		Content: bytes.NewReader(input.Content), Sensitivity: input.Sensitivity, Creator: input.Creator,
 		Roles: input.Roles, Tags: input.Tags,
 	})
