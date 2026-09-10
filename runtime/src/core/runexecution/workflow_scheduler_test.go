@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"darkstar/src/core/nodes"
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports/statestore"
 )
@@ -109,7 +110,7 @@ func TestBuiltinGateProducesEvidenceUsedByTransition(t *testing.T) {
 		workflow.ReferenceOperand{Ref: "input.progress.remaining_points"}, workflow.LiteralOperand{Literal: json.RawMessage(`0`)},
 	}}
 	node := workflow.GateNode{Executor: workflow.GateExecutor{Policy: "points-complete", Condition: condition}}
-	raw, err := builtinGateOutput(node, map[workflow.Identifier]json.RawMessage{"progress": json.RawMessage(`{"remaining_points":0}`)}, nil)
+	raw, err := nodes.GateOutput(node, map[workflow.Identifier]json.RawMessage{"progress": json.RawMessage(`{"remaining_points":0}`)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func TestBuiltinGateProducesEvidenceUsedByTransition(t *testing.T) {
 
 func TestBuiltinValidationRejectsUnrecognizedCommandNode(t *testing.T) {
 	node := workflow.CommandNode{Executor: workflow.CommandExecutor{Argv: []string{"echo", "success"}}}
-	if _, err := builtinValidationOutput(t.Context(), DefaultWorkflowID, DefaultWorkflowVersion, "s6_validation", t.TempDir(), node); err == nil || !strings.Contains(err.Error(), "not an explicitly supported") {
+	if _, err := nodes.CommandOutput(t.Context(), DefaultWorkflowID, "s6_validation", t.TempDir(), node, nil); err == nil || !strings.Contains(err.Error(), "not an explicitly supported") {
 		t.Fatalf("builtin validation error = %v", err)
 	}
 }

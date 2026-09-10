@@ -17,6 +17,7 @@ import (
 	"darkstar/src/adapters/provider/workflowtools"
 	"darkstar/src/core/config"
 	"darkstar/src/core/configmutation"
+	"darkstar/src/core/nodes"
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/workflow"
 	daemonconfiguration "darkstar/src/daemon/configuration"
@@ -143,34 +144,31 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 		return providerport.AttemptRequest{}, fmt.Errorf("observe Codex capabilities for workflow attempt: %w", err)
 	}
 	request.NodeInputs = agentNodeInputs(request)
-	preparedPath := ""
-	if node, ok := request.Node.(workflow.ImplementationNode); ok && node.Executor.WorkspaceInput != "" {
-		prepared, resolveErr := wiring.resolvePreparedWorkspace(ctx, request, request.NodeInputs[node.Executor.WorkspaceInput])
-		if resolveErr != nil {
-			return providerport.AttemptRequest{}, resolveErr
-		}
-		preparedPath = prepared.Path
-		// Resolve the current location once for this attempt; prior input history
-		// remains unchanged and the stable workspace identity is retained.
-		request.NodeInputs[node.Executor.WorkspaceInput], err = json.Marshal(prepared)
-		if err != nil {
-			return providerport.AttemptRequest{}, err
-		}
+
+	handler, err := nodes.Lookup(request.Node)
+	if err != nil {
+		return providerport.AttemptRequest{}, err
 	}
+	session := &workflowtools.Session{Database: wiring.toolDatabase, RunID: request.Run.RunID, AttemptID: request.Attempt.AttemptID, Node: request.Node, Inputs: request.NodeInputs}
+	// Build and authorize the task before touching the prepared workspace.
 	built, err := buildWorkflowAttemptRequest(request, wiring.projectRoot, manifest.Fingerprint)
 	if err != nil {
 		return built, err
 	}
-	session := &workflowtools.Session{Database: wiring.toolDatabase, RunID: request.Run.RunID, AttemptID: request.Attempt.AttemptID, Node: request.Node, Inputs: request.NodeInputs}
-	if request.Node.Type() == workflow.NodeImplementation {
-		if preparedPath != "" {
-			built.Workspace = preparedPath
-			built.Prompt += " Use only the connected prepared workspace. Do not switch branches or create another worktree."
+	if preparation, ok := handler.(nodes.AgentPreparation); ok {
+		inputs, path, suffix, prepareErr := preparation.Prepare(ctx, request.NodeInputs, built.Workspace, agentWorkspaceServices{workspaceNodeServices{wiring, request}, session})
+		if prepareErr != nil {
+			return providerport.AttemptRequest{}, prepareErr
 		}
-		session.Workspace = built.Workspace
-		if err := session.PrepareWorkspace(ctx); err != nil {
-			return providerport.AttemptRequest{}, fmt.Errorf("capture implementation baseline: %w", err)
+		request.NodeInputs = inputs
+		session.Inputs = inputs
+		// Refresh input projections from the durable workspace; old history is retained.
+		built, err = buildWorkflowAttemptRequest(request, wiring.projectRoot, manifest.Fingerprint)
+		if err != nil {
+			return built, err
 		}
+		built.Workspace = path
+		built.Prompt += suffix
 	}
 	session.Workspace = built.Workspace
 	if err := session.PrepareMarkdown(ctx); err != nil {
@@ -190,33 +188,23 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 	}
 	request.NodeInputs = agentNodeInputs(request)
 	fields := request.Node.Fields()
-	agent, skills, tools := "", []string(nil), []string(nil)
-	access := providerport.AccessReadOnly
-	commandPolicy, filePolicy := providerport.InteractionDeny, providerport.InteractionDeny
-	instruction := "Complete the following task using only the supplied inputs."
-	switch node := request.Node.(type) {
-	case workflow.ReasoningNode:
-		instruction += " " + node.Executor.Instructions
-		agent, skills, tools = node.Executor.Agent, append([]string(nil), node.Executor.Skills...), append([]string(nil), node.Executor.Tools...)
-		if len(fields.Permissions) != 0 {
-			return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q names permission policies that are not configured: %s", request.Attempt.NodeID, strings.Join(fields.Permissions, ", "))
-		}
-	case workflow.PointExecutionNode:
-		agent = "implementation-point"
-		instruction = "Read the connected Markdown implementation plan and carry out its points. Implement the requested work item in the supplied workspace. Make only the necessary repository changes. Do not claim completion unless the requested outcome exists on disk. Return changeset with summary, files, and validation; return progress with completed_points and remaining_points."
-	case workflow.ImplementationNode:
-		agent = "implementation"
-		instruction = "Implement the task in the connected input " + string(node.Executor.TaskInput) + " in the supplied workspace. Read optional connected Markdown instructions and supporting inputs when present; a plan is not required. Modify the actual files and run relevant checks. Preserve unrelated work. Do not commit, push, publish, or deploy. Use inspect_workspace_changes to see file changes relative to this attempt's durable baseline. Return changeset with disposition (changed, unchanged, or blocked), summary, files (exact relative paths reported by inspect_workspace_changes), and validation (checks actually run and results). Use unchanged only if the request is already satisfied and no files changed. Use blocked to report a blocker; blocked is not a successful completion. The runtime verifies files against the workspace; merely returning proposed content does not implement the task. " + node.Executor.Instructions
-	default:
+
+	handler, err := nodes.Lookup(request.Node)
+	if err != nil {
+		return providerport.AttemptRequest{}, err
+	}
+	agentHandler, ok := handler.(nodes.AgentHandler)
+	if !ok {
 		return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q is %s; it is not a Codex-backed executor", request.Attempt.NodeID, request.Node.Type())
 	}
-	// Both workspace executors share one permission boundary. Point execution
-	// adds its plan semantics; ordinary implementation needs only its task.
-	if request.Node.Type() == workflow.NodeImplementation || request.Node.Type() == workflow.NodePointExecution {
-		if !samePermissionSet(fields.Permissions, []string{"process.run", "workspace.write"}) {
-			return providerport.AttemptRequest{}, fmt.Errorf("%s node %q requires exactly process.run and workspace.write permissions", request.Node.Type(), request.Attempt.NodeID)
-		}
-		access = providerport.AccessWorkspaceWrite
+	task, err := agentHandler.BuildTask(request.Attempt.NodeID)
+	if err != nil {
+		return providerport.AttemptRequest{}, err
+	}
+	agent, skills, tools, instruction := task.Agent, task.Skills, task.Tools, task.Instructions
+	access := task.Access
+	commandPolicy, filePolicy := providerport.InteractionDeny, providerport.InteractionDeny
+	if access == providerport.AccessWorkspaceWrite {
 		commandPolicy, filePolicy = providerport.InteractionAllow, providerport.InteractionAllow
 	}
 	// Load trusted authoring guidance, never scheduler state, for Markdown outputs.
@@ -268,21 +256,6 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 	}, nil
 }
 
-func samePermissionSet(actual, expected []string) bool {
-	if len(actual) != len(expected) {
-		return false
-	}
-	left, right := append([]string(nil), actual...), append([]string(nil), expected...)
-	sort.Strings(left)
-	sort.Strings(right)
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
-}
-
 func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]workflow.OutputDeclaration) (json.RawMessage, error) {
 	ids := make([]string, 0, len(outputs))
 	for id := range outputs {
@@ -313,33 +286,13 @@ func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]wo
 		}
 		properties[id] = property
 	}
-	if node.Type() == workflow.NodePointExecution || node.Type() == workflow.NodeImplementation {
-		if _, exists := properties["changeset"]; exists {
-			properties["changeset"] = map[string]any{
-				"type": "object", "additionalProperties": false,
-				"properties": map[string]any{
-					"summary":    map[string]any{"type": "string"},
-					"files":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"validation": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				},
-				"required": []string{"summary", "files", "validation"},
-			}
-			if node.Type() == workflow.NodeImplementation {
-				change := properties["changeset"].(map[string]any)
-				change["properties"].(map[string]any)["disposition"] = map[string]any{"type": "string", "enum": []string{"changed", "unchanged", "blocked"}}
-				change["required"] = []string{"disposition", "summary", "files", "validation"}
-			}
-		}
-		if _, exists := properties["progress"]; exists && node.Type() == workflow.NodePointExecution {
-			properties["progress"] = map[string]any{
-				"type": "object", "additionalProperties": false,
-				"properties": map[string]any{
-					"completed_points": map[string]any{"type": "integer"},
-					"remaining_points": map[string]any{"type": "integer"},
-				},
-				"required": []string{"completed_points", "remaining_points"},
-			}
-		}
+
+	handler, err := nodes.Lookup(node)
+	if err != nil {
+		return nil, err
+	}
+	if agent, ok := handler.(nodes.AgentHandler); ok {
+		agent.ConfigureOutputs(properties)
 	}
 	schema := struct {
 		Type                 string         `json:"type"`
@@ -449,4 +402,15 @@ func sortedInputNames(inputs map[workflow.Identifier]json.RawMessage) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// agentWorkspaceServices supplies storage operations without exposing scheduling.
+type agentWorkspaceServices struct {
+	workspaceNodeServices
+	session *workflowtools.Session
+}
+
+func (s agentWorkspaceServices) CaptureBaseline(ctx context.Context, path string) error {
+	s.session.Workspace = path
+	return s.session.PrepareWorkspace(ctx)
 }

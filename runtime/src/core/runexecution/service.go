@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"darkstar/src/core/nodes"
 	"darkstar/src/core/preparation"
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports"
@@ -1434,15 +1435,13 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 			}
 			return
 		}
-		if _, builtin := dispatchContext.Node.(workflow.GateNode); builtin {
-			s.executeBuiltinWorkflowAttempt(ctx, attempt, dispatchContext)
+
+		handler, lookupErr := nodes.Lookup(dispatchContext.Node)
+		if lookupErr != nil {
+			s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DISPATCH_UNAVAILABLE", lookupErr)
 			return
 		}
-		if dispatchContext.Node.Type() == workflow.NodeWorkspacePrepare || dispatchContext.Node.Type() == workflow.NodeWorkspaceValidate {
-			s.executeBuiltinWorkflowAttempt(ctx, attempt, dispatchContext)
-			return
-		}
-		if _, builtin := dispatchContext.Node.(workflow.CommandNode); builtin {
+		if _, builtin := handler.(nodes.DeterministicHandler); builtin {
 			s.executeBuiltinWorkflowAttempt(ctx, attempt, dispatchContext)
 			return
 		}

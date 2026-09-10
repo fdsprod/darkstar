@@ -3,6 +3,7 @@ package workflowtools
 import (
 	"context"
 	"crypto/sha256"
+	"darkstar/src/core/nodes"
 	"darkstar/src/platform/process"
 	"encoding/hex"
 	"encoding/json"
@@ -161,38 +162,5 @@ func (s *Session) workspaceChanges(ctx context.Context) ([]string, error) {
 }
 
 func (s *Session) validateWorkspaceResult(ctx context.Context, raw json.RawMessage) error {
-	var result struct {
-		Disposition string   `json:"disposition"`
-		Summary     string   `json:"summary"`
-		Files       []string `json:"files"`
-		Validation  []string `json:"validation"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return err
-	}
-	if strings.TrimSpace(result.Summary) == "" {
-		return errors.New("implementation changeset requires a summary")
-	}
-	if result.Files == nil || result.Validation == nil {
-		return errors.New("implementation changeset requires explicit files and validation arrays")
-	}
-	if result.Disposition == "blocked" {
-		return fmt.Errorf("implementation blocked: %s; validation: %s", result.Summary, strings.Join(result.Validation, "; "))
-	}
-	if result.Disposition != "changed" && result.Disposition != "unchanged" {
-		return errors.New("implementation disposition must be changed, unchanged, or blocked")
-	}
-	changes, err := s.workspaceChanges(ctx)
-	if err != nil {
-		return err
-	}
-	reported := append([]string(nil), result.Files...)
-	slices.Sort(reported)
-	if !slices.Equal(changes, reported) {
-		return fmt.Errorf("changeset.files must match actual workspace changes: %v", changes)
-	}
-	if (result.Disposition == "changed") != (len(changes) > 0) {
-		return errors.New("implementation disposition does not match the actual workspace changes")
-	}
-	return nil
+	return nodes.ValidateImplementationResult(ctx, raw, s.workspaceChanges)
 }

@@ -4,17 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"darkstar/src/platform/process"
 	"darkstar/src/ports/valueschema"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
-	"time"
 
+	"darkstar/src/core/nodes"
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports/provider"
 	"darkstar/src/ports/statestore"
@@ -301,50 +298,6 @@ func stringAcceptedOutputs(source map[workflow.Identifier]map[workflow.Identifie
 	return result
 }
 
-func builtinGateOutput(node workflow.GateNode, inputs, runInputs map[workflow.Identifier]json.RawMessage) (json.RawMessage, error) {
-	passed, err := workflow.EvaluatePredicate(node.Executor.Condition, workflow.PredicateValues{Inputs: inputs, RunInputs: runInputs}, "/gate/condition")
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(map[string]any{"passed": passed, "gate_evidence": map[string]any{"policy": node.Executor.Policy, "passed": passed}})
-}
-
-func builtinValidationOutput(ctx context.Context, workflowName, workflowVersion, nodeID, workspace string, node workflow.CommandNode) (json.RawMessage, error) {
-	want := []string{"darkstar-project", "validate", "--json"}
-	if workflowName != DefaultWorkflowID || nodeID != "s6_validation" || !reflect.DeepEqual(node.Executor.Argv, want) || node.Executor.CWD != "" {
-		return nil, errors.New("command node is not an explicitly supported deterministic builtin")
-	}
-	timeout := 30 * time.Second
-	if node.Executor.TimeoutSeconds != nil && *node.Executor.TimeoutSeconds < 30 {
-		timeout = time.Duration(*node.Executor.TimeoutSeconds) * time.Second
-	}
-	commandCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	command := exec.CommandContext(commandCtx, "git", "-C", workspace, "diff", "--check", "HEAD")
-	process.HideConsole(command)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("darkstar-project validation failed: git diff --check HEAD: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	status := exec.CommandContext(commandCtx, "git", "-C", workspace, "status", "--porcelain")
-	process.HideConsole(status)
-	statusOutput, err := status.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("darkstar-project validation failed: git status --porcelain: %w: %s", err, strings.TrimSpace(string(statusOutput)))
-	}
-	changed := strings.Fields(strings.TrimSpace(string(statusOutput)))
-	if len(changed) == 0 {
-		return nil, errors.New("darkstar-project validation found no repository changes for the requested implementation")
-	}
-	return json.Marshal(map[string]any{"validation": map[string]any{
-		"passed": true, "acceptanceCovered": true,
-		"checks": []map[string]any{
-			{"command": "git diff --check HEAD", "passed": true},
-			{"command": "git status --porcelain", "passed": true, "changedEntries": len(changed)},
-		},
-	}})
-}
-
 func (s *Service) startWorkflowVisit(ctx context.Context, attempt statestore.AttemptProjection) error {
 	run, err := s.store.Run(ctx, attempt.RunID)
 	if err != nil {
@@ -406,7 +359,7 @@ func (s *Service) executeBuiltinWorkflowAttempt(ctx context.Context, attempt sta
 			output, err = executor.ExecuteWorkspaceNode(ctx, dispatch)
 		}
 	case workflow.GateNode:
-		output, err = builtinGateOutput(node, dispatch.NodeInputs, dispatch.RunInputs)
+		output, err = nodes.GateOutput(node, dispatch.NodeInputs, dispatch.RunInputs)
 	case workflow.CommandNode:
 		s.mu.Lock()
 		workspace := s.workspace
@@ -417,7 +370,15 @@ func (s *Service) executeBuiltinWorkflowAttempt(ctx context.Context, attempt sta
 			err = fmt.Errorf("workflow project %q is not authorized for daemon workspace %q", dispatch.Project.ProjectID, workspace)
 			break
 		}
-		output, err = builtinValidationOutput(ctx, dispatch.Workflow.Version.Name, dispatch.Workflow.Version.Version, dispatch.Attempt.NodeID, workspace, node)
+
+		s.mu.Lock()
+		runners, ok := s.requestBuilder.(interface{ NodeCommandRunner() nodes.CommandRunner })
+		s.mu.Unlock()
+		if !ok {
+			err = errors.New("command execution is not configured")
+			break
+		}
+		output, err = (nodes.Command{Node: node}).Execute(ctx, dispatch.NodeInputs, nodes.BuiltinServices{Commands: runners.NodeCommandRunner(), LegacyCommand: nodes.LegacyCommandScope{WorkflowID: dispatch.Workflow.Version.Name, NodeID: dispatch.Attempt.NodeID, Workspace: workspace}})
 	default:
 		err = fmt.Errorf("unsupported builtin workflow node %T", dispatch.Node)
 	}
@@ -523,9 +484,13 @@ func (s *Service) finishWorkflowAdvance(ctx context.Context, dispatch AttemptReq
 	visitID := stableID("visit_", fmt.Sprintf("%s\x00%s\x00%d", run.RunID, advance.successor, activation))
 	attemptID := stableID("attempt_", fmt.Sprintf("%s\x00%s\x00%d", run.RunID, advance.successor, activation))
 	providerName := ProviderCodex
-	switch successorNode.(type) {
-	case workflow.GateNode, workflow.CommandNode, workflow.WorkspacePrepareNode, workflow.WorkspaceValidateNode:
-		providerName = ProviderBuiltin
+	handler, lookupErr := nodes.Lookup(successorNode)
+	// Preserve the successful predecessor even when the successor is unsupported.
+	// execute rejects that successor before contacting a provider.
+	if lookupErr == nil {
+		if _, builtin := handler.(nodes.DeterministicHandler); builtin {
+			providerName = ProviderBuiltin
+		}
 	}
 	events = append(events,
 		pendingEvent("visit.created", statestore.AggregateVisit, visitID, 0, run.RunID, "visit-create:"+visitID, statestore.ActorSystem, "daemon", now, map[string]any{"runId": run.RunID, "nodeId": string(advance.successor)}),
