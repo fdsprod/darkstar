@@ -145,7 +145,9 @@ func newService(t *testing.T) (*configmutation.Service, *sqlite.Database, string
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	service, err := configmutation.New(files, database, root)
 	if err != nil {
 		t.Fatal(err)

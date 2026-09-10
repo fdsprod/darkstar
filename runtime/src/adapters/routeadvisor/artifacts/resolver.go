@@ -83,7 +83,9 @@ func (r Resolver) Resolve(ctx context.Context, reference string) (routeadvisor.E
 	if err != nil {
 		return unavailable, fmt.Errorf("%w: content lookup failed", ErrUnavailable)
 	}
-	defer func() { _ = reader.Close() }()
+	defer func() {
+		_ = reader.Close()
+	}()
 	content, err := io.ReadAll(io.LimitReader(reader, MaxEvidenceBytes+1))
 	if err != nil || int64(len(content)) != representation.Size || len(content) > MaxEvidenceBytes || !utf8.Valid(content) || fmt.Sprintf("%x", sha256.Sum256(content)) != representation.Digest {
 		return unavailable, ErrUnavailable

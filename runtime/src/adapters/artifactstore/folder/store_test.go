@@ -152,7 +152,9 @@ func TestPutRejectsIdempotencyConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = reader.Close() }()
+	defer func() {
+		_ = reader.Close()
+	}()
 	content, err := io.ReadAll(reader)
 	if err != nil || string(content) != "first" {
 		t.Fatalf("original content = %q, %v", content, err)
@@ -391,7 +393,9 @@ func TestPutRepairsOperationCommittedBeforeBlobVisibility(t *testing.T) {
 
 type failingReader struct{}
 
-func (failingReader) Read([]byte) (int, error) { return 0, errors.New("injected read failure") }
+func (failingReader) Read([]byte) (int, error) {
+	return 0, errors.New("injected read failure")
+}
 
 func newStore(t *testing.T, root string) *Store {
 	t.Helper()

@@ -29,7 +29,9 @@ type CommandRunner interface {
 
 type osCommandRunner struct{}
 
-func (osCommandRunner) LookPath(name string) (string, error) { return exec.LookPath(name) }
+func (osCommandRunner) LookPath(name string) (string, error) {
+	return exec.LookPath(name)
+}
 
 func (osCommandRunner) Run(ctx context.Context, executable string, arguments []string, input []byte) ([]byte, []byte, error) {
 	command := exec.CommandContext(ctx, executable, arguments...)

@@ -32,7 +32,9 @@ func fakeAdvisor(t *testing.T, output string, steps []fake.Step) (reasoning.Advi
 		t.Fatal(err)
 	}
 	captured := &capturedProvider{Provider: adapter}
-	return reasoning.Advisor{Provider: func() (provider.Provider, error) { return captured, nil }, Workspace: t.TempDir()}, adapter, captured
+	return reasoning.Advisor{Provider: func() (provider.Provider, error) {
+		return captured, nil
+	}, Workspace: t.TempDir()}, adapter, captured
 }
 
 func TestProviderAdviceUsesReadOnlyBoundedAuthorityAndClosedJSON(t *testing.T) {

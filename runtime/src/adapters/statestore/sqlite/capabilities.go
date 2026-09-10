@@ -39,7 +39,9 @@ func (d *Database) RegisterCapability(ctx context.Context, record registryport.R
 	if err != nil {
 		return registryport.Record{}, false, fmt.Errorf("begin capability registration: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 	existing, key, err := scanCapability(tx.QueryRowContext(ctx, capabilitySelect+` WHERE capability_id = ? OR idempotency_key = ?`, normalized.ID, idempotencyKey))
 	if err == nil {
 		if key != idempotencyKey || !reflect.DeepEqual(existing, normalized) {
@@ -97,7 +99,9 @@ func (d *Database) Snapshot(ctx context.Context) ([]registryport.Record, error) 
 	if err != nil {
 		return nil, fmt.Errorf("read capability snapshot: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	records := make([]registryport.Record, 0)
 	for rows.Next() {
 		record, _, err := scanCapability(rows)

@@ -50,8 +50,10 @@ type ContinueProposal struct {
 	Reason string `json:"reason"`
 }
 
-func (ContinueProposal) Action() Action { return ActionContinue }
-func (ContinueProposal) isProposal()    {}
+func (ContinueProposal) Action() Action {
+	return ActionContinue
+}
+func (ContinueProposal) isProposal() {}
 func (value ContinueProposal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Action Action `json:"action"`
@@ -64,8 +66,10 @@ type RefreshProposal struct {
 	Reason    string `json:"reason"`
 }
 
-func (RefreshProposal) Action() Action { return ActionRefresh }
-func (RefreshProposal) isProposal()    {}
+func (RefreshProposal) Action() Action {
+	return ActionRefresh
+}
+func (RefreshProposal) isProposal() {}
 func (value RefreshProposal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Action    Action `json:"action"`
@@ -84,8 +88,10 @@ type ReviseProposal struct {
 	Reason    string           `json:"reason"`
 }
 
-func (ReviseProposal) Action() Action { return ActionRevise }
-func (ReviseProposal) isProposal()    {}
+func (ReviseProposal) Action() Action {
+	return ActionRevise
+}
+func (ReviseProposal) isProposal() {}
 func (value ReviseProposal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Action    Action           `json:"action"`
@@ -101,8 +107,10 @@ type InsertProposal struct {
 	Reason string                 `json:"reason"`
 }
 
-func (InsertProposal) Action() Action { return ActionInsert }
-func (InsertProposal) isProposal()    {}
+func (InsertProposal) Action() Action {
+	return ActionInsert
+}
+func (InsertProposal) isProposal() {}
 func (value InsertProposal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Action Action                 `json:"action"`
@@ -118,8 +126,10 @@ type InvalidateProposal struct {
 	Reason    string           `json:"reason"`
 }
 
-func (InvalidateProposal) Action() Action { return ActionInvalidate }
-func (InvalidateProposal) isProposal()    {}
+func (InvalidateProposal) Action() Action {
+	return ActionInvalidate
+}
+func (InvalidateProposal) isProposal() {}
 func (value InvalidateProposal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Action    Action           `json:"action"`

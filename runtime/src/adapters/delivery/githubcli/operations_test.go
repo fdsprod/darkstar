@@ -282,7 +282,9 @@ func TestPublishBranchReconcilesSuccessfulPushAfterCommandFailure(t *testing.T) 
 
 func operationAdapter(t *testing.T, runner *fakeRunner) *Adapter {
 	t.Helper()
-	adapter, err := New(Options{Runner: runner, Now: func() time.Time { return observedAt }})
+	adapter, err := New(Options{Runner: runner, Now: func() time.Time {
+		return observedAt
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}

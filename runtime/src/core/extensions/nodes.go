@@ -31,4 +31,6 @@ func (c *NodeCatalog) Configure(ref extension.Ref, config json.RawMessage) (node
 	return c.catalog.Configure(ref, config, c.validator)
 }
 
-func (c *NodeCatalog) Descriptors() []extension.Descriptor { return c.catalog.Descriptors() }
+func (c *NodeCatalog) Descriptors() []extension.Descriptor {
+	return c.catalog.Descriptors()
+}

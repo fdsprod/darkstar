@@ -82,24 +82,44 @@ func TestProfileFingerprintIgnoresSetDeclarationOrder(t *testing.T) {
 func TestProfileRejectsContradictoryOrUnboundedDefinitions(t *testing.T) {
 	t.Parallel()
 	tests := map[string]func(*Definition){
-		"missing identity":   func(value *Definition) { value.ID = "" },
-		"untrimmed role":     func(value *Definition) { value.Role.Name = " builder " },
-		"duplicate required": func(value *Definition) { value.Capabilities.Required = []string{"resume", "resume"} },
+		"missing identity": func(value *Definition) {
+			value.ID = ""
+		},
+		"untrimmed role": func(value *Definition) {
+			value.Role.Name = " builder "
+		},
+		"duplicate required": func(value *Definition) {
+			value.Capabilities.Required = []string{"resume", "resume"}
+		},
 		"required preferred overlap": func(value *Definition) {
 			value.Capabilities.Required = []string{"resume"}
 			value.Capabilities.Preferred = []string{"resume"}
 		},
-		"missing eligibility": func(value *Definition) { value.Providers.Eligibility = nil },
-		"empty allowlist":     func(value *Definition) { value.Providers.Eligibility = AllowlistedProviders{} },
+		"missing eligibility": func(value *Definition) {
+			value.Providers.Eligibility = nil
+		},
+		"empty allowlist": func(value *Definition) {
+			value.Providers.Eligibility = AllowlistedProviders{}
+		},
 		"preferred outside allowlist": func(value *Definition) {
 			value.Providers.Eligibility = AllowlistedProviders{ProviderIDs: []string{"primary"}}
 			value.Providers.Preferred = []string{"other"}
 		},
-		"invalid permission":   func(value *Definition) { value.Permissions.Network = provider.NetworkPolicy("sometimes") },
-		"unbounded context":    func(value *Definition) { value.Limits.ContextTokens = 0 },
-		"unbounded output":     func(value *Definition) { value.Limits.OutputTokens = 0 },
-		"unbounded timeout":    func(value *Definition) { value.Limits.Timeout = 0 },
-		"missing cancel grace": func(value *Definition) { value.Limits.CancellationGrace = 0 },
+		"invalid permission": func(value *Definition) {
+			value.Permissions.Network = provider.NetworkPolicy("sometimes")
+		},
+		"unbounded context": func(value *Definition) {
+			value.Limits.ContextTokens = 0
+		},
+		"unbounded output": func(value *Definition) {
+			value.Limits.OutputTokens = 0
+		},
+		"unbounded timeout": func(value *Definition) {
+			value.Limits.Timeout = 0
+		},
+		"missing cancel grace": func(value *Definition) {
+			value.Limits.CancellationGrace = 0
+		},
 	}
 	for name, mutate := range tests {
 		name, mutate := name, mutate

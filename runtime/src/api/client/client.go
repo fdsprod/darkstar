@@ -50,7 +50,9 @@ func (failure *Failure) Error() string {
 	return fmt.Sprintf("%s: %v", failure.Op, failure.Err)
 }
 
-func (failure *Failure) Unwrap() error { return failure.Err }
+func (failure *Failure) Unwrap() error {
+	return failure.Err
+}
 
 // ErrorDetail identifies one field-level API failure.
 type ErrorDetail struct {
@@ -77,7 +79,9 @@ type RequestOption func(*http.Request)
 
 // WithHeader adds one HTTP header to a JSON request.
 func WithHeader(name, value string) RequestOption {
-	return func(request *http.Request) { request.Header.Set(name, value) }
+	return func(request *http.Request) {
+		request.Header.Set(name, value)
+	}
 }
 
 func (problem *APIError) Error() string {
@@ -151,10 +155,14 @@ type LogChunk struct {
 }
 
 // Version returns the negotiated API representation version.
-func (session *Session) Version() localapi.Version { return session.version }
+func (session *Session) Version() localapi.Version {
+	return session.version
+}
 
 // Recovery returns the daemon's safe startup-reconciliation summary.
-func (session *Session) Recovery() localapi.RecoveryStatus { return session.recovery }
+func (session *Session) Recovery() localapi.RecoveryStatus {
+	return session.recovery
+}
 
 // EndpointMetadata is the safe subset of endpoint discovery state exposed to
 // command output. It cannot represent or serialize the bearer credential.
@@ -360,7 +368,9 @@ func (session *Session) ReadLog(ctx context.Context, resource string, after int6
 	if err != nil {
 		return LogChunk{}, &Failure{Kind: FailureUnavailable, Op: "read attempt log", Err: err}
 	}
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	content, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 	if err != nil {
 		return LogChunk{}, &Failure{Kind: FailureProtocol, Op: "read attempt log", Err: err}

@@ -234,7 +234,9 @@ func (registry *memoryRegistry) Versions(_ context.Context, artifactID string) (
 			result = append(result, value)
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Version < result[j].Version })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Version < result[j].Version
+	})
 	return result, nil
 }
 

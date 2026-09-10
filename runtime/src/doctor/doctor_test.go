@@ -130,7 +130,9 @@ func TestReportReturnsCompleteHealthySnapshot(t *testing.T) {
 		ProjectRoot: root,
 		Provider:    providerAdapter,
 		Runner:      fakeRunner{},
-		Now:         func() time.Time { return generatedAt },
+		Now: func() time.Time {
+			return generatedAt
+		},
 	})
 	report, err := doctor.Report(context.Background())
 	if err != nil {
@@ -224,7 +226,9 @@ func TestGitHubCheckResolvesConfiguredRemoteBaseAndPushWithoutMutation(t *testin
 	t.Parallel()
 	root := t.TempDir()
 	runner := &githubHealthRunner{root: root}
-	doctor := New(Options{ProjectRoot: root, GitHubRemote: "upstream", Runner: runner, Now: func() time.Time { return time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC) }})
+	doctor := New(Options{ProjectRoot: root, GitHubRemote: "upstream", Runner: runner, Now: func() time.Time {
+		return time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC)
+	}})
 	check := doctor.githubCheck(context.Background(), root)
 	if check.Status != health.StatusHealthy || check.Code != "GITHUB_READY" {
 		t.Fatalf("check = %#v", check)

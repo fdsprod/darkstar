@@ -27,7 +27,9 @@ type DaemonHost struct{}
 
 var _ daemon.Host = (*DaemonHost)(nil)
 
-func NewDaemonHost() *DaemonHost { return &DaemonHost{} }
+func NewDaemonHost() *DaemonHost {
+	return &DaemonHost{}
+}
 
 func (h *DaemonHost) AcquireLock(path string) (daemon.Lock, error) {
 	if !filepath.IsAbs(path) {

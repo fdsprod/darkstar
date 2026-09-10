@@ -108,7 +108,9 @@ func DefinitionUsage(ref ResolvedNodeDefinitionRef, definitions []Definition) []
 			}
 		}
 		if len(ids) > 0 {
-			sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+			sort.Slice(ids, func(i, j int) bool {
+				return ids[i] < ids[j]
+			})
 			result = append(result, NodeDefinitionUsage{Workflow: WorkflowIdentity{Name: installed.Version.Name, Version: installed.Version.Version, Digest: installed.Version.Digest}, NodeIDs: ids})
 		}
 	}

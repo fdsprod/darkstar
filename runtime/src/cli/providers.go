@@ -10,10 +10,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 
+	nodets "darkstar/src/adapters/nodeextension/typescript"
 	"darkstar/src/adapters/provider/codex"
+	providerts "darkstar/src/adapters/provider/typescript"
 	"darkstar/src/adapters/provider/workflowtools"
 	"darkstar/src/core/config"
 	"darkstar/src/core/configmutation"
@@ -38,25 +42,31 @@ import (
 // selected production provider. A failed or ambiguous Codex selection remains
 // explicit so fake scenarios still run while real attempts fail closed.
 type daemonProviderWiring struct {
-	workspaces       workspace.Manager
-	pluginArtifacts  pluginworkspace.Artifacts
-	resourcePlugin   *workflowtools.ResourcePlugin
-	pluginErr        error
-	pluginConfigured bool
-	pluginRef        extension.Ref
-	validators       *extensions.Catalog[outputvalidator.Validator]
-	nodeExtensions   nodeextension.Resolver
-	providers        *runexecution.ProviderCatalog
-	defaultProvider  string
-	configuration    *configmutation.Service
-	workflows        *workflow.Catalog
-	configuredCodex  string
-	executable       string
-	environment      []string
-	selectionErr     error
-	projectRoot      string
-	toolDatabase     string
-	evidence         codex.EvidenceRecorder
+	nodePlugin           *nodets.Engine
+	nodePluginErr        error
+	providerPluginConfig *providerts.Config
+	providerPluginErr    error
+	pluginProvidersMu    sync.Mutex
+	pluginProviders      map[string]*providerts.Adapter
+	workspaces           workspace.Manager
+	pluginArtifacts      pluginworkspace.Artifacts
+	resourcePlugin       *workflowtools.ResourcePlugin
+	pluginErr            error
+	pluginConfigured     bool
+	pluginRef            extension.Ref
+	validators           *extensions.Catalog[outputvalidator.Validator]
+	nodeExtensions       nodeextension.Resolver
+	providers            *runexecution.ProviderCatalog
+	defaultProvider      string
+	configuration        *configmutation.Service
+	workflows            *workflow.Catalog
+	configuredCodex      string
+	executable           string
+	environment          []string
+	selectionErr         error
+	projectRoot          string
+	toolDatabase         string
+	evidence             codex.EvidenceRecorder
 }
 
 // richArtifactSkill is generated from skills/builtin/rich-artifacts/SKILL.md.
@@ -141,6 +151,11 @@ func (wiring *daemonProviderWiring) providerCatalog() (*runexecution.ProviderCat
 	if wiring.providers != nil {
 		return wiring.providers, nil
 	}
+	var builtinRef *extension.Ref
+	if wiring.pluginConfigured {
+		ref := providerts.BuiltinRef()
+		builtinRef = &ref
+	}
 	return runexecution.NewProviderCatalog(
 		runexecution.ProviderRegistration{Name: fakeProviderName, Factory: runexecution.WorkflowProviderFactoryFunc(func(_ context.Context, request runexecution.ProviderRequest) (providerport.Provider, error) {
 			if request.Scenario != runexecution.ScenarioSuccess && request.Scenario != runexecution.ScenarioRestart {
@@ -148,12 +163,15 @@ func (wiring *daemonProviderWiring) providerCatalog() (*runexecution.ProviderCat
 			}
 			return newFakeRunProvider(request.Scenario, request.AttemptID, request.Resume)
 		})},
-		runexecution.ProviderRegistration{Name: runexecution.ProviderCodex, Factory: runexecution.WorkflowProviderFactoryFunc(func(_ context.Context, request runexecution.ProviderRequest) (providerport.Provider, error) {
+		runexecution.ProviderRegistration{Name: runexecution.ProviderCodex, Ref: builtinRef, Factory: runexecution.WorkflowProviderFactoryFunc(func(_ context.Context, request runexecution.ProviderRequest) (providerport.Provider, error) {
 			if request.Scenario != runexecution.ScenarioWorkflow {
 				return nil, fmt.Errorf("codex provider does not support scenario %q", request.Scenario)
 			}
 			if wiring.selectionErr != nil {
 				return nil, fmt.Errorf("codex provider is unavailable: %w", wiring.selectionErr)
+			}
+			if request.Ref != nil {
+				return wiring.pluginProvider(request)
 			}
 			return wiring.codexProvider()
 		})},
@@ -173,7 +191,11 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 	if providerName == "" {
 		providerName = wiring.DefaultWorkflowProvider()
 	}
-	adapter, err := wiring.Provider(ctx, runexecution.ProviderRequest{Provider: providerName, Scenario: runexecution.ScenarioWorkflow, AttemptID: request.Attempt.AttemptID})
+	var ref *extension.Ref
+	if pin, ok := request.ExecutionContext.ExtensionPins["provider:"+providerName]; ok {
+		ref = &pin
+	}
+	adapter, err := wiring.Provider(ctx, runexecution.ProviderRequest{Ref: ref, Provider: providerName, Scenario: runexecution.ScenarioWorkflow, AttemptID: request.Attempt.AttemptID})
 	if err != nil {
 		return providerport.AttemptRequest{}, err
 	}
@@ -189,7 +211,7 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 	}
 	session := &workflowtools.Session{Database: wiring.toolDatabase, RunID: request.Run.RunID, AttemptID: request.Attempt.AttemptID, Node: request.Node, Inputs: request.NodeInputs}
 	// Build and authorize the task before touching the prepared workspace.
-	built, err := buildWorkflowAttemptRequest(request, wiring.projectRoot, manifest.Fingerprint)
+	built, err := wiring.buildScopedAttempt(ctx, request, manifest.Fingerprint)
 	if err != nil {
 		return built, err
 	}
@@ -201,7 +223,7 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 		request.NodeInputs = inputs
 		session.Inputs = inputs
 		// Refresh input projections from the durable workspace; old history is retained.
-		built, err = buildWorkflowAttemptRequest(request, wiring.projectRoot, manifest.Fingerprint)
+		built, err = wiring.buildScopedAttempt(ctx, request, manifest.Fingerprint)
 		if err != nil {
 			return built, err
 		}
@@ -225,6 +247,10 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 }
 
 func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, workspace, capabilityFingerprint string) (providerport.AttemptRequest, error) {
+	return buildWorkflowAttemptRequestWithNodes(context.Background(), request, workspace, capabilityFingerprint, nil)
+}
+
+func buildWorkflowAttemptRequestWithNodes(ctx context.Context, request runexecution.AttemptRequestContext, workspace, capabilityFingerprint string, engine *nodets.Engine) (providerport.AttemptRequest, error) {
 	workspace = filepath.Clean(strings.TrimSpace(workspace))
 	workspaceDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(workspace)))
 	if workspace == "." || !filepath.IsAbs(workspace) || request.Project.Status != statestore.ProjectActive || request.Project.SourceHash != workspaceDigest {
@@ -241,9 +267,30 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 	if !ok {
 		return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q is %s; it is not an agent-backed executor", request.Attempt.NodeID, request.Node.Type())
 	}
-	task, err := agentHandler.BuildTask(request.Attempt.NodeID)
+	var task nodes.AgentTask
+	if engine != nil {
+		task, err = engine.BuildTask(ctx, request.Node, request.Attempt.NodeID)
+	} else {
+		task, err = agentHandler.BuildTask(request.Attempt.NodeID)
+	}
 	if err != nil {
 		return providerport.AttemptRequest{}, err
+	}
+	if engine != nil {
+		permissions := slices.Clone(fields.Permissions)
+		slices.Sort(permissions)
+		switch request.Node.(type) {
+		case workflow.ReasoningNode:
+			if len(permissions) != 0 || task.Access != providerport.AccessReadOnly {
+				return providerport.AttemptRequest{}, errors.New("reasoning plugin requested ungranted access")
+			}
+		case workflow.ImplementationNode, workflow.PointExecutionNode:
+			if !slices.Equal(permissions, []string{"process.run", "workspace.write"}) || task.Access != providerport.AccessWorkspaceWrite {
+				return providerport.AttemptRequest{}, errors.New("implementation plugin access exceeds the declared permission contract")
+			}
+		default:
+			return providerport.AttemptRequest{}, errors.New("unsupported plugin agent access contract")
+		}
 	}
 	agent, skills, tools, instruction := task.Agent, task.Skills, task.Tools, task.Instructions
 	access := task.Access
@@ -258,7 +305,7 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 			break
 		}
 	}
-	outputSchema, err := workflowOutputSchema(request.Node, fields.Outputs)
+	outputSchema, err := workflowOutputSchemaWithNodes(ctx, request.Node, fields.Outputs, engine)
 	if err != nil {
 		return providerport.AttemptRequest{}, err
 	}
@@ -301,6 +348,9 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 }
 
 func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]workflow.OutputDeclaration) (json.RawMessage, error) {
+	return workflowOutputSchemaWithNodes(context.Background(), node, outputs, nil)
+}
+func workflowOutputSchemaWithNodes(ctx context.Context, node workflow.Node, outputs map[workflow.Identifier]workflow.OutputDeclaration, engine *nodets.Engine) (json.RawMessage, error) {
 	ids := make([]string, 0, len(outputs))
 	for id := range outputs {
 		ids = append(ids, string(id))
@@ -335,7 +385,11 @@ func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]wo
 	if err != nil {
 		return nil, err
 	}
-	if agent, ok := handler.(nodes.AgentHandler); ok {
+	if engine != nil {
+		if err := engine.ConfigureOutputs(ctx, node, properties); err != nil {
+			return nil, err
+		}
+	} else if agent, ok := handler.(nodes.AgentHandler); ok {
 		agent.ConfigureOutputs(properties)
 	}
 	schema := struct {
@@ -482,12 +536,14 @@ func (w *daemonProviderWiring) ExtensionPins() map[string]extension.Ref {
 	}
 	if w.pluginConfigured {
 		pins[builtinPluginPin] = w.pluginRef
+		pins[builtinNodePin] = nodets.BuiltinRef()
 	}
 	return pins
 }
 func (w *daemonProviderWiring) ValidateExtensionPins(pins map[string]extension.Ref) error {
 	for name, ref := range pins {
-		if strings.HasPrefix(name, "plugin:") && (name != builtinPluginPin || !w.pluginConfigured || w.pluginRef != ref) {
+		matches := name == builtinPluginPin && w.pluginRef == ref || name == builtinNodePin && nodets.BuiltinRef() == ref
+		if strings.HasPrefix(name, "plugin:") && (!w.pluginConfigured || !matches) {
 			return fmt.Errorf("EXTENSION_UNAVAILABLE: exact plugin %s@%s (%s) is required", ref.ID, ref.Version, ref.Digest)
 		}
 	}

@@ -22,12 +22,16 @@ type memoryWorkspace struct {
 	data  map[string][]byte
 }
 
-func (w *memoryWorkspace) Ensure(context.Context, string) error { return nil }
+func (w *memoryWorkspace) Ensure(context.Context, string) error {
+	return nil
+}
 func (w *memoryWorkspace) Bind(_ context.Context, g workspace.Grant) (workspace.Handle, error) {
 	w.grant = g
 	return w, nil
 }
-func (w *memoryWorkspace) Close() error { return nil }
+func (w *memoryWorkspace) Close() error {
+	return nil
+}
 func (w *memoryWorkspace) ReplaceFile(_ context.Context, a workspace.Area, p, expected string, b []byte) error {
 	k := string(a) + ":" + p
 	old, ok := w.data[k]

@@ -31,9 +31,14 @@ Push-Location $repositoryRoot
 try {
     New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
-    & node packages/plugin-sdk/build.mjs --check
+    & node packages/plugin-sdk/scripts/lint-control-flow.mjs
     if ($LASTEXITCODE -ne 0) {
-        throw "Embedded plugin bundle is stale. Run node packages/plugin-sdk/build.mjs before building."
+        throw "Plugin source control-flow lint failed."
+    }
+
+    & node packages/plugin-sdk/build-all.mjs --check
+    if ($LASTEXITCODE -ne 0) {
+        throw "Embedded plugin bundle is stale. Run node packages/plugin-sdk/build-all.mjs before building."
     }
 
     if (-not $SkipDashboard) {

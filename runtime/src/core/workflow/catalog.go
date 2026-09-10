@@ -1087,7 +1087,9 @@ func sortedValueDeclarationIDs(values map[Identifier]ValueDeclaration) []Identif
 	for id := range values {
 		result = append(result, id)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
 	return result
 }
 func sortedIdentifierMapKeys(values map[Identifier]Identifier) []Identifier {
@@ -1095,7 +1097,9 @@ func sortedIdentifierMapKeys(values map[Identifier]Identifier) []Identifier {
 	for id := range values {
 		result = append(result, id)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
 	return result
 }
 func sortedStringMapKeys(values map[Identifier]string) []Identifier {
@@ -1103,7 +1107,9 @@ func sortedStringMapKeys(values map[Identifier]string) []Identifier {
 	for id := range values {
 		result = append(result, id)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
 	return result
 }
 
@@ -1475,7 +1481,9 @@ func (c *Catalog) SnapshotRun(ctx context.Context, runID, name, version string, 
 	})
 }
 
-func validSourceScope(scope workflowstore.Scope) bool { return scopePrecedence(scope) != 0 }
+func validSourceScope(scope workflowstore.Scope) bool {
+	return scopePrecedence(scope) != 0
+}
 
 func scopePrecedence(scope workflowstore.Scope) int {
 	switch scope {

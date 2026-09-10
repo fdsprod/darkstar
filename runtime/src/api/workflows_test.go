@@ -26,7 +26,9 @@ func TestWorkflowAPICoversInstallListShowGraphAndPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	catalog, err := workflow.NewCatalog(emptyWorkflowSource{}, database)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +86,9 @@ func TestWorkflowSubworkflowResolutionPinsExactChildrenAndRejectsUnsafeMappings(
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	catalog, err := workflow.NewCatalog(emptyWorkflowSource{}, database)
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +157,9 @@ func TestWorkflowValidationResolvesExactReusableDefinitionBeforeInstall(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	builtin := workflow.NodeDefinition{Ref: workflow.ResolvedNodeDefinitionRef{Ref: workflow.BuiltInNodeDefinitionRef{Name: "route/assessment", Version: "1.0.0"}}, DisplayName: "Route assessment", Description: "Select route", Compatibility: workflow.APIVersionV1Alpha3, Inputs: map[workflow.Identifier]workflow.ValueDeclaration{}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"selected_route": {Type: workflow.ValueString}, "rationale": {Type: workflow.ValueString}, "advice": {Type: workflow.ValueString}, "missing_information": {Type: workflow.ValueArray}, "assumptions": {Type: workflow.ValueArray}, "confirmation_required": {Type: workflow.ValueBoolean}}, ConfigurationSchema: json.RawMessage(`{"type":"object"}`), Implementation: workflow.NodeImplementationRouting, RequiredCapabilities: []workflow.CapabilityReference{}, Lifecycle: workflow.NodeDefinitionActive, CreatedAt: time.Now().UTC()}
 	library, err := workflow.NewNodeDefinitionLibrary(builtin)
 	if err != nil {
@@ -181,7 +187,9 @@ func TestNodeDefinitionAPIMutationsPersistExactVersionsAndProtectBuiltIns(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	builtin := workflow.NodeDefinition{Ref: workflow.ResolvedNodeDefinitionRef{Ref: workflow.BuiltInNodeDefinitionRef{Name: "route/assessment", Version: "1.0.0"}}, DisplayName: "Route assessment", Compatibility: workflow.APIVersionV1Alpha3, Inputs: map[workflow.Identifier]workflow.ValueDeclaration{}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{}, ConfigurationSchema: json.RawMessage(`{"type":"object"}`), Implementation: workflow.NodeImplementationRouting, RequiredCapabilities: []workflow.CapabilityReference{}, Lifecycle: workflow.NodeDefinitionActive, CreatedAt: time.Now().UTC()}
 	library, err := workflow.NewNodeDefinitionLibrary(builtin)
 	if err != nil {
@@ -315,7 +323,9 @@ func TestWorkflowDraftAuthoringUsesCASAndPublishesImmutableVersion(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	catalog, err := workflow.NewCatalog(emptyWorkflowSource{}, database)
 	if err != nil {
 		t.Fatal(err)
@@ -509,7 +519,9 @@ func workflowRequestWithKey(t *testing.T, endpoint Endpoint, resource string, bo
 
 type emptyWorkflowSource struct{}
 
-func (emptyWorkflowSource) Load(context.Context) ([]workflowstore.Candidate, error) { return nil, nil }
+func (emptyWorkflowSource) Load(context.Context) ([]workflowstore.Candidate, error) {
+	return nil, nil
+}
 
 func apiWorkflowDocument() string {
 	return `{"apiVersion":"darkstar.local/v1alpha1","kind":"Workflow","metadata":{"name":"api-workflow","version":"1.0.0"},"spec":{"routeDefaults":{"entry":"finish","terminals":["finish"]},"nodes":{"finish":{"type":"reasoning","entry":true,"terminal":true,"inputs":{},"outputs":{},"reasoning":{"agent":"fake"},"checkpoint":{"mode":"none"},"transitions":[]}}}}`

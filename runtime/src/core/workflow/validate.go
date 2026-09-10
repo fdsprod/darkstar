@@ -621,7 +621,9 @@ func (state *validationState) validateCycles(nodeIDs []Identifier) {
 	visit = func(nodeID Identifier) bool {
 		colors[nodeID] = 1
 		targets := append([]Identifier(nil), state.normalGraph[nodeID]...)
-		sort.Slice(targets, func(i, j int) bool { return targets[i] < targets[j] })
+		sort.Slice(targets, func(i, j int) bool {
+			return targets[i] < targets[j]
+		})
 		for _, target := range targets {
 			if colors[target] == 1 || (colors[target] == 0 && visit(target)) {
 				return true
@@ -851,7 +853,9 @@ func sortedNodeIDs(nodes map[Identifier]Node) []Identifier {
 	for id := range nodes {
 		result = append(result, id)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
 	return result
 }
 
@@ -860,7 +864,9 @@ func sortedBindingIDs(bindings map[Identifier]Binding) []Identifier {
 	for id := range bindings {
 		result = append(result, id)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
 	return result
 }
 

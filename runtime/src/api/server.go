@@ -149,7 +149,9 @@ type RecoveryStatus struct {
 }
 
 // SchedulingAllowed derives scheduler admission from the unresolved count.
-func (status RecoveryStatus) SchedulingAllowed() bool { return status.ReconcileRequired == 0 }
+func (status RecoveryStatus) SchedulingAllowed() bool {
+	return status.ReconcileRequired == 0
+}
 
 // SetRecoveryStatus configures startup state before Start publishes the API.
 func (s *Server) SetRecoveryStatus(status RecoveryStatus) error {

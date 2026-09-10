@@ -70,7 +70,9 @@ func TestWorkflowInstallationAndRunSnapshotsAreImmutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 
 	source := &workflowCandidates{values: []workflowstore.Candidate{
 		{Scope: workflowstore.ScopeDefault, Reference: "built-in/delivery.json", Content: json.RawMessage(testWorkflow("default"))},
@@ -140,7 +142,9 @@ func TestRunSnapshotRequiresExistingRunAggregate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	document, canonical, digest, err := workflow.Canonicalize([]byte(testWorkflow("installed")))
 	if err != nil {
 		t.Fatal(err)

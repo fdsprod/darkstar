@@ -60,7 +60,9 @@ func parseToken(value string) (Token, error) {
 	return token, nil
 }
 
-func (t Token) encoded() string { return hex.EncodeToString(t.value[:]) }
+func (t Token) encoded() string {
+	return hex.EncodeToString(t.value[:])
+}
 
 func (t Token) matches(value string) bool {
 	candidate, err := hex.DecodeString(value)
@@ -75,12 +77,18 @@ func (t Token) equal(other Token) bool {
 }
 
 // String prevents accidental credential disclosure through logs and errors.
-func (Token) String() string { return "[redacted]" }
+func (Token) String() string {
+	return "[redacted]"
+}
 
 // GoString prevents %#v from revealing the token's backing bytes.
-func (Token) GoString() string { return "api.Token([redacted])" }
+func (Token) GoString() string {
+	return "api.Token([redacted])"
+}
 
-func (t Token) MarshalJSON() ([]byte, error) { return json.Marshal(t.encoded()) }
+func (t Token) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.encoded())
+}
 
 func (t *Token) UnmarshalJSON(content []byte) error {
 	var value string
@@ -108,13 +116,19 @@ type Endpoint struct {
 }
 
 // BaseURL returns the only address family the MVP server publishes.
-func (e Endpoint) BaseURL() string { return fmt.Sprintf("http://127.0.0.1:%d", e.Port) }
+func (e Endpoint) BaseURL() string {
+	return fmt.Sprintf("http://127.0.0.1:%d", e.Port)
+}
 
 // AuthorizationHeader returns the complete bearer credential for an HTTP client.
-func (e Endpoint) AuthorizationHeader() string { return "Bearer " + e.Token.encoded() }
+func (e Endpoint) AuthorizationHeader() string {
+	return "Bearer " + e.Token.encoded()
+}
 
 // SupportedVersions returns a copy of the server's compatibility preference.
-func SupportedVersions() []Version { return []Version{VersionV1} }
+func SupportedVersions() []Version {
+	return []Version{VersionV1}
+}
 
 // NegotiateVersion selects the endpoint version only when the client explicitly
 // supports it. A future multi-version daemon can extend the endpoint contract.

@@ -36,7 +36,9 @@ func (d *Database) StoreManifest(ctx context.Context, manifest manifestport.Mani
 	if err != nil {
 		return manifestport.Manifest{}, false, fmt.Errorf("begin context manifest: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 	existing, key, err := scanManifest(tx.QueryRowContext(ctx, manifestSelect+` WHERE attempt_id = ?`, normalized.AttemptID))
 	if err == nil {
 		if key != idempotencyKey || !reflect.DeepEqual(existing, normalized) {

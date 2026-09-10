@@ -225,7 +225,9 @@ func (resolver *Resolver) Resolve(request Request) (Manifest, error) {
 		}
 		return manifest.Selections[i].ID < manifest.Selections[j].ID
 	})
-	sort.Slice(manifest.Omissions, func(i, j int) bool { return manifest.Omissions[i].Name < manifest.Omissions[j].Name })
+	sort.Slice(manifest.Omissions, func(i, j int) bool {
+		return manifest.Omissions[i].Name < manifest.Omissions[j].Name
+	})
 	sort.Strings(manifest.FallbacksUsed)
 	manifest.Digest, err = manifestDigest(manifest)
 	return manifest, err
@@ -236,29 +238,39 @@ func (resolver *Resolver) resolveOne(name string, kind registryport.Kind, versio
 	if len(candidates) == 0 {
 		return registryport.Record{}, resolutionFailure(FailureRequiredMissing, name, "not registered")
 	}
-	kindMatches := filter(candidates, func(record registryport.Record) bool { return record.Kind == kind })
+	kindMatches := filter(candidates, func(record registryport.Record) bool {
+		return record.Kind == kind
+	})
 	if len(kindMatches) == 0 {
 		return registryport.Record{}, resolutionFailure(FailureRequiredMissing, name, "kind does not match")
 	}
 	versionMatches := kindMatches
 	if version != "" {
-		versionMatches = filter(kindMatches, func(record registryport.Record) bool { return record.DeclaredVersion == version })
+		versionMatches = filter(kindMatches, func(record registryport.Record) bool {
+			return record.DeclaredVersion == version
+		})
 		if len(versionMatches) == 0 {
 			return registryport.Record{}, resolutionFailure(FailureVersionMismatch, name, version)
 		}
 	}
 	fingerprintMatches := versionMatches
 	if fingerprint != "" {
-		fingerprintMatches = filter(versionMatches, func(record registryport.Record) bool { return record.Fingerprint == fingerprint })
+		fingerprintMatches = filter(versionMatches, func(record registryport.Record) bool {
+			return record.Fingerprint == fingerprint
+		})
 		if len(fingerprintMatches) == 0 {
 			return registryport.Record{}, resolutionFailure(FailureFingerprintChanged, name, fingerprint)
 		}
 	}
-	eligible := filter(fingerprintMatches, func(record registryport.Record) bool { return record.Class != registryport.ClassUnsupportedDiscovery })
+	eligible := filter(fingerprintMatches, func(record registryport.Record) bool {
+		return record.Class != registryport.ClassUnsupportedDiscovery
+	})
 	if len(eligible) == 0 {
 		return registryport.Record{}, resolutionFailure(FailureRequiredMissing, name, "only unsupported discovery exists")
 	}
-	allowed := filter(eligible, func(record registryport.Record) bool { return policyAllows(record, grants) })
+	allowed := filter(eligible, func(record registryport.Record) bool {
+		return policyAllows(record, grants)
+	})
 	if len(allowed) == 0 {
 		return registryport.Record{}, resolutionFailure(FailurePolicyDenied, name, "all candidates denied")
 	}
@@ -269,7 +281,9 @@ func (resolver *Resolver) resolveOne(name string, kind registryport.Kind, versio
 		return registryport.Record{}, resolutionFailure(FailureUnhealthy, name, "no candidate is available")
 	}
 	bestRank := classRank(available[0].Class)
-	best := filter(available, func(record registryport.Record) bool { return classRank(record.Class) == bestRank })
+	best := filter(available, func(record registryport.Record) bool {
+		return classRank(record.Class) == bestRank
+	})
 	if len(best) != 1 {
 		return registryport.Record{}, resolutionFailure(FailureAmbiguous, name, "multiple equally preferred candidates")
 	}

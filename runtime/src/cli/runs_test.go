@@ -28,8 +28,12 @@ func TestRunPrepareAndLaunchUseDurableReadyAPI(t *testing.T) {
 		}
 	}
 	originalResolver := resolveApplicationPaths
-	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) { return paths, nil }
-	t.Cleanup(func() { resolveApplicationPaths = originalResolver })
+	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) {
+		return paths, nil
+	}
+	t.Cleanup(func() {
+		resolveApplicationPaths = originalResolver
+	})
 
 	run := statestore.RunProjection{
 		RunID: "run_00000000000000000000000000", WorkItemID: "work_00000000000000000000000000",

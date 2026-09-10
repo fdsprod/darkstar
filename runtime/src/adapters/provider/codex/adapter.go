@@ -131,7 +131,9 @@ func (validator schemaOutputValidator) validate(output json.RawMessage) error {
 // authoritative for the already-started turn's schema constraint.
 type resumedOutputValidator struct{}
 
-func (resumedOutputValidator) validate(json.RawMessage) error { return nil }
+func (resumedOutputValidator) validate(json.RawMessage) error {
+	return nil
+}
 
 type attemptResponse struct {
 	idempotencyKey string
@@ -1242,7 +1244,9 @@ func (stream *attemptEventStream) Receive() (providerport.Event, error) {
 }
 
 func (stream *attemptEventStream) Close() error {
-	stream.once.Do(func() { close(stream.closed) })
+	stream.once.Do(func() {
+		close(stream.closed)
+	})
 	return nil
 }
 
@@ -1592,7 +1596,9 @@ func verifyFileDigest(path, expected string) error {
 	if err != nil {
 		return fmt.Errorf("open Codex input locator: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		_ = file.Close()
+	}()
 	digest := sha256.New()
 	if _, err := io.Copy(digest, file); err != nil {
 		return fmt.Errorf("digest Codex input locator: %w", err)

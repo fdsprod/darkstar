@@ -72,7 +72,9 @@ func (report Report) ReconcileRequired() int {
 }
 
 // SchedulingAllowed derives scheduler admission from the committed results.
-func (report Report) SchedulingAllowed() bool { return report.ReconcileRequired() == 0 }
+func (report Report) SchedulingAllowed() bool {
+	return report.ReconcileRequired() == 0
+}
 
 // Store owns authoritative recovery records and their atomic transitions.
 type Store interface {
@@ -282,13 +284,19 @@ func cloneSubject(subject Subject) Subject {
 
 // NormalizeDecision validates and canonicalizes a decision for adapters that
 // apply recovery without going through Reconciler.Run.
-func NormalizeDecision(decision Decision) (Decision, error) { return normalizeDecision(decision) }
+func NormalizeDecision(decision Decision) (Decision, error) {
+	return normalizeDecision(decision)
+}
 
 // ValidateSubject checks the durable subject boundary for adapters.
-func ValidateSubject(subject Subject) error { return validateSubject(subject) }
+func ValidateSubject(subject Subject) error {
+	return validateSubject(subject)
+}
 
 // NormalizeSubject validates and canonicalizes a subject for durable compare.
-func NormalizeSubject(subject Subject) (Subject, error) { return normalizeSubject(subject) }
+func NormalizeSubject(subject Subject) (Subject, error) {
+	return normalizeSubject(subject)
+}
 
 // ValidateDecisionForSubject rejects outcomes that cannot be represented by
 // the subject's durable lifecycle.

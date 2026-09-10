@@ -49,7 +49,9 @@ func (failure *Error) Error() string {
 	return fmt.Sprintf("%s at %s: %s", failure.Code, failure.Location, failure.Message)
 }
 
-func (failure *Error) Unwrap() error { return failure.Cause }
+func (failure *Error) Unwrap() error {
+	return failure.Cause
+}
 
 type Evidence struct {
 	Source      string `json:"source"`
@@ -87,10 +89,16 @@ type InformationFinding struct {
 	Evidence []Evidence `json:"evidence"`
 }
 
-func (InformationFinding) Level() Level                        { return LevelInformation }
-func (finding InformationFinding) findingCode() string         { return finding.Code }
-func (finding InformationFinding) findingEvidence() []Evidence { return finding.Evidence }
-func (InformationFinding) isFinding()                          {}
+func (InformationFinding) Level() Level {
+	return LevelInformation
+}
+func (finding InformationFinding) findingCode() string {
+	return finding.Code
+}
+func (finding InformationFinding) findingEvidence() []Evidence {
+	return finding.Evidence
+}
+func (InformationFinding) isFinding() {}
 func (finding InformationFinding) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Level    Level      `json:"level"`
@@ -124,10 +132,16 @@ type RecommendationFinding struct {
 	RemedyCode string     `json:"remedyCode"`
 }
 
-func (RecommendationFinding) Level() Level                        { return LevelRecommendation }
-func (finding RecommendationFinding) findingCode() string         { return finding.Code }
-func (finding RecommendationFinding) findingEvidence() []Evidence { return finding.Evidence }
-func (RecommendationFinding) isFinding()                          {}
+func (RecommendationFinding) Level() Level {
+	return LevelRecommendation
+}
+func (finding RecommendationFinding) findingCode() string {
+	return finding.Code
+}
+func (finding RecommendationFinding) findingEvidence() []Evidence {
+	return finding.Evidence
+}
+func (RecommendationFinding) isFinding() {}
 func (finding RecommendationFinding) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Level      Level      `json:"level"`
@@ -172,10 +186,16 @@ type PolicyGateFinding struct {
 	RemedyCode string              `json:"remedyCode,omitempty"`
 }
 
-func (PolicyGateFinding) Level() Level                        { return LevelPolicyGate }
-func (finding PolicyGateFinding) findingCode() string         { return finding.Code }
-func (finding PolicyGateFinding) findingEvidence() []Evidence { return finding.Evidence }
-func (PolicyGateFinding) isFinding()                          {}
+func (PolicyGateFinding) Level() Level {
+	return LevelPolicyGate
+}
+func (finding PolicyGateFinding) findingCode() string {
+	return finding.Code
+}
+func (finding PolicyGateFinding) findingEvidence() []Evidence {
+	return finding.Evidence
+}
+func (PolicyGateFinding) isFinding() {}
 func (finding PolicyGateFinding) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Level      Level               `json:"level"`
@@ -224,10 +244,16 @@ type InvariantFinding struct {
 	RemedyCode string          `json:"remedyCode,omitempty"`
 }
 
-func (InvariantFinding) Level() Level                        { return LevelInvariant }
-func (finding InvariantFinding) findingCode() string         { return finding.Code }
-func (finding InvariantFinding) findingEvidence() []Evidence { return finding.Evidence }
-func (InvariantFinding) isFinding()                          {}
+func (InvariantFinding) Level() Level {
+	return LevelInvariant
+}
+func (finding InvariantFinding) findingCode() string {
+	return finding.Code
+}
+func (finding InvariantFinding) findingEvidence() []Evidence {
+	return finding.Evidence
+}
+func (InvariantFinding) isFinding() {}
 func (finding InvariantFinding) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Level      Level           `json:"level"`
@@ -420,7 +446,9 @@ func (assessment Assessment) Snapshot() Snapshot {
 	return Snapshot{Submission: cloneSubmission(assessment.submission), Disposition: assessment.disposition, Digest: assessment.digest}
 }
 
-func (assessment Assessment) Disposition() Disposition { return assessment.disposition }
+func (assessment Assessment) Disposition() Disposition {
+	return assessment.disposition
+}
 
 func (assessment Assessment) View() View {
 	submission := cloneSubmission(assessment.submission)

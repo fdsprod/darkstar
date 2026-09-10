@@ -18,7 +18,9 @@ func newProcessOwner(command *exec.Cmd) (*processOwner, error) {
 	return &processOwner{command: command}, nil
 }
 
-func (owner *processOwner) Wait() error { return owner.command.Wait() }
+func (owner *processOwner) Wait() error {
+	return owner.command.Wait()
+}
 
 func (owner *processOwner) Terminate() (bool, error) {
 	err := syscall.Kill(-owner.command.Process.Pid, syscall.SIGTERM)
@@ -36,4 +38,6 @@ func (owner *processOwner) Kill() error {
 	return err
 }
 
-func (owner *processOwner) PID() int { return owner.command.Process.Pid }
+func (owner *processOwner) PID() int {
+	return owner.command.Process.Pid
+}

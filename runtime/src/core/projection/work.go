@@ -142,7 +142,9 @@ func ReduceWorkItem(current *statestore.WorkItemProjection, event statestore.Eve
 }
 
 func validateWorkRoutingIntent(intent statestore.WorkRoutingIntent) error {
-	trimmed := func(value string) bool { return value == strings.TrimSpace(value) }
+	trimmed := func(value string) bool {
+		return value == strings.TrimSpace(value)
+	}
 	if !trimmed(intent.WorkflowID) || !trimmed(intent.WorkflowVersion) || !trimmed(intent.EntryNodeID) {
 		return errors.New("work.created routingIntent fields must be trimmed")
 	}
@@ -368,7 +370,9 @@ func decodePointContract(event statestore.Event, pointID string, wantRevision ui
 	return statestore.PointProjection{StoryID: data.StoryID, Revision: data.Revision, Title: data.Title, SourceHash: data.SourceHash, Priority: data.Priority, Position: data.Position, Dependencies: dependencies}, nil
 }
 
-func validSourceHash(value string) bool { return sourceHashPattern.MatchString(value) }
+func validSourceHash(value string) bool {
+	return sourceHashPattern.MatchString(value)
+}
 
 func validateCurrent(kind, id string, revision uint64, event statestore.Event) error {
 	if id != event.AggregateID {

@@ -302,7 +302,9 @@ func (s *Server) serveRepresentationContent(response http.ResponseWriter, reques
 }
 
 func serveArtifactContent(response http.ResponseWriter, request *http.Request, content artifactops.Content, allowInline bool) {
-	defer func() { _ = content.Reader.Close() }()
+	defer func() {
+		_ = content.Reader.Close()
+	}()
 	mediaType, disposition := artifactContentHeaders(content.MediaType, allowInline)
 	response.Header().Set("Content-Type", mediaType)
 	response.Header().Set("Content-Disposition", disposition+`; filename="`+safeArtifactFileName(content.FileName)+`"`)

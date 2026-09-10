@@ -33,7 +33,9 @@ func TestBuildCreatesRedactedSelfContainedBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exporter.now = func() time.Time { return when }
+	exporter.now = func() time.Time {
+		return when
+	}
 
 	content, manifest, err := exporter.Build(context.Background(), runID)
 	if err != nil {

@@ -643,7 +643,9 @@ func (service *Service) readDiffContent(ctx context.Context, representation repr
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDiffStorage, err)
 	}
-	defer func() { _ = reader.Close() }()
+	defer func() {
+		_ = reader.Close()
+	}()
 	content, err := io.ReadAll(io.LimitReader(reader, artifactdiff.MaxInputBytes+1))
 	if err != nil {
 		return nil, err

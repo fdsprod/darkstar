@@ -30,10 +30,18 @@ type fixtureExecProcess struct {
 	killed bool
 }
 
-func (process *fixtureExecProcess) Stdout() io.Reader { return process.stdout }
-func (process *fixtureExecProcess) Stderr() io.Reader { return process.stderr }
-func (process *fixtureExecProcess) PID() int          { return process.pid }
-func (process *fixtureExecProcess) Wait() error       { return process.wait }
+func (process *fixtureExecProcess) Stdout() io.Reader {
+	return process.stdout
+}
+func (process *fixtureExecProcess) Stderr() io.Reader {
+	return process.stderr
+}
+func (process *fixtureExecProcess) PID() int {
+	return process.pid
+}
+func (process *fixtureExecProcess) Wait() error {
+	return process.wait
+}
 func (process *fixtureExecProcess) Kill() error {
 	process.mu.Lock()
 	process.killed = true
@@ -155,7 +163,9 @@ func TestExecAdapterRejectsUnboundedInteractiveAndUnreviewedAttempts(t *testing.
 	})
 
 	for name, mutate := range map[string]func(*providerport.AttemptRequest){
-		"unbounded": func(value *providerport.AttemptRequest) { value.Timeout = 0 },
+		"unbounded": func(value *providerport.AttemptRequest) {
+			value.Timeout = 0
+		},
 		"interactive": func(value *providerport.AttemptRequest) {
 			value.Timeout = execTestAttemptTimeout
 			value.CommandPolicy = providerport.InteractionAsk
@@ -179,7 +189,9 @@ func TestExecAdapterRejectsUnboundedInteractiveAndUnreviewedAttempts(t *testing.
 		t.Fatal(err)
 	}
 	unreviewed, err := NewExecAdapter(ExecAdapterOptions{
-		ProviderVersion: "9.9.9", Factory: func(ExecCommand) (ExecProcess, error) { return execFixtureProcess(""), nil }, EvidenceRecorder: recorder,
+		ProviderVersion: "9.9.9", Factory: func(ExecCommand) (ExecProcess, error) {
+			return execFixtureProcess(""), nil
+		}, EvidenceRecorder: recorder,
 		RecoveryStore: NewMemoryExecRecoveryStore(),
 	})
 	if err != nil {
@@ -349,7 +361,9 @@ func newExecTestAdapterVersion(t *testing.T, version string, store ExecRecoveryS
 	adapter, err := NewExecAdapter(ExecAdapterOptions{
 		Executable: "codex.exe", ProviderVersion: version, Factory: factory,
 		EvidenceRecorder: recorder, RecoveryStore: store,
-		Clock: func() time.Time { return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC) },
+		Clock: func() time.Time {
+			return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewExecAdapter() error = %v", err)
@@ -384,7 +398,9 @@ func collectExecEvents(t *testing.T, adapter *ExecAdapter, handle providerport.A
 	if err != nil {
 		t.Fatalf("StreamEvents() error = %v", err)
 	}
-	defer func() { _ = stream.Close() }()
+	defer func() {
+		_ = stream.Close()
+	}()
 	var events []providerport.Event
 	for {
 		event, err := stream.Receive()
@@ -428,7 +444,9 @@ func loadExecFixture(t *testing.T, version, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		_ = file.Close()
+	}()
 	var output strings.Builder
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

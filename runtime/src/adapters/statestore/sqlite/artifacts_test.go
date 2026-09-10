@@ -20,7 +20,9 @@ func TestArtifactRegistryAllocatesImmutableVersionsWithExactProvenance(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 
 	artifactID := testID("artifact", 'A')
 	firstRequest := artifactRequest(artifactID, "ingest-1", strings.Repeat("a", 64))
@@ -90,7 +92,9 @@ func TestArtifactRegistryRejectsInvalidOrDanglingMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 
 	request := artifactRequest(testID("artifact", 'C'), "invalid-attempt", strings.Repeat("c", 64))
 	request.Provenance = artifactregistry.AttemptProvenance{OperationID: testID("operation", 'C')}
@@ -119,7 +123,9 @@ func TestArtifactDigestDeduplicatesStorageWithoutCollapsingIdentity(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 
 	digest := strings.Repeat("d", 64)
 	left, _, err := database.Register(ctx, artifactRequest(testID("artifact", 'E'), "left", digest))

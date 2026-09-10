@@ -372,7 +372,9 @@ func (stream *eventStream) Receive() (provider.Event, error) {
 }
 
 func (stream *eventStream) Close() error {
-	stream.closeOnce.Do(func() { close(stream.closedCh) })
+	stream.closeOnce.Do(func() {
+		close(stream.closedCh)
+	})
 	return nil
 }
 

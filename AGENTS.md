@@ -1,3 +1,18 @@
+# Code readability
+
+Use multiline bodies for nonempty functions and braced control blocks. Put each
+statement on its own line; do not chain operations with semicolons. Idiomatic
+`if` initializers and `for` headers remain supported. The AST-based checker in
+`runtime/tools/goreadability` enforces this in `scripts/Lint.ps1` and therefore
+`scripts/Test.ps1`, including newly added Go files. To expand existing compact
+code, run `go -C runtime run ./tools/goreadability -fix .`; the fixer verifies
+that tokens, comments, and literal contents remain unchanged before writing.
+
+TypeScript plugin and SDK source follows the same multiline braced-body and
+one-statement-per-line rule. `packages/plugin-sdk/scripts/lint-control-flow.mjs`
+enforces it in SDK build/check commands and the repository build. Generated
+plugin bundles are checked for freshness rather than hand-formatted.
+
 # Grounding and architectural boundaries
 
 Before changing behavior, read the relevant sections of

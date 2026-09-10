@@ -61,10 +61,14 @@ type NotFoundError struct {
 	ID   string
 }
 
-func (e *NotFoundError) Error() string { return fmt.Sprintf("%s %s not found", e.Kind, e.ID) }
+func (e *NotFoundError) Error() string {
+	return fmt.Sprintf("%s %s not found", e.Kind, e.ID)
+}
 
 // Unwrap preserves the adapter-independent missing-state classification.
-func (e *NotFoundError) Unwrap() error { return statestore.ErrNotFound }
+func (e *NotFoundError) Unwrap() error {
+	return statestore.ErrNotFound
+}
 
 // Append assigns consecutive global positions and aggregate revisions, appends
 // immutable events, and updates all affected projections in one transaction.
@@ -231,7 +235,9 @@ func (d *Database) NodesForRun(ctx context.Context, runID string) ([]statestore.
 	if err != nil {
 		return nil, fmt.Errorf("query node projections: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	var values []statestore.NodeProjection
 	for rows.Next() {
 		value, scanErr := scanNodeProjection(rows)
@@ -485,7 +491,9 @@ func (d *Database) ApprovalsForCheckpoint(ctx context.Context, checkpointID stri
 	if err != nil {
 		return nil, fmt.Errorf("query artifact checkpoint approvals: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.ApprovalProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanApprovalProjection(rows)
@@ -514,7 +522,9 @@ func (d *Database) CheckpointApprovals(ctx context.Context, runID string, status
 	if err != nil {
 		return nil, fmt.Errorf("query checkpoint approvals: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.ApprovalProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanApprovalProjection(rows)
@@ -534,7 +544,9 @@ func (d *Database) Approvals(ctx context.Context, status statestore.ApprovalStat
 	if err != nil {
 		return nil, fmt.Errorf("query approvals: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.ApprovalProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanApprovalProjection(rows)
@@ -1104,7 +1116,9 @@ func queryInputRequests(ctx context.Context, query rowsQueryer, suffix string, a
 	if err != nil {
 		return nil, fmt.Errorf("query input requests: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.InputRequestProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanInputRequestProjection(rows)
@@ -1161,7 +1175,9 @@ func queryProviderPermissions(ctx context.Context, query rowsQueryer, suffix str
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.ProviderPermissionProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanProviderPermissionProjection(rows)
@@ -1497,9 +1513,13 @@ func jsonObject(value json.RawMessage) bool {
 	return json.Unmarshal(value, &object) == nil && object != nil
 }
 
-func cloneJSON(value json.RawMessage) json.RawMessage { return append(json.RawMessage(nil), value...) }
+func cloneJSON(value json.RawMessage) json.RawMessage {
+	return append(json.RawMessage(nil), value...)
+}
 
-func formatTime(value time.Time) string { return value.UTC().Format(time.RFC3339Nano) }
+func formatTime(value time.Time) string {
+	return value.UTC().Format(time.RFC3339Nano)
+}
 
 func parseTime(value string) (time.Time, error) {
 	parsed, err := time.Parse(time.RFC3339Nano, value)

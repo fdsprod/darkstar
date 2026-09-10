@@ -80,18 +80,34 @@ type stringVariant struct {
 type integerVariant int64
 type booleanVariant bool
 
-func (v stringVariant) settingType() SettingType { return v.kind }
-func (v stringVariant) value() any               { return v.text }
-func (integerVariant) settingType() SettingType  { return SettingInteger }
-func (v integerVariant) value() any              { return int64(v) }
-func (booleanVariant) settingType() SettingType  { return SettingBoolean }
-func (v booleanVariant) value() any              { return bool(v) }
+func (v stringVariant) settingType() SettingType {
+	return v.kind
+}
+func (v stringVariant) value() any {
+	return v.text
+}
+func (integerVariant) settingType() SettingType {
+	return SettingInteger
+}
+func (v integerVariant) value() any {
+	return int64(v)
+}
+func (booleanVariant) settingType() SettingType {
+	return SettingBoolean
+}
+func (v booleanVariant) value() any {
+	return bool(v)
+}
 
 func StringValue(value string) TypedValue {
 	return TypedValue{variant: stringVariant{kind: SettingString, text: value}}
 }
-func IntegerValue(value int64) TypedValue { return TypedValue{variant: integerVariant(value)} }
-func BooleanValue(value bool) TypedValue  { return TypedValue{variant: booleanVariant(value)} }
+func IntegerValue(value int64) TypedValue {
+	return TypedValue{variant: integerVariant(value)}
+}
+func BooleanValue(value bool) TypedValue {
+	return TypedValue{variant: booleanVariant(value)}
+}
 func EnumValue(value string) TypedValue {
 	return TypedValue{variant: stringVariant{kind: SettingEnum, text: value}}
 }
@@ -174,11 +190,21 @@ type mutationScopeVariant interface {
 type userScope struct{}
 type projectScope string
 
-func (userScope) kind() MutationScopeKind    { return MutationScopeUser }
-func (userScope) projectID() string          { return "" }
-func (projectScope) kind() MutationScopeKind { return MutationScopeProject }
-func (v projectScope) projectID() string     { return string(v) }
-func UserMutationScope() MutationScope       { return MutationScope{variant: userScope{}} }
+func (userScope) kind() MutationScopeKind {
+	return MutationScopeUser
+}
+func (userScope) projectID() string {
+	return ""
+}
+func (projectScope) kind() MutationScopeKind {
+	return MutationScopeProject
+}
+func (v projectScope) projectID() string {
+	return string(v)
+}
+func UserMutationScope() MutationScope {
+	return MutationScope{variant: userScope{}}
+}
 func ProjectMutationScope(projectID string) (MutationScope, error) {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
@@ -309,7 +335,9 @@ func SupportedCatalog() Catalog {
 	return Catalog{SchemaVersion: 1, Settings: settings}
 }
 
-func integerBound(value int64) *int64 { return &value }
+func integerBound(value int64) *int64 {
+	return &value
+}
 
 func LookupSetting(key string) (SettingDescriptor, bool) {
 	for _, setting := range supportedSettings {

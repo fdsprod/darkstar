@@ -65,9 +65,13 @@ type CreateBranch struct {
 	Base BaseRevision
 }
 
-func (CreateBranch) isBranchPlan()                {}
-func (value CreateBranch) branchName() string     { return value.Name }
-func (value CreateBranch) expectedCommit() string { return value.Base.CommitSHA }
+func (CreateBranch) isBranchPlan() {}
+func (value CreateBranch) branchName() string {
+	return value.Name
+}
+func (value CreateBranch) expectedCommit() string {
+	return value.Base.CommitSHA
+}
 
 // ReattachBranch attaches a previously owned branch only at its recorded tip.
 type ReattachBranch struct {
@@ -75,9 +79,13 @@ type ReattachBranch struct {
 	ExpectedCommitSHA string
 }
 
-func (ReattachBranch) isBranchPlan()                {}
-func (value ReattachBranch) branchName() string     { return value.Name }
-func (value ReattachBranch) expectedCommit() string { return value.ExpectedCommitSHA }
+func (ReattachBranch) isBranchPlan() {}
+func (value ReattachBranch) branchName() string {
+	return value.Name
+}
+func (value ReattachBranch) expectedCommit() string {
+	return value.ExpectedCommitSHA
+}
 
 // AttachRequest creates or reconciles one worktree attachment. WorktreePath must
 // be absolute and unused except for an exact idempotent attachment match.

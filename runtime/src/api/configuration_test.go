@@ -64,11 +64,15 @@ func TestEffectiveConfigurationRequiresAuthenticationAndReturnsStrictReport(t *t
 	}
 
 	unauthorized := get(t, endpoint.BaseURL()+"/api/v1/configuration/effective", "")
-	defer func() { _ = unauthorized.Body.Close() }()
+	defer func() {
+		_ = unauthorized.Body.Close()
+	}()
 	assertAPIError(t, unauthorized, http.StatusUnauthorized, "UNAUTHENTICATED")
 
 	invalid := get(t, endpoint.BaseURL()+"/api/v1/configuration/effective?projectRoot=relative", endpoint.AuthorizationHeader())
-	defer func() { _ = invalid.Body.Close() }()
+	defer func() {
+		_ = invalid.Body.Close()
+	}()
 	assertAPIError(t, invalid, http.StatusBadRequest, "VALIDATION_FAILED")
 	mutation, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint.BaseURL()+"/api/v1/configuration/effective", nil)
 	if err != nil {
@@ -79,14 +83,18 @@ func TestEffectiveConfigurationRequiresAuthenticationAndReturnsStrictReport(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = mutationResponse.Body.Close() }()
+	defer func() {
+		_ = mutationResponse.Body.Close()
+	}()
 	assertAPIError(t, mutationResponse, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
 	if allow := mutationResponse.Header.Get("Allow"); allow != "GET, HEAD" {
 		t.Fatalf("Allow = %q", allow)
 	}
 
 	response := get(t, endpoint.BaseURL()+"/api/v1/configuration/effective", endpoint.AuthorizationHeader())
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("GET effective configuration status = %d", response.StatusCode)
 	}
@@ -137,7 +145,9 @@ func TestEffectiveConfigurationForwardsAbsoluteProjectRoot(t *testing.T) {
 	endpoint, _ := server.Endpoint()
 	requestRoot := filepath.Join(root, "another project")
 	response := get(t, endpoint.BaseURL()+"/api/v1/configuration/effective?projectRoot="+url.QueryEscape(requestRoot), endpoint.AuthorizationHeader())
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusOK || reporter.projectRoot != requestRoot {
 		t.Fatalf("status = %d, reporter project root = %q", response.StatusCode, reporter.projectRoot)
 	}

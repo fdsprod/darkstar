@@ -89,7 +89,9 @@ func Candidates(input Input) (routeadvisor.Request, []Alternative) {
 			entries = append(entries, id)
 		}
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i] < entries[j] })
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i] < entries[j]
+	})
 	context := input.Context
 	context.RequiredNodes = append(append([]workflow.Identifier{}, context.RequiredNodes...), input.Policy.RequiredNodes...)
 	alternatives := []Alternative{}

@@ -42,7 +42,9 @@ func (d *Database) Register(ctx context.Context, request artifactregistry.Regist
 	if err != nil {
 		return artifactregistry.ArtifactVersion{}, false, fmt.Errorf("begin artifact registration: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	existing, _, err := scanArtifactVersion(tx.QueryRowContext(ctx,
 		artifactVersionSelect+` WHERE artifact_id = ? AND idempotency_key = ?`, normalized.ArtifactID, normalized.IdempotencyKey))
@@ -155,7 +157,9 @@ func (d *Database) queryArtifactVersions(ctx context.Context, statement string, 
 	if err != nil {
 		return nil, fmt.Errorf("list artifact versions: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]artifactregistry.ArtifactVersion, 0)
 	for rows.Next() {
 		value, _, err := scanArtifactVersion(rows)

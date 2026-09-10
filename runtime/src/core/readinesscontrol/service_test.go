@@ -30,7 +30,9 @@ func TestServiceFreezesValidationAndRecordsPendingDecisionEffect(t *testing.T) {
 		t.Fatal(err)
 	}
 	when := time.Date(2026, 9, 3, 14, 0, 0, 0, time.UTC)
-	service.now = func() time.Time { return when }
+	service.now = func() time.Time {
+		return when
+	}
 	submission := routeassessment.Submission{AssessmentID: "assessment_01K3Z1D0000000000000000000", RunID: runID, NodeID: "plan",
 		Scores:   []routeassessment.Score{{Name: "completeness", Value: .5, Evidence: readinessEvidence()}},
 		Findings: []routeassessment.Finding{routeassessment.RecommendationFinding{Code: "needs_requirements", Summary: "Requirements are incomplete.", Evidence: readinessEvidence(), RemedyCode: "requirements"}}}

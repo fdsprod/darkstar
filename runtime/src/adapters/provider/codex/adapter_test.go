@@ -69,7 +69,9 @@ func (owner *scriptedProcessOwner) Kill() error {
 	return nil
 }
 
-func (owner *scriptedProcessOwner) PID() int { return 4242 }
+func (owner *scriptedProcessOwner) PID() int {
+	return 4242
+}
 
 func (owner *scriptedProcessOwner) exit() {
 	if owner.exitOnce.CompareAndSwap(false, true) {
@@ -114,8 +116,12 @@ func (script *appServerScript) factory(ctx context.Context) (*AppServerClient, I
 }
 
 func (script *appServerScript) run(reader *io.PipeReader, writer *io.PipeWriter) error {
-	defer func() { _ = reader.Close() }()
-	defer func() { _ = writer.Close() }()
+	defer func() {
+		_ = reader.Close()
+	}()
+	defer func() {
+		_ = writer.Close()
+	}()
 	scanner := bufio.NewScanner(reader)
 	receive := func() (wireMessage, error) {
 		if !scanner.Scan() {
@@ -262,7 +268,9 @@ func (script *resumeAppServerScript) factory(ctx context.Context) (*AppServerCli
 	if err != nil {
 		return nil, InitializeResult{}, err
 	}
-	go func() { script.done <- script.run(serverReads, serverWrites) }()
+	go func() {
+		script.done <- script.run(serverReads, serverWrites)
+	}()
 	initialized, err := client.Initialize(ctx)
 	if err != nil {
 		return nil, InitializeResult{}, err
@@ -271,8 +279,12 @@ func (script *resumeAppServerScript) factory(ctx context.Context) (*AppServerCli
 }
 
 func (script *resumeAppServerScript) run(reader *io.PipeReader, writer *io.PipeWriter) error {
-	defer func() { _ = reader.Close() }()
-	defer func() { _ = writer.Close() }()
+	defer func() {
+		_ = reader.Close()
+	}()
+	defer func() {
+		_ = writer.Close()
+	}()
 	scanner := bufio.NewScanner(reader)
 	receive := func() (wireMessage, error) {
 		if !scanner.Scan() {
@@ -349,7 +361,9 @@ func (script *stopAppServerScript) factory(ctx context.Context) (*AppServerClien
 	if err != nil {
 		return nil, InitializeResult{}, err
 	}
-	go func() { script.done <- script.run(serverReads, serverWrites) }()
+	go func() {
+		script.done <- script.run(serverReads, serverWrites)
+	}()
 	initialized, err := client.Initialize(ctx)
 	if err != nil {
 		return nil, InitializeResult{}, err
@@ -358,8 +372,12 @@ func (script *stopAppServerScript) factory(ctx context.Context) (*AppServerClien
 }
 
 func (script *stopAppServerScript) run(reader *io.PipeReader, writer *io.PipeWriter) error {
-	defer func() { _ = reader.Close() }()
-	defer func() { _ = writer.Close() }()
+	defer func() {
+		_ = reader.Close()
+	}()
+	defer func() {
+		_ = writer.Close()
+	}()
 	scanner := bufio.NewScanner(reader)
 	receive := func() (wireMessage, error) {
 		if !scanner.Scan() {
@@ -1048,7 +1066,9 @@ func newResumeTestAdapter(t *testing.T, script *resumeAppServerScript) *Adapter 
 	}
 	adapter, err := NewAdapter(AdapterOptions{
 		Factory: script.factory, EvidenceRecorder: recorder,
-		Clock: func() time.Time { return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC) },
+		Clock: func() time.Time {
+			return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewAdapter() error = %v", err)
@@ -1064,7 +1084,9 @@ func newStopTestAdapter(t *testing.T, script *stopAppServerScript) *Adapter {
 	}
 	adapter, err := NewAdapter(AdapterOptions{
 		Factory: script.factory, EvidenceRecorder: recorder,
-		Clock: func() time.Time { return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC) },
+		Clock: func() time.Time {
+			return time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewAdapter() error = %v", err)
@@ -1108,7 +1130,9 @@ func collectEvents(t *testing.T, adapter *Adapter, handle providerport.AttemptHa
 	if err != nil {
 		t.Fatalf("StreamEvents() error = %v", err)
 	}
-	defer func() { _ = stream.Close() }()
+	defer func() {
+		_ = stream.Close()
+	}()
 	var events []providerport.Event
 	for {
 		event, err := stream.Receive()

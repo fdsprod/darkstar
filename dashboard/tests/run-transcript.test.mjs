@@ -24,3 +24,28 @@ test('legacy tool calls recover input and saved dynamic results remain readable'
  const result = buildTranscript([first, event(2, 'item/completed', { item: { id: 'call', type: 'dynamicToolCall', tool: 'submit_output', output: { contentItems: [{ type: 'inputText', text: '{"status":"recorded"}' }] } } })]);
  assert.equal(result.entries.length, 1); assert.match(result.entries[0].text, /# Plan/); assert.match(result.entries[0].output, /recorded/);
 });
+test('session facts and the context window come from what the provider reported', () => {
+ const result = buildTranscript([
+  event(1, 'thread/started', { thread: { model: 'gpt-5.6-sol', reasoningEffort: 'medium' } }),
+  event(2, 'thread/tokenUsage/updated', { threadId: 'one', tokenUsage: { total: { inputTokens: 15710, outputTokens: 167, totalTokens: 15877 }, modelContextWindow: 258400 } }),
+ ]);
+ assert.equal(result.session.model, 'gpt-5.6-sol');
+ assert.equal(result.session.effort, 'medium');
+ assert.equal(result.session.contextWindow, 258400);
+ assert.equal(result.usage.total, 15877);
+});
+test('a provider that reports no model, effort, or window leaves those facts unknown', () => {
+ const result = buildTranscript([event(1, 'thread/tokenUsage/updated', { threadId: 'one', tokenUsage: { total: { inputTokens: 10 } } })]);
+ assert.deepEqual(result.session, {});
+ assert.equal(result.usage.total, undefined);
+});
+test('the newest reported model and effort win as a run continues', () => {
+ const result = buildTranscript([
+  event(1, 'thread/started', { model: 'gpt-5.6-sol', reasoningEffort: 'low' }),
+  event(2, 'turn/start', { model: 'gpt-6-astra' }),
+  event(3, 'thread/started', { session: { reasoningEffort: 'high' } }),
+ ]);
+ assert.equal(result.session.model, 'gpt-6-astra');
+ assert.equal(result.session.effort, 'high');
+});
+

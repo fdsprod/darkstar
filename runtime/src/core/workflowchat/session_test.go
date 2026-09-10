@@ -16,7 +16,9 @@ const document = `{"apiVersion":"darkstar.local/v1alpha2","kind":"Workflow","met
 
 type source struct{}
 
-func (source) Load(context.Context) ([]workflowstore.Candidate, error) { return nil, nil }
+func (source) Load(context.Context) ([]workflowstore.Candidate, error) {
+	return nil, nil
+}
 
 func setup(t *testing.T, target workflowchat.Target) (*workflowchat.Session, *workflow.Catalog, *[]string) {
 	t.Helper()
@@ -25,13 +27,18 @@ func setup(t *testing.T, target workflowchat.Target) (*workflowchat.Session, *wo
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
 	catalog, err := workflow.NewCatalog(source{}, db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	events := []string{}
-	session := &workflowchat.Session{Store: catalog, Target: target, Key: "chat-test-operation", Emit: func(kind string, _ any) error { events = append(events, kind); return nil }}
+	session := &workflowchat.Session{Store: catalog, Target: target, Key: "chat-test-operation", Emit: func(kind string, _ any) error {
+		events = append(events, kind)
+		return nil
+	}}
 	return session, catalog, &events
 }
 
@@ -72,7 +79,9 @@ func TestCreateIntentCanSelectNewDraftWithoutChangingCurrentDraft(t *testing.T) 
 	s, store, _ := setup(t, workflowchat.Target{Kind: "new"})
 	call(t, s, "create_workflow", `{"name":"chat-test","document":`+document+`}`)
 	previous := s.Target
-	s = &workflowchat.Session{Store: store, Target: previous, Key: "another-workflow", Emit: func(string, any) error { return nil }}
+	s = &workflowchat.Session{Store: store, Target: previous, Key: "another-workflow", Emit: func(string, any) error {
+		return nil
+	}}
 	call(t, s, "create_workflow", `{"name":"chat-test","document":`+document+`}`)
 	if s.Target.ID == previous.ID {
 		t.Fatal("create edited the selected draft")

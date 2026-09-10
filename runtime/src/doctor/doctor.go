@@ -41,7 +41,9 @@ type executableEnumerator interface {
 
 type osCommandRunner struct{}
 
-func (osCommandRunner) LookPath(name string) (string, error) { return exec.LookPath(name) }
+func (osCommandRunner) LookPath(name string) (string, error) {
+	return exec.LookPath(name)
+}
 
 func (osCommandRunner) Output(ctx context.Context, name string, arguments ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, name, arguments...)
@@ -210,10 +212,16 @@ func (doctor *Doctor) ReportForProject(ctx context.Context, projectRoot string) 
 		doctor.databaseCheck,
 		doctor.daemonCheck,
 		doctor.pathsCheck,
-		func(ctx context.Context) health.Check { return doctor.gitCheck(ctx, projectRoot) },
+		func(ctx context.Context) health.Check {
+			return doctor.gitCheck(ctx, projectRoot)
+		},
 		doctor.codexCheck,
-		func(ctx context.Context) health.Check { return doctor.githubCheck(ctx, projectRoot) },
-		func(ctx context.Context) health.Check { return doctor.configurationCheck(ctx, projectRoot) },
+		func(ctx context.Context) health.Check {
+			return doctor.githubCheck(ctx, projectRoot)
+		},
+		func(ctx context.Context) health.Check {
+			return doctor.configurationCheck(ctx, projectRoot)
+		},
 		doctor.providerCheck,
 	}
 	checks := make([]health.Check, len(probes))

@@ -142,7 +142,9 @@ func TestLaunchRejectsPolicyChangedAfterAssessment(t *testing.T) {
 	planner := workflowDispatchPlannerFor(workflow.NoCheckpoint{}, true)
 	_ = s.SetWorkflowPlanner(planner)
 	policy := preparation.Policy{Version: "policy-1", RequiredNodes: []workflow.Identifier{}, ConsequentialNodes: []workflow.Identifier{}, AllowedAssumptions: []string{}}
-	_ = s.SetPreparationPolicyResolver(func(context.Context, statestore.ProjectProjection) (preparation.Policy, error) { return policy, nil })
+	_ = s.SetPreparationPolicyResolver(func(context.Context, statestore.ProjectProjection) (preparation.Policy, error) {
+		return policy, nil
+	})
 	run, err := s.Prepare(context.Background(), CreateRequest{WorkItemID: work, WorkflowID: planner.preview.Workflow.Name}, "assessment-policy")
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +158,9 @@ func TestLaunchRejectsPolicyChangedAfterAssessment(t *testing.T) {
 
 func TestConfirmationRequiresExactDigestAndAuditsActor(t *testing.T) {
 	s, db, _ := newControlTestService(t, false)
-	if err := s.EnableQueue(func() (int, error) { return 3, nil }); err != nil {
+	if err := s.EnableQueue(func() (int, error) {
+		return 3, nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	_, work := seedWorkflowWork(t, db)

@@ -22,6 +22,11 @@ try {
     }
     New-Item -ItemType Directory -Force $env:GOLANGCI_LINT_CACHE | Out-Null
 
+    & go -C runtime run -mod=readonly ./tools/goreadability .
+    if ($LASTEXITCODE -ne 0) {
+        throw "Go readability checks failed. Run go -C runtime run ./tools/goreadability -fix . to expand compact blocks and chained statements."
+    }
+
     $linter = & (Join-Path $PSScriptRoot "Resolve-GolangCiLint.ps1")
     $goModules = @(& git ls-files -- ":(glob)**/go.mod")
     if ($LASTEXITCODE -ne 0) {

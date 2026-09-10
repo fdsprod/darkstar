@@ -172,7 +172,9 @@ type FrameError struct {
 	TransitionID Identifier
 }
 
-func (e *FrameError) Error() string { return e.Message }
+func (e *FrameError) Error() string {
+	return e.Message
+}
 
 // NewRootFrame creates the root execution frame for a frozen route.
 func NewRootFrame(id, runID string, definition LoadedDefinition, route Route, inputs map[Identifier]json.RawMessage) (*Frame, error) {
@@ -555,8 +557,12 @@ func sameIdentifierSet(left, right []Identifier) bool {
 		return false
 	}
 	a, b := append([]Identifier(nil), left...), append([]Identifier(nil), right...)
-	sort.Slice(a, func(i, j int) bool { return a[i] < a[j] })
-	sort.Slice(b, func(i, j int) bool { return b[i] < b[j] })
+	sort.Slice(a, func(i, j int) bool {
+		return a[i] < a[j]
+	})
+	sort.Slice(b, func(i, j int) bool {
+		return b[i] < b[j]
+	})
 	return slicesEqual(a, b)
 }
 

@@ -103,14 +103,30 @@ func TestEventValidateClassifiesContractDrift(t *testing.T) {
 		field string
 		edit  func(*provider.Event)
 	}{
-		{"schema version", "schemaVersion", func(event *provider.Event) { event.SchemaVersion = 2 }},
-		{"attempt identity", "attemptId", func(event *provider.Event) { event.AttemptID = " " }},
-		{"sequence", "sequence", func(event *provider.Event) { event.Sequence = 0 }},
-		{"timestamp", "occurredAt", func(event *provider.Event) { event.OccurredAt = time.Time{} }},
-		{"provider-native kind", "kind", func(event *provider.Event) { event.Kind = "codex/item.completed" }},
-		{"provider identity", "provider", func(event *provider.Event) { event.Provider = "" }},
-		{"missing payload", "payload", func(event *provider.Event) { event.Payload = nil }},
-		{"malformed payload", "payload", func(event *provider.Event) { event.Payload = json.RawMessage(`{`) }},
+		{"schema version", "schemaVersion", func(event *provider.Event) {
+			event.SchemaVersion = 2
+		}},
+		{"attempt identity", "attemptId", func(event *provider.Event) {
+			event.AttemptID = " "
+		}},
+		{"sequence", "sequence", func(event *provider.Event) {
+			event.Sequence = 0
+		}},
+		{"timestamp", "occurredAt", func(event *provider.Event) {
+			event.OccurredAt = time.Time{}
+		}},
+		{"provider-native kind", "kind", func(event *provider.Event) {
+			event.Kind = "codex/item.completed"
+		}},
+		{"provider identity", "provider", func(event *provider.Event) {
+			event.Provider = ""
+		}},
+		{"missing payload", "payload", func(event *provider.Event) {
+			event.Payload = nil
+		}},
+		{"malformed payload", "payload", func(event *provider.Event) {
+			event.Payload = json.RawMessage(`{`)
+		}},
 	}
 
 	for _, test := range tests {

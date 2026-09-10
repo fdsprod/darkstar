@@ -59,7 +59,11 @@ func New(directory string, limits Limits) (*Folder, error) {
 	return &Folder{root: root, limits: limits}, nil
 }
 
-func (f *Folder) Close() error { f.mu.Lock(); defer f.mu.Unlock(); return f.root.Close() }
+func (f *Folder) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.root.Close()
+}
 
 func identity(value string) (string, error) {
 	if strings.TrimSpace(value) == "" || len(value) > 1024 {

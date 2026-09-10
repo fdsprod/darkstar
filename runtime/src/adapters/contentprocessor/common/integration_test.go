@@ -28,7 +28,9 @@ func TestIngestAndDerivePersistsVersionedRepresentations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	processor := common.New()
 	ingestion, err := artifactingest.New(store, database, processor)
 	if err != nil {
@@ -76,7 +78,9 @@ func TestDerivationEnforcesProcessorTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	processor := slowProcessor{}
 	ingestion, err := artifactingest.New(store, database, processor)
 	if err != nil {

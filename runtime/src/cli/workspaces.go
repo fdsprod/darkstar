@@ -124,7 +124,9 @@ func (s workspaceNodeServices) Load(ctx context.Context, id string) (nodes.Works
 	if err != nil {
 		return nodes.Workspace{}, err
 	}
-	defer func() { _ = db.Close() }()
+	defer func() {
+		_ = db.Close()
+	}()
 	var raw string
 	err = db.QueryRowContext(ctx, "SELECT record FROM workflow_workspaces WHERE id=?", id).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -142,7 +144,9 @@ func (s workspaceNodeServices) Create(ctx context.Context, p nodes.Workspace) (n
 	if err != nil {
 		return p, err
 	}
-	defer func() { _ = db.Close() }()
+	defer func() {
+		_ = db.Close()
+	}()
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return p, err
@@ -169,13 +173,42 @@ func (w *daemonProviderWiring) ExecuteWorkspaceNode(ctx context.Context, r runex
 	if err != nil {
 		return nil, err
 	}
-	return handler.(nodes.DeterministicHandler).Execute(ctx, r.NodeInputs, nodes.BuiltinServices{
+	services := nodes.BuiltinServices{
 		Workspaces: nodes.WorkspaceServices{Identity: nodes.WorkspaceIdentity{RunID: r.Run.RunID, NodeID: r.Attempt.NodeID, ProjectID: r.Project.ProjectID, SourceHash: r.Project.SourceHash, WorkItemID: r.WorkItem.WorkItemID, Root: w.projectRoot}, Store: workspaceNodeServices{w, r}, Repository: manager},
 		Commands:   nodeprocess.Runner{Environment: w.environment, OutputLimit: 65536},
-	})
+	}
+	engine, err := w.pinnedNodeEngine(r)
+	if err != nil {
+		return nil, err
+	}
+	if engine != nil {
+		return engine.Execute(ctx, r.Node, r.NodeInputs, services)
+	}
+	return handler.(nodes.DeterministicHandler).Execute(ctx, r.NodeInputs, services)
 }
 
-func (w *daemonProviderWiring) NodeCommandRunner() nodes.CommandRunner { return nodeprocess.Runner{} }
+func (w *daemonProviderWiring) ExecuteCommandNode(ctx context.Context, r runexecution.AttemptRequestContext) (json.RawMessage, error) {
+	if err := w.authorizeWorkspaceProject(r); err != nil {
+		return nil, err
+	}
+	services := nodes.BuiltinServices{Commands: w.NodeCommandRunner(), LegacyCommand: nodes.LegacyCommandScope{WorkflowID: r.Workflow.Version.Name, NodeID: r.Attempt.NodeID, Workspace: w.projectRoot}}
+	engine, err := w.pinnedNodeEngine(r)
+	if err != nil {
+		return nil, err
+	}
+	if engine != nil {
+		return engine.Execute(ctx, r.Node, r.NodeInputs, services)
+	}
+	handler, err := nodes.Lookup(r.Node)
+	if err != nil {
+		return nil, err
+	}
+	return handler.(nodes.DeterministicHandler).Execute(ctx, r.NodeInputs, services)
+}
+
+func (w *daemonProviderWiring) NodeCommandRunner() nodes.CommandRunner {
+	return nodeprocess.Runner{}
+}
 
 func (w *daemonProviderWiring) ExecuteExtensionNode(ctx context.Context, request runexecution.AttemptRequestContext) (json.RawMessage, error) {
 	if err := w.authorizeWorkspaceProject(request); err != nil {

@@ -173,11 +173,17 @@ func NewManager(runtimeDirectory string, host Host) (*Manager, error) {
 	}, nil
 }
 
-func (m *Manager) RuntimeDirectory() string { return m.runtimeDirectory }
+func (m *Manager) RuntimeDirectory() string {
+	return m.runtimeDirectory
+}
 
-func (m *Manager) statePath() string { return filepath.Join(m.runtimeDirectory, "daemon.json") }
+func (m *Manager) statePath() string {
+	return filepath.Join(m.runtimeDirectory, "daemon.json")
+}
 
-func (m *Manager) lockPath() string { return filepath.Join(m.runtimeDirectory, "daemon.lock") }
+func (m *Manager) lockPath() string {
+	return filepath.Join(m.runtimeDirectory, "daemon.lock")
+}
 
 // Inspect derives daemon liveness from the state record and complete process
 // identity. It never treats a PID alone as ownership proof.

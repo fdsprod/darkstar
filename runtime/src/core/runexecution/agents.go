@@ -85,7 +85,9 @@ func (e *AgentTransitionError) Error() string {
 	return fmt.Sprintf("%v: attempt %s is %s", ErrAgentInvalidTransition, e.AttemptID, e.Status)
 }
 
-func (e *AgentTransitionError) Unwrap() error { return ErrAgentInvalidTransition }
+func (e *AgentTransitionError) Unwrap() error {
+	return ErrAgentInvalidTransition
+}
 
 type AgentVersionConflictError struct {
 	AttemptID string
@@ -97,7 +99,9 @@ func (e *AgentVersionConflictError) Error() string {
 	return fmt.Sprintf("%v for %s: expected %d, current %d", ErrAgentVersionConflict, e.AttemptID, e.Expected, e.Current)
 }
 
-func (e *AgentVersionConflictError) Unwrap() error { return ErrAgentVersionConflict }
+func (e *AgentVersionConflictError) Unwrap() error {
+	return ErrAgentVersionConflict
+}
 
 type attemptManifestReader interface {
 	ManifestForAttempt(context.Context, string) (manifestport.Manifest, error)

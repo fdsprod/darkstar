@@ -77,7 +77,9 @@ func (service *Service) Assess(ctx context.Context, request Request) (impactasse
 	if err != nil {
 		return impactassessment.Assessment{}, fmt.Errorf("read evidence bindings: %w", err)
 	}
-	if !slices.ContainsFunc(bindings, func(binding artifactbinding.Version) bool { return binding.Artifact == request.Evidence }) {
+	if !slices.ContainsFunc(bindings, func(binding artifactbinding.Version) bool {
+		return binding.Artifact == request.Evidence
+	}) {
 		return impactassessment.Assessment{}, ErrEvidenceNotBound
 	}
 	roles := append([]string(nil), evidence.Roles...)
@@ -190,7 +192,9 @@ func scopedAttempts(values []statestore.AttemptProjection, request Request, targ
 		}
 		result = append(result, attempt)
 	}
-	sort.Slice(result, func(left, right int) bool { return result[left].AttemptID < result[right].AttemptID })
+	sort.Slice(result, func(left, right int) bool {
+		return result[left].AttemptID < result[right].AttemptID
+	})
 	return result
 }
 
@@ -234,7 +238,9 @@ func splitEffects(values []artifactlineage.Invalidation) ([]impactassessment.Art
 }
 
 func hasFocusedRole(roles, focused []string) bool {
-	return slices.ContainsFunc(roles, func(role string) bool { return slices.Contains(focused, role) })
+	return slices.ContainsFunc(roles, func(role string) bool {
+		return slices.Contains(focused, role)
+	})
 }
 
 func canonicalStrings(values []string) ([]string, error) {

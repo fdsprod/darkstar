@@ -1,8 +1,8 @@
 # Extension registration and execution
 
-Status: implemented extension seams, TypeScript resource/tool process host, and
-work-item workspace services. Third-party installation and migration of the other
-extension families to TypeScript remain separate work.
+Status: implemented TypeScript node, Codex provider, resource/tool process hosts,
+and work-item workspace services. Third-party installation and TypeScript
+transports for the other extension families remain separate work.
 
 DARKSTAR registers extensions in daemon composition. There are no global init
 hooks, workflow-supplied executables, or plugin callbacks for state transitions.
@@ -85,9 +85,10 @@ diffs, and human decisions. Artifact content cannot register a renderer.
 ## TypeScript tools and resource contributions
 
 `packages/plugin-sdk` implements the `darkstar.plugin/v1` JSON-lines process
-protocol. The Go `adapters/plugin/process` host currently supports resource and tool
-contributions. Other families below still use their existing Go ports; a shared
-package does not imply that their TypeScript transport has already been implemented.
+protocol. The Go `adapters/plugin/process` host supports resource, tool, and node
+contributions. Providers use the persistent `adapters/provider/typescript` bridge
+with the SDK's provider protocol. Processor, storage, and source families still
+use their Go ports.
 
 One package may contribute nodes, providers, tools, resource types, processors,
 and storage adapters. Each contribution uses its family's contract and the
@@ -137,6 +138,32 @@ embedded in the Go binary. Normal daemon composition selects this exact digest;
 new run execution contexts pin it, and recovery rejects a changed implementation.
 Node.js is required to execute these tools. If unavailable, daemon inspection
 remains available but plugin-backed attempts fail with an explicit error.
+
+## TypeScript nodes and providers
+
+`plugins/builtin-nodes` implements reasoning, implementation, point-execution,
+command, workspace-prepare, and workspace-validate behavior. The node bridge
+translates daemon-selected requests into task descriptions, output schemas, or
+deterministic tool calls. New runs pin `darkstar/builtin-nodes`; legacy runs without
+that pin retain the Go implementation. The daemon still checks executor permissions,
+declared input scope, repository ownership, configured commands, and required host
+operation receipts before accepting plugin results. Git operations, writer leases,
+implementation baselines, scheduling, gates, and advancement remain host-owned.
+
+`plugins/provider-codex` implements Codex App Server translation in TypeScript:
+health and capabilities, start/resume, normalized events, dynamic tools, permission
+responses, cancellation, and results. The persistent bridge binds host callbacks to
+an attempt and its granted tool names, records evidence, and validates candidate
+outputs. Workflow execution retains the durable provider name `codex`; its exact
+provider pin selects the TypeScript implementation for new runs. Runs without a
+provider pin use the legacy Go adapter. Workflow authoring chat remains the separate
+Go capability and does not acquire execution authority through this migration.
+
+Each built-in package has its own generated bundle and digest. SDK checks typecheck
+the source and verify generated bundles. Node.js is required for plugin-backed
+execution. This is trusted local code, not an installer or an OS sandbox. On Windows,
+the provider bridge owns a kill-on-close job containing Node and its Codex child.
+Host callbacks expose no approval or workflow-transition API.
 
 ## Work-item workspace
 
@@ -192,8 +219,9 @@ committed evidence. Artifact bytes remain retained while historical references e
    through the existing immutable artifact service and work bindings.
 3. Implemented: open items and decision logs as built-in TypeScript contributions,
    journal concurrency checks, and real Node/Go behavioral tests.
-4. Remaining: move the Codex connector and node/task behavior onto the SDK; add
-   another provider using the same tool contracts.
+4. Implemented: built-in node/task behavior and the Codex execution connector on
+   the SDK, with exact run pins and real process fixture tests. Another provider
+   can implement the same normalized provider and tool contracts.
 5. Remaining: TypeScript transports for processors, storage, and other integration
    adapters. Third-party installation is a separate layer.
 

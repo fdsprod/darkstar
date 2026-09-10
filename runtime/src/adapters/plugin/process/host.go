@@ -94,6 +94,7 @@ func (h *Host) Describe(ctx context.Context) (plugin.Descriptor, error) {
 		}
 	}
 	tools := append([]plugin.Tool(nil), d.Tools...)
+	tools = append(tools, d.Nodes...)
 	for _, r := range d.Resources {
 		tools = append(tools, r.Tool)
 	}
@@ -132,7 +133,7 @@ func (h *Host) Invoke(ctx context.Context, invocation plugin.Invocation, service
 			break
 		}
 	}
-	for _, candidate := range d.Tools {
+	for _, candidate := range append(append([]plugin.Tool(nil), d.Tools...), d.Nodes...) {
 		if candidate.ID == invocation.Contribution {
 			copy := candidate
 			tool = &copy

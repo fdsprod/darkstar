@@ -71,19 +71,45 @@ func TestResolveRejectsUntrustedOrMutableReferencesBeforeLookup(t *testing.T) {
 
 func TestResolveEnforcesDisclosureAndRepresentationIntegrity(t *testing.T) {
 	cases := map[string]func(*fixture){
-		"secret":               func(f *fixture) { f.artifact.Sensitivity = artifactregistry.SensitivitySecret },
-		"sensitive":            func(f *fixture) { f.artifact.Sensitivity = artifactregistry.SensitivitySensitive },
-		"unknown":              func(f *fixture) { f.artifact.Sensitivity = artifactregistry.SensitivityUnknown },
-		"quarantined":          func(f *fixture) { f.artifact.Status = artifactregistry.StatusQuarantined },
-		"uninspectable":        func(f *fixture) { f.artifact.Status = artifactregistry.StatusStoredUninspectable },
-		"wrong version":        func(f *fixture) { f.representation.Artifact.Version = 1 },
-		"wrong representation": func(f *fixture) { f.representation.RepresentationID = "other" },
-		"withheld":             func(f *fixture) { f.representation.Disclosure = representationregistry.DisclosureWithheld },
-		"unknown disclosure":   func(f *fixture) { f.representation.Disclosure = "" },
-		"binary":               func(f *fixture) { f.representation.MediaType = "application/octet-stream" },
-		"wrong charset":        func(f *fixture) { f.representation.MediaType = "text/plain; charset=utf-16" },
-		"truncated":            func(f *fixture) { f.representation.Truncated = true },
-		"oversized":            func(f *fixture) { f.representation.Size = MaxEvidenceBytes + 1 },
+		"secret": func(f *fixture) {
+			f.artifact.Sensitivity = artifactregistry.SensitivitySecret
+		},
+		"sensitive": func(f *fixture) {
+			f.artifact.Sensitivity = artifactregistry.SensitivitySensitive
+		},
+		"unknown": func(f *fixture) {
+			f.artifact.Sensitivity = artifactregistry.SensitivityUnknown
+		},
+		"quarantined": func(f *fixture) {
+			f.artifact.Status = artifactregistry.StatusQuarantined
+		},
+		"uninspectable": func(f *fixture) {
+			f.artifact.Status = artifactregistry.StatusStoredUninspectable
+		},
+		"wrong version": func(f *fixture) {
+			f.representation.Artifact.Version = 1
+		},
+		"wrong representation": func(f *fixture) {
+			f.representation.RepresentationID = "other"
+		},
+		"withheld": func(f *fixture) {
+			f.representation.Disclosure = representationregistry.DisclosureWithheld
+		},
+		"unknown disclosure": func(f *fixture) {
+			f.representation.Disclosure = ""
+		},
+		"binary": func(f *fixture) {
+			f.representation.MediaType = "application/octet-stream"
+		},
+		"wrong charset": func(f *fixture) {
+			f.representation.MediaType = "text/plain; charset=utf-16"
+		},
+		"truncated": func(f *fixture) {
+			f.representation.Truncated = true
+		},
+		"oversized": func(f *fixture) {
+			f.representation.Size = MaxEvidenceBytes + 1
+		},
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -97,8 +123,12 @@ func TestResolveEnforcesDisclosureAndRepresentationIntegrity(t *testing.T) {
 		})
 	}
 	for name, mutate := range map[string]func(*fixture){
-		"digest": func(f *fixture) { f.content = strings.Repeat("x", len(f.content)) },
-		"size":   func(f *fixture) { f.content += "extra" },
+		"digest": func(f *fixture) {
+			f.content = strings.Repeat("x", len(f.content))
+		},
+		"size": func(f *fixture) {
+			f.content += "extra"
+		},
 		"utf8": func(f *fixture) {
 			f.content = "\xff"
 			f.representation.Size = 1

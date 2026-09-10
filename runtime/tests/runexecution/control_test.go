@@ -50,7 +50,9 @@ func TestPauseResumePreservesAttemptCursorAndIsIdempotent(t *testing.T) {
 	if err != nil || resumed.Status != statestore.RunQueued {
 		t.Fatalf("Resume() = %#v, %v", resumed, err)
 	}
-	completed := waitForControlRun(t, service, view.Run.RunID, func(value View) bool { return value.Run.Status == statestore.RunCompleted })
+	completed := waitForControlRun(t, service, view.Run.RunID, func(value View) bool {
+		return value.Run.Status == statestore.RunCompleted
+	})
 	if completed.Attempts[0].LastSequence != 3 || factory.callCount(fake.CallResume) != 1 {
 		t.Fatalf("resume result = %#v; resume calls=%d", completed, factory.callCount(fake.CallResume))
 	}
@@ -275,7 +277,9 @@ func TestStartupLeavesExplicitlyPausedRunQuiescent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = replacement.Close() })
+	t.Cleanup(func() {
+		_ = replacement.Close()
+	})
 	if err := replacement.ResumeActive(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +302,9 @@ func TestRetryCreatesFreshAttemptAndRejectsStaleVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	failed := waitForControlRun(t, service, view.Run.RunID, func(value View) bool { return value.Run.Status == statestore.RunFailed })
+	failed := waitForControlRun(t, service, view.Run.RunID, func(value View) bool {
+		return value.Run.Status == statestore.RunFailed
+	})
 	if _, err := service.Retry(context.Background(), RetryRequest{ControlRequest: ControlRequest{
 		RunID: view.Run.RunID, ExpectedResourceVersion: failed.Run.ResourceVersion - 1, IdempotencyKey: "retry-stale-version",
 	}}); !errors.Is(err, ErrControlConflict) {
@@ -406,7 +412,9 @@ func (factory *controlTestFactory) callCount(kind fake.CallKind) int {
 
 type controlTestLogs struct{}
 
-func (controlTestLogs) AppendLog(context.Context, string, []byte) error { return nil }
+func (controlTestLogs) AppendLog(context.Context, string, []byte) error {
+	return nil
+}
 
 type staticControlPlanner struct{ preview workflow.RoutePreview }
 

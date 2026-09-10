@@ -23,10 +23,16 @@ func TestProjectAndWorkCLICommandsUseStableMachineResults(t *testing.T) {
 		}
 	}
 	originalResolver := resolveApplicationPaths
-	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) { return paths, nil }
-	t.Cleanup(func() { resolveApplicationPaths = originalResolver })
+	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) {
+		return paths, nil
+	}
+	t.Cleanup(func() {
+		resolveApplicationPaths = originalResolver
+	})
 	service := startAcceptanceService(t, paths, "44444444444444444444444444444444")
-	t.Cleanup(func() { _ = service.Close() })
+	t.Cleanup(func() {
+		_ = service.Close()
+	})
 
 	var project statestore.ProjectProjection
 	runCLIJSON(t, []string{"project", "add", root, "--name", "acceptance", "--idempotency-key", "project-cli-command", "--json"}, &struct {

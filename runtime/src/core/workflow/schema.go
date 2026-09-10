@@ -166,24 +166,42 @@ const (
 
 type BuiltInNodeDefinitionRef struct{ Name, Version string }
 
-func (r BuiltInNodeDefinitionRef) DefinitionName() string             { return r.Name }
-func (r BuiltInNodeDefinitionRef) DefinitionVersion() string          { return r.Version }
-func (BuiltInNodeDefinitionRef) definitionScope() NodeDefinitionScope { return NodeDefinitionBuiltIn }
-func (BuiltInNodeDefinitionRef) isNodeDefinitionRef()                 {}
+func (r BuiltInNodeDefinitionRef) DefinitionName() string {
+	return r.Name
+}
+func (r BuiltInNodeDefinitionRef) DefinitionVersion() string {
+	return r.Version
+}
+func (BuiltInNodeDefinitionRef) definitionScope() NodeDefinitionScope {
+	return NodeDefinitionBuiltIn
+}
+func (BuiltInNodeDefinitionRef) isNodeDefinitionRef() {}
 
 type ProjectNodeDefinitionRef struct{ ProjectID, Name, Version string }
 
-func (r ProjectNodeDefinitionRef) DefinitionName() string             { return r.Name }
-func (r ProjectNodeDefinitionRef) DefinitionVersion() string          { return r.Version }
-func (ProjectNodeDefinitionRef) definitionScope() NodeDefinitionScope { return NodeDefinitionProject }
-func (ProjectNodeDefinitionRef) isNodeDefinitionRef()                 {}
+func (r ProjectNodeDefinitionRef) DefinitionName() string {
+	return r.Name
+}
+func (r ProjectNodeDefinitionRef) DefinitionVersion() string {
+	return r.Version
+}
+func (ProjectNodeDefinitionRef) definitionScope() NodeDefinitionScope {
+	return NodeDefinitionProject
+}
+func (ProjectNodeDefinitionRef) isNodeDefinitionRef() {}
 
 type UserNodeDefinitionRef struct{ UserID, Name, Version string }
 
-func (r UserNodeDefinitionRef) DefinitionName() string             { return r.Name }
-func (r UserNodeDefinitionRef) DefinitionVersion() string          { return r.Version }
-func (UserNodeDefinitionRef) definitionScope() NodeDefinitionScope { return NodeDefinitionUser }
-func (UserNodeDefinitionRef) isNodeDefinitionRef()                 {}
+func (r UserNodeDefinitionRef) DefinitionName() string {
+	return r.Name
+}
+func (r UserNodeDefinitionRef) DefinitionVersion() string {
+	return r.Version
+}
+func (UserNodeDefinitionRef) definitionScope() NodeDefinitionScope {
+	return NodeDefinitionUser
+}
+func (UserNodeDefinitionRef) isNodeDefinitionRef() {}
 
 // ResolvedNodeDefinitionRef is the immutable snapshot stored in canonical
 // published workflows and consequently in run workflow snapshots.
@@ -255,49 +273,73 @@ type ImplementationExecutor struct {
 	Instructions   string     `json:"instructions,omitempty"`
 }
 
-func (ImplementationNode) Type() NodeType       { return NodeImplementation }
-func (n ImplementationNode) Fields() NodeFields { return n.Common }
-func (ImplementationNode) isNode()              {}
+func (ImplementationNode) Type() NodeType {
+	return NodeImplementation
+}
+func (n ImplementationNode) Fields() NodeFields {
+	return n.Common
+}
+func (ImplementationNode) isNode() {}
 
-func (ReasoningNode) Type() NodeType       { return NodeReasoning }
-func (n ReasoningNode) Fields() NodeFields { return n.Common }
-func (ReasoningNode) isNode()              {}
+func (ReasoningNode) Type() NodeType {
+	return NodeReasoning
+}
+func (n ReasoningNode) Fields() NodeFields {
+	return n.Common
+}
+func (ReasoningNode) isNode() {}
 
 type GateNode struct {
 	Common   NodeFields
 	Executor GateExecutor
 }
 
-func (GateNode) Type() NodeType       { return NodeGate }
-func (n GateNode) Fields() NodeFields { return n.Common }
-func (GateNode) isNode()              {}
+func (GateNode) Type() NodeType {
+	return NodeGate
+}
+func (n GateNode) Fields() NodeFields {
+	return n.Common
+}
+func (GateNode) isNode() {}
 
 type CommandNode struct {
 	Common   NodeFields
 	Executor CommandExecutor
 }
 
-func (CommandNode) Type() NodeType       { return NodeCommand }
-func (n CommandNode) Fields() NodeFields { return n.Common }
-func (CommandNode) isNode()              {}
+func (CommandNode) Type() NodeType {
+	return NodeCommand
+}
+func (n CommandNode) Fields() NodeFields {
+	return n.Common
+}
+func (CommandNode) isNode() {}
 
 type ApprovalNode struct {
 	Common   NodeFields
 	Executor ApprovalExecutor
 }
 
-func (ApprovalNode) Type() NodeType       { return NodeApproval }
-func (n ApprovalNode) Fields() NodeFields { return n.Common }
-func (ApprovalNode) isNode()              {}
+func (ApprovalNode) Type() NodeType {
+	return NodeApproval
+}
+func (n ApprovalNode) Fields() NodeFields {
+	return n.Common
+}
+func (ApprovalNode) isNode() {}
 
 type SubworkflowNode struct {
 	Common NodeFields
 	Call   SubworkflowCall
 }
 
-func (SubworkflowNode) Type() NodeType       { return NodeSubworkflow }
-func (n SubworkflowNode) Fields() NodeFields { return n.Common }
-func (SubworkflowNode) isNode()              {}
+func (SubworkflowNode) Type() NodeType {
+	return NodeSubworkflow
+}
+func (n SubworkflowNode) Fields() NodeFields {
+	return n.Common
+}
+func (SubworkflowNode) isNode() {}
 
 // PointExecutionNode delegates one visit to the typed implementation-point
 // executor. Its policy is workflow data rather than provider reasoning output.
@@ -313,9 +355,13 @@ type RoutingNode struct {
 	Executor RoutingExecutor
 }
 
-func (RoutingNode) Type() NodeType       { return NodeRouting }
-func (n RoutingNode) Fields() NodeFields { return n.Common }
-func (RoutingNode) isNode()              {}
+func (RoutingNode) Type() NodeType {
+	return NodeRouting
+}
+func (n RoutingNode) Fields() NodeFields {
+	return n.Common
+}
+func (RoutingNode) isNode() {}
 
 type AdviceLevel string
 
@@ -341,9 +387,13 @@ type RoutingExecutor struct {
 	ConfirmationOutput       Identifier      `json:"confirmationOutput"`
 }
 
-func (PointExecutionNode) Type() NodeType       { return NodePointExecution }
-func (n PointExecutionNode) Fields() NodeFields { return n.Common }
-func (PointExecutionNode) isNode()              {}
+func (PointExecutionNode) Type() NodeType {
+	return NodePointExecution
+}
+func (n PointExecutionNode) Fields() NodeFields {
+	return n.Common
+}
+func (PointExecutionNode) isNode() {}
 
 type PointApprovalMode string
 
@@ -405,7 +455,9 @@ type ApprovalExecutor interface {
 
 type NamedApproval struct{ Name string }
 
-func (a NamedApproval) Actor() string     { return a.Name }
+func (a NamedApproval) Actor() string {
+	return a.Name
+}
 func (NamedApproval) isApprovalExecutor() {}
 
 type ExternalApproval struct {
@@ -413,7 +465,9 @@ type ExternalApproval struct {
 	EvidenceOutput    Identifier
 }
 
-func (ExternalApproval) Actor() string       { return "external" }
+func (ExternalApproval) Actor() string {
+	return "external"
+}
 func (ExternalApproval) isApprovalExecutor() {}
 
 type WorkflowReference struct {
@@ -446,9 +500,13 @@ type RequiredBinding struct {
 	Description string
 }
 
-func (b RequiredBinding) Source() string       { return b.From }
-func (b RequiredBinding) ValueType() ValueType { return b.Type }
-func (RequiredBinding) isBinding()             {}
+func (b RequiredBinding) Source() string {
+	return b.From
+}
+func (b RequiredBinding) ValueType() ValueType {
+	return b.Type
+}
+func (RequiredBinding) isBinding() {}
 
 type OptionalBinding struct {
 	From        string
@@ -458,9 +516,13 @@ type OptionalBinding struct {
 	Description string
 }
 
-func (b OptionalBinding) Source() string       { return b.From }
-func (b OptionalBinding) ValueType() ValueType { return b.Type }
-func (OptionalBinding) isBinding()             {}
+func (b OptionalBinding) Source() string {
+	return b.From
+}
+func (b OptionalBinding) ValueType() ValueType {
+	return b.Type
+}
+func (OptionalBinding) isBinding() {}
 
 // Validator is a closed schema/command union.
 type Validator interface{ isValidator() }
@@ -512,31 +574,41 @@ const (
 
 type NoCheckpoint struct{}
 
-func (NoCheckpoint) Mode() CheckpointMode { return CheckpointNone }
-func (NoCheckpoint) isCheckpoint()        {}
+func (NoCheckpoint) Mode() CheckpointMode {
+	return CheckpointNone
+}
+func (NoCheckpoint) isCheckpoint() {}
 
 type AcknowledgeCheckpoint struct{}
 
-func (AcknowledgeCheckpoint) Mode() CheckpointMode { return CheckpointAcknowledge }
-func (AcknowledgeCheckpoint) isCheckpoint()        {}
+func (AcknowledgeCheckpoint) Mode() CheckpointMode {
+	return CheckpointAcknowledge
+}
+func (AcknowledgeCheckpoint) isCheckpoint() {}
 
 type ApproveCheckpoint struct{ MaxRevisions *uint8 }
 
-func (ApproveCheckpoint) Mode() CheckpointMode { return CheckpointApprove }
-func (ApproveCheckpoint) isCheckpoint()        {}
+func (ApproveCheckpoint) Mode() CheckpointMode {
+	return CheckpointApprove
+}
+func (ApproveCheckpoint) isCheckpoint() {}
 
 type ApproveOnChangeCheckpoint struct {
 	When         Predicate
 	MaxRevisions *uint8
 }
 
-func (ApproveOnChangeCheckpoint) Mode() CheckpointMode { return CheckpointApproveOnChange }
-func (ApproveOnChangeCheckpoint) isCheckpoint()        {}
+func (ApproveOnChangeCheckpoint) Mode() CheckpointMode {
+	return CheckpointApproveOnChange
+}
+func (ApproveOnChangeCheckpoint) isCheckpoint() {}
 
 type ExternalCheckpoint struct{ ExternalCondition string }
 
-func (ExternalCheckpoint) Mode() CheckpointMode { return CheckpointExternal }
-func (ExternalCheckpoint) isCheckpoint()        {}
+func (ExternalCheckpoint) Mode() CheckpointMode {
+	return CheckpointExternal
+}
+func (ExternalCheckpoint) isCheckpoint() {}
 
 type TransitionMode string
 
@@ -574,18 +646,26 @@ type TransitionFields struct {
 
 type NormalTransition struct{ Common TransitionFields }
 
-func (t NormalTransition) ID() Identifier     { return t.Common.TransitionID }
-func (t NormalTransition) Target() Identifier { return t.Common.To }
-func (NormalTransition) isTransition()        {}
+func (t NormalTransition) ID() Identifier {
+	return t.Common.TransitionID
+}
+func (t NormalTransition) Target() Identifier {
+	return t.Common.To
+}
+func (NormalTransition) isTransition() {}
 
 type BoundedTransition struct {
 	Common        TransitionFields
 	MaxTraversals uint16
 }
 
-func (t BoundedTransition) ID() Identifier     { return t.Common.TransitionID }
-func (t BoundedTransition) Target() Identifier { return t.Common.To }
-func (BoundedTransition) isTransition()        {}
+func (t BoundedTransition) ID() Identifier {
+	return t.Common.TransitionID
+}
+func (t BoundedTransition) Target() Identifier {
+	return t.Common.To
+}
+func (BoundedTransition) isTransition() {}
 
 // Predicate is the closed v1alpha1 data-only expression tree.
 type Predicate interface{ isPredicate() }

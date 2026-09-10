@@ -38,7 +38,9 @@ func TestQueueAutomaticPickupCapacityAndRelease(t *testing.T) {
 	}
 	var limit atomic.Int32
 	limit.Store(3)
-	if err := s.EnableQueue(func() (int, error) { return int(limit.Load()), nil }); err != nil {
+	if err := s.EnableQueue(func() (int, error) {
+		return int(limit.Load()), nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	ids := []string{}
@@ -61,7 +63,9 @@ func TestQueueAutomaticPickupCapacityAndRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range ids[:3] {
-		waitForControlRun(t, s, id, func(v View) bool { return v.Run.Status == statestore.RunRunning })
+		waitForControlRun(t, s, id, func(v View) bool {
+			return v.Run.Status == statestore.RunRunning
+		})
 	}
 	fourth, _ := s.Get(context.Background(), ids[3])
 	if fourth.Run.Status != statestore.RunQueued || len(fourth.Attempts) != 0 {
@@ -81,7 +85,9 @@ func TestQueueAutomaticPickupCapacityAndRelease(t *testing.T) {
 	if err := s.DispatchQueue(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitForControlRun(t, s, ids[3], func(v View) bool { return v.Run.Status == statestore.RunRunning })
+	waitForControlRun(t, s, ids[3], func(v View) bool {
+		return v.Run.Status == statestore.RunRunning
+	})
 	if err := s.DispatchQueue(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +101,9 @@ func TestQueueAutomaticPickupCapacityAndRelease(t *testing.T) {
 	if _, err := s.Resume(context.Background(), ControlRequest{RunID: ids[0], ExpectedResourceVersion: first.Run.ResourceVersion, IdempotencyKey: "resume-first-queue"}); err != nil {
 		t.Fatal(err)
 	}
-	waitForControlRun(t, s, ids[0], func(v View) bool { return v.Run.Status == statestore.RunRunning })
+	waitForControlRun(t, s, ids[0], func(v View) bool {
+		return v.Run.Status == statestore.RunRunning
+	})
 }
 
 func TestAuthorizedQueueSurvivesRestartWithoutAttempt(t *testing.T) {
@@ -105,7 +113,9 @@ func TestAuthorizedQueueSurvivesRestartWithoutAttempt(t *testing.T) {
 	if err := s.SetWorkflowPlanner(planner); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.EnableQueue(func() (int, error) { return 3, nil }); err != nil {
+	if err := s.EnableQueue(func() (int, error) {
+		return 3, nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	run, err := s.Prepare(context.Background(), CreateRequest{WorkItemID: workID, WorkflowID: planner.preview.Workflow.Name, WorkflowVersion: planner.preview.Workflow.Version}, "restart-queue-prepare")
@@ -132,7 +142,9 @@ func TestAuthorizedQueueSurvivesRestartWithoutAttempt(t *testing.T) {
 	if err := next.SetWorkflowDispatch(queueBlockingFactory{}, &capturingAttemptBuilder{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := next.EnableQueue(func() (int, error) { return 3, nil }); err != nil {
+	if err := next.EnableQueue(func() (int, error) {
+		return 3, nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := next.ResumeActive(context.Background()); err != nil {
@@ -141,7 +153,9 @@ func TestAuthorizedQueueSurvivesRestartWithoutAttempt(t *testing.T) {
 	if err := next.DispatchQueue(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitForControlRun(t, next, run.RunID, func(v View) bool { return v.Run.Status == statestore.RunRunning })
+	waitForControlRun(t, next, run.RunID, func(v View) bool {
+		return v.Run.Status == statestore.RunRunning
+	})
 	if err := next.DispatchQueue(context.Background()); err != nil {
 		t.Fatal(err)
 	}

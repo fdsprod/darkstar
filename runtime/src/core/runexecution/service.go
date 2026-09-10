@@ -192,6 +192,7 @@ func (f ProviderFactoryFunc) Provider(scenario, attemptID string, resume bool) (
 // attempt. Provider and Scenario are durable projection values rather than
 // configuration inferred again after a daemon restart.
 type ProviderRequest struct {
+	Ref       *extension.Ref
 	Provider  string
 	Scenario  string
 	AttemptID string
@@ -238,7 +239,9 @@ type workflowAdmissionError struct {
 	message string
 }
 
-func (e *workflowAdmissionError) Error() string { return e.message }
+func (e *workflowAdmissionError) Error() string {
+	return e.message
+}
 
 func workflowFailureCode(err error, fallback string) string {
 	var admission *workflowAdmissionError
@@ -1485,7 +1488,11 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 				return
 			}
 		}
-		adapter, err = workflowFactory.Provider(ctx, ProviderRequest{Provider: attempt.Provider, Scenario: attempt.Scenario, AttemptID: attempt.AttemptID, Resume: resume})
+		var providerRef *extension.Ref
+		if ref, ok := dispatchContext.ExecutionContext.ExtensionPins["provider:"+attempt.Provider]; ok {
+			providerRef = &ref
+		}
+		adapter, err = workflowFactory.Provider(ctx, ProviderRequest{Ref: providerRef, Provider: attempt.Provider, Scenario: attempt.Scenario, AttemptID: attempt.AttemptID, Resume: resume})
 	} else {
 		adapter, err = s.factory.Provider(attempt.Scenario, attempt.AttemptID, resume)
 	}
@@ -1671,6 +1678,14 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 	}
 	if ctx.Err() == nil {
 		s.completeAttempt(ctx, current.AttemptID, current.RunID, result)
+	}
+	// Release a completed transport only after its events and result have been
+	// consumed. Uncertain results retain the existing reconciliation lifecycle.
+	switch result.(type) {
+	case provider.SucceededResult, provider.FailedResult, provider.CancelledResult:
+		if owner, ok := s.workflowFactory.(interface{ ReleaseProvider(string) }); ok {
+			owner.ReleaseProvider(current.AttemptID)
+		}
 	}
 }
 

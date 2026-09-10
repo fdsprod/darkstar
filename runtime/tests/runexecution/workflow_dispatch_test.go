@@ -35,7 +35,9 @@ func TestCreateAtomicallyCreatesAndDispatchesWorkflowEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view := waitForControlRun(t, service, created.RunID, func(value View) bool { return value.Run.Status == statestore.RunWaiting })
+	view := waitForControlRun(t, service, created.RunID, func(value View) bool {
+		return value.Run.Status == statestore.RunWaiting
+	})
 	if len(view.Nodes) != 1 || len(view.Attempts) != 1 || view.Nodes[0].NodeID != "design" || view.Attempts[0].Provider != ProviderCodex || view.Attempts[0].Scenario != ScenarioWorkflow {
 		t.Fatalf("workflow entry projections = %#v", view)
 	}
@@ -63,7 +65,9 @@ func TestCreatePersistsExplicitFailureWhenWorkflowDispatchIsUnavailable(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	view := waitForControlRun(t, service, created.RunID, func(value View) bool { return value.Run.Status == statestore.RunFailed })
+	view := waitForControlRun(t, service, created.RunID, func(value View) bool {
+		return value.Run.Status == statestore.RunFailed
+	})
 	if len(view.Attempts) != 1 || view.Attempts[0].Status != statestore.AttemptFailed || view.Nodes[0].Status != statestore.NodeFailed {
 		t.Fatalf("failed workflow dispatch = %#v", view)
 	}
@@ -199,7 +203,9 @@ func TestWorkflowProviderHealthFailureDoesNotClaimReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view := waitForControlRun(t, service, created.RunID, func(value View) bool { return value.Run.Status == statestore.RunFailed })
+	view := waitForControlRun(t, service, created.RunID, func(value View) bool {
+		return value.Run.Status == statestore.RunFailed
+	})
 	if view.Issue == nil || view.Issue.Code != "PROVIDER_NOT_READY" || view.Nodes[0].Status != statestore.NodeFailed {
 		t.Fatalf("provider admission failure = %#v", view)
 	}
@@ -235,7 +241,9 @@ func TestResumeActiveRepairsQueuedWorkflowWithoutEntryAttempt(t *testing.T) {
 	if err := service.ResumeActive(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	view := waitForControlRun(t, service, runID, func(value View) bool { return value.Run.Status == statestore.RunCompleted })
+	view := waitForControlRun(t, service, runID, func(value View) bool {
+		return value.Run.Status == statestore.RunCompleted
+	})
 	if len(view.Attempts) != 2 || view.Attempts[0].NodeID != "design" || view.Attempts[0].Status != statestore.AttemptSucceeded || view.Attempts[1].NodeID != "delivery" || view.Attempts[1].Status != statestore.AttemptSucceeded {
 		t.Fatalf("repaired workflow entry = %#v", view)
 	}
@@ -298,7 +306,9 @@ func TestResumeActiveRefusesCreatedWorkflowAttemptAfterCrashWindow(t *testing.T)
 	if err := service.ResumeActive(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	view := waitForControlRun(t, service, runID, func(value View) bool { return value.Run.Status == statestore.RunReconcileRequired })
+	view := waitForControlRun(t, service, runID, func(value View) bool {
+		return value.Run.Status == statestore.RunReconcileRequired
+	})
 	if view.Attempts[0].Status != statestore.AttemptReconcileRequired || view.Nodes[0].Status != statestore.NodePending {
 		t.Fatalf("uncertain crash-window state = %#v", view)
 	}

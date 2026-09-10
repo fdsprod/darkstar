@@ -248,7 +248,9 @@ func TestHeldLeaseSurvivesDatabaseRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open first database: %v", err)
 	}
-	first.now = func() time.Time { return coordinationTestTime }
+	first.now = func() time.Time {
+		return coordinationTestTime
+	}
 	request := leaseRequest("lease_restart", "repo_restart", "attempt_restart", 0)
 	lease, err := first.AcquireLease(ctx, request)
 	if err != nil {
@@ -262,8 +264,12 @@ func TestHeldLeaseSurvivesDatabaseRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen database: %v", err)
 	}
-	t.Cleanup(func() { _ = second.Close() })
-	second.now = func() time.Time { return coordinationTestTime.Add(time.Second) }
+	t.Cleanup(func() {
+		_ = second.Close()
+	})
+	second.now = func() time.Time {
+		return coordinationTestTime.Add(time.Second)
+	}
 	resumed, err := second.ValidateLease(ctx, statestore.LeaseScopeRepository, request.ScopeID, leaseGuard(lease))
 	if err != nil {
 		t.Fatalf("validate lease after restart: %v", err)
@@ -282,14 +288,22 @@ func TestConcurrentDatabaseConnectionsCreateOneScopeOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open first database: %v", err)
 	}
-	t.Cleanup(func() { _ = first.Close() })
+	t.Cleanup(func() {
+		_ = first.Close()
+	})
 	second, err := Open(ctx, path, Options{})
 	if err != nil {
 		t.Fatalf("open second database: %v", err)
 	}
-	t.Cleanup(func() { _ = second.Close() })
-	first.now = func() time.Time { return coordinationTestTime }
-	second.now = func() time.Time { return coordinationTestTime }
+	t.Cleanup(func() {
+		_ = second.Close()
+	})
+	first.now = func() time.Time {
+		return coordinationTestTime
+	}
+	second.now = func() time.Time {
+		return coordinationTestTime
+	}
 
 	start := make(chan struct{})
 	results := make(chan error, 2)
@@ -329,9 +343,13 @@ func openCoordinationTestDatabase(t *testing.T) (*Database, *time.Time) {
 	if err != nil {
 		t.Fatalf("open coordination database: %v", err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	clock := coordinationTestTime
-	database.now = func() time.Time { return clock }
+	database.now = func() time.Time {
+		return clock
+	}
 	return database, &clock
 }
 

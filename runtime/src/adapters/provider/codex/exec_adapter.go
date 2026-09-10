@@ -242,11 +242,21 @@ type ownedExecProcess struct {
 	stderr io.Reader
 }
 
-func (process *ownedExecProcess) Stdout() io.Reader { return process.stdout }
-func (process *ownedExecProcess) Stderr() io.Reader { return process.stderr }
-func (process *ownedExecProcess) PID() int          { return process.owner.PID() }
-func (process *ownedExecProcess) Wait() error       { return process.owner.Wait() }
-func (process *ownedExecProcess) Kill() error       { return process.owner.Kill() }
+func (process *ownedExecProcess) Stdout() io.Reader {
+	return process.stdout
+}
+func (process *ownedExecProcess) Stderr() io.Reader {
+	return process.stderr
+}
+func (process *ownedExecProcess) PID() int {
+	return process.owner.PID()
+}
+func (process *ownedExecProcess) Wait() error {
+	return process.owner.Wait()
+}
+func (process *ownedExecProcess) Kill() error {
+	return process.owner.Kill()
+}
 
 var _ providerport.Provider = (*ExecAdapter)(nil)
 
@@ -624,7 +634,9 @@ func failExecStart(state *execAttempt, err error) {
 		state.startErr = err
 		state.terminal = true
 		close(state.done)
-		state.readyOnce.Do(func() { close(state.ready) })
+		state.readyOnce.Do(func() {
+			close(state.ready)
+		})
 		signalExecAttempt(state)
 	}
 	state.mu.Unlock()
@@ -785,7 +797,9 @@ func (adapter *ExecAdapter) observeExecLine(state *execAttempt, line []byte, exp
 		}
 		state.threadStarted = true
 		state.handle.ProviderThreadID = threadID
-		state.readyOnce.Do(func() { close(state.ready) })
+		state.readyOnce.Do(func() {
+			close(state.ready)
+		})
 	}
 	if typeName == "turn.started" {
 		state.turnStarted = true
@@ -929,7 +943,9 @@ func (adapter *ExecAdapter) finishExec(state *execAttempt, pumpErr, waitErr erro
 		state.result = result
 		state.terminal = true
 		close(state.done)
-		state.readyOnce.Do(func() { close(state.ready) })
+		state.readyOnce.Do(func() {
+			close(state.ready)
+		})
 		signalExecAttempt(state)
 	}
 	state.mu.Unlock()
@@ -1143,7 +1159,9 @@ func (stream *execEventStream) Receive() (providerport.Event, error) {
 }
 
 func (stream *execEventStream) Close() error {
-	stream.once.Do(func() { close(stream.closed) })
+	stream.once.Do(func() {
+		close(stream.closed)
+	})
 	return nil
 }
 

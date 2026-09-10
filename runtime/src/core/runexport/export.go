@@ -52,10 +52,14 @@ type LogChunk struct {
 }
 
 // NextOffset returns the first unread byte.
-func (chunk LogChunk) NextOffset() int64 { return chunk.Offset + int64(len(chunk.Content)) }
+func (chunk LogChunk) NextOffset() int64 {
+	return chunk.Offset + int64(len(chunk.Content))
+}
 
 // Complete reports whether this chunk reaches the current end of the log.
-func (chunk LogChunk) Complete() bool { return chunk.NextOffset() == chunk.Size }
+func (chunk LogChunk) Complete() bool {
+	return chunk.NextOffset() == chunk.Size
+}
 
 // Exporter creates finite ZIP archives from durable evidence.
 type Exporter struct {
@@ -189,7 +193,9 @@ func (exporter *Exporter) Build(ctx context.Context, runID string) ([]byte, Mani
 		}
 		files = append(files, archiveFile{path: "logs/" + reference.Value, kind: "log", mediaType: "text/plain; charset=utf-8", content: redactText(content)})
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].path < files[j].path })
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].path < files[j].path
+	})
 	for _, file := range files {
 		digest := sha256.Sum256(file.content)
 		manifest.Entries = append(manifest.Entries, Entry{
@@ -205,7 +211,9 @@ func (exporter *Exporter) Build(ctx context.Context, runID string) ([]byte, Mani
 		return nil, Manifest{}, fmt.Errorf("encode manifest: %w", err)
 	}
 	files = append(files, archiveFile{path: "manifest.json", kind: "manifest", mediaType: "application/json", content: manifestJSON})
-	sort.Slice(files, func(i, j int) bool { return files[i].path < files[j].path })
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].path < files[j].path
+	})
 	var totalSize int64
 	for _, file := range files {
 		totalSize += int64(len(file.content))
@@ -337,7 +345,9 @@ func sensitiveKey(key string) bool {
 	}
 }
 
-func redactText(content []byte) []byte { return []byte(redactString(string(content))) }
+func redactText(content []byte) []byte {
+	return []byte(redactString(string(content)))
+}
 
 func redactString(value string) string {
 	value = jsonValuePattern.ReplaceAllString(value, `${1}`+redactionReplacement+`${2}`)
@@ -359,7 +369,9 @@ func discoverReferences(events []statestore.Event) []evidenceReference {
 	for _, reference := range seen {
 		result = append(result, reference)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Kind+result[i].Value < result[j].Kind+result[j].Value })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Kind+result[i].Value < result[j].Kind+result[j].Value
+	})
 	return result
 }
 

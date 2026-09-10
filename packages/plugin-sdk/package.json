@@ -5,8 +5,9 @@
   "type": "module",
   "exports": "./src/index.ts",
   "scripts": {
-    "build": "tsc --noEmit -p tsconfig.json && node build.mjs",
-    "check": "tsc --noEmit -p tsconfig.json && node build.mjs --check"
+    "build": "node scripts/lint-control-flow.mjs && tsc --noEmit -p tsconfig.json && node build-all.mjs",
+    "check": "node scripts/lint-control-flow.mjs && node --test tests/control-flow-lint.test.mjs && tsc --noEmit -p tsconfig.json && node build-all.mjs --check && node --test ../../plugins/provider-codex/tests/provider.test.mjs",
+    "lint": "node scripts/lint-control-flow.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -2,7 +2,9 @@ import { useRef } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
 import { entries } from "./stories.fixtures";
+import { MessageComposer } from "./MessageComposer";
 import { HistoryNotice, ShowMoreHistory, TerminalFrame, TranscriptEmpty, TranscriptScroll } from "./TerminalFrame";
+import { TerminalStatusBar } from "./TerminalStatusBar";
 import { TranscriptRow } from "./TranscriptRow";
 
 const meta = {
@@ -19,9 +21,24 @@ function Scroll({ children }: { children: React.ReactNode }) {
   return <TranscriptScroll turns={false} scrollRef={ref} onScroll={() => undefined}>{children}</TranscriptScroll>;
 }
 
+const dock = <>
+  <MessageComposer value="" sending={false} disabled={false} placeholder="Interject or give the agent guidance…"
+    onChange={() => undefined} onSend={() => undefined} />
+  <TerminalStatusBar node="implement-ci" scope="workflow/windows-ci v3" provider="codex" model="gpt-5.6-sol"
+    effort="medium" context={{ used: 23_256, window: 258_400 }} hint="Enter to send · Shift+Enter for a new line" />
+</>;
+
+// The whole window: transcript, docked composer, and status bar together.
 export const Live: StoryObj<typeof meta> = {
-  render: (args) => <TerminalFrame {...args}>
+  render: (args) => <TerminalFrame {...args} dock={dock}>
     <Scroll>{entries.map((entry) => <TranscriptRow key={entry.id} entry={entry} raw={false} />)}</Scroll>
+  </TerminalFrame>,
+};
+
+export const AwaitingInput: StoryObj<typeof meta> = {
+  args: { state: "3 events" },
+  render: (args) => <TerminalFrame {...args} dock={dock}>
+    <Scroll>{entries.slice(0, 3).map((entry) => <TranscriptRow key={entry.id} entry={entry} raw={false} />)}</Scroll>
   </TerminalFrame>,
 };
 

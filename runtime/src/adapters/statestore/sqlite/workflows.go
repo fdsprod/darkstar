@@ -81,7 +81,9 @@ func (d *Database) InstalledVersions(ctx context.Context, name string) ([]workfl
 	if err != nil {
 		return nil, fmt.Errorf("list installed workflows: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]workflowstore.InstalledVersion, 0)
 	for rows.Next() {
 		value, err := scanInstalledVersion(rows)
@@ -149,7 +151,9 @@ func (d *Database) Drafts(ctx context.Context) ([]workflowstore.Draft, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list workflow drafts: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]workflowstore.Draft, 0)
 	for rows.Next() {
 		value, err := scanWorkflowDraft(rows)
@@ -239,7 +243,9 @@ func (d *Database) Archives(ctx context.Context) ([]workflowstore.Archive, error
 	if err != nil {
 		return nil, fmt.Errorf("list workflow archives: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]workflowstore.Archive, 0)
 	for rows.Next() {
 		var value workflowstore.Archive

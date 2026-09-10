@@ -346,10 +346,14 @@ type daemonAPIService struct {
 	database                 *sqlite.Database
 	executions               *runexecution.Service
 	workspaces               *workspacefolder.Folder
+	providerWiring           *daemonProviderWiring
 }
 
 func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) (startErr error) {
 	defer func() {
+		if startErr != nil && service.providerWiring != nil {
+			service.providerWiring.closePluginProviders()
+		}
 		if startErr != nil && service.workspaces != nil {
 			_ = service.workspaces.Close()
 			service.workspaces = nil
@@ -420,6 +424,7 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return fmt.Errorf("configure daemon providers: %w", err)
 	}
+	service.providerWiring = providerWiring
 	if err := service.server.SetWorkflowChat(codex.WorkflowChat{Executable: providerWiring.executable}); err != nil {
 		return err
 	}
@@ -594,7 +599,9 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return closeArtifactSetup(err)
 	}
 	service.executions = executions
-	if err := executions.EnableQueue(func() (int, error) { return configuredQueueLimit(service.paths, service.projectRoot) }); err != nil {
+	if err := executions.EnableQueue(func() (int, error) {
+		return configuredQueueLimit(service.paths, service.projectRoot)
+	}); err != nil {
 		return closeArtifactSetup(err)
 	}
 
@@ -728,6 +735,10 @@ func (service *daemonAPIService) Close() error {
 		service.executions = nil
 	}
 	serverErr := service.server.Close()
+	if service.providerWiring != nil {
+		service.providerWiring.closePluginProviders()
+		service.providerWiring = nil
+	}
 	var databaseErr error
 	if service.database != nil {
 		databaseErr = service.database.Close()
@@ -1347,7 +1358,9 @@ func writeNewFileAtomically(destination string, content []byte) (err error) {
 		return fmt.Errorf("create temporary export: %w", err)
 	}
 	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
+	defer func() {
+		_ = os.Remove(temporaryPath)
+	}()
 	if err = temporary.Chmod(0o600); err == nil {
 		_, err = temporary.Write(content)
 	}

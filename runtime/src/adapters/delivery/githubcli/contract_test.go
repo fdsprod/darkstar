@@ -264,7 +264,9 @@ func contractRetryPush(t *testing.T) {
 	assertNoExternalMutation(t, runner.calls)
 }
 
-func contractRetryCreate(t *testing.T) { contractOwnedPullRequest(t) }
+func contractRetryCreate(t *testing.T) {
+	contractOwnedPullRequest(t)
+}
 
 func contractRetryUpdate(t *testing.T) {
 	request := finalChangeRequest()

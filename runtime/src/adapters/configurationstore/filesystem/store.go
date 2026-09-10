@@ -230,7 +230,9 @@ func atomicReplace(path string, content []byte, userOnly bool) (err error) {
 		return err
 	}
 	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
+	defer func() {
+		_ = os.Remove(temporaryPath)
+	}()
 	if userOnly {
 		err = temporary.Chmod(0o600)
 	}
@@ -294,7 +296,9 @@ func readBounded(path string) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		_ = file.Close()
+	}()
 	content, err := io.ReadAll(io.LimitReader(file, configuration.MaxFileSize+1))
 	if err != nil {
 		return nil, false, err

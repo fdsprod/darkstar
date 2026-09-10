@@ -19,7 +19,9 @@ func TestArtifactRevisionInvalidatesOnlyReachableDescendants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 
 	createdAt := time.Date(2026, time.September, 1, 13, 0, 0, 0, time.UTC)
 	upstream := registerLineageArtifact(t, ctx, database, testID("artifact", 'G'), "upstream-1", "a", createdAt)

@@ -11,7 +11,9 @@ import (
 
 type acceptingSchema struct{}
 
-func (acceptingSchema) Validate(json.RawMessage, json.RawMessage) error { return nil }
+func (acceptingSchema) Validate(json.RawMessage, json.RawMessage) error {
+	return nil
+}
 
 type testValidator struct {
 	calls *int

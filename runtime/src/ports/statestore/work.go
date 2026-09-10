@@ -29,7 +29,9 @@ const (
 	ProjectArchived ProjectStatus = "archived"
 )
 
-func (status ProjectStatus) Terminal() bool { return status == ProjectArchived }
+func (status ProjectStatus) Terminal() bool {
+	return status == ProjectArchived
+}
 
 // ProjectProjection is the rebuildable current state of one repository-backed project.
 type ProjectProjection struct {

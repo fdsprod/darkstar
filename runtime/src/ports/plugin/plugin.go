@@ -27,6 +27,9 @@ type Descriptor struct {
 	Protocol  string        `json:"protocol"`
 	Resources []Resource    `json:"resources"`
 	Tools     []Tool        `json:"tools,omitempty"`
+	// Nodes use the same bounded invocation transport, but are selected by
+	// daemon node dispatch and never exposed as agent tools.
+	Nodes []Tool `json:"nodes,omitempty"`
 }
 type Invocation struct {
 	Contribution string          `json:"contribution"`

@@ -110,7 +110,9 @@ func TestConfigurationMutationTypedErrors(t *testing.T) {
 	endpoint, _ := server.Endpoint()
 	body := `{"scope":{"type":"user"},"key":"provider.codex.actionAvailability","change":{"operation":"unset"},"expectedRevision":"` + strings.Repeat("a", 64) + `"}`
 	response := configurationRequest(t, endpoint, http.MethodPost, "/api/v1/configuration/apply", body, "conflict-key")
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	payload, _ := io.ReadAll(response.Body)
 	if response.StatusCode != http.StatusConflict || !strings.Contains(string(payload), "REVISION_CONFLICT") {
 		t.Fatalf("status=%d payload=%s", response.StatusCode, payload)

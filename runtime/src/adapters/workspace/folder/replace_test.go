@@ -12,7 +12,9 @@ import (
 	port "darkstar/src/ports/workspace"
 )
 
-func digest(data string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(data))) }
+func digest(data string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(data)))
+}
 
 func TestCompareAndSwapReplacementPreservesPriorBytesOnFailure(t *testing.T) {
 	ctx := context.Background()

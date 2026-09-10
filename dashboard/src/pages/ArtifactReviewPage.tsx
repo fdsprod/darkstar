@@ -1,3 +1,4 @@
+import { RepresentationView } from "../components/extensions/RepresentationView";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiRequestError, apiClient, type AgentLogChunk } from "../api/client";
@@ -311,7 +312,7 @@ function SafeTextReader({ state, label }: { state?: SafeTextState; label: string
   if (!state || state.kind === "loading") return <div className="review-reader-loading" aria-busy="true">Loading {label} safe representation…</div>;
   if (state.kind === "unavailable") return <ReaderUnavailable reason={state.reason} version={state.version} />;
   if (state.kind === "error") return <div className="review-reader-unavailable" role="alert"><h2>Safe preview unavailable</h2><p>{state.message}</p></div>;
-  return <article className="safe-text-reader"><header><strong>{label}</strong><span>{humanize(state.disclosure)} · {state.mediaType}{state.truncated ? " · truncated" : ""}</span></header>{state.truncated && <p className="review-reader-warning">This safe representation is truncated. The decision remains bound to the full candidate digest shown beside the reader.</p>}<pre tabIndex={0}>{state.text}</pre></article>;
+  return <article className="safe-text-reader"><header><strong>{label}</strong><span>{humanize(state.disclosure)} · {state.mediaType}{state.truncated ? " · truncated" : ""}</span></header>{state.truncated && <p className="review-reader-warning">This safe representation is truncated. The decision remains bound to the full candidate digest shown beside the reader.</p>}<RepresentationView text={state.text} mediaType={state.mediaType} /></article>;
 }
 function ReaderUnavailable({ reason, version }: { reason: "withheld" | "unsupported" | "too_large" | "missing"; version: number }) { return <div className="review-reader-unavailable"><h2>Safe preview unavailable</h2><p>{reason === "withheld" ? `Revision ${version} content is withheld by inspection policy.` : reason === "unsupported" ? `Revision ${version} has no supported plain-text or escaped-markdown representation.` : reason === "too_large" ? "The exact safe content or comparison exceeds the bounded review policy." : "No safe derived representation is recorded for this exact revision."}</p><strong>Raw HTML and original-content fallback are disabled.</strong></div>; }
 

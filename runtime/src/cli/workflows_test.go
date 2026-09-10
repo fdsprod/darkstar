@@ -23,10 +23,16 @@ func TestWorkflowCLIInstallListGraphAndPreviewJSON(t *testing.T) {
 		}
 	}
 	originalResolver := resolveApplicationPaths
-	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) { return paths, nil }
-	t.Cleanup(func() { resolveApplicationPaths = originalResolver })
+	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) {
+		return paths, nil
+	}
+	t.Cleanup(func() {
+		resolveApplicationPaths = originalResolver
+	})
 	service := startAcceptanceService(t, paths, "33333333333333333333333333333333")
-	t.Cleanup(func() { _ = service.Close() })
+	t.Cleanup(func() {
+		_ = service.Close()
+	})
 
 	definitionPath := filepath.Join(root, "workflow.json")
 	if err := os.WriteFile(definitionPath, []byte(cliWorkflowDocument()), 0o600); err != nil {

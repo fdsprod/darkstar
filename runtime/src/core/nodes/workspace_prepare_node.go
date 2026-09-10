@@ -19,12 +19,19 @@ type WorkspacePrepare struct{ Node workflow.WorkspacePrepareNode }
 func (WorkspacePrepare) isHandler() {}
 
 func (n WorkspacePrepare) Execute(ctx context.Context, inputs Inputs, services BuiltinServices) (json.RawMessage, error) {
+	return PrepareWorkspace(ctx, inputs[n.Node.Executor.RepositoryInput], n.Node.Executor.Checkout, services.Workspaces)
+}
+
+// PrepareWorkspace is the daemon-owned Git/ownership operation. Node plugins may
+// request this operation only with their bound repository and declared plan.
+func PrepareWorkspace(ctx context.Context, repositoryInput json.RawMessage, checkout workflow.CheckoutPlan, workspaces WorkspaceServices) (json.RawMessage, error) {
+	services := BuiltinServices{Workspaces: workspaces}
 	identity := services.Workspaces.Identity
 	var source struct {
 		ProjectID  string `json:"projectId"`
 		SourceHash string `json:"sourceHash"`
 	}
-	if err := json.Unmarshal(inputs[n.Node.Executor.RepositoryInput], &source); err != nil {
+	if err := json.Unmarshal(repositoryInput, &source); err != nil {
 		return nil, err
 	}
 	if source.ProjectID != identity.ProjectID || source.SourceHash != identity.SourceHash {
@@ -35,7 +42,7 @@ func (n WorkspacePrepare) Execute(ctx context.Context, inputs Inputs, services B
 	manager := services.Workspaces.Repository
 	if errors.Is(err, ErrWorkspaceNotFound) {
 		p = Workspace{ID: id, RunID: identity.RunID, ProjectID: identity.ProjectID, Repository: filepath.Clean(identity.Root), Path: filepath.Clean(identity.Root)}
-		switch plan := n.Node.Executor.Checkout.(type) {
+		switch plan := checkout.(type) {
 		case workflow.CurrentCheckout:
 			p.Mode = "current_checkout"
 			p.BaseRef = "HEAD"

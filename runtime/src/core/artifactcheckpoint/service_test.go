@@ -499,7 +499,9 @@ func (store *memoryStore) ApprovalsForCheckpoint(_ context.Context, id string) (
 			values = append(values, value)
 		}
 	}
-	sort.Slice(values, func(left, right int) bool { return values[left].CheckpointRevision < values[right].CheckpointRevision })
+	sort.Slice(values, func(left, right int) bool {
+		return values[left].CheckpointRevision < values[right].CheckpointRevision
+	})
 	return values, nil
 }
 
@@ -531,7 +533,9 @@ func (store *memoryStore) EventsForAggregate(_ context.Context, aggregateID stri
 	if len(values) == 0 {
 		return nil, statestore.ErrNotFound
 	}
-	sort.Slice(values, func(left, right int) bool { return values[left].AggregateRevision < values[right].AggregateRevision })
+	sort.Slice(values, func(left, right int) bool {
+		return values[left].AggregateRevision < values[right].AggregateRevision
+	})
 	return values, nil
 }
 

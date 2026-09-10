@@ -22,7 +22,9 @@ func TestIsolationPersistenceAndExclusiveVersions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { h.Close() })
+		t.Cleanup(func() {
+			h.Close()
+		})
 		return h
 	}
 	a := bind("work-a", "builtin/items", "attempt-a")

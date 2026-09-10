@@ -10,5 +10,5 @@
     "skipLibCheck": false,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "../../plugins/builtin-resources/src/**/*.ts"]
+  "include": ["src/**/*.ts", "../../plugins/builtin-resources/src/**/*.ts", "../../plugins/builtin-nodes/src/**/*.ts", "../../plugins/provider-codex/src/**/*.ts"]
 }

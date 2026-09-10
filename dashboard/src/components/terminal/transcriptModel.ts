@@ -3,7 +3,10 @@ import type { components } from "../../api/schema.generated";
 export type TranscriptEvent = components["schemas"]["RunTranscriptEvent"];
 export type EventKind = "message" | "reasoning" | "tool" | "error" | "decision" | "user" | "lifecycle";
 export interface TranscriptEntry { id: string; time: number; end: number; position: number; kind: EventKind; title: string; text: string; output: string; turn: string; attempt: string; status?: string; raw: TranscriptEvent[] }
-export interface Usage { input?: number; output?: number; reasoning?: number; cached?: number }
+export interface Usage { input?: number; output?: number; reasoning?: number; cached?: number; total?: number }
+// The provider reports the window alongside usage, so context pressure is a
+// measured value rather than an assumed model size.
+export interface Session { model?: string; effort?: string; contextWindow?: number }
 type Obj = Record<string, any>;
 const object = (value: unknown): Obj => value && typeof value === "object" && !Array.isArray(value) ? value as Obj : {};
 const text = (value: unknown): string => typeof value === "string" ? value : value == null ? "" : JSON.stringify(value, null, 2);
@@ -14,6 +17,7 @@ const words = (value: string) => value.replaceAll(/[._]/g, " ");
 export function buildTranscript(events: readonly TranscriptEvent[]) {
   const entries: TranscriptEntry[] = [], items = new Map<string, TranscriptEntry>(), turns = new Set<string>();
   const activeTurns = new Map<string, string>(), usageByThread = new Map<string, Usage>();
+  const session: Session = {};
   let gaps = 0;
   for (const event of events) {
     const data = object(event.data), payload = object(data.payload), params = object(payload.params), item = object(params.item);
@@ -27,10 +31,18 @@ export function buildTranscript(events: readonly TranscriptEvent[]) {
     };
     if (event.kind === "attempt.provider_event") {
       if (data.historyGap) { gaps++; continue; }
+      // Providers name the model and effort on thread and turn boundaries; the
+      // exact carrier differs, so read whichever shape is present.
+      for (const source of [params, object(params.thread), object(params.session), object(params.turn)]) {
+        const model = text(source.model), effort = text(source.reasoningEffort || source.effort);
+        if (model && !model.startsWith("{")) session.model = model;
+        if (effort && !effort.startsWith("{")) session.effort = effort;
+      }
       if (method === "thread/tokenUsage/updated") {
-        const total = object(object(params.tokenUsage).total);
+        const usageParams = object(params.tokenUsage), total = object(usageParams.total);
+        if (typeof usageParams.modelContextWindow === "number") session.contextWindow = usageParams.modelContextWindow;
         const usage: Usage = {};
-        for (const [field, native] of [["input", "inputTokens"], ["output", "outputTokens"], ["reasoning", "reasoningOutputTokens"], ["cached", "cachedInputTokens"]] as const) if (typeof total[native] === "number") usage[field] = total[native];
+        for (const [field, native] of [["input", "inputTokens"], ["output", "outputTokens"], ["reasoning", "reasoningOutputTokens"], ["cached", "cachedInputTokens"], ["total", "totalTokens"]] as const) if (typeof total[native] === "number") usage[field] = total[native];
         usageByThread.set(text(params.threadId || data.providerThreadId || event.subject), usage); continue;
       }
       if (method === "turn/started" || method === "turn/completed") continue;
@@ -80,14 +92,14 @@ export function buildTranscript(events: readonly TranscriptEvent[]) {
     if (["run.completed", "run.cancelled", "run.paused", "run.resumed", "visit.started", "visit.succeeded", "visit.waiting_checkpoint"].includes(event.kind)) add("lifecycle", words(event.kind), text(data.nodeId));
   }
   const usage: Usage = {};
-  for (const value of usageByThread.values()) for (const field of ["input", "output", "reasoning", "cached"] as const) if (value[field] !== undefined) usage[field] = (usage[field] ?? 0) + value[field]!;
+  for (const value of usageByThread.values()) for (const field of ["input", "output", "reasoning", "cached", "total"] as const) if (value[field] !== undefined) usage[field] = (usage[field] ?? 0) + value[field]!;
   // Provider turn IDs encompass an entire user-to-agent run. Count observable
   // model actions instead: one message or tool invocation, never its deltas/results.
   const modelActions = entries.filter(e => e.kind === "tool" || (e.kind === "message" && e.title === "Assistant"));
   for (const entry of entries) entry.turn = "";
   for (const entry of modelActions) entry.turn = entry.id;
   for (const entry of entries) if (entry.kind === "reasoning") entry.turn = modelActions.find(action => action.attempt === entry.attempt && action.position >= entry.position)?.id ?? "";
-  return { entries: entries.filter(e => e.kind !== "reasoning" || e.text), turns: modelActions.map(e => e.id), providerTurns: [...turns], usage, gaps, missingToolResults: entries.filter(e=>e.status==="Result was not recorded by the previous version").length };
+  return { entries: entries.filter(e => e.kind !== "reasoning" || e.text), turns: modelActions.map(e => e.id), providerTurns: [...turns], usage, session, gaps, missingToolResults: entries.filter(e=>e.status==="Result was not recorded by the previous version").length };
 }
 
 export function inTimeRange(entry: TranscriptEntry, range: [number, number] | null) { return !range || (entry.end >= range[0] && entry.time <= range[1]); }

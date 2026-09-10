@@ -156,7 +156,9 @@ func TestDownloadReturnsAuthenticatedZIP(t *testing.T) {
 	if err := server.Start(context.Background(), os.Getpid(), time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = server.Close() })
+	t.Cleanup(func() {
+		_ = server.Close()
+	})
 	client := newClient(t, clientapi.Config{RuntimeDirectory: runtimeDirectory})
 	session, err := client.Connect(context.Background())
 	if err != nil {
@@ -195,7 +197,9 @@ func startServer(t *testing.T, runtimeDirectory string) *localapi.Server {
 	if err := server.Start(context.Background(), os.Getpid(), time.Now().UTC()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = server.Close() })
+	t.Cleanup(func() {
+		_ = server.Close()
+	})
 	return server
 }
 

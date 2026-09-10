@@ -56,7 +56,9 @@ type EnableTransitionOperation struct {
 	TransitionID Identifier `json:"transitionId"`
 }
 
-func (EnableTransitionOperation) operationName() string  { return "enableTransition" }
+func (EnableTransitionOperation) operationName() string {
+	return "enableTransition"
+}
 func (EnableTransitionOperation) isRoutePatchOperation() {}
 func (operation EnableTransitionOperation) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -69,7 +71,9 @@ type DisableTransitionOperation struct {
 	TransitionID Identifier `json:"transitionId"`
 }
 
-func (DisableTransitionOperation) operationName() string  { return "disableTransition" }
+func (DisableTransitionOperation) operationName() string {
+	return "disableTransition"
+}
 func (DisableTransitionOperation) isRoutePatchOperation() {}
 func (operation DisableTransitionOperation) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -82,7 +86,9 @@ type SetTerminalsOperation struct {
 	Nodes []Identifier `json:"nodes"`
 }
 
-func (SetTerminalsOperation) operationName() string  { return "setTerminals" }
+func (SetTerminalsOperation) operationName() string {
+	return "setTerminals"
+}
 func (SetTerminalsOperation) isRoutePatchOperation() {}
 func (operation SetTerminalsOperation) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -224,9 +230,15 @@ func (state RouteState) Snapshot() RouteStateSnapshot {
 	}
 }
 
-func (state RouteState) RunID() string    { return state.runID }
-func (state RouteState) Revision() uint64 { return state.revision }
-func (state RouteState) Route() Route     { return cloneRoute(state.route) }
+func (state RouteState) RunID() string {
+	return state.runID
+}
+func (state RouteState) Revision() uint64 {
+	return state.revision
+}
+func (state RouteState) Route() Route {
+	return cloneRoute(state.route)
+}
 
 type RoutePatchAuthorizationMode string
 
@@ -281,7 +293,9 @@ type RoutePatchProposal struct {
 	baseTopologyDigest string
 }
 
-func (proposal RoutePatchProposal) Patch() RoutePatch { return cloneRoutePatch(proposal.patch) }
+func (proposal RoutePatchProposal) Patch() RoutePatch {
+	return cloneRoutePatch(proposal.patch)
+}
 func (proposal RoutePatchProposal) Candidate() RouteStateSnapshot {
 	return proposal.candidate.Snapshot()
 }
@@ -291,9 +305,15 @@ func (proposal RoutePatchProposal) Impact() RoutePatchImpact {
 func (proposal RoutePatchProposal) AuthorizationMode() RoutePatchAuthorizationMode {
 	return proposal.mode
 }
-func (proposal RoutePatchProposal) ScopeDigest() string      { return proposal.scopeDigest }
-func (proposal RoutePatchProposal) ValidationDigest() string { return proposal.validationDigest }
-func (proposal RoutePatchProposal) PolicyDigest() string     { return proposal.policyDigest }
+func (proposal RoutePatchProposal) ScopeDigest() string {
+	return proposal.scopeDigest
+}
+func (proposal RoutePatchProposal) ValidationDigest() string {
+	return proposal.validationDigest
+}
+func (proposal RoutePatchProposal) PolicyDigest() string {
+	return proposal.policyDigest
+}
 
 // ProposeRoutePatch applies the ordered operations to a private override copy,
 // rederives the complete route, validates it, and returns deterministic impact
@@ -740,7 +760,9 @@ func setDifference(left, right map[Identifier]bool) []Identifier {
 			result = append(result, id)
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
 	return result
 }
 
@@ -769,7 +791,9 @@ func sortedIdentifierSet(values map[Identifier]bool) []Identifier {
 	for value := range values {
 		result = append(result, value)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
 	return result
 }
 
@@ -778,7 +802,9 @@ func sortedTransitionOverrides(overrides map[Identifier]bool) []TransitionOverri
 	for id := range overrides {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	sort.Slice(ids, func(i, j int) bool {
+		return ids[i] < ids[j]
+	})
 	result := make([]TransitionOverride, 0, len(ids))
 	for _, id := range ids {
 		result = append(result, TransitionOverride{TransitionID: id, Enabled: overrides[id]})

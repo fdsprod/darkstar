@@ -33,7 +33,9 @@ func TestInputRequestAPIExposesGlobalQueueAndServerOwnedRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +57,9 @@ func TestInputRequestAPIExposesGlobalQueueAndServerOwnedRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = retryResponse.Body.Close() }()
+	defer func() {
+		_ = retryResponse.Body.Close()
+	}()
 	if retryResponse.StatusCode != http.StatusOK || service.retriedID != service.view.ID || service.expected != 2 {
 		t.Fatalf("retry status=%d id=%q expected=%d", retryResponse.StatusCode, service.retriedID, service.expected)
 	}

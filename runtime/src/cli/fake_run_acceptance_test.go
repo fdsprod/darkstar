@@ -31,8 +31,12 @@ func TestPublicCLIFakeRunSurvivesRestartWithoutDuplicateEffectsAndExports(t *tes
 		}
 	}
 	originalResolver := resolveApplicationPaths
-	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) { return paths, nil }
-	t.Cleanup(func() { resolveApplicationPaths = originalResolver })
+	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) {
+		return paths, nil
+	}
+	t.Cleanup(func() {
+		resolveApplicationPaths = originalResolver
+	})
 
 	first := startAcceptanceService(t, paths, "11111111111111111111111111111111")
 	var start runexecution.View
@@ -50,7 +54,9 @@ func TestPublicCLIFakeRunSurvivesRestartWithoutDuplicateEffectsAndExports(t *tes
 	}
 
 	second := startAcceptanceService(t, paths, "22222222222222222222222222222222")
-	t.Cleanup(func() { _ = second.Close() })
+	t.Cleanup(func() {
+		_ = second.Close()
+	})
 	var watched runexecution.View
 	runCLIJSON(t, []string{"run", "watch", start.Run.RunID, "--json"}, &watched)
 	if watched.Run.Status != statestore.RunCompleted || len(watched.Attempts) != 1 ||
@@ -97,10 +103,16 @@ func TestPublicCLIPausesResumesAndCancelsRuns(t *testing.T) {
 		}
 	}
 	originalResolver := resolveApplicationPaths
-	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) { return paths, nil }
-	t.Cleanup(func() { resolveApplicationPaths = originalResolver })
+	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) {
+		return paths, nil
+	}
+	t.Cleanup(func() {
+		resolveApplicationPaths = originalResolver
+	})
 	service := startAcceptanceService(t, paths, "33333333333333333333333333333333")
-	t.Cleanup(func() { _ = service.Close() })
+	t.Cleanup(func() {
+		_ = service.Close()
+	})
 
 	var started runexecution.View
 	runCLIJSON(t, []string{"run", "start", "--scenario", runexecution.ScenarioRestart, "--idempotency-key", "cli-control-start", "--json"}, &started)
@@ -117,7 +129,9 @@ func TestPublicCLIPausesResumesAndCancelsRuns(t *testing.T) {
 	}
 	var resumed runMachineOutput
 	runCLIJSON(t, []string{"run", "resume", started.Run.RunID, "--idempotency-key", "cli-resume-command", "--json"}, &resumed)
-	waitForRun(t, started.Run.RunID, func(view runexecution.View) bool { return view.Run.Status == statestore.RunCompleted })
+	waitForRun(t, started.Run.RunID, func(view runexecution.View) bool {
+		return view.Run.Status == statestore.RunCompleted
+	})
 
 	var second runexecution.View
 	runCLIJSON(t, []string{"run", "start", "--scenario", runexecution.ScenarioRestart, "--idempotency-key", "cli-cancel-start", "--json"}, &second)
@@ -126,7 +140,9 @@ func TestPublicCLIPausesResumesAndCancelsRuns(t *testing.T) {
 	})
 	var cancelled runMachineOutput
 	runCLIJSON(t, []string{"run", "cancel", second.Run.RunID, "--idempotency-key", "cli-cancel-command", "--json"}, &cancelled)
-	final := waitForRun(t, second.Run.RunID, func(view runexecution.View) bool { return view.Run.Status == statestore.RunCancelled })
+	final := waitForRun(t, second.Run.RunID, func(view runexecution.View) bool {
+		return view.Run.Status == statestore.RunCancelled
+	})
 	if final.Attempts[0].Status != statestore.AttemptCancelled {
 		t.Fatalf("cancelled attempt = %#v", final.Attempts[0])
 	}
@@ -144,10 +160,16 @@ func TestPublicCLIAgentStatusLogsAndCancellation(t *testing.T) {
 		}
 	}
 	originalResolver := resolveApplicationPaths
-	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) { return paths, nil }
-	t.Cleanup(func() { resolveApplicationPaths = originalResolver })
+	resolveApplicationPaths = func(context.Context) (platformport.Paths, error) {
+		return paths, nil
+	}
+	t.Cleanup(func() {
+		resolveApplicationPaths = originalResolver
+	})
 	service := startAcceptanceService(t, paths, "44444444444444444444444444444444")
-	t.Cleanup(func() { _ = service.Close() })
+	t.Cleanup(func() {
+		_ = service.Close()
+	})
 
 	var started runexecution.View
 	runCLIJSON(t, []string{"run", "start", "--scenario", runexecution.ScenarioRestart, "--idempotency-key", "agent-cli-start", "--json"}, &started)

@@ -298,7 +298,9 @@ func parseSecretWrite(args []string) (configmutation.SecretWriteRequest, string,
 		if err != nil {
 			return configmutation.SecretWriteRequest{}, "", fmt.Errorf("open secret input: %w", err)
 		}
-		defer func() { _ = opened.Close() }()
+		defer func() {
+			_ = opened.Close()
+		}()
 		reader = opened
 	}
 	content, err := io.ReadAll(io.LimitReader(reader, maxSecretInput+1))

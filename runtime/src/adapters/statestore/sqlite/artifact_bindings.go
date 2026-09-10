@@ -28,7 +28,9 @@ func (d *Database) Bind(ctx context.Context, request artifactbinding.BindRequest
 	if err != nil {
 		return artifactbinding.Version{}, false, fmt.Errorf("begin artifact bind: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	existing, existingKey, err := scanBindingVersion(tx.QueryRowContext(ctx,
 		bindingVersionSelect+` WHERE binding_id = ? AND idempotency_key = ?`,
@@ -86,7 +88,9 @@ func (d *Database) Unbind(ctx context.Context, request artifactbinding.UnbindReq
 	if err != nil {
 		return artifactbinding.Version{}, false, fmt.Errorf("begin artifact unbind: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	existing, existingKey, err := scanBindingVersion(tx.QueryRowContext(ctx,
 		bindingVersionSelect+` WHERE binding_id = ? AND idempotency_key = ?`,
@@ -249,7 +253,9 @@ func (d *Database) queryBindingVersions(ctx context.Context, statement string, a
 	if err != nil {
 		return nil, fmt.Errorf("list artifact binding versions: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	result := make([]artifactbinding.Version, 0)
 	for rows.Next() {
 		value, _, err := scanBindingVersion(rows)

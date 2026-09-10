@@ -44,7 +44,9 @@ func newProcessOwner(command *exec.Cmd) (*processOwner, error) {
 		_ = windows.CloseHandle(job)
 		return nil, fmt.Errorf("open process for job assignment: %w", err)
 	}
-	defer func() { _ = windows.CloseHandle(process) }()
+	defer func() {
+		_ = windows.CloseHandle(process)
+	}()
 	if err := windows.AssignProcessToJobObject(job, process); err != nil {
 		_ = windows.CloseHandle(job)
 		return nil, fmt.Errorf("assign process to job: %w", err)
@@ -61,7 +63,9 @@ func resumeOwnedProcess(pid int) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = windows.CloseHandle(snapshot) }()
+	defer func() {
+		_ = windows.CloseHandle(snapshot)
+	}()
 	entry := windows.ThreadEntry32{Size: uint32(unsafe.Sizeof(windows.ThreadEntry32{}))}
 	if err := windows.Thread32First(snapshot, &entry); err != nil {
 		return err
@@ -101,7 +105,9 @@ func (owner *processOwner) Wait() error {
 
 // Windows does not provide a reliable non-interactive graceful signal for an
 // arbitrary hidden process, so cancellation escalates directly to the job.
-func (*processOwner) Terminate() (bool, error) { return false, nil }
+func (*processOwner) Terminate() (bool, error) {
+	return false, nil
+}
 
 func (owner *processOwner) Kill() error {
 	err := windows.TerminateJobObject(owner.job, 1)
@@ -109,8 +115,12 @@ func (owner *processOwner) Kill() error {
 	return err
 }
 
-func (owner *processOwner) PID() int { return owner.command.Process.Pid }
+func (owner *processOwner) PID() int {
+	return owner.command.Process.Pid
+}
 
 func (owner *processOwner) close() {
-	owner.once.Do(func() { _ = windows.CloseHandle(owner.job) })
+	owner.once.Do(func() {
+		_ = windows.CloseHandle(owner.job)
+	})
 }

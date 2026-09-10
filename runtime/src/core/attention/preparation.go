@@ -37,8 +37,10 @@ func (subject PreparationInputSubject) MarshalJSON() ([]byte, error) {
 	}{Source: "route_preparation", fields: fields(subject)})
 }
 
-func (PreparationInputRequired) checkpoint()           {}
-func (item PreparationInputRequired) Common() Envelope { return item.Envelope }
+func (PreparationInputRequired) checkpoint() {}
+func (item PreparationInputRequired) Common() Envelope {
+	return item.Envelope
+}
 
 type preparationSource interface {
 	Runs(context.Context) ([]statestore.RunProjection, error)

@@ -129,8 +129,12 @@ func TestRunExecutionContextMigrationAndProjectionRebuildCompatibility(t *testin
 	if err != nil {
 		t.Fatalf("open upgraded database: %v", err)
 	}
-	database.now = func() time.Time { return eventTestTime }
-	t.Cleanup(func() { _ = database.Close() })
+	database.now = func() time.Time {
+		return eventTestTime
+	}
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	runID := testID("run", 'T')
 	createRunAggregate(t, database, runID)
 	want, err := database.SaveRunExecutionContext(ctx, executionContextFixture(runID), 0)

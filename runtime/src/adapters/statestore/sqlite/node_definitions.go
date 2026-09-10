@@ -46,7 +46,9 @@ func (d *Database) NodeDefinitions(ctx context.Context) ([]workflowstore.NodeDef
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := []workflowstore.NodeDefinitionRecord{}
 	for rows.Next() {
 		value, err := scanNodeDefinition(rows)

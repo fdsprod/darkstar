@@ -5,7 +5,8 @@ import type { components } from "../api/schema.generated";
 import { useRouter } from "../app/router";
 import { MessageComposer } from "../components/terminal/MessageComposer";
 import { RunTimeline } from "../components/terminal/RunTimeline";
-import { HistoryNotice, ShowMoreHistory, TerminalFrame, TranscriptEmpty, TranscriptScroll } from "../components/terminal/TerminalFrame";
+import { ComposerDock, HistoryNotice, ShowMoreHistory, TerminalFrame, TranscriptEmpty, TranscriptScroll } from "../components/terminal/TerminalFrame";
+import { TerminalStatusBar } from "../components/terminal/TerminalStatusBar";
 import { TranscriptRow, TurnHeading } from "../components/terminal/TranscriptRow";
 import { RunViewTabs, TranscriptTools } from "../components/terminal/TranscriptTools";
 import { selectTimelineRange, timelineRange, type TimelineSelection } from "../components/terminal/timelineModel";
@@ -77,12 +78,30 @@ export function RunLive({ view, refresh }: { view: S["RunView"]; refresh(): Prom
   function download() {
     const blob = new Blob([events.map(event => JSON.stringify(event)).join("\n")], { type: "application/x-ndjson" });
     const url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = `${run.id}-transcript.ndjson`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }  return <section className="run-live" aria-label="Live run">
+  }
+
+  const running = view.attempts.find(attempt => attempt.status === "running");
+  // Input and status ride inside the terminal window rather than below it.
+  const dock = <>
+    <MessageComposer value={message} onChange={setMessage} onSend={() => void send()} sending={sending}
+      disabled={run.status !== "running"}
+      placeholder={run.status === "running" ? "Interject or give the agent guidance…" : run.status === "waiting" ? "Resolve the question or review above to continue." : "Messages are available while an agent is running."} />
+    <TerminalStatusBar
+      node={running?.nodeId ?? run.workflowId}
+      scope={`${run.workflowId} v${run.workflowVersion}`}
+      provider={running?.provider}
+      model={transcript.session.model}
+      effort={transcript.session.effort}
+      context={transcript.session.contextWindow && transcript.usage.total ? { used: transcript.usage.total, window: transcript.session.contextWindow } : undefined}
+      hint={run.status === "running" ? "Enter to send · Shift+Enter for a new line" : undefined} />
+  </>;
+  return <section className="run-live" aria-label="Live run">
     <RunViewTabs mode={mode} turnCount={transcript.turns.length} usage={transcript.usage} onSelect={setMode} />
     <RunAttention runId={run.id} refreshRun={refresh} />
-    {mode === "artifacts" ? <RunArtifacts runId={run.id} attempts={view.attempts} events={events} /> : <TerminalFrame
-      title={`${view.attempts.find(a => a.status === "running")?.nodeId ?? run.workflowId} Â· ${mode === "turns" ? "turn history" : "agent transcript"}`}
-      state={history === "loading" ? "Loading historyâ¦" : history === "error" ? "Reconnectingâ¦" : follow && run.status === "running" ? "â Live" : `${filtered.length} events`}>
+    {mode === "artifacts" ? <><RunArtifacts runId={run.id} attempts={view.attempts} events={events} /><ComposerDock>{dock}</ComposerDock></> : <TerminalFrame
+      dock={dock}
+      title={`${running?.nodeId ?? run.workflowId} · ${mode === "turns" ? "turn history" : "agent transcript"}`}
+      state={history === "loading" ? "Loading history…" : history === "error" ? "Reconnecting…" : follow && run.status === "running" ? "● Live" : `${filtered.length} events`}>
       <RunTimeline entries={transcript.entries} start={timelineStart} end={timelineEnd} range={range} onChange={chooseRange} />
       <TranscriptTools
         filter={filter} onFilter={value => { setFilter(value); setVisibleCount(200); }}
@@ -94,14 +113,11 @@ export function RunLive({ view, refresh }: { view: S["RunView"]; refresh(): Prom
       {transcript.gaps > 0 && <HistoryNotice>{transcript.gaps} older observations have no recoverable content. Available history is shown below.</HistoryNotice>}
       {transcript.missingToolResults > 0 && <HistoryNotice>This older run saved {transcript.missingToolResults} tool requests without their responses. New runs save both.</HistoryNotice>}
       <TranscriptScroll turns={mode === "turns"} scrollRef={scroll} onScroll={() => { const el = scroll.current; if (el && el.scrollHeight - el.scrollTop - el.clientHeight > 100) setFollow(false); }}>
-        {!visible.length && <TranscriptEmpty>{history === "loading" ? "Reading the saved transcriptâ¦" : filter || range || kind ? "No events match this view. Adjust the timeline or filters." : "Waiting for the agentâs first message. Its output and tool calls will appear here."}</TranscriptEmpty>}
+        {!visible.length && <TranscriptEmpty>{history === "loading" ? "Reading the saved transcript…" : filter || range || kind ? "No events match this view. Adjust the timeline or filters." : "Waiting for the agent’s first message. Its output and tool calls will appear here."}</TranscriptEmpty>}
         {visible.map((entry, i) => <div key={entry.id}>{mode === "turns" && entry.turn && entry.turn !== visible[i - 1]?.turn && <TurnHeading number={turnNumbers.get(entry.turn)} time={entry.time} />}<TranscriptRow entry={entry} raw={raw} /></div>)}
         {filtered.length > visible.length && <ShowMoreHistory hidden={filtered.length - visible.length} onShowMore={() => { setFollow(false); setVisibleCount(value => value + 200); }} />}
       </TranscriptScroll>
     </TerminalFrame>}
-    <MessageComposer value={message} onChange={setMessage} onSend={() => void send()} sending={sending}
-      disabled={run.status !== "running"}
-      placeholder={run.status === "running" ? "Interject or give the agent guidanceâ¦" : run.status === "waiting" ? "Resolve the question or review above to continue." : "Messages are available while an agent is running."} />
     {notice && <p role="status">{notice}</p>}
   </section>;
 }

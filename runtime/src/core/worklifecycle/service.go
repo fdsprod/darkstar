@@ -141,7 +141,9 @@ type VersionConflictError struct {
 func (e *VersionConflictError) Error() string {
 	return fmt.Sprintf("%v: expected %d, current %d", ErrVersionConflict, e.Expected, e.Current.ResourceVersion)
 }
-func (e *VersionConflictError) Unwrap() error { return ErrVersionConflict }
+func (e *VersionConflictError) Unwrap() error {
+	return ErrVersionConflict
+}
 
 type Runtime interface {
 	Prepare(context.Context, runexecution.CreateRequest, string) (statestore.RunProjection, error)
@@ -295,7 +297,9 @@ func (s *Service) facts(ctx context.Context, id string) (facts, error) {
 	if err != nil {
 		return facts{}, err
 	}
-	sort.Slice(runs, func(i, j int) bool { return runs[i].LastGlobalPosition > runs[j].LastGlobalPosition })
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].LastGlobalPosition > runs[j].LastGlobalPosition
+	})
 	value := facts{work: work, state: StateBacklog, projectArchived: project.Status != statestore.ProjectActive}
 	advanceVersion(&value.version, work.LastGlobalPosition, project.LastGlobalPosition)
 	active := 0

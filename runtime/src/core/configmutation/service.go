@@ -44,14 +44,24 @@ type changeVariant interface {
 type unsetChange struct{}
 type setChange struct{ configured config.TypedValue }
 
-func (unsetChange) operation() ChangeOperation       { return ChangeUnset }
-func (unsetChange) value() (config.TypedValue, bool) { return config.TypedValue{}, false }
-func (setChange) operation() ChangeOperation         { return ChangeSet }
-func (v setChange) value() (config.TypedValue, bool) { return v.configured, true }
+func (unsetChange) operation() ChangeOperation {
+	return ChangeUnset
+}
+func (unsetChange) value() (config.TypedValue, bool) {
+	return config.TypedValue{}, false
+}
+func (setChange) operation() ChangeOperation {
+	return ChangeSet
+}
+func (v setChange) value() (config.TypedValue, bool) {
+	return v.configured, true
+}
 func Set(value config.TypedValue) SettingChange {
 	return SettingChange{variant: setChange{configured: value}}
 }
-func Unset() SettingChange { return SettingChange{variant: unsetChange{}} }
+func Unset() SettingChange {
+	return SettingChange{variant: unsetChange{}}
+}
 func (c SettingChange) Operation() ChangeOperation {
 	if c.variant == nil {
 		return ""
@@ -526,7 +536,9 @@ func effectiveSettings(effective config.Effective) []EffectiveSetting {
 			result = append(result, EffectiveSetting{Key: descriptor.Key, Value: value, Source: resolved.Source()})
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Key < result[j].Key })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Key < result[j].Key
+	})
 	return result
 }
 func primitiveValue(kind config.SettingType, raw any) (config.TypedValue, bool) {
@@ -669,6 +681,8 @@ func validateRevision(value string) error {
 	}
 	return nil
 }
-func digest(value string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(value))) }
+func digest(value string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
+}
 
 var secretNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)

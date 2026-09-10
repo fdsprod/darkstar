@@ -499,7 +499,9 @@ func uniqueSortedIdentifiers(values []Identifier) []Identifier {
 	for value := range set {
 		result = append(result, value)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
 	return result
 }
 

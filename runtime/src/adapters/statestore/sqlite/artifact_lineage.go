@@ -29,7 +29,9 @@ func (d *Database) AddDependency(ctx context.Context, request artifactlineage.Ad
 	if err != nil {
 		return artifactlineage.Dependency{}, false, fmt.Errorf("begin artifact dependency: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	existing, err := scanDependency(tx.QueryRowContext(ctx, dependencySelect+` WHERE
 		source_artifact_id = ? AND source_artifact_version = ? AND
@@ -142,7 +144,9 @@ func (d *Database) Invalidations(ctx context.Context, reference artifactregistry
 	if err != nil {
 		return nil, fmt.Errorf("list artifact invalidations: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	result := make([]artifactlineage.Invalidation, 0)
 	for rows.Next() {
 		var value artifactlineage.Invalidation
@@ -176,7 +180,9 @@ func (d *Database) AffectedBy(ctx context.Context, trigger artifactregistry.Vers
 	if err != nil {
 		return nil, fmt.Errorf("list revision impact: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	result := make([]artifactlineage.Invalidation, 0)
 	for rows.Next() {
 		var value artifactlineage.Invalidation
@@ -213,7 +219,9 @@ func recordArtifactInvalidations(ctx context.Context, tx *sql.Tx, previous, curr
 	if err != nil {
 		return fmt.Errorf("resolve artifact invalidation scope: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	type affectedVersion struct {
 		reference artifactregistry.VersionRef
 		rank      int
@@ -302,7 +310,9 @@ func queryDependencies(ctx context.Context, query sqlQuerier, statement string, 
 	if err != nil {
 		return nil, fmt.Errorf("list artifact dependencies: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	result := make([]artifactlineage.Dependency, 0)
 	for rows.Next() {
 		value, err := scanDependency(rows)

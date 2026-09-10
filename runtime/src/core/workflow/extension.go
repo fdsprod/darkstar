@@ -32,9 +32,13 @@ type ExtensionNode struct {
 	Executor ExtensionExecutor
 }
 
-func (ExtensionNode) isNode()              {}
-func (ExtensionNode) Type() NodeType       { return NodeExtension }
-func (n ExtensionNode) Fields() NodeFields { return n.Common }
+func (ExtensionNode) isNode() {}
+func (ExtensionNode) Type() NodeType {
+	return NodeExtension
+}
+func (n ExtensionNode) Fields() NodeFields {
+	return n.Common
+}
 func (n ExtensionNode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nodeObject(n.Common, n.Type(), "extension", n.Executor))
 }

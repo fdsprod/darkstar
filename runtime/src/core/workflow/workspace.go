@@ -76,9 +76,13 @@ func (v *WorkspacePrepareExecutor) UnmarshalJSON(raw []byte) error {
 	}
 	return nil
 }
-func (WorkspacePrepareNode) Type() NodeType       { return NodeWorkspacePrepare }
-func (n WorkspacePrepareNode) Fields() NodeFields { return n.Common }
-func (WorkspacePrepareNode) isNode()              {}
+func (WorkspacePrepareNode) Type() NodeType {
+	return NodeWorkspacePrepare
+}
+func (n WorkspacePrepareNode) Fields() NodeFields {
+	return n.Common
+}
+func (WorkspacePrepareNode) isNode() {}
 func (n WorkspacePrepareNode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nodeObject(n.Common, n.Type(), "workspacePrepare", n.Executor))
 }
@@ -92,9 +96,13 @@ type WorkspaceValidateExecutor struct {
 	Checks         [][]string `json:"checks"`
 }
 
-func (WorkspaceValidateNode) Type() NodeType       { return NodeWorkspaceValidate }
-func (n WorkspaceValidateNode) Fields() NodeFields { return n.Common }
-func (WorkspaceValidateNode) isNode()              {}
+func (WorkspaceValidateNode) Type() NodeType {
+	return NodeWorkspaceValidate
+}
+func (n WorkspaceValidateNode) Fields() NodeFields {
+	return n.Common
+}
+func (WorkspaceValidateNode) isNode() {}
 func (n WorkspaceValidateNode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nodeObject(n.Common, n.Type(), "workspaceValidate", n.Executor))
 }

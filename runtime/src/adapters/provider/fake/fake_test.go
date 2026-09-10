@@ -86,7 +86,9 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamEvents() error = %v", err)
 	}
-	t.Cleanup(func() { _ = stream.Close() })
+	t.Cleanup(func() {
+		_ = stream.Close()
+	})
 
 	first := receive(t, stream)
 	second := receive(t, stream)
@@ -100,7 +102,9 @@ func TestScenarioStreamsInteractionsAndControlledDelays(t *testing.T) {
 	approvalEvent := receiveAsync(stream)
 	assertBlocked(t, approvalEvent)
 	respondAnswer(t, adapter, handle, "tool-1", "tool-response-1", json.RawMessage(`{"value":"inspected"}`))
-	waitFor(t, func() bool { return clock.Pending() == 1 }, "scripted delay to become pending")
+	waitFor(t, func() bool {
+		return clock.Pending() == 1
+	}, "scripted delay to become pending")
 	clock.Advance(5 * time.Minute)
 	third := awaitEvent(t, approvalEvent)
 	if third.Kind != provider.EventPermissionRequested {
@@ -234,7 +238,9 @@ func TestCancellationInterruptsAControlledDelay(t *testing.T) {
 		t.Fatalf("StreamEvents() error = %v", err)
 	}
 	received := receiveAsync(stream)
-	waitFor(t, func() bool { return clock.Pending() == 1 }, "cancellable delay to become pending")
+	waitFor(t, func() bool {
+		return clock.Pending() == 1
+	}, "cancellable delay to become pending")
 
 	cancel, err := adapter.CancelAttempt(context.Background(), provider.CancelRequest{
 		Handle:         handle,

@@ -110,7 +110,9 @@ func (s *Service) Call(ctx context.Context, method string, raw json.RawMessage) 
 		if args.ExpectedDigest == nil {
 			err = h.WriteFile(ctx, args.Area, args.Path, data)
 		} else {
-			if len(*args.ExpectedDigest) != 64 || strings.IndexFunc(*args.ExpectedDigest, func(r rune) bool { return !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') }) != -1 {
+			if len(*args.ExpectedDigest) != 64 || strings.IndexFunc(*args.ExpectedDigest, func(r rune) bool {
+				return !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f')
+			}) != -1 {
 				return nil, errors.New("expectedDigest must be a lowercase SHA-256 digest")
 			}
 			err = h.ReplaceFile(ctx, args.Area, args.Path, *args.ExpectedDigest, data)
@@ -163,7 +165,9 @@ func (s *Service) Call(ctx context.Context, method string, raw json.RawMessage) 
 	}
 }
 
-func digest(data []byte) string { return fmt.Sprintf("%x", sha256.Sum256(data)) }
+func digest(data []byte) string {
+	return fmt.Sprintf("%x", sha256.Sum256(data))
+}
 
 func (s *Service) bind(ctx context.Context) (workspace.Handle, error) {
 	return s.manager.Bind(ctx, workspace.Grant{WorkItemID: s.scope.WorkItemID, PluginID: s.scope.Plugin.ID, AttemptID: s.scope.AttemptID})

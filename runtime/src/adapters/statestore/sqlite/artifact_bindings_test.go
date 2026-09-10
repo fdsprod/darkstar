@@ -19,7 +19,9 @@ func TestArtifactBindingsRetainVersionedHistoryForEveryTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 
 	createdAt := time.Date(2026, time.September, 1, 14, 0, 0, 0, time.UTC)
 	artifactID := testID("artifact", 'L')
@@ -112,7 +114,9 @@ func TestArtifactBindingRejectsIdentityAndTransitionConflicts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	createdAt := time.Date(2026, time.September, 1, 15, 0, 0, 0, time.UTC)
 	first := registerLineageArtifact(t, ctx, database, testID("artifact", 'M'), "first", "c", createdAt)
 	other := registerLineageArtifact(t, ctx, database, testID("artifact", 'N'), "other", "d", createdAt)

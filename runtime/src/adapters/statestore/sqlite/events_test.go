@@ -236,7 +236,9 @@ func TestCommittedEventsAreAppendOnlyAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	database.now = func() time.Time { return eventTestTime }
+	database.now = func() time.Time {
+		return eventTestTime
+	}
 	runID := testID("run", 'K')
 	if _, err := database.Append(ctx, pendingEvent(testID("event", 'K'), statestore.AggregateRun, runID, 0, "run.created",
 		`{"workItemId":"work_01K3Z1C1AAAAAAAAAAAAAAAAAA","workflowId":"delivery","workflowVersion":"1"}`)); err != nil {
@@ -308,7 +310,9 @@ func openEventTestDatabase(t *testing.T) *Database {
 	if err != nil {
 		t.Fatalf("open event test database: %v", err)
 	}
-	database.now = func() time.Time { return eventTestTime }
+	database.now = func() time.Time {
+		return eventTestTime
+	}
 	t.Cleanup(func() {
 		if err := database.Close(); err != nil {
 			t.Errorf("close event test database: %v", err)

@@ -92,7 +92,10 @@ func TestImplementationResultUsesEvidenceRatherThanSuccessNarration(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reads := 0
-			err := ValidateImplementationResult(t.Context(), json.RawMessage(tc.raw), func(context.Context) ([]string, error) { reads++; return tc.files, nil })
+			err := ValidateImplementationResult(t.Context(), json.RawMessage(tc.raw), func(context.Context) ([]string, error) {
+				reads++
+				return tc.files, nil
+			})
 			if tc.want == "" && err != nil {
 				t.Fatal(err)
 			}
@@ -105,7 +108,9 @@ func TestImplementationResultUsesEvidenceRatherThanSuccessNarration(t *testing.T
 		})
 	}
 	want := errors.New("evidence unavailable")
-	err := ValidateImplementationResult(t.Context(), json.RawMessage(`{"disposition":"changed","summary":"done","files":[],"validation":[]}`), func(context.Context) ([]string, error) { return nil, want })
+	err := ValidateImplementationResult(t.Context(), json.RawMessage(`{"disposition":"changed","summary":"done","files":[],"validation":[]}`), func(context.Context) ([]string, error) {
+		return nil, want
+	})
 	if !errors.Is(err, want) {
 		t.Fatal("lost evidence failure")
 	}

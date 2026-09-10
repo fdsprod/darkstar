@@ -26,7 +26,10 @@ func TestWorkflowChatProtocolStreamsQuestionsAndRejectsPublishing(t *testing.T) 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	kinds := []string{}
-	emit := func(kind string, _ any) error { kinds = append(kinds, kind); return nil }
+	emit := func(kind string, _ any) error {
+		kinds = append(kinds, kind)
+		return nil
+	}
 	session := &workflowchat.Session{Target: workflowchat.Target{Kind: "new"}, Emit: emit, Generation: &workflowchat.Generation{Model: "test-model", Effort: "high"}}
 	done := make(chan error, 1)
 	go func() {

@@ -41,7 +41,9 @@ func startWorkLifecycleAPI(t *testing.T, lifecycle WorkLifecycleService) (*Serve
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	work, err := workmanagement.New(database)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +61,9 @@ func startWorkLifecycleAPI(t *testing.T, lifecycle WorkLifecycleService) (*Serve
 	if err := server.Start(ctx, 4321, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { closeTestServer(t, server) })
+	t.Cleanup(func() {
+		closeTestServer(t, server)
+	})
 	endpoint, ok := server.Endpoint()
 	if !ok {
 		t.Fatal("server endpoint unavailable")
@@ -102,7 +106,9 @@ func TestWorkTransitionStaleApplyReturnsRefreshedPlan(t *testing.T) {
 	stub := &lifecycleStub{applyError: &worklifecycle.VersionConflictError{Expected: 7, Current: current}}
 	_, endpoint := startWorkLifecycleAPI(t, stub)
 	response := lifecycleRequest(t, endpoint, http.MethodPost, "/api/v1/work-items/"+workID+"/transitions", `{"target":"running"}`, "work-transition-stale", `"7"`)
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusPreconditionFailed {
 		t.Fatalf("status = %d", response.StatusCode)
 	}

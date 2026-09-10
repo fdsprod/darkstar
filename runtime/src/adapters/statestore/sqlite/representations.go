@@ -33,7 +33,9 @@ func (d *Database) RegisterRepresentation(ctx context.Context, request represent
 	if err != nil {
 		return representationregistry.Representation{}, false, fmt.Errorf("begin representation registration: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 	existing, key, err := scanRepresentation(tx.QueryRowContext(ctx,
 		representationSelect+` WHERE artifact_id = ? AND artifact_version = ? AND idempotency_key = ? AND representation_kind = ?`,
 		normalized.Artifact.ArtifactID, normalized.Artifact.Version, normalized.IdempotencyKey, normalized.Kind))
@@ -90,7 +92,9 @@ func (d *Database) ForArtifact(ctx context.Context, artifact artifactregistry.Ve
 	if err != nil {
 		return nil, fmt.Errorf("list artifact representations: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]representationregistry.Representation, 0)
 	for rows.Next() {
 		value, _, err := scanRepresentation(rows)

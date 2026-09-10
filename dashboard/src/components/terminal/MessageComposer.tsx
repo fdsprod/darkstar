@@ -9,8 +9,9 @@ export interface MessageComposerProps {
 
 // Enter sends; Shift+Enter and IME composition keep their normal meaning.
 export function MessageComposer({ value, onChange, onSend, sending, disabled, placeholder }: MessageComposerProps) {
-  return <form className="run-message-composer" onSubmit={(event) => { event.preventDefault(); onSend(); }}>
+  return <form className="run-composer" onSubmit={(event) => { event.preventDefault(); onSend(); }}>
     <label className="sr-only" htmlFor="run-guidance">Message the agent</label>
+    <span className="run-composer__prompt" aria-hidden="true">&rsaquo;</span>
     <textarea id="run-guidance" value={value} onChange={(event) => onChange(event.target.value)} maxLength={32000}
       disabled={sending || disabled} placeholder={placeholder} rows={2}
       onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); onSend(); } }} />

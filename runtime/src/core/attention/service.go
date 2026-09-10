@@ -99,8 +99,10 @@ type WorkflowCheckpoint struct {
 	AllowedActions []WorkflowCheckpointAction `json:"allowedActions"`
 }
 
-func (WorkflowCheckpoint) checkpoint()           {}
-func (item WorkflowCheckpoint) Common() Envelope { return item.Envelope }
+func (WorkflowCheckpoint) checkpoint() {}
+func (item WorkflowCheckpoint) Common() Envelope {
+	return item.Envelope
+}
 
 type WorkflowControlAction string
 
@@ -124,8 +126,10 @@ type WorkflowControl struct {
 	AllowedActions []WorkflowControlAction `json:"allowedActions"`
 }
 
-func (WorkflowControl) checkpoint()           {}
-func (item WorkflowControl) Common() Envelope { return item.Envelope }
+func (WorkflowControl) checkpoint() {}
+func (item WorkflowControl) Common() Envelope {
+	return item.Envelope
+}
 
 type ProviderPermissionAction string
 
@@ -156,8 +160,10 @@ type ProviderPermission struct {
 	AllowedActions []ProviderPermissionAction `json:"allowedActions"`
 }
 
-func (ProviderPermission) checkpoint()           {}
-func (item ProviderPermission) Common() Envelope { return item.Envelope }
+func (ProviderPermission) checkpoint() {}
+func (item ProviderPermission) Common() Envelope {
+	return item.Envelope
+}
 
 type ExternalDeliveryAction string
 
@@ -181,8 +187,10 @@ type ExternalDelivery struct {
 	AllowedActions []ExternalDeliveryAction `json:"allowedActions"`
 }
 
-func (ExternalDelivery) checkpoint()           {}
-func (item ExternalDelivery) Common() Envelope { return item.Envelope }
+func (ExternalDelivery) checkpoint() {}
+func (item ExternalDelivery) Common() Envelope {
+	return item.Envelope
+}
 
 type InputRequiredAction string
 
@@ -206,8 +214,10 @@ type InputRequired struct {
 	AllowedActions []InputRequiredAction `json:"allowedActions"`
 }
 
-func (InputRequired) checkpoint()           {}
-func (item InputRequired) Common() Envelope { return item.Envelope }
+func (InputRequired) checkpoint() {}
+func (item InputRequired) Common() Envelope {
+	return item.Envelope
+}
 
 // Checkpoints is a JSON-aware union that rejects unknown sibling variants.
 type Checkpoints []Checkpoint
@@ -453,14 +463,18 @@ func (service *Service) List(ctx context.Context, request ListRequest) (Page, er
 		}
 		items = exact
 	}
-	sort.Slice(items, func(i, j int) bool { return before(items[i].Common(), items[j].Common()) })
+	sort.Slice(items, func(i, j int) bool {
+		return before(items[i].Common(), items[j].Common())
+	})
 	totalCount := len(items)
 	position, err := decodeCursor(request.Cursor, fingerprint)
 	if err != nil {
 		return Page{}, err
 	}
 	if position != nil {
-		first := sort.Search(len(items), func(index int) bool { return after(items[index].Common(), *position) })
+		first := sort.Search(len(items), func(index int) bool {
+			return after(items[index].Common(), *position)
+		})
 		items = items[first:]
 	}
 	page := Page{SchemaVersion: 1, Items: items, TotalCount: totalCount}

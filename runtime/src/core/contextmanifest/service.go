@@ -265,7 +265,9 @@ func canonicalCapabilities(values []capabilityregistry.Selection) ([]capabilityr
 
 func canonicalDigestRefs(kind string, values []manifestport.DigestRef) ([]manifestport.DigestRef, error) {
 	result := append([]manifestport.DigestRef(nil), values...)
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ID < result[j].ID
+	})
 	for index, value := range result {
 		if strings.TrimSpace(value.ID) == "" || !validDigest(value.Digest) {
 			return nil, fmt.Errorf("%s digest reference is invalid", kind)

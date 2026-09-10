@@ -137,7 +137,10 @@ func (s *Session) toolCatalog() ([]Tool, error) {
 }
 
 // Validate fails before handing definitions to a provider when composition is invalid.
-func (s *Session) Validate() error { _, err := s.toolCatalog(); return err }
+func (s *Session) Validate() error {
+	_, err := s.toolCatalog()
+	return err
+}
 func (s *Session) Definitions() []provider.ToolDefinition {
 	entries, err := s.toolCatalog()
 	if err != nil {

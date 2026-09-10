@@ -181,7 +181,9 @@ func (s *Service) IngestFile(ctx context.Context, path string, request Request) 
 	if err != nil {
 		return Result{}, fmt.Errorf("open artifact file: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		_ = file.Close()
+	}()
 	info, err := file.Stat()
 	if err != nil {
 		return Result{}, fmt.Errorf("inspect artifact file: %w", err)

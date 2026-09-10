@@ -371,6 +371,15 @@ func (s *Service) executeBuiltinWorkflowAttempt(ctx context.Context, attempt sta
 		output, err = nodes.GateOutput(node, dispatch.NodeInputs, dispatch.RunInputs)
 	case workflow.CommandNode:
 		s.mu.Lock()
+		pluginCommands, configured := s.requestBuilder.(interface {
+			ExecuteCommandNode(context.Context, AttemptRequestContext) (json.RawMessage, error)
+		})
+		s.mu.Unlock()
+		if configured {
+			output, err = pluginCommands.ExecuteCommandNode(ctx, dispatch)
+			break
+		}
+		s.mu.Lock()
 		workspace := s.workspace
 		s.mu.Unlock()
 		workspace = filepath.Clean(strings.TrimSpace(workspace))

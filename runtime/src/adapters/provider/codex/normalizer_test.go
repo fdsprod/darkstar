@@ -45,7 +45,9 @@ func TestEventNormalizerReplaysVersionedAppServerFixtures(t *testing.T) {
 		normalizer, err := NewEventNormalizer(NormalizerOptions{
 			AttemptID:       "attempt-fixture",
 			ProviderVersion: fixture.version,
-			Clock:           func() time.Time { return fixed },
+			Clock: func() time.Time {
+				return fixed
+			},
 			EvidenceRef: func(sequence uint64, _ string) string {
 				return "evidence/codex/frame-" + strconv.FormatUint(sequence, 10) + ".json"
 			},
@@ -130,7 +132,9 @@ func TestEventNormalizerPreservesKnownUnknownAndRequestPayloads(t *testing.T) {
 	normalizer, err := NewEventNormalizer(NormalizerOptions{
 		AttemptID:       "attempt-1",
 		ProviderVersion: "0.151.0-alpha.7.2",
-		Clock:           func() time.Time { return time.Unix(10, 0).UTC() },
+		Clock: func() time.Time {
+			return time.Unix(10, 0).UTC()
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewEventNormalizer() error = %v", err)

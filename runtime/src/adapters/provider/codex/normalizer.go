@@ -499,7 +499,9 @@ func rawString(raw json.RawMessage) string {
 	return result
 }
 
-func requestIDKey(raw json.RawMessage) string { return string(bytes.TrimSpace(raw)) }
+func requestIDKey(raw json.RawMessage) string {
+	return string(bytes.TrimSpace(raw))
+}
 
 func rawIDKey(raw json.RawMessage) string {
 	trimmed := bytes.TrimSpace(raw)

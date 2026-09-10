@@ -61,12 +61,16 @@ func TestTerminalSelectionSeparatesDesignOnlyAndDeliveryOutcomes(t *testing.T) {
 
 func TestTerminalAdviceCannotNameUnknownBoundaryOrOmitPairs(t *testing.T) {
 	input := terminalFixture()
-	result := terminalAdvice(input, func(routeadvisor.Candidate) bool { return true })
+	result := terminalAdvice(input, func(routeadvisor.Candidate) bool {
+		return true
+	})
 	result.Candidates[0].Terminals = []string{"ghost"}
 	if _, err := preparation.Assess(input, result); err == nil {
 		t.Fatal("unknown terminal advice accepted")
 	}
-	result = terminalAdvice(input, func(routeadvisor.Candidate) bool { return true })
+	result = terminalAdvice(input, func(routeadvisor.Candidate) bool {
+		return true
+	})
 	result.Candidates = result.Candidates[1:]
 	if _, err := preparation.Assess(input, result); err == nil {
 		t.Fatal("unassessed entry-terminal pair accepted")
@@ -75,7 +79,9 @@ func TestTerminalAdviceCannotNameUnknownBoundaryOrOmitPairs(t *testing.T) {
 
 func TestTerminalTieBreakIsIndependentOfAdviceOrder(t *testing.T) {
 	input := terminalFixture()
-	result := terminalAdvice(input, func(routeadvisor.Candidate) bool { return true })
+	result := terminalAdvice(input, func(routeadvisor.Candidate) bool {
+		return true
+	})
 	first, err := preparation.Assess(input, result)
 	if err != nil {
 		t.Fatal(err)

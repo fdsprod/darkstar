@@ -825,7 +825,9 @@ func readRepresentation(ctx context.Context, reader RepresentationContentReader,
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = stream.Close() }()
+	defer func() {
+		_ = stream.Close()
+	}()
 	content, err := io.ReadAll(io.LimitReader(stream, (4<<20)+1))
 	if err != nil || len(content) > 4<<20 || !utf8.Valid(content) {
 		return nil, ErrCandidateConflict

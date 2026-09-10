@@ -253,13 +253,19 @@ func (client *AppServerClient) ProcessID() int {
 }
 
 // Notifications returns every passive provider notification in wire order.
-func (client *AppServerClient) Notifications() <-chan ServerNotification { return client.notifications }
+func (client *AppServerClient) Notifications() <-chan ServerNotification {
+	return client.notifications
+}
 
 // Requests returns every ID-bearing server request in wire order.
-func (client *AppServerClient) Requests() <-chan ServerRequest { return client.requests }
+func (client *AppServerClient) Requests() <-chan ServerRequest {
+	return client.requests
+}
 
 // Messages returns server notifications and requests in their original wire order.
-func (client *AppServerClient) Messages() <-chan IncomingMessage { return client.incoming }
+func (client *AppServerClient) Messages() <-chan IncomingMessage {
+	return client.incoming
+}
 
 // Call sends one JSON-RPC request and waits for its correlated response.
 func (client *AppServerClient) Call(ctx context.Context, method string, params any, target any) error {
@@ -479,7 +485,9 @@ func (client *AppServerClient) Shutdown(ctx context.Context) error {
 		return nil
 	}
 	waited := make(chan error, 1)
-	go func() { waited <- client.owner.Wait() }()
+	go func() {
+		waited <- client.owner.Wait()
+	}()
 	select {
 	case err := <-waited:
 		if err != nil {

@@ -73,7 +73,9 @@ func New(directories ...Directory) (*Source, error) {
 		seen[directory.Scope] = struct{}{}
 		configured[index] = Directory{Scope: directory.Scope, Path: filepath.Clean(directory.Path)}
 	}
-	sort.Slice(configured, func(i, j int) bool { return precedence(configured[i].Scope) < precedence(configured[j].Scope) })
+	sort.Slice(configured, func(i, j int) bool {
+		return precedence(configured[i].Scope) < precedence(configured[j].Scope)
+	})
 	return &Source{directories: configured}, nil
 }
 
@@ -118,7 +120,9 @@ func ReadDocument(path string) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		_ = file.Close()
+	}()
 	content, err := io.ReadAll(io.LimitReader(file, MaxDocumentSize+1))
 	if err != nil {
 		return nil, err

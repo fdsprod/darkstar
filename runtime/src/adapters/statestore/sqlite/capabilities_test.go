@@ -19,7 +19,9 @@ func TestCapabilityRegistryPersistsImmutableNamespacedRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	record := registryport.Record{
 		SchemaVersion: 1, ID: "cap_project_review_v1", Name: "project:review", Kind: registryport.KindSkill,
 		Class: registryport.ClassRegistered, DeclaredVersion: "1.0.0", Fingerprint: strings.Repeat("a", 64),
@@ -56,7 +58,9 @@ func TestCapabilityRegistryRejectsSameClassShadowing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	base := registryport.Record{SchemaVersion: 1, ID: "cap_a", Name: "project:review", Kind: registryport.KindSkill, Class: registryport.ClassRegistered, Fingerprint: strings.Repeat("a", 64), Source: registryport.Source{Type: "test", Locator: "a"}, Availability: registryport.AvailabilityAvailable, ObservedAt: time.Now().UTC()}
 	if _, _, err := database.RegisterCapability(ctx, base, "a"); err != nil {
 		t.Fatal(err)

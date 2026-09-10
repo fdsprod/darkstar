@@ -50,7 +50,9 @@ func TestConfiguredWorkflowsIncludeAndInstallShippedDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	catalog, err := workflow.NewCatalog(source, database)
 	if err != nil {
 		t.Fatal(err)

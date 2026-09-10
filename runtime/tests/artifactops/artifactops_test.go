@@ -327,7 +327,9 @@ func newIntegrationService(t *testing.T, ctx context.Context) (*artifactops.Serv
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	derivation, err := artifactderive.New(store, database, database, common.New(), commonimage.New())
 	if err != nil {
 		t.Fatal(err)

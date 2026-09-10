@@ -16,18 +16,53 @@ import (
 
 // Opt-in because this uses the locally authenticated provider and model usage.
 func TestLiveWorkspaceIntent(t *testing.T) {
- executable:=os.Getenv("DARKSTAR_CHAT_LIVE_CODEX");if executable==""{t.Skip("opt-in provider test")}
- s,store,events:=setup(t,workflowchat.Target{Kind:"new"})
- ctx,cancel:=context.WithTimeout(context.Background(),3*time.Minute);defer cancel()
- err:=(codex.WorkflowChat{Executable:executable}).Run(ctx,s,[]workflowchat.Message{{Role:"user",Text:"Create a workflow that creates an isolated worktree from HEAD on branch darkstar/{runId}, implements the connected work item there, and runs git diff --check in that same workspace before Done. Do not publish."}},s.Emit)
- if err!=nil{t.Fatal(err)}
- for _,event:=range *events{if event=="question"{t.Fatal("unnecessary question for explicit workspace request")}}
- draft,err:=store.Draft(ctx,s.Target.ID);if err!=nil{t.Fatal(err)}
- doc,err:=workflow.Decode(draft.Document);if err!=nil{t.Fatal(err)}
- found:=map[workflow.NodeType]bool{};for _,node:=range doc.Spec.Nodes{found[node.Type()]=true;if prepare,ok:=node.(workflow.WorkspacePrepareNode);ok{plan,yes:=prepare.Executor.Checkout.(workflow.NewWorktree);if !yes||plan.BaseRef!="HEAD"||plan.Branch!="darkstar/{runId}"{t.Fatalf("wrong preparation: %#v",prepare.Executor)}}}
- for _,kind:=range []workflow.NodeType{workflow.NodeWorkspacePrepare,workflow.NodeImplementation,workflow.NodeWorkspaceValidate}{if !found[kind]{t.Fatalf("missing %s",kind)}}
- report,err:=store.ValidateDraft(ctx,draft.ID,draft.Revision);if err!=nil||len(report.Findings)>0{t.Fatalf("invalid workflow: %#v %v",report,err)}
- library,err:=store.Library(ctx);if err!=nil||len(library.Versions)>0{t.Fatal("must not publish")}
+	executable := os.Getenv("DARKSTAR_CHAT_LIVE_CODEX")
+	if executable == "" {
+		t.Skip("opt-in provider test")
+	}
+	s, store, events := setup(t, workflowchat.Target{Kind: "new"})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	err := (codex.WorkflowChat{Executable: executable}).Run(ctx, s, []workflowchat.Message{{Role: "user", Text: "Create a workflow that creates an isolated worktree from HEAD on branch darkstar/{runId}, implements the connected work item there, and runs git diff --check in that same workspace before Done. Do not publish."}}, s.Emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range *events {
+		if event == "question" {
+			t.Fatal("unnecessary question for explicit workspace request")
+		}
+	}
+	draft, err := store.Draft(ctx, s.Target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := workflow.Decode(draft.Document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[workflow.NodeType]bool{}
+	for _, node := range doc.Spec.Nodes {
+		found[node.Type()] = true
+		if prepare, ok := node.(workflow.WorkspacePrepareNode); ok {
+			plan, yes := prepare.Executor.Checkout.(workflow.NewWorktree)
+			if !yes || plan.BaseRef != "HEAD" || plan.Branch != "darkstar/{runId}" {
+				t.Fatalf("wrong preparation: %#v", prepare.Executor)
+			}
+		}
+	}
+	for _, kind := range []workflow.NodeType{workflow.NodeWorkspacePrepare, workflow.NodeImplementation, workflow.NodeWorkspaceValidate} {
+		if !found[kind] {
+			t.Fatalf("missing %s", kind)
+		}
+	}
+	report, err := store.ValidateDraft(ctx, draft.ID, draft.Revision)
+	if err != nil || len(report.Findings) > 0 {
+		t.Fatalf("invalid workflow: %#v %v", report, err)
+	}
+	library, err := store.Library(ctx)
+	if err != nil || len(library.Versions) > 0 {
+		t.Fatal("must not publish")
+	}
 }
 
 func TestLiveWorkflowChat(t *testing.T) {
@@ -105,8 +140,19 @@ func TestLiveSingleShotIntent(t *testing.T) {
 	if err = json.Unmarshal(draft.Document, &authored); err != nil {
 		t.Fatal(err)
 	}
-	implementations:=0;for _,node:=range authored.Spec.Nodes{if implementation,ok:=node.(workflow.ImplementationNode);ok{implementations++;if implementation.Executor.WorkspaceInput==""{t.Fatal("Implementation missing explicit workspace")}}};if implementations!=1{t.Fatalf("expected one implementation step, got %d",implementations)}
-report, err := store.ValidateDraft(ctx, draft.ID, draft.Revision)
+	implementations := 0
+	for _, node := range authored.Spec.Nodes {
+		if implementation, ok := node.(workflow.ImplementationNode); ok {
+			implementations++
+			if implementation.Executor.WorkspaceInput == "" {
+				t.Fatal("Implementation missing explicit workspace")
+			}
+		}
+	}
+	if implementations != 1 {
+		t.Fatalf("expected one implementation step, got %d", implementations)
+	}
+	report, err := store.ValidateDraft(ctx, draft.ID, draft.Revision)
 	if err != nil || len(report.Findings) != 0 {
 		t.Fatalf("invalid workflow: %#v %v", report, err)
 	}

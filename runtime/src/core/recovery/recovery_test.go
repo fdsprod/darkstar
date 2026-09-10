@@ -118,7 +118,9 @@ type fakeStore struct {
 	appliedIDs []string
 }
 
-func (s *fakeStore) CheckIntegrity(context.Context) error { return nil }
+func (s *fakeStore) CheckIntegrity(context.Context) error {
+	return nil
+}
 
 func (s *fakeStore) RebuildProjections(context.Context) error {
 	s.rebuilt = true

@@ -328,7 +328,9 @@ func (manager *Manager) candidateTree(ctx context.Context, worktree repository.W
 	if removeErr := os.Remove(indexPath); removeErr != nil {
 		return "", nil, failure(ports.FailureUnavailable, "temporary candidate index cannot be initialized", true, nil)
 	}
-	defer func() { _ = os.Remove(indexPath) }()
+	defer func() {
+		_ = os.Remove(indexPath)
+	}()
 	environment := []string{"GIT_INDEX_FILE=" + indexPath}
 	if _, err := manager.runWith(ctx, worktree.Path, nil, environment, "read-tree", parent); err != nil {
 		return "", nil, failure(ports.FailureUnavailable, "candidate parent tree cannot be loaded", true, nil)
@@ -488,7 +490,9 @@ func (manager *Manager) worktrees(ctx context.Context, identity repository.Ident
 		}
 		values = append(values, value)
 	}
-	sort.Slice(values, func(i, j int) bool { return normalizedPath(values[i].Path) < normalizedPath(values[j].Path) })
+	sort.Slice(values, func(i, j int) bool {
+		return normalizedPath(values[i].Path) < normalizedPath(values[j].Path)
+	})
 	return values, nil
 }
 
@@ -791,7 +795,9 @@ func canonicalProspectivePath(path string) (string, error) {
 	return filepath.Clean(filepath.Join(canonicalAncestor, remainder)), nil
 }
 
-func pathsEqual(left, right string) bool { return normalizedPath(left) == normalizedPath(right) }
+func pathsEqual(left, right string) bool {
+	return normalizedPath(left) == normalizedPath(right)
+}
 
 func normalizedPath(path string) string {
 	path = filepath.Clean(path)

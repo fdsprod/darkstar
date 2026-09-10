@@ -97,7 +97,9 @@ func (service *Service) Derive(ctx context.Context, request Request) (Result, er
 	if err != nil {
 		return Result{}, fmt.Errorf("open source artifact: %w", err)
 	}
-	defer func() { _ = content.Close() }()
+	defer func() {
+		_ = content.Close()
+	}()
 	limits := effectiveLimits(request.Limits, service.policy.ProcessorLimits())
 	sink := &registrySink{
 		store: service.store, registry: service.representations, source: request.Artifact,

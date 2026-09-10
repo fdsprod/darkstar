@@ -99,7 +99,9 @@ func validateMigrationSet(migrations []migration) ([]migration, error) {
 		return nil, errors.New("no SQLite migrations are embedded")
 	}
 	migrations = append([]migration(nil), migrations...)
-	sort.Slice(migrations, func(i, j int) bool { return migrations[i].Version < migrations[j].Version })
+	sort.Slice(migrations, func(i, j int) bool {
+		return migrations[i].Version < migrations[j].Version
+	})
 	for index, item := range migrations {
 		if item.Version <= 0 || item.Name == "" || item.SQL == "" || item.Checksum == "" {
 			return nil, fmt.Errorf("migration at index %d is incomplete", index)

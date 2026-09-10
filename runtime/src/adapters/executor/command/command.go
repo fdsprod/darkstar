@@ -71,33 +71,45 @@ type Completion interface {
 
 type Succeeded struct{}
 
-func (Succeeded) Classification() Classification { return ClassificationSucceeded }
-func (Succeeded) isCompletion()                  {}
+func (Succeeded) Classification() Classification {
+	return ClassificationSucceeded
+}
+func (Succeeded) isCompletion() {}
 
 type Failed struct{ ExitCode int }
 
-func (Failed) Classification() Classification { return ClassificationFailed }
-func (Failed) isCompletion()                  {}
+func (Failed) Classification() Classification {
+	return ClassificationFailed
+}
+func (Failed) isCompletion() {}
 
 type TimedOut struct{}
 
-func (TimedOut) Classification() Classification { return ClassificationTimedOut }
-func (TimedOut) isCompletion()                  {}
+func (TimedOut) Classification() Classification {
+	return ClassificationTimedOut
+}
+func (TimedOut) isCompletion() {}
 
 type Cancelled struct{}
 
-func (Cancelled) Classification() Classification { return ClassificationCancelled }
-func (Cancelled) isCompletion()                  {}
+func (Cancelled) Classification() Classification {
+	return ClassificationCancelled
+}
+func (Cancelled) isCompletion() {}
 
 type OutputLimited struct{}
 
-func (OutputLimited) Classification() Classification { return ClassificationOutputLimited }
-func (OutputLimited) isCompletion()                  {}
+func (OutputLimited) Classification() Classification {
+	return ClassificationOutputLimited
+}
+func (OutputLimited) isCompletion() {}
 
 type Uncertain struct{}
 
-func (Uncertain) Classification() Classification { return ClassificationUncertain }
-func (Uncertain) isCompletion()                  {}
+func (Uncertain) Classification() Classification {
+	return ClassificationUncertain
+}
+func (Uncertain) isCompletion() {}
 
 // EvidenceRecord is one immutable command observation to persist.
 type EvidenceRecord struct {
@@ -150,7 +162,9 @@ func New(definition Definition, policy Policy, recorder EvidenceRecorder) (*Adap
 	return &Adapter{definition: definition, policy: resolved, recorder: recorder}, nil
 }
 
-func (*Adapter) Kind() string { return Kind }
+func (*Adapter) Kind() string {
+	return Kind
+}
 
 func (adapter *Adapter) Start(ctx context.Context, request executorport.Request) (executorport.Execution, error) {
 	if adapter == nil || adapter.recorder == nil {
@@ -250,8 +264,12 @@ type cancelRequest struct {
 	response chan executorport.CancelResult
 }
 
-func (execution *processExecution) Reference() executorport.Reference { return execution.reference }
-func (execution *processExecution) Events() executorport.Events       { return execution.events }
+func (execution *processExecution) Reference() executorport.Reference {
+	return execution.reference
+}
+func (execution *processExecution) Events() executorport.Events {
+	return execution.events
+}
 
 func (execution *processExecution) Wait(ctx context.Context) (executorport.Result, error) {
 	outcome, err := execution.waitOutcome(ctx)
@@ -376,7 +394,9 @@ func (stream *eventStream) Receive() (executorport.Event, error) {
 	return event, nil
 }
 
-func (*eventStream) Close() error { return nil }
+func (*eventStream) Close() error {
+	return nil
+}
 
 func start(ctx context.Context, attemptID, workspace string, timeout time.Duration, definition Definition, policy resolvedPolicy, recorder EvidenceRecorder, stdin []byte) (executorport.Execution, error) {
 	if err := ctx.Err(); err != nil {
@@ -472,7 +492,9 @@ func prepare(workspace string, definition Definition, policy resolvedPolicy) (pr
 
 func (execution *processExecution) observe(ctx context.Context, timeout time.Duration, owner *processOwner, prepared preparedCommand, stdout, stderr *boundedCapture, recorder EvidenceRecorder, events chan<- executorport.Event, startedAt time.Time) {
 	wait := make(chan error, 1)
-	go func() { wait <- owner.Wait() }()
+	go func() {
+		wait <- owner.Wait()
+	}()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
@@ -644,7 +666,9 @@ func (capture *boundedCapture) Write(data []byte) (int, error) {
 	}
 	if len(data) > remaining {
 		capture.truncated = true
-		capture.once.Do(func() { close(capture.overflow) })
+		capture.once.Do(func() {
+			close(capture.overflow)
+		})
 	}
 	return len(data), nil
 }

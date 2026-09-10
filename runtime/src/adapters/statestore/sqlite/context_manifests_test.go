@@ -25,7 +25,9 @@ func TestAttemptContextManifestSelectsDeterministicallyAndFreezes(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	runID, nodeID, attemptID := "run_context", "design", "attempt_context"
 	seedManifestAttempt(t, ctx, database, runID, nodeID, attemptID)
 	when := time.Date(2026, 9, 1, 17, 0, 0, 0, time.UTC)
@@ -75,7 +77,9 @@ func TestAttemptContextManifestFailsClosedForRequiredBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	seedManifestAttempt(t, ctx, database, "run_required", "node", "attempt_required")
 	representation := registerManifestRepresentation(t, ctx, database, "artifact_REQUIRED", "representation_required_budget", 18, time.Now().UTC())
 	service, _ := contextcore.New(database, database)

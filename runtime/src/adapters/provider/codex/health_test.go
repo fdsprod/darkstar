@@ -34,7 +34,9 @@ func (script *healthProbeScript) factory(ctx context.Context) (*AppServerClient,
 	if err != nil {
 		return nil, InitializeResult{}, err
 	}
-	go func() { script.done <- script.run(serverReads, serverWrites) }()
+	go func() {
+		script.done <- script.run(serverReads, serverWrites)
+	}()
 	initialized, err := client.Initialize(ctx)
 	if err != nil {
 		return nil, InitializeResult{}, err
@@ -43,8 +45,12 @@ func (script *healthProbeScript) factory(ctx context.Context) (*AppServerClient,
 }
 
 func (script *healthProbeScript) run(reader *io.PipeReader, writer *io.PipeWriter) error {
-	defer func() { _ = reader.Close() }()
-	defer func() { _ = writer.Close() }()
+	defer func() {
+		_ = reader.Close()
+	}()
+	defer func() {
+		_ = writer.Close()
+	}()
 	scanner := bufio.NewScanner(reader)
 	receive := func(method string) (wireMessage, error) {
 		if !scanner.Scan() {

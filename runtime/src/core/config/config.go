@@ -54,10 +54,14 @@ type Source struct {
 }
 
 // Scope returns the precedence scope that supplied the value.
-func (s Source) Scope() Scope { return s.scope }
+func (s Source) Scope() Scope {
+	return s.scope
+}
 
 // Reference returns the source filename or override identity.
-func (s Source) Reference() string { return s.reference }
+func (s Source) Reference() string {
+	return s.reference
+}
 
 // MarshalJSON exposes source attribution without making Source mutable.
 func (s Source) MarshalJSON() ([]byte, error) {
@@ -103,7 +107,9 @@ func CLIOverride(values map[string]any) (Layer, error) {
 }
 
 // Source returns the immutable source for this layer.
-func (l Layer) Source() Source { return l.source }
+func (l Layer) Source() Source {
+	return l.source
+}
 
 func fileLayer(scope Scope, path string, values map[string]any) (Layer, error) {
 	if !filepath.IsAbs(path) {
@@ -235,7 +241,9 @@ func NewEffectiveReport(projectRoot string, files []File, effective Effective) (
 		}
 		report.Entries = append(report.Entries, Entry{Path: pointer, Value: display, Source: source})
 	}
-	sort.Slice(report.Entries, func(i, j int) bool { return report.Entries[i].Path < report.Entries[j].Path })
+	sort.Slice(report.Entries, func(i, j int) bool {
+		return report.Entries[i].Path < report.Entries[j].Path
+	})
 	return report, nil
 }
 
@@ -246,7 +254,9 @@ func (v ResolvedValue) Value() any {
 }
 
 // Source returns the layer that supplied the resolved value.
-func (v ResolvedValue) Source() Source { return v.source }
+func (v ResolvedValue) Source() Source {
+	return v.source
+}
 
 // Resolve merges the required shipped defaults with optional higher-precedence
 // layers. Call order is irrelevant; duplicate scopes are rejected.

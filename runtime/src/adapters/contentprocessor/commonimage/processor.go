@@ -48,7 +48,9 @@ type Processor struct {
 
 var _ contentprocessor.Processor = Processor{}
 
-func New() Processor { return NewWithConfig(Config{}) }
+func New() Processor {
+	return NewWithConfig(Config{})
+}
 
 func NewWithConfig(config Config) Processor {
 	mediaTypes := append([]string(nil), defaultMediaTypes...)
@@ -160,7 +162,9 @@ func imageMetadata(width, height int, format, mediaType string) map[string]strin
 	}
 }
 
-func widthString(value int) string { return strconv.Itoa(value) }
+func widthString(value int) string {
+	return strconv.Itoa(value)
+}
 
 func pixelCount(width, height int) (int64, bool) {
 	if width <= 0 || height <= 0 {

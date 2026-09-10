@@ -35,7 +35,9 @@ type Processor struct{}
 
 var _ contentprocessor.Processor = Processor{}
 
-func New() Processor { return Processor{} }
+func New() Processor {
+	return Processor{}
+}
 
 func (Processor) Descriptor() contentprocessor.Descriptor {
 	return contentprocessor.Descriptor{Name: Name, Version: Version, MediaTypes: append([]string(nil), mediaTypes...)}

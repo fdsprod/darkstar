@@ -43,7 +43,9 @@ func TestRunReplacesStaleStateAndCleansOwnedState(t *testing.T) {
 	writeTestState(t, manager, testState(101))
 	host.inspection = ProcessAbsent
 	host.current = testState(202).Process
-	manager.newInstanceID = func() (string, error) { return "22222222222222222222222222222222", nil }
+	manager.newInstanceID = func() (string, error) {
+		return "22222222222222222222222222222222", nil
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var ready State
@@ -152,7 +154,9 @@ func TestStopUsesGracefulSignalBeforeTermination(t *testing.T) {
 	state := testState(101)
 	writeTestState(t, manager, state)
 	host.inspection = ProcessIdentityMatches
-	host.onSignal = func() { host.inspection = ProcessAbsent }
+	host.onSignal = func() {
+		host.inspection = ProcessAbsent
+	}
 
 	result, err := manager.Stop(context.Background())
 	if err != nil {
@@ -259,12 +263,18 @@ func (h *fakeHost) AcquireLock(string) (Lock, error) {
 		return nil, ErrLockHeld
 	}
 	h.lockHeld = true
-	return fakeLock{close: func() { h.lockHeld = false }}, nil
+	return fakeLock{close: func() {
+		h.lockHeld = false
+	}}, nil
 }
 
-func (h *fakeHost) CreateStopEvent(string) (StopEvent, error) { return fakeStopEvent{}, nil }
+func (h *fakeHost) CreateStopEvent(string) (StopEvent, error) {
+	return fakeStopEvent{}, nil
+}
 
-func (h *fakeHost) CurrentProcessIdentity() (ProcessIdentity, error) { return h.current, nil }
+func (h *fakeHost) CurrentProcessIdentity() (ProcessIdentity, error) {
+	return h.current, nil
+}
 
 func (h *fakeHost) InspectProcess(ProcessIdentity) (ProcessInspection, error) {
 	return h.inspection, nil
@@ -308,7 +318,9 @@ func (fakeStopEvent) Wait(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func (fakeStopEvent) Close() error { return nil }
+func (fakeStopEvent) Close() error {
+	return nil
+}
 
 type fakeRuntimeService struct {
 	startCalls int

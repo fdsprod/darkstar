@@ -148,7 +148,9 @@ func TestAppServerClientCorrelatesCallsAndSeparatesRequestsFromNotifications(t *
 		t.Fatalf("second incoming message = %T, want request", secondIncoming)
 	}
 	responded := make(chan error, 1)
-	go func() { responded <- client.Respond(request.ID, map[string]any{"answers": map[string]any{}}) }()
+	go func() {
+		responded <- client.Respond(request.ID, map[string]any{"answers": map[string]any{}})
+	}()
 	response := server.receive(t)
 	if string(response.ID) != "0" || len(response.Result) == 0 || response.Method != "" {
 		t.Fatalf("server request response = %#v", response)
@@ -210,7 +212,9 @@ func TestAppServerClientTracksThreadsTurnsAndUnsubscribesBeforeShutdown(t *testi
 	}
 
 	shutdownDone := make(chan error, 1)
-	go func() { shutdownDone <- client.Shutdown(context.Background()) }()
+	go func() {
+		shutdownDone <- client.Shutdown(context.Background())
+	}()
 	unsubscribe := server.receive(t)
 	if unsubscribe.Method != "thread/unsubscribe" || !strings.Contains(string(unsubscribe.Params), "thread-1") {
 		t.Fatalf("shutdown message = %#v", unsubscribe)
@@ -255,7 +259,9 @@ func TestAppServerClientResumesThreadWithTurnSnapshot(t *testing.T) {
 	}
 
 	shutdownDone := make(chan error, 1)
-	go func() { shutdownDone <- client.Shutdown(context.Background()) }()
+	go func() {
+		shutdownDone <- client.Shutdown(context.Background())
+	}()
 	unsubscribe := server.receive(t)
 	server.send(t, map[string]any{"id": json.RawMessage(unsubscribe.ID), "result": map[string]string{"status": "unsubscribed"}})
 	if err := <-shutdownDone; err != nil {

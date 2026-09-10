@@ -83,8 +83,12 @@ func (candidate ValidatedCandidate) Evidence() []executorport.Evidence {
 	return append([]executorport.Evidence(nil), candidate.evidence...)
 }
 
-func (candidate ValidatedCandidate) Digest() string  { return candidate.digest }
-func (candidate ValidatedCandidate) Profile() string { return candidate.profile }
+func (candidate ValidatedCandidate) Digest() string {
+	return candidate.digest
+}
+func (candidate ValidatedCandidate) Profile() string {
+	return candidate.profile
+}
 
 // Validate freezes the worktree candidate first, then runs the configured
 // deterministic validator against that exact tree description and workspace.

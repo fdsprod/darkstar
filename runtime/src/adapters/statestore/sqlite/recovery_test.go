@@ -23,7 +23,9 @@ func TestPendingRecoveryAndAtomicDecisions(t *testing.T) {
 		_ = database.Close()
 	}()
 	now := time.Date(2026, 9, 1, 2, 0, 0, 0, time.UTC)
-	database.now = func() time.Time { return now }
+	database.now = func() time.Time {
+		return now
+	}
 
 	lease, err := database.AcquireLease(ctx, statestore.AcquireLeaseRequest{
 		LeaseID: "lease_process", ScopeKind: statestore.LeaseScopeAttempt, ScopeID: "attempt_scope",
@@ -117,7 +119,9 @@ func TestReconcileRequiredFencesAmbiguousSubjects(t *testing.T) {
 		_ = database.Close()
 	}()
 	now := time.Date(2026, 9, 1, 2, 0, 0, 0, time.UTC)
-	database.now = func() time.Time { return now }
+	database.now = func() time.Time {
+		return now
+	}
 	_, err = database.AcquireLease(ctx, statestore.AcquireLeaseRequest{
 		LeaseID: "lease_repo", ScopeKind: statestore.LeaseScopeRepository, ScopeID: "repo_01",
 		HolderAttemptID: "attempt_01", DaemonInstanceID: "daemon_old", HostBootID: "boot_01", Duration: 30 * time.Second,

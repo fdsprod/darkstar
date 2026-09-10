@@ -32,7 +32,9 @@ func checkpointFixture(t *testing.T) (*Service, *sqlite.Database, string, string
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		db.Close()
+	})
 	runID, visitID, attemptID := randomID("run_"), randomID("visit_"), randomID("attempt_")
 	workID, projectID := randomID("work_"), randomID("project_")
 	digest := strings.Repeat("a", 64)

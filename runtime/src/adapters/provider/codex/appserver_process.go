@@ -48,7 +48,9 @@ func StartAppServer(ctx context.Context, executable string, options AppServerOpt
 		_ = stderr.Close()
 		return nil, InitializeResult{}, fmt.Errorf("own Codex App Server process tree: %w", err)
 	}
-	go func() { _, _ = io.Copy(io.Discard, stderr) }()
+	go func() {
+		_, _ = io.Copy(io.Discard, stderr)
+	}()
 
 	client, err := newAppServerClient(stdin, stdout, owner, options)
 	if err != nil {

@@ -1,6 +1,6 @@
 //go:build windows
 
-package codex
+package process
 
 import (
 	"errors"
@@ -13,25 +13,25 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-type commandOwner struct {
+type Owner struct {
 	command *exec.Cmd
 	job     windows.Handle
 	once    sync.Once
 }
 
-func configureAppServerProcess(command *exec.Cmd) {
+func PrepareOwned(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow: true, CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED | windows.CREATE_NO_WINDOW,
 	}
 }
 
-func configureProbeProcess(command *exec.Cmd) {
+func PrepareProbe(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow: true, CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW,
 	}
 }
 
-func newCommandOwner(command *exec.Cmd) (*commandOwner, error) {
+func Own(command *exec.Cmd) (*Owner, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create kill-on-close job: %w", err)
@@ -52,7 +52,9 @@ func newCommandOwner(command *exec.Cmd) (*commandOwner, error) {
 		_ = windows.CloseHandle(job)
 		return nil, fmt.Errorf("open process for job assignment: %w", err)
 	}
-	defer func() { _ = windows.CloseHandle(process) }()
+	defer func() {
+		_ = windows.CloseHandle(process)
+	}()
 	if err := windows.AssignProcessToJobObject(job, process); err != nil {
 		_ = windows.CloseHandle(job)
 		return nil, fmt.Errorf("assign process to kill-on-close job: %w", err)
@@ -61,7 +63,7 @@ func newCommandOwner(command *exec.Cmd) (*commandOwner, error) {
 		_ = windows.CloseHandle(job)
 		return nil, fmt.Errorf("resume job-owned process: %w", err)
 	}
-	return &commandOwner{command: command, job: job}, nil
+	return &Owner{command: command, job: job}, nil
 }
 
 func resumeProcess(pid int) error {
@@ -69,7 +71,9 @@ func resumeProcess(pid int) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = windows.CloseHandle(snapshot) }()
+	defer func() {
+		_ = windows.CloseHandle(snapshot)
+	}()
 	entry := windows.ThreadEntry32{Size: uint32(unsafe.Sizeof(windows.ThreadEntry32{}))}
 	if err := windows.Thread32First(snapshot, &entry); err != nil {
 		return err
@@ -101,13 +105,13 @@ func resumeProcess(pid int) error {
 	return nil
 }
 
-func (owner *commandOwner) Wait() error {
+func (owner *Owner) Wait() error {
 	err := owner.command.Wait()
 	owner.closeJob()
 	return err
 }
 
-func (owner *commandOwner) Kill() error {
+func (owner *Owner) Kill() error {
 	err := windows.TerminateJobObject(owner.job, 1)
 	owner.closeJob()
 	if err == nil {
@@ -116,8 +120,12 @@ func (owner *commandOwner) Kill() error {
 	return err
 }
 
-func (owner *commandOwner) PID() int { return owner.command.Process.Pid }
+func (owner *Owner) PID() int {
+	return owner.command.Process.Pid
+}
 
-func (owner *commandOwner) closeJob() {
-	owner.once.Do(func() { _ = windows.CloseHandle(owner.job) })
+func (owner *Owner) closeJob() {
+	owner.once.Do(func() {
+		_ = windows.CloseHandle(owner.job)
+	})
 }

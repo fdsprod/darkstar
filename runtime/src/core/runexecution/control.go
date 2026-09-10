@@ -69,7 +69,9 @@ func (e *ControlConflictError) Error() string {
 	return fmt.Sprintf("%v for %s: expected %d, current %d", ErrControlConflict, e.RunID, e.Expected, e.Current)
 }
 
-func (e *ControlConflictError) Unwrap() error { return ErrControlConflict }
+func (e *ControlConflictError) Unwrap() error {
+	return ErrControlConflict
+}
 
 type controlCommandResponse struct {
 	Result  *statestore.RunProjection `json:"result,omitempty"`

@@ -167,12 +167,18 @@ func TestImmutableAssessmentRejectsEveryDecisionContentChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, mutate := range map[string]func(*preparation.Assessment){
-		"route": func(a *preparation.Assessment) { a.Route.Entry = "review" },
+		"route": func(a *preparation.Assessment) {
+			a.Route.Entry = "review"
+		},
 		"question": func(a *preparation.Assessment) {
 			a.Questions = []routeadvisor.Question{{ID: "new", Prompt: "Unrecorded question"}}
 		},
-		"confirmation": func(a *preparation.Assessment) { a.ConfirmationReasons = []string{"Unrecorded authority"} },
-		"rationale":    func(a *preparation.Assessment) { a.Rationale = "Unrecorded reason" },
+		"confirmation": func(a *preparation.Assessment) {
+			a.ConfirmationReasons = []string{"Unrecorded authority"}
+		},
+		"rationale": func(a *preparation.Assessment) {
+			a.Rationale = "Unrecorded reason"
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			encoded, err := json.Marshal(original)
@@ -212,9 +218,15 @@ func TestAssessmentBindsEvidencePolicyAndWorkflowIdentity(t *testing.T) {
 	}
 	original := assess(base)
 	for name, mutate := range map[string]func(*preparation.Input){
-		"policy":   func(i *preparation.Input) { i.Policy.Version = "review-policy-v2" },
-		"evidence": func(i *preparation.Input) { i.Evidence[0].Digest = strings.Repeat("c", 64) },
-		"workflow": func(i *preparation.Input) { i.WorkflowDigest = strings.Repeat("d", 64) },
+		"policy": func(i *preparation.Input) {
+			i.Policy.Version = "review-policy-v2"
+		},
+		"evidence": func(i *preparation.Input) {
+			i.Evidence[0].Digest = strings.Repeat("c", 64)
+		},
+		"workflow": func(i *preparation.Input) {
+			i.WorkflowDigest = strings.Repeat("d", 64)
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			changed := base

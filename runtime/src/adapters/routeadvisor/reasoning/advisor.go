@@ -56,7 +56,9 @@ func (a Advisor) Assess(ctx context.Context, input routeadvisor.Request) (routea
 	if err != nil {
 		return routeadvisor.Advice{}, err
 	}
-	defer func() { _ = stream.Close() }()
+	defer func() {
+		_ = stream.Close()
+	}()
 	for {
 		event, receiveErr := stream.Receive()
 		if receiveErr == io.EOF {

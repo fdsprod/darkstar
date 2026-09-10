@@ -52,6 +52,11 @@ func (c *ProviderCatalog) Provider(ctx context.Context, request ProviderRequest)
 	if !exists {
 		return nil, fmt.Errorf("unsupported durable provider %q", request.Provider)
 	}
+	if request.Ref != nil {
+		if ref, ok := c.pins[request.Provider]; !ok || ref != *request.Ref {
+			return nil, fmt.Errorf("EXTENSION_UNAVAILABLE: exact provider implementation is not registered")
+		}
+	}
 	return f.Provider(ctx, request)
 }
 

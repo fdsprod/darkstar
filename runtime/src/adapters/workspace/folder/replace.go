@@ -105,7 +105,10 @@ func (h *handle) ReplaceFile(ctx context.Context, area port.Area, name, expected
 	if err != nil {
 		return err
 	}
-	defer func() { file.Close(); _ = parent.Remove(temporary) }()
+	defer func() {
+		file.Close()
+		_ = parent.Remove(temporary)
+	}()
 	if _, err := file.Write(data); err != nil {
 		return err
 	}

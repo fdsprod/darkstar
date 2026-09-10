@@ -389,4 +389,6 @@ func pendingEvent(kind string, aggregateType statestore.AggregateType, aggregate
 		Actor: statestore.Actor{Type: statestore.ActorUser, ID: "local-user"}, Data: encoded, Metadata: json.RawMessage(`{}`)}
 }
 
-func digest(value string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(value))) }
+func digest(value string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
+}

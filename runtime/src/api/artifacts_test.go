@@ -53,7 +53,9 @@ func TestArtifactIngestRouteRequiresIdempotencyAndReturnsLocation(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusCreated)
 	}
@@ -71,7 +73,9 @@ func TestArtifactListRoutePassesExactTargetFilter(t *testing.T) {
 	defer closeTestServer(t, server)
 
 	response := get(t, endpoint.BaseURL()+"/api/v1/artifacts?targetKind=run&targetId=run_one", endpoint.AuthorizationHeader())
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
@@ -87,7 +91,9 @@ func TestArtifactDiffRoutePassesExactSelectionAndReturnsUnavailableAsOK(t *testi
 	server, endpoint := startArtifactTestServer(t, service)
 	defer closeTestServer(t, server)
 	response := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one/diff?from=2&to=4&fromRepresentationId=representation_a&toRepresentationId=representation_b&limit=17&cursor=abc", endpoint.AuthorizationHeader())
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
@@ -97,11 +103,15 @@ func TestArtifactDiffRoutePassesExactSelectionAndReturnsUnavailableAsOK(t *testi
 		t.Fatalf("result/input = %#v / %#v", result, service.diffInput)
 	}
 	invalid := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one/diff?from=2&to=4&unknown=true", endpoint.AuthorizationHeader())
-	defer func() { _ = invalid.Body.Close() }()
+	defer func() {
+		_ = invalid.Body.Close()
+	}()
 	assertAPIError(t, invalid, http.StatusBadRequest, "VALIDATION_FAILED")
 	service.diffErr = artifactops.ErrDiffStorage
 	failed := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one/diff?from=2&to=4", endpoint.AuthorizationHeader())
-	defer func() { _ = failed.Body.Close() }()
+	defer func() {
+		_ = failed.Body.Close()
+	}()
 	assertAPIError(t, failed, http.StatusInternalServerError, "ARTIFACT_DIFF_STORAGE_FAILED")
 }
 
@@ -125,7 +135,9 @@ func TestArtifactWireResponsePreservesExactNestedRepresentationAndProvenance(t *
 	defer closeTestServer(t, server)
 
 	response := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one?version=2", endpoint.AuthorizationHeader())
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
@@ -161,7 +173,9 @@ func TestArtifactContentRoutesUseSafeAuthenticatedHeaders(t *testing.T) {
 	_ = unauthorized.Body.Close()
 
 	original := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_one/content?version=1", endpoint.AuthorizationHeader())
-	defer func() { _ = original.Body.Close() }()
+	defer func() {
+		_ = original.Body.Close()
+	}()
 	content, err := io.ReadAll(original.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +197,9 @@ func TestArtifactContentRoutesUseSafeAuthenticatedHeaders(t *testing.T) {
 	}
 
 	preview := get(t, endpoint.BaseURL()+"/api/v1/representations/representation_preview/content", endpoint.AuthorizationHeader())
-	defer func() { _ = preview.Body.Close() }()
+	defer func() {
+		_ = preview.Body.Close()
+	}()
 	previewContent, err := io.ReadAll(preview.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +212,9 @@ func TestArtifactContentRoutesUseSafeAuthenticatedHeaders(t *testing.T) {
 	service.representationMeta.Size = int64(len(service.representationBytes))
 	service.representationMeta.MediaType = "text/html"
 	unsafePreview := get(t, endpoint.BaseURL()+"/api/v1/representations/representation_preview/content", endpoint.AuthorizationHeader())
-	defer func() { _ = unsafePreview.Body.Close() }()
+	defer func() {
+		_ = unsafePreview.Body.Close()
+	}()
 	if unsafePreview.StatusCode != http.StatusOK || unsafePreview.Header.Get("Content-Type") != "application/octet-stream" || !strings.HasPrefix(unsafePreview.Header.Get("Content-Disposition"), "attachment;") {
 		t.Fatalf("unsafe preview headers = %d %#v", unsafePreview.StatusCode, unsafePreview.Header)
 	}
@@ -210,7 +228,9 @@ func TestArtifactContentRoutesUseSafeAuthenticatedHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = headResponse.Body.Close() }()
+	defer func() {
+		_ = headResponse.Body.Close()
+	}()
 	headBody, err := io.ReadAll(headResponse.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +246,9 @@ func TestWithheldRepresentationContentFailsClosed(t *testing.T) {
 	defer closeTestServer(t, server)
 
 	response := get(t, endpoint.BaseURL()+"/api/v1/representations/representation_secret/content", endpoint.AuthorizationHeader())
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	assertAPIError(t, response, http.StatusForbidden, "ARTIFACT_CONTENT_WITHHELD")
 }
 

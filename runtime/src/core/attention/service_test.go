@@ -211,7 +211,9 @@ func TestDecideResolvesAuthoritativeControlWithExactBinding(t *testing.T) {
 		events:          map[string]statestore.Event{},
 	}
 	service, _ := New(source)
-	service.now = func() time.Time { return when }
+	service.now = func() time.Time {
+		return when
+	}
 	request := DecisionRequest{Kind: KindWorkflowControl, ID: "approval_control", ExpectedResourceVersion: 3, Action: DecisionDeny, ScopeDigest: scope, PolicyDigest: policy, Comment: "Unsafe operation.", IdempotencyKey: "deny-control", Actor: statestore.Actor{Type: statestore.ActorUser, ID: "operator"}}
 	resolution, err := service.Decide(context.Background(), request)
 	if err != nil {

@@ -43,8 +43,12 @@ type decodePathError struct {
 	cause    error
 }
 
-func (e *decodePathError) Error() string { return e.cause.Error() }
-func (e *decodePathError) Unwrap() error { return e.cause }
+func (e *decodePathError) Error() string {
+	return e.cause.Error()
+}
+func (e *decodePathError) Unwrap() error {
+	return e.cause
+}
 
 func atDecodePath(segment string, err error) error {
 	var located *decodePathError
@@ -75,8 +79,12 @@ type DecodeError struct {
 	cause    error
 }
 
-func (e *DecodeError) Error() string { return "decode workflow: " + e.Message }
-func (e *DecodeError) Unwrap() error { return e.cause }
+func (e *DecodeError) Error() string {
+	return "decode workflow: " + e.Message
+}
+func (e *DecodeError) Unwrap() error {
+	return e.cause
+}
 
 func decodeLocationFromMessage(message string) string {
 	parts := strings.Split(message, ":")

@@ -42,7 +42,9 @@ func newFixture(t *testing.T) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		db.Close()
+	})
 	derive, err := artifactderive.New(store, db, db, common.New())
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +66,9 @@ func newFixture(t *testing.T) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { manager.Close() })
+	t.Cleanup(func() {
+		manager.Close()
+	})
 	return fixture{manager: manager, artifacts: artifacts, database: db, workspaceRoot: directory}
 }
 
@@ -219,5 +223,33 @@ func TestHostBindsWorkspaceAndPublicationOwners(t *testing.T) {
 	}
 	if _, err := s.Call(context.Background(), "workspace.publish_artifact", json.RawMessage(`{"path":"private.md","mediaType":"text/markdown","key":"another-key","artifactId":"selected-by-plugin"}`)); err == nil {
 		t.Fatal("plugin selected artifact identity")
+	}
+}
+
+func TestStagedCorrectionThroughWorkspaceAPIPreservesPublishedArtifact(t *testing.T) {
+	f := newFixture(t)
+	s := f.service(t, "work_one", "attempt_one")
+	stage(t, s, "draft.md", "# First\n")
+	first := publish(t, s, "draft.md", "first-revision")
+	read := call(t, s, "workspace.read", map[string]string{"area": "staged", "path": "draft.md"})
+	var snapshot struct {
+		Digest string `json:"digest"`
+	}
+	if err := json.Unmarshal(read, &snapshot); err != nil || snapshot.Digest == "" {
+		t.Fatalf("workspace snapshot omitted revision: %s: %v", read, err)
+	}
+	call(t, s, "workspace.write", map[string]any{
+		"area": "staged", "path": "draft.md", "expectedDigest": snapshot.Digest,
+		"content": map[string]string{"encoding": "utf8", "text": "# Corrected\n"},
+	})
+	second := publish(t, s, "draft.md", "corrected-revision")
+	if first.Artifact == second.Artifact || first.Digest == second.Digest {
+		t.Fatal("corrected publication reused the original revision")
+	}
+	if content := original(t, f, first.Artifact); content != "# First\n" {
+		t.Fatalf("correction changed published original: %q", content)
+	}
+	if content := original(t, f, second.Artifact); content != "# Corrected\n" {
+		t.Fatalf("corrected artifact contains stale bytes: %q", content)
 	}
 }

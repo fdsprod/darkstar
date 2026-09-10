@@ -21,7 +21,9 @@ func TestProjectAndWorkAPICommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	service, _ := workmanagement.New(database)
 	server, err := NewServer(t.TempDir())
 	if err != nil {

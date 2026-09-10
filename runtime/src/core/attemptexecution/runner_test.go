@@ -247,7 +247,9 @@ type fakeExecutor struct {
 	resume    executor.ResumeRequest
 }
 
-func (*fakeExecutor) Kind() string { return "fake" }
+func (*fakeExecutor) Kind() string {
+	return "fake"
+}
 
 func (fake *fakeExecutor) Start(_ context.Context, request executor.Request) (executor.Execution, error) {
 	*fake.trace = append(*fake.trace, "executor.start")
@@ -269,8 +271,12 @@ type fakeExecution struct {
 	waitErr   error
 }
 
-func (fake *fakeExecution) Reference() executor.Reference { return fake.reference }
-func (fake *fakeExecution) Events() executor.Events       { return fake.events }
+func (fake *fakeExecution) Reference() executor.Reference {
+	return fake.reference
+}
+func (fake *fakeExecution) Events() executor.Events {
+	return fake.events
+}
 func (fake *fakeExecution) Wait(context.Context) (executor.Result, error) {
 	*fake.trace = append(*fake.trace, "execution.wait")
 	return fake.result, fake.waitErr

@@ -19,7 +19,9 @@ func TestReadinessAssessmentPersistsQueriesAndRebuilds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = database.Close() }()
+	defer func() {
+		_ = database.Close()
+	}()
 	assessmentID := "assessment_01K3Z1D0000000000000000000"
 	runID := "run_01K3Z1D0000000000000000000"
 	digest := strings.Repeat("a", 64)

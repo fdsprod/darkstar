@@ -14,7 +14,9 @@ func TestSteerBindsToActiveTurnAndRequiresAcknowledgement(t *testing.T) {
 	close(ready)
 	adapter := &Adapter{attempts: map[string]*codexAttempt{"attempt": {handle: handle, client: client, ready: ready}}}
 	done := make(chan error, 1)
-	go func() { done <- adapter.Steer(t.Context(), handle, "message-1", "Document Windows.") }()
+	go func() {
+		done <- adapter.Steer(t.Context(), handle, "message-1", "Document Windows.")
+	}()
 	request := server.receive(t)
 	var params map[string]json.RawMessage
 	if err := json.Unmarshal(request.Params, &params); err != nil {

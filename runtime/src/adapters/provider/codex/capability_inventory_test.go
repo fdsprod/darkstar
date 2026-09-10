@@ -22,7 +22,9 @@ func TestObserveCapabilitiesProjectsScopedSkillsAndPaginatedMCPTools(t *testing.
 	repoSkill := createInventorySkill(t, filepath.Join(projectRoot, ".agents", "skills", "review"), "repo")
 	userSkill := createInventorySkill(t, filepath.Join(testRoot, "user", "skills", "personal"), "user")
 	systemSkill := createInventorySkill(t, filepath.Join(testRoot, "system", "skills", "core"), "system")
-	adapter := &Adapter{projectRoot: projectRoot, clock: func() time.Time { return observedAt }}
+	adapter := &Adapter{projectRoot: projectRoot, clock: func() time.Time {
+		return observedAt
+	}}
 
 	completed := make(chan struct {
 		snapshot registryport.ObservationSnapshot

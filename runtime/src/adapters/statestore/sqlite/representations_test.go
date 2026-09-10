@@ -22,7 +22,9 @@ func TestRepresentationRegistryIsImmutableAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		_ = database.Close()
+	})
 	artifactID := testID("artifact", 'R')
 	artifact, _, err := database.Register(ctx, artifactRequest(artifactID, "source", strings.Repeat("a", 64)))
 	if err != nil {

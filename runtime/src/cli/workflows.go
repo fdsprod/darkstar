@@ -661,7 +661,9 @@ func readWorkflowInputs(path string) (map[workflow.Identifier]json.RawMessage, e
 	if err != nil {
 		return nil, fmt.Errorf("read workflow input file: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		_ = file.Close()
+	}()
 	content, err := io.ReadAll(io.LimitReader(file, workflowfilesystem.MaxDocumentSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read workflow input file: %w", err)

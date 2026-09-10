@@ -97,7 +97,9 @@ func TestDeletionReconcilesAfterRestartAndStopsEveryRun(t *testing.T) {
 	}
 	// Recreate the service around the same durable store with a provider that can
 	// now prove the old session stopped. No workflow is restarted.
-	restarted := &Service{store: db, now: s.now, ctx: ctx, workers: map[string]*worker{}, workflowFactory: WorkflowProviderFactoryFunc(func(context.Context, ProviderRequest) (provider.Provider, error) { return deletionProvider{}, nil })}
+	restarted := &Service{store: db, now: s.now, ctx: ctx, workers: map[string]*worker{}, workflowFactory: WorkflowProviderFactoryFunc(func(context.Context, ProviderRequest) (provider.Provider, error) {
+		return deletionProvider{}, nil
+	})}
 	if err = restarted.reconcileWorkDeletion(ctx, work.WorkItemID); err != nil {
 		t.Fatal(err)
 	}

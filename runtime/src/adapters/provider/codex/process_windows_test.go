@@ -116,7 +116,9 @@ func assertProcessExited(t *testing.T, pid uint32) {
 		}
 		t.Fatalf("open process %d: %v", pid, err)
 	}
-	defer func() { _ = windows.CloseHandle(process) }()
+	defer func() {
+		_ = windows.CloseHandle(process)
+	}()
 	status, err := windows.WaitForSingleObject(process, 5_000)
 	if err != nil {
 		t.Fatalf("wait for process %d: %v", pid, err)

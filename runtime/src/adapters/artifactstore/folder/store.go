@@ -434,7 +434,9 @@ func (s *Store) publishRecord(path string, value any) (bool, error) {
 		return false, filesystemFailure("create artifact record temporary file", err)
 	}
 	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
+	defer func() {
+		_ = os.Remove(temporaryPath)
+	}()
 	if err := temporary.Chmod(fileMode); err != nil {
 		_ = temporary.Close()
 		return false, filesystemFailure("protect artifact store record", err)
@@ -518,7 +520,9 @@ func verifyFile(ctx context.Context, path, digest string, size int64) error {
 	if err != nil {
 		return filesystemFailure("open stored artifact for verification", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		_ = file.Close()
+	}()
 	return verifyOpenFile(ctx, file, digest, size)
 }
 
@@ -575,7 +579,9 @@ func readRecord(path string, destination any) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		_ = file.Close()
+	}()
 	info, err := file.Stat()
 	if err != nil {
 		return err

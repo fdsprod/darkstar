@@ -36,7 +36,9 @@ func (runner WorkflowChat) Models(ctx context.Context) ([]workflowchat.Model, er
 		return nil, err
 	}
 	if configured, ok := config.Config["model"].(string); ok {
-		if slices.ContainsFunc(models, func(m workflowchat.Model) bool { return m.ID == configured }) {
+		if slices.ContainsFunc(models, func(m workflowchat.Model) bool {
+			return m.ID == configured
+		}) {
 			for i := range models {
 				models[i].IsDefault = models[i].ID == configured
 			}

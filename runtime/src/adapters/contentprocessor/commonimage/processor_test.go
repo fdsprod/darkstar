@@ -22,7 +22,9 @@ func TestCommonImagesProduceModelImageAndBoundedPreview(t *testing.T) {
 		encode          func(io.Writer, image.Image) error
 	}{
 		{name: "png", mediaType: "image/png", encode: png.Encode},
-		{name: "jpeg", mediaType: "image/jpeg", encode: func(writer io.Writer, value image.Image) error { return jpeg.Encode(writer, value, nil) }},
+		{name: "jpeg", mediaType: "image/jpeg", encode: func(writer io.Writer, value image.Image) error {
+			return jpeg.Encode(writer, value, nil)
+		}},
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {

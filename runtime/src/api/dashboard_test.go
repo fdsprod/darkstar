@@ -29,7 +29,9 @@ func TestDashboardServesIndexForRootAndClientRoutesWithMemoryOnlyBootstrap(t *te
 			serveDashboard(response, request, assets, endpoint)
 
 			result := response.Result()
-			defer func() { _ = result.Body.Close() }()
+			defer func() {
+				_ = result.Body.Close()
+			}()
 			if result.StatusCode != http.StatusOK {
 				t.Fatalf("status = %d, want 200", result.StatusCode)
 			}
@@ -64,7 +66,9 @@ func TestDashboardBootstrapUsesRotatedToken(t *testing.T) {
 	}
 
 	response := get(t, rotated.BaseURL()+"/index.html?after=rotation", "")
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	body := readResponseBody(t, response)
 	if response.StatusCode != http.StatusOK || !strings.Contains(body, rotated.AuthorizationHeader()) {
 		t.Fatalf("rotated dashboard response did not contain current authorization")
@@ -89,7 +93,9 @@ func TestDashboardServesImmutableAssetsWithoutCredentialInjection(t *testing.T) 
 	serveDashboard(response, request, assets, Endpoint{APIVersion: VersionV1, Token: token})
 
 	result := response.Result()
-	defer func() { _ = result.Body.Close() }()
+	defer func() {
+		_ = result.Body.Close()
+	}()
 	if result.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", result.StatusCode)
 	}
@@ -149,7 +155,9 @@ func TestServerServesEmbeddedDashboardWithoutBearerAndKeepsAPIRoutesProtected(t 
 	defer closeTestServer(t, server)
 
 	dashboard := get(t, endpoint.BaseURL()+"/", "")
-	defer func() { _ = dashboard.Body.Close() }()
+	defer func() {
+		_ = dashboard.Body.Close()
+	}()
 	if dashboard.StatusCode != http.StatusOK {
 		t.Fatalf("GET / status = %d", dashboard.StatusCode)
 	}
@@ -159,7 +167,9 @@ func TestServerServesEmbeddedDashboardWithoutBearerAndKeepsAPIRoutesProtected(t 
 	}
 
 	api := get(t, endpoint.BaseURL()+"/api/v1/work-items", "")
-	defer func() { _ = api.Body.Close() }()
+	defer func() {
+		_ = api.Body.Close()
+	}()
 	assertAPIError(t, api, http.StatusUnauthorized, "UNAUTHENTICATED")
 }
 

@@ -47,7 +47,9 @@ func (d *Database) Projects(ctx context.Context) ([]statestore.ProjectProjection
 	if err != nil {
 		return nil, fmt.Errorf("query projects: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.ProjectProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanProjectProjection(rows)
@@ -105,7 +107,9 @@ func queryWorkItems(ctx context.Context, query workQueryer, where string, argume
 	if err != nil {
 		return nil, fmt.Errorf("query work items: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.WorkItemProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanWorkItemProjection(rows)
@@ -130,7 +134,9 @@ func queryRuns(ctx context.Context, query workQueryer, where string, arguments [
 	if err != nil {
 		return nil, fmt.Errorf("query runs: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.RunProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanRunProjection(rows)
@@ -174,7 +180,9 @@ func (d *Database) StoriesForWorkItem(ctx context.Context, workItemID string) ([
 	if err != nil {
 		return nil, fmt.Errorf("query work-item stories: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.StoryProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanStoryProjection(rows)
@@ -218,7 +226,9 @@ func readPointDependencies(ctx context.Context, query workQueryer, pointID strin
 	if err != nil {
 		return nil, fmt.Errorf("query point dependencies: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]string, 0)
 	for rows.Next() {
 		var dependency string
@@ -270,7 +280,9 @@ func (d *Database) AttemptsForPoint(ctx context.Context, pointID string, revisio
 	if err != nil {
 		return nil, fmt.Errorf("query point attempts: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		_ = rows.Close()
+	}()
 	values := make([]statestore.AttemptProjection, 0)
 	for rows.Next() {
 		value, scanErr := scanAttemptProjection(rows)
