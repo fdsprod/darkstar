@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"darkstar/src/platform/process"
 	"darkstar/src/ports/valueschema"
 	"encoding/json"
 	"errors"
@@ -320,11 +321,13 @@ func builtinValidationOutput(ctx context.Context, workflowName, workflowVersion,
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	command := exec.CommandContext(commandCtx, "git", "-C", workspace, "diff", "--check", "HEAD")
+	process.HideConsole(command)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("darkstar-project validation failed: git diff --check HEAD: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	status := exec.CommandContext(commandCtx, "git", "-C", workspace, "status", "--porcelain")
+	process.HideConsole(status)
 	statusOutput, err := status.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("darkstar-project validation failed: git status --porcelain: %w: %s", err, strings.TrimSpace(string(statusOutput)))

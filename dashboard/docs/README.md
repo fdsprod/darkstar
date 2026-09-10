@@ -15,6 +15,8 @@ questions, conflict handling, and the human publishing boundary.
 | `src/app` | Application boundary and dependency-free browser router. |
 | `src/api` | Typed client and schema-generated types for the versioned local API. |
 | `src/components` | Reusable shell and navigation primitives. |
+| `src/components/ui` | Pure presentational primitives with no API, state, or router dependency. |
+| `.storybook` | Component catalog configuration for isolated previews. |
 | `src/pages` | Route-level dashboard views. |
 | `tests` | Dashboard behavior and structural contract tests. |
 | `index.html` | Browser entry document. |
@@ -102,4 +104,6 @@ OpenAPI document. Build and check commands run `api:check`, which fails when the
 committed generated surface is stale.
 
 Rich Markdown review UI and the pure-component boundaries are described in
-[Rich document review components](rich-documents.md).
+[Rich document review components](rich-documents.md). The layer rules, the
+primitive set, and the story catalog are described in
+[Component catalog](component-catalog.md).

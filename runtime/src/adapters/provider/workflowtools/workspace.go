@@ -3,6 +3,7 @@ package workflowtools
 import (
 	"context"
 	"crypto/sha256"
+	"darkstar/src/platform/process"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -72,6 +73,7 @@ func workspaceSnapshot(ctx context.Context, workspace string) (map[string]string
 	// Git supplies tracked and nonignored untracked paths, including files that
 	// were already dirty before this attempt. No reset, checkout, or clean occurs.
 	command := exec.CommandContext(ctx, "git", "-C", workspace, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+	process.HideConsole(command)
 	paths, err := command.Output()
 	if err != nil {
 		return nil, fmt.Errorf("implementation needs a readable Git repository: %w", err)
@@ -175,7 +177,7 @@ func (s *Session) validateWorkspaceResult(ctx context.Context, raw json.RawMessa
 		return errors.New("implementation changeset requires explicit files and validation arrays")
 	}
 	if result.Disposition == "blocked" {
-		return fmt.Errorf("implementation blocked: %s", result.Summary)
+		return fmt.Errorf("implementation blocked: %s; validation: %s", result.Summary, strings.Join(result.Validation, "; "))
 	}
 	if result.Disposition != "changed" && result.Disposition != "unchanged" {
 		return errors.New("implementation disposition must be changed, unchanged, or blocked")

@@ -8,6 +8,8 @@
     "build": "npm run build --workspace @darkstar/dashboard",
     "check": "npm run check --workspace @darkstar/dashboard",
     "test:browser": "playwright test",
+    "test:stories": "playwright test --config playwright.storybook.config.ts",
+    "storybook": "npm run storybook --workspace @darkstar/dashboard",
     "schemas:generate": "node scripts/schema-tool.mjs generate",
     "schemas:check": "node scripts/schema-tool.mjs check",
     "schemas:compatibility": "node scripts/schema-tool.mjs compatibility",

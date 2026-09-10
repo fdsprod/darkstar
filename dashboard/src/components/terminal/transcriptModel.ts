@@ -1,4 +1,4 @@
-import type { components } from "../api/schema.generated";
+import type { components } from "../../api/schema.generated";
 
 export type TranscriptEvent = components["schemas"]["RunTranscriptEvent"];
 export type EventKind = "message" | "reasoning" | "tool" | "error" | "decision" | "user" | "lifecycle";

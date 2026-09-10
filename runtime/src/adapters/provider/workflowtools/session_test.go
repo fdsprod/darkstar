@@ -91,3 +91,41 @@ func TestSubmittedOutputsAreDurableAndRequiredWithoutFinalEcho(t *testing.T) {
 		t.Fatal("other attempt's submissions leaked")
 	}
 }
+
+func TestRejectedSubmissionSurvivesReconnectAndCanBeCorrected(t *testing.T) {
+	node := workflow.ReasoningNode{Common: workflow.NodeFields{Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"document": {Type: workflow.ValueString}}}}
+	s := &Session{Database: filepath.Join(t.TempDir(), "tools.db"), RunID: "run", AttemptID: "attempt", Node: node}
+	_, rejected := s.Call(t.Context(), "bad", "submit_output", json.RawMessage(`{"id":"document","value":42}`))
+	if rejected == nil {
+		t.Fatal("invalid output accepted")
+	}
+	artifacts, err := ReadRunArtifacts(t.Context(), s.Database, s.RunID, 0, 100)
+	if err != nil || len(artifacts) != 0 {
+		t.Fatalf("rejected submission appeared as an artifact: %v %v", artifacts, err)
+	}
+	recovered := &Session{Database: s.Database, RunID: s.RunID, AttemptID: s.AttemptID, Node: node}
+	if _, err := recovered.ResolveSubmittedOutputs(t.Context()); err == nil || !strings.Contains(err.Error(), rejected.Error()) || strings.Contains(err.Error(), "sql: no rows") {
+		t.Fatalf("lost rejection reason: %v", err)
+	}
+	if _, err := recovered.Call(t.Context(), "correct", "submit_output", json.RawMessage(`{"id":"document","value":"Corrected document"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recovered.ResolveSubmittedOutputs(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	recovered.AttemptID = "another-attempt"
+	if _, err := recovered.ResolveSubmittedOutputs(t.Context()); err == nil || strings.Contains(err.Error(), rejected.Error()) {
+		t.Fatalf("rejection leaked across attempts: %v", err)
+	}
+}
+
+func TestBlockedImplementationReportsValidationBlockerAtCompletion(t *testing.T) {
+	s := &Session{Database: filepath.Join(t.TempDir(), "tools.db"), RunID: "run", AttemptID: "attempt", Node: workflow.ImplementationNode{Common: workflow.NodeFields{Outputs: map[workflow.Identifier]workflow.OutputDeclaration{"changeset": {Type: workflow.ValueObject}}}}}
+	_, err := s.Call(t.Context(), "blocked", "submit_output", json.RawMessage(`{"id":"changeset","value":{"disposition":"blocked","summary":"README updated; verification unavailable","files":["README.md"],"validation":["Go 1.24.0 required; 1.27.0 installed"]}}`))
+	if err == nil {
+		t.Fatal("blocked implementation accepted")
+	}
+	if _, err := s.ResolveSubmittedOutputs(t.Context()); err == nil || !strings.Contains(err.Error(), "Go 1.24.0 required") {
+		t.Fatalf("blocker lost: %v", err)
+	}
+}

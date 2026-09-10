@@ -8,6 +8,10 @@ The review defaults to formatted Markdown. Contents and Annotations collapse ind
 
 The parser supports headings, inline formatting, lists/tasks, tables, blockquotes/alerts, and code fences. Specialized fences are `apispec`, `datamodel`, `tree`, `diff`, and `mermaid`. Invalid structured fences show diagnostics and their unchanged source. Raw HTML is inert; diagrams use a local strict renderer and display through images.
 
-With the Vite development server running, open `/fixtures/rich-document.html` for a standalone component showcase without a daemon or model. This provides fixtures for future Storybook integration. Run `node --experimental-strip-types --test` in dashboard for model tests and the repository Playwright command with `dashboard/e2e/rich-document.spec.ts` for component interaction tests.
+With the Vite development server running, open `/fixtures/rich-document.html` for a standalone component showcase without a daemon or model. `npm run storybook` serves the same components as a browsable catalog; see [Component catalog](component-catalog.md). Run `node --experimental-strip-types --test` in dashboard for model tests and the repository Playwright command with `dashboard/e2e/rich-document.spec.ts` for component interaction tests.
 
 The generic authoring specification is `skills/builtin/rich-artifacts/SKILL.md`. `node scripts/builtin-skills.mjs generate` updates its manifest and embedded runtime copy; `check` detects drift. Markdown-producing execution and revision attempts receive its complete content automatically, without workflow graph or scheduler state. Existing saved prompts are unchanged.
+
+Reviewers collect general comments with **Add general annotation** and selected-text comments with **Annotate**. Both lists support multiple comments, editing, and removal before submission. Typing alone does not enable **Revise**; at least one added comment is required. General comments are submitted together in the existing overall instruction field, while range comments retain their UTF-8 anchors. Submission remains bound to the exact candidate and representation; saved review history remains unchanged.
+
+Review refreshes run serially and retain unchanged artifact metadata, so live activity does not remount the document, clear text selection, or repeatedly fetch the same representation.

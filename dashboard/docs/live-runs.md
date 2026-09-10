@@ -1,5 +1,11 @@
 # Live runs
 
+Timeline selections at the right edge remain live as events arrive. Selecting
+the full width restores the entire live run; narrowing only the start retains
+that start while extending the end. A selection ending before the right edge
+is fixed history. Scrolling up pauses automatic scrolling without changing the
+time range, and Follow live restores the entire run.
+
 Run pages open on the terminal transcript. Turns groups the same persisted
 history by observable model action (agent messages and tool calls), and Artifacts shows submitted Markdown, repository
 Markdown snapshots, journal decisions and open items, structured results, and
@@ -73,3 +79,26 @@ For tool-backed attempts, final assistant prose is a human summary. It is not th
 Inputs are filtered against the node's declared bindings. Each appears once as a named context item; `read_input` exposes the same scoped values. Runtime work/project IDs remain in canonical records but are excluded from task-content projections. Revision attempts explicitly declare candidate and feedback inputs, and feedback contains the instruction and annotations rather than the review lifecycle record.
 
 Formatted transcripts decode complete JSON envelopes into named document values generically. They do not perform blind escape replacement. Raw mode and saved events retain the original response; terminal command output remains a terminal block.
+
+## Terminal view components
+
+The live run view is a wrapper over pure components. `RunLive.tsx` owns the
+transcript poll, the route-encoded view mode and format, message delivery, and
+history export. Everything it renders lives in `src/components/terminal` and
+takes resolved data with callbacks: `TerminalFrame` with `TranscriptScroll`,
+`TranscriptEmpty`, `HistoryNotice`, and `ShowMoreHistory`; `RunViewTabs` and
+`TranscriptTools`; `TranscriptRow` with `TurnHeading`;
+`RunTimeline`; and `MessageComposer`.
+
+`transcriptModel.ts` builds entries, turns, usage, and gap counts from saved
+events. `timelineModel.ts` decides what a brushed range means as the run grows.
+Both are validated with `node --test` and hold no React.
+
+Transcript rows stay compact: they carry no per-event raw disclosure. Saved
+events are unchanged and the complete raw history is exported as NDJSON from
+the tools bar.
+
+None of these import the API client, shared state, or the router, so every
+transcript state — live, reconnecting, degraded history, no matches, and each
+event kind — is previewable in the component catalog without a daemon. See
+[Component catalog](component-catalog.md).

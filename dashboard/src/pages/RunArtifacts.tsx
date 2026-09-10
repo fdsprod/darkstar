@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { decodeArtifactViews, type DecodedArtifactView } from "./artifactModel";
-import type { TranscriptEvent } from "./runTranscriptModel";
+import type { TranscriptEvent } from "../components/terminal/transcriptModel";
 
 type S = components["schemas"];
 type Record = S["RunArtifactRecord"];

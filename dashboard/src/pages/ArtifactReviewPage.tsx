@@ -5,7 +5,6 @@ import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
 import { AsyncPanel } from "../components/InteractionPatterns";
 import { PageHeader } from "../components/PageStructure";
-import { useDashboardState } from "../state/DashboardStateProvider";
 import { decodeArtifactViews, revisionsForArtifact, type DecodedArtifactView } from "./artifactModel";
 import {
   buildReviewDecision, chooseSafeTextRepresentation, exactFeedbackSetForRepresentation, iterationActivity, nextReviewSession,
@@ -15,6 +14,7 @@ import {
 import { DetailFailure, DetailLoading, formatDate, StatusPill } from "./WorkDetailPage";
 import { humanize, shortIdentifier } from "./runDetailModel";
 import { ApprovalActions } from "../components/document/AnnotationParts";
+import { GeneralAnnotations, type GeneralAnnotation } from "../components/document/GeneralAnnotations";
 import { ArtifactAnnotations } from "./ArtifactAnnotations";
 import type { FeedbackAnnotationDraft } from "./artifactReviewModel";
 
@@ -33,7 +33,6 @@ export function ArtifactReviewPage() {
 export function ArtifactReviewWorkspace({ approvalId, embedded = false }: { approvalId: string; embedded?: boolean }) {
   const { search, navigate: routeNavigate, route } = useRouter();
   const navigate = (url: string) => { if (!embedded) { routeNavigate(url); return; } const parsed = new URL(url, window.location.origin); const next = new URLSearchParams(parsed.search); next.set("tab", "artifacts"); next.set("review", parsed.pathname.split("/")[2]); routeNavigate(`/work/${encodeURIComponent(route.params.workId)}/run/${encodeURIComponent(route.params.runId)}?${next}`); };
-  const { state } = useDashboardState();
   const params = useMemo(() => new URLSearchParams(search), [search]);
   const requestedView = params.has("view") ? parseReviewView(params.get("view")) : undefined;
   const requestedRevision = Number(params.get("revision"));
@@ -47,6 +46,7 @@ export function ArtifactReviewWorkspace({ approvalId, embedded = false }: { appr
   const [agent, setAgent] = useState<Schemas["Agent"]>();
   const [candidateState, setCandidateState] = useState<CandidateState>({ kind: "current" });
   const [feedback, setFeedback] = useState("");
+  const [generalAnnotations, setGeneralAnnotations] = useState<GeneralAnnotation[]>([]);
   const [annotations, setAnnotations] = useState<FeedbackAnnotationDraft[]>([]);
   const [draftBinding, setDraftBinding] = useState<{ representationId: string; digest: string }>();
   const [submittedSets, setSubmittedSets] = useState<FeedbackSetView[]>([]);
@@ -78,11 +78,12 @@ export function ArtifactReviewWorkspace({ approvalId, embedded = false }: { appr
       const reviewedPrior = previousReviewedVersion(reviewHistory, exact);
       const previousArtifact = all.find((item) => item.artifact.version < exact.candidate.version)?.artifact.version;
       const nextPrior: PriorSelection | undefined = reviewedPrior ? { kind: "reviewed", version: reviewedPrior } : previousArtifact ? { kind: "artifact_history", version: previousArtifact } : undefined;
+      if (signal?.aborted) return;
       const previous = currentRef.current;
       if (exact.state === "superseded") setCandidateState({ kind: "stale", reason: "candidate_superseded" });
       else if (!acknowledge && previous && reviewSessionChanged(previous, exact)) setCandidateState({ kind: "stale", reason: "resource_changed" });
       else if (acknowledge || !previous) setCandidateState({ kind: "current" });
-      currentRef.current = exact; setSession(exact); setHistory(reviewHistory); setRevisions(all); setPrior(nextPrior); setError("");
+      currentRef.current = exact; setSession(exact); setHistory(reviewHistory); setRevisions(current => JSON.stringify(current) === JSON.stringify(all) ? current : all); setPrior(nextPrior); setError("");
       setSubmittedSets([...new Map(reviewHistory.sessions.flatMap(readFeedbackSets).filter((item) => item.state === "submitted").map((item) => [item.id, item])).values()]);
       if (exact.activeIteration) {
         const attemptId = exact.activeIteration.attemptId;
@@ -110,7 +111,16 @@ export function ArtifactReviewWorkspace({ approvalId, embedded = false }: { appr
     }
   }, [approvalId]);
 
-  useEffect(() => { const abort = new AbortController(); void load(abort.signal); return () => abort.abort(); }, [load, state.cursor]);
+  useEffect(() => {
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function refresh() {
+      await load(abort.signal);
+      if (!abort.signal.aborted) timer = setTimeout(refresh, 1500);
+    }
+    void refresh();
+    return () => { abort.abort(); clearTimeout(timer); };
+  }, [load]);
 
   const priorVersion = prior?.version;
   const view: ReviewView = requestedView ?? (session && session.revision > 1 && prior ? "inline" : "current");
@@ -160,7 +170,9 @@ export function ArtifactReviewWorkspace({ approvalId, embedded = false }: { appr
   const mutationAllowed = candidateState.kind === "current" && readingExactCandidate && session.state === "awaiting_human" && !busy;
   const draftBindingMatches = !draftBinding || (displayedCurrent?.kind === "available" && displayedCurrent.representationId === draftBinding.representationId && displayedCurrent.representationDigest === draftBinding.digest);
   const annotationEditingAllowed = mutationAllowed && draftBindingMatches;
-  const feedbackSetAllowed = annotationEditingAllowed && annotations.every((item) => { try { validateAnnotationComment(item.comment); return true; } catch { return false; } });
+  const generalInstruction = generalAnnotations.map(item => item.comment.trim()).join("\n\n");
+  const annotationCount = annotations.length + generalAnnotations.length;
+  const feedbackSetAllowed = annotationEditingAllowed && annotationCount > 0 && generalAnnotations.every(item => item.comment.trim()) && new TextEncoder().encode(generalInstruction).length <= 16_384 && annotations.every((item) => { try { validateAnnotationComment(item.comment); return true; } catch { return false; } });
   const exactSubmittedSet = displayedCurrent?.kind === "available" && shownArtifact ? exactFeedbackSetForRepresentation(submittedSets, shownArtifact.artifact, shownArtifact.artifact.blobDigest, displayedCurrent.representationId, displayedCurrent.representationDigest) : undefined;
   const editingCurrentDraft = shownVersion === session.candidate.version && session.state === "awaiting_human";
   const inlineAnnotations = editingCurrentDraft ? annotations : exactSubmittedSet?.annotations ?? [];
@@ -181,8 +193,8 @@ export function ArtifactReviewWorkspace({ approvalId, embedded = false }: { appr
     try {
       if (action === "request_revisions") {
         if (!feedbackSetAllowed) throw new Error("The local annotations are bound to a different safe representation. Keep them for reference, then remove and re-anchor them before submitting.");
-        const submitted = await submitAnnotationFeedbackSet(exactSession, displayedCurrent?.kind === "available" ? displayedCurrent : undefined, feedback, annotations, lifetimeAbortRef.current.signal);
-        currentRef.current = submitted.session; setSession(submitted.session); setSubmittedSets((sets) => [...sets.filter((item) => item.id !== submitted.set.id), submitted.set]); setFeedback(""); setAnnotations([]); setDraftBinding(undefined); setCandidateState({ kind: "current" });
+        const submitted = await submitAnnotationFeedbackSet(exactSession, displayedCurrent?.kind === "available" ? displayedCurrent : undefined, generalInstruction, annotations, lifetimeAbortRef.current.signal);
+        currentRef.current = submitted.session; setSession(submitted.session); setSubmittedSets((sets) => [...sets.filter((item) => item.id !== submitted.set.id), submitted.set]); setFeedback(""); setGeneralAnnotations([]); setAnnotations([]); setDraftBinding(undefined); setCandidateState({ kind: "current" });
         setNotice("Feedback sent. The revised document will return here for your approval.");
         await load(lifetimeAbortRef.current.signal, true); return;
       }
@@ -224,7 +236,18 @@ export function ArtifactReviewWorkspace({ approvalId, embedded = false }: { appr
     } catch { if (!lifetimeAbortRef.current.signal.aborted) setError("The next bounded diff page could not be loaded or verified."); } finally { diffCursorRef.current = ""; setDiffBusy(false); }
   }
 
-  const decisionPanel = <section className="review-decision-bar" aria-label="Exact candidate decision"><label><span>{embedded ? `Message the revision agent · version ${session.candidate.version}` : `Overall instruction for candidate v${session.candidate.version}`}</span><textarea rows={2} maxLength={16384} value={feedback} onChange={event=>setFeedback(event.target.value)} placeholder="Add a general instruction…" /></label><ApprovalActions busy={busy ?? ""} approveDisabled={!mutationAllowed || !session.allowedActions.includes("approve")} reviseDisabled={!feedbackSetAllowed || !session.allowedActions.includes("request_changes") || (!feedback.trim() && !annotations.length)} rejectDisabled={!mutationAllowed || !session.allowedActions.includes("reject") || !feedback.trim()} revisionLabel={embedded ? `Request revision${annotations.length ? ` · ${annotations.length} annotations` : ""}` : `Submit feedback set${annotations.length ? ` · ${annotations.length}` : ""}`} onApprove={()=>void mutate("approve")} onRevise={()=>void mutate("request_revisions")} onReject={()=>void mutate("reject")} />{!draftBindingMatches&&<small>The representation changed. Re-anchor your preserved comments before submitting.</small>}<small>Only your approval finishes this review.</small></section>;
+  const generalList = <GeneralAnnotations annotations={generalAnnotations} readOnly={!annotationEditingAllowed} onChange={setGeneralAnnotations} />;
+  const decisionPanel = <section className="review-decision-bar" aria-label="Exact candidate decision">
+    <label><span>{embedded ? `Message the revision agent · version ${session.candidate.version}` : `Overall instruction for candidate v${session.candidate.version}`}</span><textarea rows={2} maxLength={16384} disabled={!annotationEditingAllowed} value={feedback} onChange={event=>setFeedback(event.target.value)} placeholder="Add a general annotation…" /></label>
+    <button type="button" className="button button--compact" disabled={!annotationEditingAllowed || !feedback.trim()} onClick={() => {
+      const comment = feedback.trim();
+      if (new TextEncoder().encode([...generalAnnotations.map(item => item.comment.trim()), comment].join("\n\n")).length > 16384) { setError("General annotations must contain at most 16384 UTF-8 bytes in total."); return; }
+      setGeneralAnnotations(notes => [...notes, { id: crypto.randomUUID(), comment }]); setFeedback(""); setError("");
+    }}>Add general annotation</button>
+    <ApprovalActions busy={busy ?? ""} approveDisabled={!mutationAllowed || !session.allowedActions.includes("approve")} reviseDisabled={!feedbackSetAllowed || !session.allowedActions.includes("request_changes")} rejectDisabled={!mutationAllowed || !session.allowedActions.includes("reject") || !feedback.trim()} revisionLabel={`Revise${annotationCount ? ` · ${annotationCount} annotations` : ""}`} onApprove={()=>void mutate("approve")} onRevise={()=>void mutate("request_revisions")} onReject={()=>void mutate("reject")} />
+    {feedback.trim() && <small>Add this annotation to the list before revising. Reject uses the text above as its reason.</small>}
+    {!draftBindingMatches&&<small>The representation changed. Re-anchor your preserved comments before submitting.</small>}<small>Only your approval finishes this review.</small>
+  </section>;
   return <div className="page review-page">
     <PageHeader eyebrow="Document review" title={`Candidate revision ${session.revision}`} description={`Review exact artifact ${shortIdentifier(session.candidate.artifactId)} version ${session.candidate.version} before recording a durable decision.`} breadcrumbs={[{ label: "Checkpoints", to: "/checkpoints" }, { label: shortIdentifier(session.id) }]} status={<StatusPill status={session.state} />} />
     {notice && <AsyncPanel compact state={newer ? "success" : candidateState.kind === "stale" ? "stale" : "success"} title={newer ? "New candidate ready" : candidateState.kind === "stale" ? "Candidate changed" : "Review updated"} message={<>{notice}{newer && <button ref={readyRef} className="button button--compact" type="button" onClick={openNewCandidate}>Review revision {newer.revision}</button>}</>} />}
@@ -239,7 +262,7 @@ export function ArtifactReviewWorkspace({ approvalId, embedded = false }: { appr
         <nav className="review-view-tabs" aria-label="Document view">{(["current", "prior", "inline", "split"] as ReviewView[]).map((item) => <button type="button" key={item} aria-current={view === item ? "page" : undefined} disabled={(item === "prior" || item === "inline" || item === "split") && !priorVersion} onClick={() => setView(item)}>{item === "inline" ? "Inline diff" : item === "split" ? "Side-by-side" : humanize(item)}</button>)}</nav>
         {selectedArtifact && <details className="review-history-disclosure"><summary>Document details</summary><ArtifactProvenance value={selectedArtifact} prefix={view === "prior" && prior?.kind === "artifact_history" ? "Prior artifact-history" : view === "prior" ? "Prior reviewed" : "Selected"} /></details>}
         {view === "current" && displayedCurrent?.kind === "available"
-          ? <ArtifactAnnotations text={displayedCurrent.text} annotations={inlineAnnotations} readOnly={!editingCurrentDraft || !annotationEditingAllowed} onChange={changeAnnotations} actions={decisionPanel} />
+          ? <ArtifactAnnotations text={displayedCurrent.text} annotations={inlineAnnotations} readOnly={!editingCurrentDraft || !annotationEditingAllowed} onChange={changeAnnotations} generalAnnotations={generalList} generalCount={generalAnnotations.length} actions={decisionPanel} />
           : <Reader view={view} current={displayedCurrent} prior={displayedPrior} priorKind={prior?.kind} diff={displayedDiff} currentVersion={session.candidate.version} priorVersion={priorVersion} diffBusy={diffBusy} onLoadMore={() => void loadMoreDiff()} onRetry={() => setDiffRetry((value) => value + 1)} />}
       </section>
       <details className="review-context review-history-disclosure"><summary>Revision activity and review history</summary>
@@ -251,7 +274,7 @@ export function ArtifactReviewWorkspace({ approvalId, embedded = false }: { appr
         {!embedded && <section className="review-separate-context"><h2>Separate attention</h2><p>Provider permission and required-input decisions do not approve this artifact.</p>{session.activeIteration && <><AppLink to={`/agents?tab=permissions&permissionAttemptId=${encodeURIComponent(session.activeIteration.attemptId)}`}>Provider permissions</AppLink><AppLink to={`/checkpoints?tab=inputs&attemptId=${encodeURIComponent(session.activeIteration.attemptId)}`}>Required input</AppLink></>}</section>}
       </details>
     </div>
-    {!(view === "current" && displayedCurrent?.kind === "available") && decisionPanel}
+    {!(view === "current" && displayedCurrent?.kind === "available") && <>{generalList}{decisionPanel}</>}
   </div>;
 }
 

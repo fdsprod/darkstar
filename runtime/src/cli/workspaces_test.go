@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/sha256"
+	gitadapter "darkstar/src/adapters/repository/git"
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports/statestore"
@@ -52,6 +53,9 @@ func TestPreparedWorktreeIsolationResumeAndRequiredChecks(t *testing.T) {
 	if p.Path == root || p.Branch != "darkstar/run_one" {
 		t.Fatalf("workspace: %#v", p)
 	}
+	if p.Path != filepath.Join(root, ".darkstar", "worktrees", p.ID) {
+		t.Fatalf("worktree must be outside private daemon storage: %s", p.Path)
+	}
 	if err = os.WriteFile(filepath.Join(p.Path, "README.md"), []byte("implemented\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +74,41 @@ func TestPreparedWorktreeIsolationResumeAndRequiredChecks(t *testing.T) {
 	}
 	if err = os.WriteFile(filepath.Join(p.Path, "README.md"), []byte("bad trailing spaces   \n"), 0600); err != nil {
 		t.Fatal(err)
+	}
+	// Simulate an older daemon's private-storage record and preserve dirty work
+	// through relocation, including recovery after Git moved but DB did not.
+	legacyPath := filepath.Join(filepath.Dir(w.toolDatabase), "worktrees", p.ID)
+	manager, err := gitadapter.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = manager.RelocateWorktree(ctx, root, p.Path, legacyPath, p.Branch, p.BaseSHA); err != nil {
+		t.Fatal(err)
+	}
+	legacy := p
+	legacy.Path = legacyPath
+	encoded, _ := json.Marshal(legacy)
+	db, err := w.workspaceDB(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err = db.ExecContext(ctx, `UPDATE workflow_workspaces SET record=? WHERE id=?`, string(encoded), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := w.resolvePreparedWorkspace(ctx, r, outputs["workspace"])
+	if err != nil || repaired.Path != p.Path {
+		t.Fatalf("legacy relocation: %+v %v", repaired, err)
+	}
+	if content, err := os.ReadFile(filepath.Join(repaired.Path, "README.md")); err != nil || string(content) != "bad trailing spaces   \n" {
+		t.Fatalf("lost edits: %q %v", content, err)
+	}
+	// A crash can leave the old location in the record after a successful move.
+	if _, err = db.ExecContext(ctx, `UPDATE workflow_workspaces SET record=? WHERE id=?`, string(encoded), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = w.resolvePreparedWorkspace(ctx, r, outputs["workspace"]); err != nil {
+		t.Fatalf("relocation recovery: %v", err)
 	}
 	if _, err = w.ExecuteWorkspaceNode(ctx, validator); err == nil {
 		t.Fatal("failed check accepted as success")

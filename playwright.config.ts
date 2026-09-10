@@ -2,6 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./dashboard/e2e",
+  // Stories have their own configuration and Storybook server.
+  testIgnore: "**/stories.spec.ts",
   outputDir: "./test-results/browser",
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),

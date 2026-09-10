@@ -52,7 +52,8 @@ test("two-revision HITL preserves anchored feedback and rejects a stale exact de
   await page.getByLabel(/Comment on selected text/).fill("Cite the source for this risk.");
   await page.getByRole("button", { name: "+ Annotate" }).click();
   await page.getByLabel("Overall instruction for candidate v1").fill("Revise the title and support the risk statement.");
-  await page.getByRole("button", { name: "Submit feedback set · 1" }).click();
+  await page.getByRole("button", { name: "Add general annotation", exact: true }).click();
+  await page.getByRole("button", { name: "Revise · 2 annotations" }).click();
   await expect.poll(() => submittedBody?.annotations?.length).toBe(1);
   expect(submittedBody.annotations).toHaveLength(1);
   expect(submittedBody.annotations[0].anchor.quotedText).toBe("risky sentence");

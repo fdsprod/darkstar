@@ -5,7 +5,7 @@ import { installEmptyControlPlane } from "./acceptance.fixtures";
 const primaryRoutes = [
   ["/board", "Lifecycle board"],
   ["/checkpoints", "Checkpoints"],
-  ["/workflows", "Workflow authoring"],
+  ["/workflows", "Workflows"],
   ["/settings", "Settings"],
 ] as const;
 

@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { installEmptyControlPlane } from './acceptance.fixtures';
 
+test.use({ timezoneId: 'UTC' });
+
 test('run offers a scrubbed transcript, turn count, artifacts, inline decisions and live messages', async ({ page }, testInfo) => {
  await page.setViewportSize({ width: 1600, height: 1100 }); await installEmptyControlPlane(page);
  const runId='run_01K3Z1C2AAAAAAAAAAAAAAAAAA', workId='work_01K3Z1C2AAAAAAAAAAAAAAAAAA', start='2026-09-08T17:00:00Z';
@@ -40,4 +42,43 @@ test('run offers a scrubbed transcript, turn count, artifacts, inline decisions 
  await page.getByRole('button',{name:'Terminal',exact:true}).click(); await page.getByRole('textbox',{name:'Message the agent'}).fill('Also document Windows setup.'); await page.getByRole('button',{name:'Send message to agent'}).click(); await expect.poll(()=>message).toBe('Also document Windows setup.');
  await page.screenshot({path:testInfo.outputPath('run-terminal.png'),fullPage:true});
  await page.reload(); await expect(page.getByRole('button',{name:'Turns (3)',exact:true})).toBeVisible();
+});
+
+
+test('timeline follows its right edge while historical selections remain fixed', async ({page}) => {
+  await installEmptyControlPlane(page);
+  const start='2026-09-08T17:00:00Z', workId='work_live_edge', runId='run_live_edge';
+  const run={id:runId,workItemId:workId,workflowId:'test',workflowVersion:'1',status:'running',resourceVersion:1,createdAt:start,updatedAt:'2026-09-08T17:01:00Z'};
+  const view={run,nodes:[],attempts:[],timeline:[],commands:[],timelinePageInfo:{hasEarlier:false},commandsPageInfo:{hasEarlier:false}};
+  const event=(position:number,label:string)=>({position,time:new Date(Date.parse(start)+position*1000).toISOString(),kind:'attempt.provider_event',subject:'attempt',data:{payload:{providerMethod:'item/completed',params:{item:{type:'agentMessage',id:'message-'+position,text:label}}}}});
+  const events=[event(10,'First message')];
+  await page.route('**/api/v1/runs/'+runId,r=>r.fulfill({json:view}));
+  await page.route('**/api/v1/work-items/'+workId,r=>r.fulfill({json:{work:{id:workId,title:'Live timeline',status:'in_progress',resourceVersion:1,createdAt:start,updatedAt:start},runs:[run],stories:[]}}));
+  await page.route('**/api/v1/work-items/*/transition-plan**',r=>r.fulfill({json:{resourceVersion:1,state:'running',targets:[]}}));
+  await page.route('**/api/v1/runs/'+runId+'/transcript?**',r=>r.fulfill({json:{events:events.filter(e=>e.position>Number(new URL(r.request().url()).searchParams.get('after')??0)),next:events.at(-1)!.position,hasMore:false}}));
+  await page.goto('/work/'+workId+'/run/'+runId);
+  await expect(page.getByText('First message',{exact:true})).toBeVisible();
+  const endHandle=page.getByRole('button',{name:'Timeline range end',exact:true});
+  await endHandle.focus(); await page.keyboard.press('ArrowLeft');
+  events.push(event(70,'Outside fixed selection'));
+  await expect(page.locator('.run-timeline-times')).toContainText('17:01:10');
+  await expect(page.getByText('Outside fixed selection',{exact:true})).toHaveCount(0);
+  const rail=await page.locator('.run-timeline-rail').boundingBox();
+  if(!rail)throw new Error('Timeline missing');
+  const dragEndToLive=async()=>{const handle=await endHandle.boundingBox();if(!handle)throw new Error('Handle missing');await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);await page.mouse.down();await page.mouse.move(rail.x+rail.width+2,handle.y+handle.height/2);await page.mouse.up();};
+  await dragEndToLive();
+  await expect(page.getByRole('button',{name:'Follow live',exact:true})).toHaveAttribute('aria-pressed','true');
+  events.push(event(80,'New full-range message'));
+  await expect(page.getByText('New full-range message',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Timeline range start',exact:true}).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('button',{name:'Follow live',exact:true})).toHaveAttribute('aria-pressed','true');
+  events.push(event(90,'New narrowed live message'));
+  await expect(page.getByText('New narrowed live message',{exact:true})).toBeVisible();
+  await endHandle.focus(); await page.keyboard.press('ArrowLeft');
+  events.push(event(100,'Later historical exclusion'));
+  await expect(page.locator('.run-timeline-times')).toContainText('17:01:40');
+  await expect(page.getByText('Later historical exclusion',{exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Follow live',exact:true}).click();
+  await expect(page.getByText('Later historical exclusion',{exact:true})).toBeVisible();
 });

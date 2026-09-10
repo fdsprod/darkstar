@@ -928,9 +928,6 @@ div.settings-boundary p { flex-basis: 100%; margin: 2px 0 0; }
 .run-transcript-entry pre.run-tool-output { color: #9dabb6; padding-left: 16px; margin-top: 8px; border-left: 1px solid #4e465d; }
 .run-transcript-entry--error { color: #edb0a9; }
 .run-transcript-entry--lifecycle { color: #8d939e; font-size: 12px; }
-.run-raw-event { color: #929ba8; font-size: 12px; margin-top: 5px; }
-.run-raw-event summary { cursor: pointer; width: fit-content; }
-.run-raw-event pre { margin-top: 10px; max-height: 320px; overflow: auto; }
 .run-turn-heading { color: #d6d8e1; font-size: 14px; font-weight: 500; margin: 28px 0 14px; padding-bottom: 12px; border-bottom: 1px solid #3a3b40; }
 .run-turn-heading small { float: right; color: #818793; font: 12px ui-monospace, monospace; }
 .run-transcript-turns .run-transcript-entry { padding-left: 16px; border-left: 2px solid color-mix(in srgb, var(--event-color) 40%, transparent); }

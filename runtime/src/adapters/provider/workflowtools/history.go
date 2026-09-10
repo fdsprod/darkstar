@@ -24,7 +24,7 @@ func ReadRunArtifacts(ctx context.Context, database, runID string, after uint64,
 	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='workflow_tool_events'`).Scan(&exists); err != nil || exists == 0 {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT sequence,attempt_id,resource,entry_id,operation,content FROM workflow_tool_events WHERE run_id=? AND sequence>? ORDER BY sequence LIMIT ?`, runID, after, limit)
+	rows, err := db.QueryContext(ctx, `SELECT sequence,attempt_id,resource,entry_id,operation,content FROM workflow_tool_events WHERE run_id=? AND sequence>? AND operation <> 'reject' ORDER BY sequence LIMIT ?`, runID, after, limit)
 	if err != nil {
 		return nil, err
 	}

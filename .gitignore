@@ -1,12 +1,14 @@
 # Build output
 /out/
 /dashboard/dist/
+/dashboard/storybook-static/
 /runtime/src/dashboardassets/dist/
 
 # JavaScript dependencies and caches
 /node_modules/
 /dashboard/node_modules/
 *.tsbuildinfo
+/dashboard/node_modules/.cache/storybook/
 /playwright-report/
 /test-results/
 

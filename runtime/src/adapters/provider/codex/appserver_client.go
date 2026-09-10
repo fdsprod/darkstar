@@ -36,6 +36,8 @@ type ClientInfo struct {
 
 // AppServerOptions configures protocol negotiation and framing limits.
 type AppServerOptions struct {
+	// Environment is resolved and verified by the daemon, never by agent text.
+	Environment       []string
 	ClientInfo        ClientInfo
 	SupportedVersions []string
 	MaxMessageBytes   int

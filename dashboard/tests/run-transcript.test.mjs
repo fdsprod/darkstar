@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTranscript, inTimeRange } from '../src/pages/runTranscriptModel.ts';
+import { buildTranscript, inTimeRange } from '../src/components/terminal/transcriptModel.ts';
 
 function event(position, method, params, subject = 'attempt-a') { return { position, time: new Date(1700000000000 + position * 1000).toISOString(), kind: 'attempt.provider_event', subject, data: { payload: { providerMethod: method, params } } }; }
 test('replay joins deltas and replaces completion snapshots without duplicating output', () => {

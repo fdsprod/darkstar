@@ -10,7 +10,7 @@ function popupPosition(rect:DOMRect) {
   const width=Math.min(360,window.innerWidth-16), height=270;
   return {left:Math.max(8,Math.min(rect.left,window.innerWidth-width-8)),top:Math.max(8,Math.min(rect.top>height+12?rect.top-height-8:rect.bottom+8,window.innerHeight-height-8))};
 }
-export function ArtifactAnnotations({text,annotations,readOnly,onChange,actions}: {text:string;annotations:readonly FeedbackAnnotationDraft[];readOnly:boolean;onChange(next:FeedbackAnnotationDraft[]):void;actions?:ReactNode}) {
+export function ArtifactAnnotations({text,annotations,readOnly,onChange,actions,generalAnnotations,generalCount=0}: {text:string;annotations:readonly FeedbackAnnotationDraft[];readOnly:boolean;onChange(next:FeedbackAnnotationDraft[]):void;actions?:ReactNode;generalAnnotations?:ReactNode;generalCount?:number}) {
   const readerRef=useRef<HTMLDivElement>(null), panelRef=useRef<HTMLDivElement>(null), savingRef=useRef(false);
   const [format,setFormat]=useState<'formatted'|'raw'>('formatted');
   const [contentsOpen,setContentsOpen]=useState(true),[annotationsOpen,setAnnotationsOpen]=useState(true);
@@ -62,7 +62,7 @@ export function ArtifactAnnotations({text,annotations,readOnly,onChange,actions}
       return <span key={a}>{matches.filter(r=>r.start===a).map(r=><AnnotationBadge key={r.id} number={r.number} onActivate={()=>activate(r.id,true)}/>)}<mark data-source-start={a} data-annotation-ids={matches.map(r=>r.id).join(' ')} className={matches.some(r=>r.id===activeId)?'is-active':undefined} onClick={()=>activate(matches[0].id,true)}>{content}</mark></span>;
     });
   }
-  const sidebar=<div className="annotation-panel-inner" ref={panelRef}><AnnotationPanel count={ordered.length} actions={actions} composer={null}><ol className="annotation-list" aria-label="Annotation comments">{ordered.map((item,index)=>{
+  const sidebar=<div className="annotation-panel-inner" ref={panelRef}><AnnotationPanel count={ordered.length+generalCount} actions={actions} composer={null}>{generalAnnotations}<ol className="annotation-list" aria-label="Annotation comments">{ordered.map((item,index)=>{
     const lines=displayLineRange(text,item.anchor);
     return <li key={item.id} data-comment-id={item.id}><AnnotationCard number={index+1} quote={item.anchor.quotedText} comment={item.comment} label={`Lines ${lines.start}–${lines.end}`} readOnly={readOnly} active={item.id===activeId} onActivate={()=>activate(item.id)} onEdit={()=>edit(item)} onRemove={()=>{onChange(annotations.filter(a=>a.id!==item.id));if(activeId===item.id)setActiveId('');if(editor?.kind==='edit'&&editor.id===item.id)closeEditor();}}/></li>;
   })}</ol></AnnotationPanel></div>;

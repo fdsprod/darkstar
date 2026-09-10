@@ -3,6 +3,7 @@ package workflowtools
 import (
 	"context"
 	"crypto/sha256"
+	"darkstar/src/platform/process"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,6 +91,7 @@ func (s *Session) markdownFiles(ctx context.Context) (map[string]string, error) 
 		return nil, errors.New("Markdown capture requires an absolute workspace")
 	}
 	command := exec.CommandContext(ctx, "git", "-C", s.Workspace, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*.md", "*.markdown")
+	process.HideConsole(command)
 	paths, err := command.Output()
 	if err != nil {
 		return nil, err

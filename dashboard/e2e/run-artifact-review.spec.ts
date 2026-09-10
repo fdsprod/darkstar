@@ -17,10 +17,11 @@ test("run Artifacts embeds revision chat, annotations, diff and exact human appr
   let staleOnce = true;
   let submittedBody: any;
   let finalDecision: any;
+  let reviewReads = 0, contentReads = 0;
 
   await page.route("**/api/v1/artifacts", route => route.fulfill({ json: [artifact(2), artifact(1)] }));
   await page.route("**/api/v1/artifacts/artifact_review/representations**", route => { const version = Number(new URL(route.request().url()).searchParams.get("version")) as 1 | 2; return route.fulfill({ json: [rep(version)] }); });
-  await page.route("**/api/v1/representations/rep_*/content", route => { const version = route.request().url().includes("rep_2") ? 2 : 1; return route.fulfill({ body: texts[version], headers: { "content-type": "text/plain; charset=utf-8", "x-darkstar-content-digest": `sha256=${rep(version).digest}` } }); });
+  await page.route("**/api/v1/representations/rep_*/content", route => { contentReads++; const version = route.request().url().includes("rep_2") ? 2 : 1; return route.fulfill({ body: texts[version], headers: { "content-type": "text/plain; charset=utf-8", "x-darkstar-content-digest": `sha256=${rep(version).digest}` } }); });
   await page.route("**/api/v1/artifacts/artifact_review/diff**", route => route.fulfill({ json: { artifactId: "artifact_review", from: 1, to: 2, changed: ["content"], fromDigest: d("1"), toDigest: d("2"), representations: { from: ["rep_1"], to: ["rep_2"] }, textDiff: { status: "available", from: { artifact: { artifactId: "artifact_review", version: 1 }, representationId: "rep_1", digest: rep(1).digest, representationKind: "text", mediaType: rep(1).mediaType, disclosure: "raw" }, to: { artifact: { artifactId: "artifact_review", version: 2 }, representationId: "rep_2", digest: rep(2).digest, representationKind: "text", mediaType: rep(2).mediaType, disclosure: "raw" }, policy: { algorithm: "darkstar-line-dp/v1", contextLines: 3, maxInputBytes: 2097152, maxWorkUnits: 1000000, pageSize: 100, maxPageBytes: 3145728 }, policyDigest: d("c"), resultDigest: d("d"), hunks: [{ fromStart: 1, toStart: 1, entries: [{ kind: "removed", fromLine: 1, text: "Draft title" }, { kind: "added", toLine: 1, text: "Final title" }] }], totalEntries: 2 } } }));
   await page.route("**/api/v1/review-sessions?**", route => route.fulfill({ json: { schemaVersion: 1, checkpointId: "checkpoint_1", sessions: revisionReady ? [first, second] : [first] } }));
   await page.route("**/api/v1/review-sessions/**", async route => {
@@ -39,7 +40,7 @@ test("run Artifacts embeds revision chat, annotations, diff and exact human appr
       second = { ...second, state: "approved", allowedActions: [], decision: { action: "approve", effect: "accept_candidate", actor: { type: "user", id: "local" }, comment: finalDecision.comment, decidedAt: now }, resourceVersion: 4 };
       await route.fulfill({ json: second }); return;
     }
-    if (path === "/api/v1/review-sessions/approval_1") { await route.fulfill({ json: first }); return; }
+    if (path === "/api/v1/review-sessions/approval_1") { reviewReads++; await route.fulfill({ json: first }); return; }
     if (path === "/api/v1/review-sessions/approval_2") { await route.fulfill({ json: second }); return; }
     await route.fulfill({ status: 404, json: { schemaVersion: 1, code: "missing", message: path, requestId: "req", retryable: false } });
   });
@@ -69,16 +70,53 @@ test("run Artifacts embeds revision chat, annotations, diff and exact human appr
   await page.screenshot({path:"out/review-layout-mobile.png",fullPage:true});
   await page.setViewportSize({width:1440,height:1000});
   const reader = page.locator(".annotation-reader");
+  const revise = page.getByRole("button", { name: /^Revise(?: ·|$)/ });
+  const general = page.getByLabel("Message the revision agent · version 1");
+  await expect(revise).toBeDisabled();
+  await general.fill("First general note.");
+  await expect(revise).toBeDisabled();
+  await page.getByRole("button", {name:"Add general annotation", exact:true}).click();
+  await expect(revise).toBeEnabled();
+  await general.fill("Second general note.");
+  await page.getByRole("button", {name:"Add general annotation", exact:true}).click();
+  await expect(page.getByRole("list", {name:"General annotation comments"}).getByRole("listitem")).toHaveCount(2);
+  expect(submittedBody).toBeUndefined();
+  await page.getByLabel("Remove general annotation 2").click();
+  await page.getByLabel("Remove general annotation 1").click();
+  await expect(revise).toBeDisabled();
+  await reader.evaluate(element => element.setAttribute("data-retained-reader", "yes"));
+  const readsBefore = reviewReads, contentBefore = contentReads;
+  await general.fill("Draft survives live refresh.");
+  await expect.poll(() => reviewReads).toBeGreaterThan(readsBefore + 1);
+  expect(contentReads).toBe(contentBefore);
+  await expect(reader).toHaveAttribute("data-retained-reader", "yes");
+  await expect(general).toHaveValue("Draft survives live refresh.");
+  await general.fill("");
   await expect(reader).toContainText("risky sentence");
   await reader.evaluate(element => { const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT); let node: Node | null; while ((node = walker.nextNode())) { const start = node.textContent!.indexOf("risky sentence"); if(start < 0 || node.parentElement?.tagName !== "SPAN" || !node.parentElement.closest("strong")) continue; const range = document.createRange(); range.setStart(node, start); range.setEnd(node, start + "risky sentence".length); const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range); element.dispatchEvent(new MouseEvent("mouseup", {bubbles:true})); break; } });
   await page.getByLabel(/Comment on selected text/).fill("Cite the source for this risk.");
   await page.getByRole("button", { name: "+ Annotate" }).click();
+  await reader.evaluate(element => {
+    const node = [...element.querySelectorAll('[data-source-start]')].find(item => item.textContent === 'First risky sentence.');
+    if (!node?.firstChild) throw new Error('Second selection text missing');
+    const range = document.createRange(); range.selectNodeContents(node.firstChild);
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    element.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+  });
+  await page.getByLabel(/Comment on selected text/).fill("Clarify this opening claim.");
+  await page.getByRole("button", {name:"+ Annotate"}).click();
+  await expect(page.getByRole("list", {name:"Annotation comments"}).getByRole("listitem")).toHaveCount(2);
   await page.getByLabel("Message the revision agent · version 1").fill("Revise the title and support the risk statement.");
-  await page.getByRole("button", { name: "Request revision · 1 annotations" }).click();
-  await expect.poll(() => submittedBody?.annotations?.length).toBe(1);
-  expect(submittedBody.annotations).toHaveLength(1);
-  expect(submittedBody.annotations[0].anchor.startOffset).toBe(new TextEncoder().encode(texts[1].slice(0,texts[1].indexOf("**risky sentence")+2)).length);
-  expect(submittedBody.annotations[0].anchor.quotedText).toBe("risky sentence");
+  await page.getByRole("button", {name:"Add general annotation", exact:true}).click();
+  await general.fill("Keep the examples concise.");
+  await page.getByRole("button", {name:"Add general annotation", exact:true}).click();
+  await page.getByRole("button", { name: "Revise · 4 annotations" }).click();
+  await expect.poll(() => submittedBody?.annotations?.length).toBe(2);
+  expect(submittedBody.annotations).toHaveLength(2);
+  expect(submittedBody.overallInstruction).toBe("Revise the title and support the risk statement.\n\nKeep the examples concise.");
+  const riskyAnnotation = submittedBody.annotations.find((item:any) => item.anchor.quotedText === "risky sentence");
+  expect(riskyAnnotation.anchor.startOffset).toBe(new TextEncoder().encode(texts[1].slice(0,texts[1].indexOf("**risky sentence")+2)).length);
+  expect(riskyAnnotation.anchor.quotedText).toBe("risky sentence");
   await page.goto("/work/work_1/run/run_1?tab=artifacts&review=approval_2&view=inline");
   await expect(page.getByRole("heading", { level: 1, name: "Candidate revision 2" })).toBeVisible();
   await page.getByText("Revision activity and review history", {exact:true}).click();

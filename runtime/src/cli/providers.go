@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"darkstar/src/core/workflow"
 	daemonconfiguration "darkstar/src/daemon/configuration"
 	"darkstar/src/doctor"
+	"darkstar/src/platform/toolchain"
 	platformport "darkstar/src/ports/platform"
 	providerport "darkstar/src/ports/provider"
 	"darkstar/src/ports/statestore"
@@ -33,6 +35,7 @@ type daemonProviderWiring struct {
 	workflows       *workflow.Catalog
 	configuredCodex string
 	executable      string
+	environment     []string
 	selectionErr    error
 	projectRoot     string
 	toolDatabase    string
@@ -47,7 +50,11 @@ var richArtifactSkill string
 const fakeProviderName = "fake"
 
 func newDaemonProviderWiring(paths platformport.Paths, projectRoot string) (*daemonProviderWiring, error) {
-	return resolveDaemonProviderWiring(paths, projectRoot, doctor.ResolveCodexExecutable)
+	wiring, err := resolveDaemonProviderWiring(paths, projectRoot, doctor.ResolveCodexExecutable)
+	if err == nil && wiring.selectionErr == nil {
+		err = toolchain.Activate(wiring.environment)
+	}
+	return wiring, err
 }
 
 func resolveDaemonProviderWiring(paths platformport.Paths, projectRoot string, resolve func(string) (string, error)) (*daemonProviderWiring, error) {
@@ -57,6 +64,10 @@ func resolveDaemonProviderWiring(paths platformport.Paths, projectRoot string, r
 	}
 	wiring := &daemonProviderWiring{configuredCodex: configured, projectRoot: projectRoot}
 	wiring.executable, wiring.selectionErr = resolve(configured)
+	if wiring.selectionErr != nil {
+		return wiring, nil
+	}
+	wiring.environment, wiring.selectionErr = toolchain.Environment(context.Background(), projectRoot, os.Environ())
 	if wiring.selectionErr != nil {
 		return wiring, nil
 	}
@@ -132,18 +143,28 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 		return providerport.AttemptRequest{}, fmt.Errorf("observe Codex capabilities for workflow attempt: %w", err)
 	}
 	request.NodeInputs = agentNodeInputs(request)
+	preparedPath := ""
+	if node, ok := request.Node.(workflow.ImplementationNode); ok && node.Executor.WorkspaceInput != "" {
+		prepared, resolveErr := wiring.resolvePreparedWorkspace(ctx, request, request.NodeInputs[node.Executor.WorkspaceInput])
+		if resolveErr != nil {
+			return providerport.AttemptRequest{}, resolveErr
+		}
+		preparedPath = prepared.Path
+		// Resolve the current location once for this attempt; prior input history
+		// remains unchanged and the stable workspace identity is retained.
+		request.NodeInputs[node.Executor.WorkspaceInput], err = json.Marshal(prepared)
+		if err != nil {
+			return providerport.AttemptRequest{}, err
+		}
+	}
 	built, err := buildWorkflowAttemptRequest(request, wiring.projectRoot, manifest.Fingerprint)
 	if err != nil {
 		return built, err
 	}
 	session := &workflowtools.Session{Database: wiring.toolDatabase, RunID: request.Run.RunID, AttemptID: request.Attempt.AttemptID, Node: request.Node, Inputs: request.NodeInputs}
 	if request.Node.Type() == workflow.NodeImplementation {
-		if node := request.Node.(workflow.ImplementationNode); node.Executor.WorkspaceInput != "" {
-			prepared, resolveErr := wiring.resolvePreparedWorkspace(ctx, request, request.NodeInputs[node.Executor.WorkspaceInput])
-			if resolveErr != nil {
-				return providerport.AttemptRequest{}, resolveErr
-			}
-			built.Workspace = prepared.Path
+		if preparedPath != "" {
+			built.Workspace = preparedPath
 			built.Prompt += " Use only the connected prepared workspace. Do not switch branches or create another worktree."
 		}
 		session.Workspace = built.Workspace
@@ -334,8 +355,13 @@ func workflowOutputSchema(node workflow.Node, outputs map[workflow.Identifier]wo
 }
 
 func (wiring *daemonProviderWiring) codexProvider() (providerport.Provider, error) {
+	environment, err := toolchain.Environment(context.Background(), wiring.projectRoot, os.Environ())
+	if err != nil {
+		return nil, err
+	}
 	return codex.NewAdapter(codex.AdapterOptions{
 		Executable: wiring.executable, ProjectRoot: wiring.projectRoot, EvidenceRecorder: wiring.evidence,
+		Client: codex.AppServerOptions{Environment: environment},
 	})
 }
 

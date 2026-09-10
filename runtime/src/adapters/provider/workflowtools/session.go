@@ -171,11 +171,11 @@ func (s *Session) Call(ctx context.Context, callID, name string, raw json.RawMes
 			return nil, err
 		}
 		if err := workflow.ValidateDeliverable(s.Node, args.ID, args.Value, s.Inputs, valueschemaadapter.Validator{}); err != nil {
-			return nil, err
+			return nil, s.recordRejectedOutput(ctx, callID, args.ID, err)
 		}
 		if s.Node.Type() == workflow.NodeImplementation && args.ID == "changeset" {
 			if err := s.validateWorkspaceResult(ctx, args.Value); err != nil {
-				return nil, err
+				return nil, s.recordRejectedOutput(ctx, callID, args.ID, err)
 			}
 		}
 		return s.append(ctx, "output:"+s.AttemptID+":"+string(args.ID), "submit", string(args.ID), callID, string(args.Value), false)
@@ -284,6 +284,16 @@ func (s *Session) read(ctx context.Context, resource string) (json.RawMessage, e
 	return json.Marshal(map[string]string{"markdown": md.String()})
 }
 
+// Rejections are diagnostic evidence, never successful output submissions.
+func (s *Session) recordRejectedOutput(ctx context.Context, callID string, id workflow.Identifier, cause error) error {
+	encoded, _ := json.Marshal(cause.Error())
+	_, err := s.append(ctx, "rejected_output:"+s.AttemptID+":"+string(id), "reject", string(id), callID, string(encoded), false)
+	if err != nil {
+		return fmt.Errorf("%v (could not save rejection evidence: %w)", cause, err)
+	}
+	return cause
+}
+
 // ResolveSubmittedOutputs uses durable tool submissions as the sole output authority.
 // Final assistant prose is transcript content, not a second competing result.
 func (s *Session) ResolveSubmittedOutputs(ctx context.Context) (json.RawMessage, error) {
@@ -300,6 +310,19 @@ func (s *Session) ResolveSubmittedOutputs(ctx context.Context) (json.RawMessage,
 			continue
 		}
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				var rejected string
+				rejectionErr := db.QueryRowContext(ctx, "SELECT content FROM workflow_tool_events WHERE run_id=? AND attempt_id=? AND resource=? ORDER BY sequence DESC LIMIT 1", s.RunID, s.AttemptID, "rejected_output:"+s.AttemptID+":"+string(id)).Scan(&rejected)
+				if rejectionErr == nil {
+					var reason string
+					if json.Unmarshal([]byte(rejected), &reason) == nil {
+						return nil, fmt.Errorf("required output %s was rejected: %s", id, reason)
+					}
+				} else if !errors.Is(rejectionErr, sql.ErrNoRows) {
+					return nil, fmt.Errorf("read output rejection evidence: %w", rejectionErr)
+				}
+				return nil, fmt.Errorf("required output %s was not submitted; call submit_output and correct any validation errors before completing", id)
+			}
 			return nil, fmt.Errorf("required output %s has no validated submission: %w", id, err)
 		}
 		value := json.RawMessage(staged)

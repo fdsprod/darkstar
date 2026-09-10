@@ -23,7 +23,7 @@ type processOwner struct {
 // process is assigned to the kill-on-close job.
 func configureOwnedProcess(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow: true, CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED,
+		HideWindow: true, CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED | windows.CREATE_NO_WINDOW,
 	}
 }
 

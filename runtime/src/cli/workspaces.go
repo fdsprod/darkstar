@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/sha256"
+	"darkstar/src/platform/process"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -74,12 +75,33 @@ func (w *daemonProviderWiring) resolvePreparedWorkspace(ctx context.Context, r r
 	if err = w.authorizeWorkspaceProject(r); err != nil {
 		return p, err
 	}
-	if p.ProjectID != r.Project.ProjectID || filepath.Clean(p.Repository) != filepath.Clean(w.projectRoot) {
+	if p.ID != ref.ID || filepath.Base(p.ID) != p.ID || p.RunID != r.Run.RunID || p.ProjectID != r.Project.ProjectID || filepath.Clean(p.Repository) != filepath.Clean(w.projectRoot) {
 		return p, errors.New("prepared workspace belongs to another repository")
 	}
 	manager, err := gitadapter.New("")
 	if err != nil {
 		return p, err
+	}
+	legacyPath := filepath.Join(filepath.Dir(w.toolDatabase), "worktrees", p.ID)
+	if p.Mode == "new_worktree" && filepath.Clean(p.Path) == legacyPath {
+		destination := filepath.Join(w.projectRoot, ".darkstar", "worktrees", p.ID)
+		// Both absolute locations are derived from the authorized repository and
+		// this run's durable workspace record, never from agent output paths.
+		if err = manager.RelocateWorktree(ctx, p.Repository, p.Path, destination, p.Branch, p.BaseSHA); err != nil {
+			return p, fmt.Errorf("relocate legacy workspace outside private daemon storage: %w", err)
+		}
+		p.Path = destination
+		updated, _ := json.Marshal(p)
+		result, updateErr := db.ExecContext(ctx, `UPDATE workflow_workspaces SET record=? WHERE id=? AND run_id=? AND record=?`, string(updated), p.ID, r.Run.RunID, encoded)
+		if updateErr != nil {
+			return p, updateErr
+		}
+		if count, _ := result.RowsAffected(); count == 0 {
+			var current string
+			if err = db.QueryRowContext(ctx, `SELECT record FROM workflow_workspaces WHERE id=? AND run_id=?`, p.ID, r.Run.RunID).Scan(&current); err != nil || current != string(updated) {
+				return p, errors.New("workspace record changed during relocation")
+			}
+		}
 	}
 	observed, err := manager.Inspect(ctx, repository.InspectRequest{Path: p.Repository})
 	if err != nil {
@@ -141,7 +163,11 @@ func (w *daemonProviderWiring) ExecuteWorkspaceNode(ctx context.Context, r runex
 				p.Mode = "new_worktree"
 				p.BaseRef = plan.BaseRef
 				p.Branch = strings.ReplaceAll(plan.Branch, "{runId}", r.Run.RunID)
-				p.Path = filepath.Join(filepath.Dir(w.toolDatabase), "worktrees", id)
+				// Agent tools must not traverse the daemon's private data directory.
+				// Keep editable checkouts in project-local state; the authoritative
+				// ownership record remains in the daemon database. Existing records
+				// retain their original path across retries.
+				p.Path = filepath.Join(w.projectRoot, ".darkstar", "worktrees", id)
 			default:
 				return nil, errors.New("choose a supported checkout mode")
 			}
@@ -212,7 +238,9 @@ func (w *daemonProviderWiring) ExecuteWorkspaceNode(ctx context.Context, r runex
 			}
 			checkCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			command := exec.CommandContext(checkCtx, argv[0], argv[1:]...)
+			process.HideConsole(command)
 			command.Dir = p.Path
+			command.Env = w.environment
 			output := &boundedCheckOutput{}
 			command.Stdout = output
 			command.Stderr = output

@@ -3,7 +3,7 @@
 DARKSTAR is Windows-first. Run all commands below from a PowerShell prompt at
 the repository root.
 
-## Pinned toolchain
+## Toolchain defaults and minimums
 
 - Go 1.24.0 (see `.go-version`)
 - golangci-lint 2.8.0 (see `.golangci-version`)
@@ -11,8 +11,11 @@ the repository root.
 - npm 10.9.0, bundled with Node.js 22.12.0 (see `.npm-version`)
 - Git for Windows
 
-The PowerShell entry points reject other tool versions so local and CI builds
-use the same compilers and package manager.
+Go, Node.js, and npm checks accept these versions or newer stable versions.
+Setup and CI install the listed defaults; the linter remains pinned.
+The daemon and scripts share a verified local tool binding so stale PATH entries
+cannot select different installations. See [project toolchain setup](runtime/docs/toolchains.md)
+for registration, repair, and cache behavior.
 
 ## Clean-checkout setup
 

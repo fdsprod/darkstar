@@ -21,13 +21,13 @@ type commandOwner struct {
 
 func configureAppServerProcess(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow: true, CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED,
+		HideWindow: true, CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED | windows.CREATE_NO_WINDOW,
 	}
 }
 
 func configureProbeProcess(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow: true, CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		HideWindow: true, CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW,
 	}
 }
 

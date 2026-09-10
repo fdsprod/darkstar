@@ -16,6 +16,7 @@ func StartAppServer(ctx context.Context, executable string, options AppServerOpt
 		return nil, InitializeResult{}, err
 	}
 	command := exec.Command(canonical, "app-server")
+	command.Env = options.Environment
 	configureAppServerProcess(command)
 	stdin, err := command.StdinPipe()
 	if err != nil {

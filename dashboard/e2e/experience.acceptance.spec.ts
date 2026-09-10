@@ -44,18 +44,21 @@ test("minimal Create Work defaults to automatic routing and keeps advanced overr
   await expect(page).toHaveURL(/\/board$/);
 });
 
-test("workflow authoring presents Structure and React Flow Canvas alternatives with typed connection controls", async ({ page }) => {
+test("workflow authoring surfaces the canvas editor and chat, and opens drafts with safe defaults", async ({ page }) => {
   await page.goto("/workflows");
-  await expect(page.getByRole("heading", { level: 1, name: "Workflow authoring" })).toBeVisible();
-  await page.getByRole("button", { name: "New" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Workflows" })).toBeVisible();
+  // Authoring is canvas-only: the editor and the authoring chat are its surfaces.
+  await expect(page.getByRole("region", { name: "Workflow editor" })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Workflow chat" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Select a workflow" })).toBeVisible();
+  await page.getByRole("button", { name: "New workflow", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New workflow draft" });
   await expect(dialog.getByLabel("Workflow name")).toHaveValue("workflow/new-workflow");
   await expect(dialog.getByLabel("Scope")).toHaveValue("user");
   await dialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByRole("button", { name: "Preview route" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Validate draft" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Publish" })).toBeDisabled();
-  await expect(page.getByRole("complementary", { name: "Workflow library and node palette" })).toBeVisible();
+  await expect(dialog).toBeHidden();
+  // Nothing is published from this surface without a selected workflow.
+  await expect(page.getByRole("button", { name: "Publish" })).toHaveCount(0);
 });
 
 test("Settings keeps compact controls, inheritance, secret safety, and diagnostics progressive", async ({ page }) => {

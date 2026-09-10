@@ -45,7 +45,9 @@ jobs:
           package-manager-cache: false
 
       - name: Verify pinned toolchain
-        run: ./scripts/Assert-Toolchain.ps1
+        run: |
+          ./scripts/Setup-Toolchain.ps1 -GoRoot (Split-Path -Parent (Split-Path -Parent (Get-Command go).Source)) -NodeRoot (Split-Path -Parent (Get-Command node).Source)
+          ./scripts/Assert-Toolchain.ps1
 
       - name: Install pinned lint and dashboard dependencies
         run: ./scripts/Bootstrap.ps1
