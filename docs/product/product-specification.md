@@ -524,6 +524,13 @@ Capability resolution is explicit and auditable: workflow pin → project bindin
 
 ### 6.7 Artifacts, lineage, and revision
 
+Every work item owns a durable workspace for private plugin state and per-attempt
+scratch/staged files, separate from its optional managed Git worktree. The daemon
+provisions it on creation and reconciles existing items at startup. Plugins use
+scoped handles; reads return digests and replacements require an expected digest
+to prevent stale writes. Publishing a staged file registers and binds an immutable
+artifact revision; later workspace edits cannot change published evidence.
+
 Artifacts shall be:
 
 - stored as normal files through an `ArtifactStore` connector;
@@ -695,7 +702,7 @@ The recommended MVP stack is:
 - **React + TypeScript** for the dashboard, compiled to static files and embedded in the daemon binary; and
 - **Git, Codex CLI, and delivery CLIs** invoked as child processes without shell interpolation wherever possible.
 
-Why Go: one binary, strong process/concurrency primitives, fast startup, simple local installation, and no runtime dependency for the daemon. The dashboard build toolchain is needed by contributors, not end users.
+Why Go: one binary, strong process/concurrency primitives, fast startup, and simple local installation for the daemon core. TypeScript plugin execution requires Node.js; the built-in tool package is embedded as generated JavaScript. The dashboard build toolchain is needed by contributors, not end users.
 
 ### 7.2 Platform boundary
 
@@ -791,7 +798,7 @@ Node attempts have their own states: `created`, `starting`, `running`, `validati
 
 ### 7.7 Integration boundaries
 
-The system has seven stable extension contracts:
+The system has eight stable extension contracts:
 
 1. **Provider adapters** run AI subscription CLIs.
 2. **Source adapters** import work items and refresh their source state.
@@ -800,8 +807,18 @@ The system has seven stable extension contracts:
 5. **Content processors** extract or derive text, metadata, OCR, transcripts, thumbnails, tables, or model-usable representations while retaining source lineage.
 6. **Platform strategies** isolate operating-system-specific process, filesystem, service, credential, and IPC behavior.
 7. **Node executors/validators** add deterministic or reasoning-capable workflow behavior.
+8. **Tools and resources** expose provider-neutral operations, schemas, and scoped host services. Open items and decision logs use the same TypeScript tool contract as workspace read/write/publication tools; daemon callbacks retain persistence, concurrency, and approval boundaries.
 
 Extensions run out of process in the long term. In the MVP, built-in adapters and a generic executable contract are sufficient, provided core packages depend only on interfaces and contract tests.
+
+The current [extension registration contract](../architecture/runtime/EXTENSIONS.md)
+defines exact implementation identities, family-specific catalogs, scoped custom
+nodes, validator evidence, descriptor-based authoring, and the TypeScript tool/resource
+process host. New runs pin the built-in plugin digest; older runs retain their
+original tool path. Package installation and TypeScript transports for the remaining
+extension families remain separate work. During workflow-model iteration, builds
+start without automatically installed example workflows; examples remain available
+as reference and test fixtures, and user/project workflows remain configurable.
 
 ---
 

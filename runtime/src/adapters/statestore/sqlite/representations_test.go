@@ -32,7 +32,7 @@ func TestRepresentationRegistryIsImmutableAndIdempotent(t *testing.T) {
 		RepresentationID: "representation_0123456789abcdef", IdempotencyKey: "derive-1",
 		Artifact:  artifactregistry.VersionRef{ArtifactID: artifact.ArtifactID, Version: artifact.Version},
 		Kind:      contentprocessor.RepresentationStructured,
-		Processor: contentprocessor.Descriptor{Name: "common", Version: "1.0.0", MediaTypes: []string{"application/json"}},
+		Processor: contentprocessor.Descriptor{Name: "common", Version: "1.0.0", Digest: strings.Repeat("d", 64), MediaTypes: []string{"application/json"}},
 		MediaType: "application/json", Locator: artifactstore.Locator("sha256:" + strings.Repeat("b", 64)),
 		Digest: strings.Repeat("b", 64), Size: 12, TokenEstimate: 3,
 		Disclosure: representationregistry.DisclosureRaw, Diagnostics: []string{}, Metadata: map[string]string{"sourceFormat": "json"},
@@ -45,6 +45,9 @@ func TestRepresentationRegistryIsImmutableAndIdempotent(t *testing.T) {
 	repeated, inserted, err := database.RegisterRepresentation(ctx, request)
 	if err != nil || inserted || !reflect.DeepEqual(repeated, created) {
 		t.Fatalf("Register(repeat) = %#v, %v, %v", repeated, inserted, err)
+	}
+	if created.Processor.Digest != request.Processor.Digest {
+		t.Fatal("processor implementation digest was not persisted")
 	}
 	conflict := request
 	conflict.Digest = strings.Repeat("c", 64)

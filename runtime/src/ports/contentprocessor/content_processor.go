@@ -17,6 +17,7 @@ type Processor interface {
 }
 
 type Descriptor struct {
+	Digest     string   `json:"digest,omitempty"`
 	Name       string   `json:"name"`
 	Version    string   `json:"version"`
 	MediaTypes []string `json:"mediaTypes"`

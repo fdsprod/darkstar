@@ -191,7 +191,7 @@ func (s *Service) Launch(ctx context.Context, request ControlRequest) (statestor
 		controlEvent(eventKind, run, request, map[string]any{"assessmentDigest": request.ConfirmationDigest}, now),
 		pendingEvent("visit.created", statestore.AggregateVisit, visitID, 0, run.RunID, request.IdempotencyKey+":visit", statestore.ActorSystem, "daemon", now, map[string]any{"runId": run.RunID, "nodeId": entryID}),
 		pendingEvent("attempt.created", statestore.AggregateAttempt, attemptID, 0, run.RunID, request.IdempotencyKey+":attempt", statestore.ActorSystem, "daemon", now, map[string]any{
-			"runId": run.RunID, "visitId": visitID, "nodeId": entryID, "scenario": ScenarioWorkflow, "provider": ProviderCodex,
+			"runId": run.RunID, "visitId": visitID, "nodeId": entryID, "scenario": ScenarioWorkflow, "provider": s.workflowProviderForRun(ctx, run.RunID),
 			"logReference": strings.TrimPrefix(attemptID, "attempt_") + ".log", "priority": run.Priority,
 		}),
 	)

@@ -3,6 +3,7 @@ package runexecution
 import (
 	"context"
 	"crypto/sha256"
+	"darkstar/src/core/extensions"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -272,7 +273,7 @@ func (s *Service) reviewAttemptContext(ctx context.Context, request AttemptReque
 	request.Node = workflow.ReasoningNode{Common: workflow.NodeFields{Inputs: map[workflow.Identifier]workflow.Binding{"candidate": workflow.RequiredBinding{Type: workflow.ValueMarkdown}, "feedback": workflow.RequiredBinding{Type: workflow.ValueObject}}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{workflow.Identifier(output): declaration}}, Executor: workflow.ReasoningExecutor{Instructions: "Revise the supplied Markdown candidate using the human feedback and annotations. Return the complete revised document under output " + output + ". Preserve content outside the requested changes. Do not approve the document, edit repository files, or perform the work described in the document."}}
 	return request, nil
 }
-func (s *Service) completeReviewAttempt(ctx context.Context, dispatch AttemptRequestContext, attempt statestore.AttemptProjection, run statestore.RunProjection, visit statestore.NodeProjection, result provider.SucceededResult) (bool, error) {
+func (s *Service) completeReviewAttempt(ctx context.Context, dispatch AttemptRequestContext, attempt statestore.AttemptProjection, run statestore.RunProjection, visit statestore.NodeProjection, result provider.SucceededResult, validationEvidence []extensions.ValidationEvidence) (bool, error) {
 	session, err := s.activeReview(ctx, attempt)
 	if err != nil || session == nil {
 		return session != nil, err
@@ -308,6 +309,9 @@ func (s *Service) completeReviewAttempt(ctx context.Context, dispatch AttemptReq
 	// this sequence from the immutable result if the daemon stops between commits.
 	now := s.now()
 	data := map[string]any{"lastSequence": attempt.LastSequence, "output": json.RawMessage(result.StructuredOutput)}
+	if len(validationEvidence) > 0 {
+		data["validationEvidence"] = validationEvidence
+	}
 	_, err = s.store.Append(ctx, pendingEvent("attempt.result_received", statestore.AggregateAttempt, attempt.AttemptID, attempt.ResourceVersion, run.RunID, "result:"+attempt.AttemptID, statestore.ActorProvider, attempt.Provider, now, data), pendingEvent("attempt.succeeded", statestore.AggregateAttempt, attempt.AttemptID, attempt.ResourceVersion+1, run.RunID, "terminal:"+attempt.AttemptID, statestore.ActorSystem, "daemon", now, data), pendingEvent("visit.result_received", statestore.AggregateVisit, visit.VisitID, visit.ResourceVersion, run.RunID, "result:"+attempt.AttemptID, statestore.ActorSystem, "daemon", now, data), pendingEvent("visit.waiting_checkpoint", statestore.AggregateVisit, visit.VisitID, visit.ResourceVersion+1, run.RunID, "checkpoint:"+attempt.AttemptID, statestore.ActorSystem, "daemon", now, data), pendingEvent("run.waiting", statestore.AggregateRun, run.RunID, run.ResourceVersion, run.RunID, "checkpoint:"+attempt.AttemptID, statestore.ActorSystem, "daemon", now, data))
 	if err != nil {
 		return true, err
@@ -341,6 +345,10 @@ func (s *Service) advanceReviewedArtifacts(ctx context.Context, dispatch Attempt
 		}
 		outputs[workflow.Identifier(id)], _ = json.Marshal(text)
 	}
+	validationEvidence, err := s.validateExtensionOutputs(ctx, dispatch, outputs)
+	if err != nil {
+		return err
+	}
 	advance, err := prepareWorkflowAdvance(dispatch, outputs, s.valueSchemas)
 	if err != nil {
 		return err
@@ -354,7 +362,7 @@ func (s *Service) advanceReviewedArtifacts(ctx context.Context, dispatch Attempt
 	}
 	events := []statestore.PendingEvent{pendingEvent("run.resumed", statestore.AggregateRun, run.RunID, run.ResourceVersion, run.RunID, "review-accepted:"+visit.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{}), pendingEvent("run.visit_ready", statestore.AggregateRun, run.RunID, run.ResourceVersion+1, run.RunID, "review-ready:"+visit.VisitID, statestore.ActorSystem, "daemon", s.now(), map[string]any{})}
 	run.ResourceVersion += 2
-	return s.finishWorkflowAdvance(ctx, dispatch, attempt, run, visit, saved, advance, events, visit.ResourceVersion, map[string]any{"reviewed": true})
+	return s.finishWorkflowAdvance(ctx, dispatch, attempt, run, visit, saved, advance, events, visit.ResourceVersion, map[string]any{"reviewed": true, "validationEvidence": validationEvidence})
 }
 func (s *Service) recoverReviewResponse(ctx context.Context, session cp.ReviewSession, attempt statestore.AttemptProjection) error {
 	outcome := cp.AgentFailed

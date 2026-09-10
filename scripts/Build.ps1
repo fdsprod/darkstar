@@ -31,6 +31,11 @@ Push-Location $repositoryRoot
 try {
     New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
+    & node packages/plugin-sdk/build.mjs --check
+    if ($LASTEXITCODE -ne 0) {
+        throw "Embedded plugin bundle is stale. Run node packages/plugin-sdk/build.mjs before building."
+    }
+
     if (-not $SkipDashboard) {
         & npm run build
         if ($LASTEXITCODE -ne 0) {
@@ -64,11 +69,6 @@ try {
         throw "Go build failed with exit code $LASTEXITCODE."
     }
 
-    $workflowDirectory = Join-Path $OutputDirectory "workflows"
-    New-Item -ItemType Directory -Force -Path $workflowDirectory | Out-Null
-    foreach ($workflowName in @("software-delivery.json", "story-execution.json")) {
-        Copy-Item -LiteralPath (Join-Path $repositoryRoot "examples/workflows/$workflowName") -Destination (Join-Path $workflowDirectory $workflowName) -Force
-    }
     $planningTemplateDirectory = Join-Path $OutputDirectory "templates/planning"
     New-Item -ItemType Directory -Force -Path $planningTemplateDirectory | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "templates/planning") -File -Filter "*.md" | ForEach-Object {

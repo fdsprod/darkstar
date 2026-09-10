@@ -20,6 +20,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "npm ci failed with exit code $LASTEXITCODE."
     }
+    & npm ci --prefix packages/plugin-sdk
+    if ($LASTEXITCODE -ne 0) {
+        throw "Plugin SDK dependency installation failed with exit code $LASTEXITCODE."
+    }
 }
 finally {
     Pop-Location

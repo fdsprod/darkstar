@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"context"
+	"darkstar/src/ports/nodeextension"
 	"encoding/json"
 	"time"
 
@@ -52,6 +53,7 @@ type CommandRunner interface {
 type LegacyCommandScope struct{ WorkflowID, NodeID, Workspace string }
 
 type BuiltinServices struct {
+	Extensions    nodeextension.Resolver
 	Workspaces    WorkspaceServices
 	Commands      CommandRunner
 	LegacyCommand LegacyCommandScope

@@ -176,3 +176,18 @@ func (w *daemonProviderWiring) ExecuteWorkspaceNode(ctx context.Context, r runex
 }
 
 func (w *daemonProviderWiring) NodeCommandRunner() nodes.CommandRunner { return nodeprocess.Runner{} }
+
+func (w *daemonProviderWiring) ExecuteExtensionNode(ctx context.Context, request runexecution.AttemptRequestContext) (json.RawMessage, error) {
+	if err := w.authorizeWorkspaceProject(request); err != nil {
+		return nil, err
+	}
+	handler, err := nodes.Lookup(request.Node)
+	if err != nil {
+		return nil, err
+	}
+	deterministic, ok := handler.(nodes.DeterministicHandler)
+	if !ok {
+		return nil, errors.New("extension must be deterministic")
+	}
+	return deterministic.Execute(ctx, request.NodeInputs, nodes.BuiltinServices{Extensions: w.nodeExtensions})
+}

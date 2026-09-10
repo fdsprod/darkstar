@@ -12,6 +12,7 @@ registry; schema declarations alone do not make a type executable.
 | `workspace_prepare_node.go` | Checkout selection, frozen base, durable workspace reuse, and worktree attachment through injected services. |
 | `workspace_validate_node.go` | Required checks in the resolved workspace, timeout policy, failure propagation, and evidence. |
 | `gate_node.go` | Deterministic predicate evaluation and gate evidence. |
+| `extension_node.go` | Exact extension resolution, copied declared inputs, and candidate output submission to daemon validation. |
 | `command_node.go` | Existing restricted `darkstar/story-execution` validation compatibility behavior. |
 | `approval_node.go` | Explicit unsupported standalone execution boundary; artifact checkpoints remain supported by the daemon. |
 | `subworkflow_node.go` | Explicit unsupported production dispatch boundary. |
@@ -32,6 +33,9 @@ no workflow graph or scheduler context. Workspace identity fields are daemon
 metadata used for durable ownership, not agent instructions.
 
 The Go node configuration types and serialization remain in `core/workflow`.
+Custom operations use the closed `workflow.ExtensionNode` variant and the open
+`ports/nodeextension.Executor` port. The handler union stays closed; third-party
+behavior does not implement a scheduler handler or receive `BuiltinServices`.
 The CLI composition layer wires storage, Git, and process services. Workspace
 authorization, SQLite records, and legacy relocation remain in `cli/workspaces.go`;
 bounded process execution is in `adapters/executor/nodeprocess`. Codex protocol

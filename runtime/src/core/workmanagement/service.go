@@ -12,6 +12,7 @@ import (
 
 	"darkstar/src/core/identity"
 	"darkstar/src/ports/statestore"
+	"darkstar/src/ports/workspace"
 )
 
 const (
@@ -70,8 +71,51 @@ type WorkView struct {
 
 // Service owns project and work-item public commands.
 type Service struct {
-	store statestore.Store
-	now   func() time.Time
+	store      statestore.Store
+	now        func() time.Time
+	workspaces workspace.Provisioner
+}
+
+// NewWithWorkspaces provisions private storage before a work command succeeds.
+// Physical locations remain adapter concerns and are not persisted in projections.
+func NewWithWorkspaces(store statestore.Store, workspaces workspace.Provisioner) (*Service, error) {
+	if workspaces == nil {
+		return nil, errors.New("work management requires workspace provisioning")
+	}
+	s, err := New(store)
+	if err != nil {
+		return nil, err
+	}
+	s.workspaces = workspaces
+	return s, nil
+}
+
+// ReconcileWorkspaces repairs missing directories for existing work on startup.
+// Retained history, including deleted work, is never removed by reconciliation.
+func (s *Service) ReconcileWorkspaces(ctx context.Context) error {
+	if s.workspaces == nil {
+		return nil
+	}
+	items, err := s.store.WorkItems(ctx)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if err := s.ensureWorkspace(ctx, item.WorkItemID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) ensureWorkspace(ctx context.Context, workID string) error {
+	if s.workspaces == nil {
+		return nil
+	}
+	if err := s.workspaces.Ensure(ctx, workID); err != nil {
+		return fmt.Errorf("provision work-item workspace: %w", err)
+	}
+	return nil
 }
 
 // New constructs the service over the authoritative event store.
@@ -238,13 +282,16 @@ func (s *Service) createWork(ctx context.Context, scope, projectID, title, sourc
 		if err := json.Unmarshal(command.Response, &value); err != nil {
 			return statestore.WorkItemProjection{}, fmt.Errorf("decode replayed work response: %w", err)
 		}
-		return value, nil
+		return value, s.ensureWorkspace(ctx, value.WorkItemID)
 	}
 	workID := identity.Deterministic("work_", scope+"\x00"+idempotencyKey)
 	if reused {
 		value, getErr := s.store.WorkItem(ctx, workID)
 		if getErr != nil {
 			return statestore.WorkItemProjection{}, ErrCommandInProgress
+		}
+		if err := s.ensureWorkspace(ctx, value.WorkItemID); err != nil {
+			return value, err
 		}
 		return value, s.complete(ctx, scope, idempotencyKey, httpCreated, value, nil)
 	}
@@ -259,6 +306,9 @@ func (s *Service) createWork(ctx context.Context, scope, projectID, title, sourc
 	value, err := s.store.WorkItem(ctx, workID)
 	if err != nil {
 		return statestore.WorkItemProjection{}, err
+	}
+	if err := s.ensureWorkspace(ctx, value.WorkItemID); err != nil {
+		return value, err
 	}
 	return value, s.complete(ctx, scope, idempotencyKey, httpCreated, value, events)
 }

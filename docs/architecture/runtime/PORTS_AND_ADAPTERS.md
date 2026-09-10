@@ -12,11 +12,20 @@ interfaces and normalized values under `runtime/src/ports`; concrete provider,
 storage, delivery, processing, and operating-system behavior depends inward on
 those interfaces. A concrete adapter is never a dependency of core code.
 
+See [extension registration and execution](EXTENSIONS.md) for immutable catalogs,
+exact implementation pins, and the boundary for future out-of-process plugins.
+
 The required external-effect port families are:
 
 | Package | Owns |
 |---|---|
 | `ports/provider` | Provider health, capabilities, attempt lifecycle, normalized events, interaction, cancellation, result, and recovery metadata. |
+| `ports/worksource` | Read-only, revision-bound external work import and refresh observations. |
+| `ports/nodeextension` | Scoped custom-node input/configuration and candidate-output execution. |
+| `ports/outputvalidator` | Deterministic candidate checks and inspectable diagnostics. |
+| `ports/tool` | Provider-neutral tool definitions, result schemas, and invocation handlers. |
+| `ports/plugin` | Versioned resource/tool descriptors and scoped external-process host calls. |
+| `ports/workspace` | Host-bound work-item storage handles with isolated areas and digest-checked replacement. |
 | `ports/artifactstore` | Atomic immutable blob storage and opaque-locator read/stat/list operations. |
 | `ports/delivery` | Remote branch publication and provider-neutral change-request observation/create/update operations. |
 | `ports/contentprocessor` | Bounded, isolated derivation of immutable artifact representations. |

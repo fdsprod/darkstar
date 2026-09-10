@@ -17,30 +17,46 @@ import (
 	"darkstar/src/adapters/provider/workflowtools"
 	"darkstar/src/core/config"
 	"darkstar/src/core/configmutation"
+	"darkstar/src/core/extensions"
 	"darkstar/src/core/nodes"
+	"darkstar/src/core/pluginworkspace"
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/workflow"
 	daemonconfiguration "darkstar/src/daemon/configuration"
 	"darkstar/src/doctor"
 	"darkstar/src/platform/toolchain"
+	"darkstar/src/ports/extension"
+	"darkstar/src/ports/nodeextension"
+	"darkstar/src/ports/outputvalidator"
 	platformport "darkstar/src/ports/platform"
 	providerport "darkstar/src/ports/provider"
 	"darkstar/src/ports/statestore"
+	"darkstar/src/ports/workspace"
 )
 
 // daemonProviderWiring keeps fake acceptance scenarios separate from the
 // selected production provider. A failed or ambiguous Codex selection remains
 // explicit so fake scenarios still run while real attempts fail closed.
 type daemonProviderWiring struct {
-	configuration   *configmutation.Service
-	workflows       *workflow.Catalog
-	configuredCodex string
-	executable      string
-	environment     []string
-	selectionErr    error
-	projectRoot     string
-	toolDatabase    string
-	evidence        codex.EvidenceRecorder
+	workspaces       workspace.Manager
+	pluginArtifacts  pluginworkspace.Artifacts
+	resourcePlugin   *workflowtools.ResourcePlugin
+	pluginErr        error
+	pluginConfigured bool
+	pluginRef        extension.Ref
+	validators       *extensions.Catalog[outputvalidator.Validator]
+	nodeExtensions   nodeextension.Resolver
+	providers        *runexecution.ProviderCatalog
+	defaultProvider  string
+	configuration    *configmutation.Service
+	workflows        *workflow.Catalog
+	configuredCodex  string
+	executable       string
+	environment      []string
+	selectionErr     error
+	projectRoot      string
+	toolDatabase     string
+	evidence         codex.EvidenceRecorder
 }
 
 // richArtifactSkill is generated from skills/builtin/rich-artifacts/SKILL.md.
@@ -54,6 +70,9 @@ func newDaemonProviderWiring(paths platformport.Paths, projectRoot string) (*dae
 	wiring, err := resolveDaemonProviderWiring(paths, projectRoot, doctor.ResolveCodexExecutable)
 	if err == nil && wiring.selectionErr == nil {
 		err = toolchain.Activate(wiring.environment)
+	}
+	if err == nil {
+		wiring.configurePlugins(paths.Data)
 	}
 	return wiring, err
 }
@@ -111,37 +130,56 @@ func (wiring *daemonProviderWiring) doctorProvider() (providerport.Provider, err
 	return wiring.codexProvider()
 }
 
-func (wiring *daemonProviderWiring) Provider(_ context.Context, request runexecution.ProviderRequest) (providerport.Provider, error) {
-	switch request.Provider {
-	case fakeProviderName:
-		if request.Scenario != runexecution.ScenarioSuccess && request.Scenario != runexecution.ScenarioRestart {
-			return nil, runexecution.ErrInvalidScenario
-		}
-		return newFakeRunProvider(request.Scenario, request.AttemptID, request.Resume)
-	case runexecution.ProviderCodex:
-		if request.Scenario != runexecution.ScenarioWorkflow {
-			return nil, fmt.Errorf("codex provider does not support scenario %q", request.Scenario)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported durable provider %q", request.Provider)
+func (wiring *daemonProviderWiring) DefaultWorkflowProvider() string {
+	if wiring.defaultProvider != "" {
+		return wiring.defaultProvider
 	}
-	if wiring.selectionErr != nil {
-		return nil, fmt.Errorf("codex provider is unavailable: %w", wiring.selectionErr)
+	return runexecution.ProviderCodex
+}
+
+func (wiring *daemonProviderWiring) providerCatalog() (*runexecution.ProviderCatalog, error) {
+	if wiring.providers != nil {
+		return wiring.providers, nil
 	}
-	return wiring.codexProvider()
+	return runexecution.NewProviderCatalog(
+		runexecution.ProviderRegistration{Name: fakeProviderName, Factory: runexecution.WorkflowProviderFactoryFunc(func(_ context.Context, request runexecution.ProviderRequest) (providerport.Provider, error) {
+			if request.Scenario != runexecution.ScenarioSuccess && request.Scenario != runexecution.ScenarioRestart {
+				return nil, runexecution.ErrInvalidScenario
+			}
+			return newFakeRunProvider(request.Scenario, request.AttemptID, request.Resume)
+		})},
+		runexecution.ProviderRegistration{Name: runexecution.ProviderCodex, Factory: runexecution.WorkflowProviderFactoryFunc(func(_ context.Context, request runexecution.ProviderRequest) (providerport.Provider, error) {
+			if request.Scenario != runexecution.ScenarioWorkflow {
+				return nil, fmt.Errorf("codex provider does not support scenario %q", request.Scenario)
+			}
+			if wiring.selectionErr != nil {
+				return nil, fmt.Errorf("codex provider is unavailable: %w", wiring.selectionErr)
+			}
+			return wiring.codexProvider()
+		})},
+	)
+}
+
+func (wiring *daemonProviderWiring) Provider(ctx context.Context, request runexecution.ProviderRequest) (providerport.Provider, error) {
+	catalog, err := wiring.providerCatalog()
+	if err != nil {
+		return nil, err
+	}
+	return catalog.Provider(ctx, request)
 }
 
 func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, request runexecution.AttemptRequestContext) (providerport.AttemptRequest, error) {
-	if wiring.selectionErr != nil {
-		return providerport.AttemptRequest{}, fmt.Errorf("codex provider is unavailable: %w", wiring.selectionErr)
+	providerName := request.Attempt.Provider
+	if providerName == "" {
+		providerName = wiring.DefaultWorkflowProvider()
 	}
-	adapter, err := wiring.codexProvider()
+	adapter, err := wiring.Provider(ctx, runexecution.ProviderRequest{Provider: providerName, Scenario: runexecution.ScenarioWorkflow, AttemptID: request.Attempt.AttemptID})
 	if err != nil {
 		return providerport.AttemptRequest{}, err
 	}
 	manifest, err := adapter.Capabilities(ctx)
 	if err != nil {
-		return providerport.AttemptRequest{}, fmt.Errorf("observe Codex capabilities for workflow attempt: %w", err)
+		return providerport.AttemptRequest{}, fmt.Errorf("observe provider capabilities for workflow attempt: %w", err)
 	}
 	request.NodeInputs = agentNodeInputs(request)
 
@@ -171,6 +209,12 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 		built.Prompt += suffix
 	}
 	session.Workspace = built.Workspace
+	if err := wiring.bindPluginTools(session, request); err != nil {
+		return providerport.AttemptRequest{}, err
+	}
+	if err := session.Validate(); err != nil {
+		return providerport.AttemptRequest{}, fmt.Errorf("validate attempt tools: %w", err)
+	}
 	if err := session.PrepareMarkdown(ctx); err != nil {
 		return providerport.AttemptRequest{}, fmt.Errorf("capture Markdown baseline: %w", err)
 	}
@@ -195,7 +239,7 @@ func buildWorkflowAttemptRequest(request runexecution.AttemptRequestContext, wor
 	}
 	agentHandler, ok := handler.(nodes.AgentHandler)
 	if !ok {
-		return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q is %s; it is not a Codex-backed executor", request.Attempt.NodeID, request.Node.Type())
+		return providerport.AttemptRequest{}, fmt.Errorf("workflow node %q is %s; it is not an agent-backed executor", request.Attempt.NodeID, request.Node.Type())
 	}
 	task, err := agentHandler.BuildTask(request.Attempt.NodeID)
 	if err != nil {
@@ -413,4 +457,43 @@ type agentWorkspaceServices struct {
 func (s agentWorkspaceServices) CaptureBaseline(ctx context.Context, path string) error {
 	s.session.Workspace = path
 	return s.session.PrepareWorkspace(ctx)
+}
+
+func (w *daemonProviderWiring) ValidateExtensions(ctx context.Context, checks []extensions.Check, inputs, outputs map[workflow.Identifier]json.RawMessage) ([]extensions.ValidationEvidence, error) {
+	in, out := map[string]json.RawMessage{}, map[string]json.RawMessage{}
+	for k, v := range inputs {
+		in[string(k)] = v
+	}
+	for k, v := range outputs {
+		out[string(k)] = v
+	}
+	return extensions.Validate(ctx, w.validators, valueschemaadapter.Validator{}, checks, in, out)
+}
+
+func (w *daemonProviderWiring) ExtensionPins() map[string]extension.Ref {
+	c, err := w.providerCatalog()
+	if err != nil {
+		return nil
+	}
+	pins := map[string]extension.Ref{}
+	key := "provider:" + w.DefaultWorkflowProvider()
+	if ref, ok := c.ExtensionPins()[key]; ok {
+		pins[key] = ref
+	}
+	if w.pluginConfigured {
+		pins[builtinPluginPin] = w.pluginRef
+	}
+	return pins
+}
+func (w *daemonProviderWiring) ValidateExtensionPins(pins map[string]extension.Ref) error {
+	for name, ref := range pins {
+		if strings.HasPrefix(name, "plugin:") && (name != builtinPluginPin || !w.pluginConfigured || w.pluginRef != ref) {
+			return fmt.Errorf("EXTENSION_UNAVAILABLE: exact plugin %s@%s (%s) is required", ref.ID, ref.Version, ref.Digest)
+		}
+	}
+	c, err := w.providerCatalog()
+	if err != nil {
+		return err
+	}
+	return c.ValidateExtensionPins(pins)
 }

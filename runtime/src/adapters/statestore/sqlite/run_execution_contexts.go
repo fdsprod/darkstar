@@ -12,14 +12,17 @@ import (
 	"io"
 	"strings"
 
+	"darkstar/src/ports/extension"
 	"darkstar/src/ports/statestore"
 )
 
 const runExecutionContextSelect = `SELECT schema_version, run_id, revision,
-	run_inputs_json, accepted_outputs_json, frame_json, digest
+	run_inputs_json, accepted_outputs_json, frame_json, digest, extension_pins_json, provider_name
 	FROM run_execution_contexts`
 
 type runExecutionContextContent struct {
+	Provider        string                                `json:"provider,omitempty"`
+	ExtensionPins   map[string]extension.Ref              `json:"extensionPins,omitempty"`
 	SchemaVersion   uint64                                `json:"schemaVersion"`
 	RunID           string                                `json:"runId"`
 	RunInputs       map[string]json.RawMessage            `json:"runInputs"`
@@ -57,8 +60,17 @@ func (d *Database) SaveRunExecutionContext(ctx context.Context, value statestore
 	}()
 
 	var actual uint64
+	pins := normalized.ExtensionPins
+	if pins == nil {
+		pins = map[string]extension.Ref{}
+	}
+	pinsJSON, err := json.Marshal(pins)
+	if err != nil {
+		return statestore.RunExecutionContext{}, err
+	}
+	var existingPins, existingProvider string
 	var existingInputs string
-	readErr := tx.QueryRowContext(ctx, `SELECT revision, run_inputs_json FROM run_execution_contexts WHERE run_id = ?`, normalized.RunID).Scan(&actual, &existingInputs)
+	readErr := tx.QueryRowContext(ctx, `SELECT revision, run_inputs_json, extension_pins_json, provider_name FROM run_execution_contexts WHERE run_id = ?`, normalized.RunID).Scan(&actual, &existingInputs, &existingPins, &existingProvider)
 	switch {
 	case errors.Is(readErr, sql.ErrNoRows) && expectedRevision != 0:
 		return statestore.RunExecutionContext{}, contextRevisionConflict(normalized.RunID, expectedRevision, 0)
@@ -66,6 +78,10 @@ func (d *Database) SaveRunExecutionContext(ctx context.Context, value statestore
 		return statestore.RunExecutionContext{}, fmt.Errorf("read current run execution context revision: %w", readErr)
 	case readErr == nil && actual != expectedRevision:
 		return statestore.RunExecutionContext{}, contextRevisionConflict(normalized.RunID, expectedRevision, actual)
+	case readErr == nil && existingProvider != normalized.Provider:
+		return statestore.RunExecutionContext{}, errors.New("run provider selection is immutable")
+	case readErr == nil && existingPins != string(pinsJSON):
+		return statestore.RunExecutionContext{}, errors.New("run extension pins are immutable")
 	case readErr == nil && existingInputs != runInputsJSON:
 		return statestore.RunExecutionContext{}, errors.New("run execution inputs are immutable")
 	}
@@ -79,9 +95,9 @@ func (d *Database) SaveRunExecutionContext(ctx context.Context, value statestore
 	now := formatTime(d.now().UTC().Round(0))
 	if errors.Is(readErr, sql.ErrNoRows) {
 		_, err = tx.ExecContext(ctx, `INSERT INTO run_execution_contexts(
-			run_id, schema_version, revision, run_inputs_json, accepted_outputs_json, frame_json, digest, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, normalized.RunID, normalized.SchemaVersion,
-			revision, runInputsJSON, outputsJSON, frameJSON, normalized.Digest, now, now)
+			run_id, schema_version, revision, run_inputs_json, accepted_outputs_json, frame_json, digest, created_at, updated_at, extension_pins_json, provider_name)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, normalized.RunID, normalized.SchemaVersion,
+			revision, runInputsJSON, outputsJSON, frameJSON, normalized.Digest, now, now, string(pinsJSON), normalized.Provider)
 	} else {
 		_, err = tx.ExecContext(ctx, `UPDATE run_execution_contexts
 			SET schema_version = ?, revision = ?, accepted_outputs_json = ?, frame_json = ?, digest = ?, updated_at = ?
@@ -102,6 +118,14 @@ func (d *Database) SaveRunExecutionContext(ctx context.Context, value statestore
 }
 
 func normalizeRunExecutionContext(value statestore.RunExecutionContext) (statestore.RunExecutionContext, string, string, string, error) {
+	for key, ref := range value.ExtensionPins {
+		if key == "" {
+			return value, "", "", "", errors.New("extension pin name is required")
+		}
+		if err := ref.Validate(); err != nil {
+			return value, "", "", "", err
+		}
+	}
 	if value.SchemaVersion != statestore.RunExecutionContextSchemaVersion {
 		return value, "", "", "", fmt.Errorf("unsupported run execution context schema version %d", value.SchemaVersion)
 	}
@@ -189,8 +213,8 @@ func decodeCanonicalJSON(raw json.RawMessage) (json.RawMessage, any, error) {
 }
 
 func executionContextDigest(value statestore.RunExecutionContext) (string, error) {
-	content := runExecutionContextContent{SchemaVersion: value.SchemaVersion, RunID: value.RunID,
-		RunInputs: value.RunInputs, AcceptedOutputs: value.AcceptedOutputs, FrameSnapshot: value.FrameSnapshot}
+	content := runExecutionContextContent{Provider: value.Provider, SchemaVersion: value.SchemaVersion, RunID: value.RunID,
+		RunInputs: value.RunInputs, AcceptedOutputs: value.AcceptedOutputs, FrameSnapshot: value.FrameSnapshot, ExtensionPins: value.ExtensionPins}
 	encoded, err := json.Marshal(content)
 	if err != nil {
 		return "", fmt.Errorf("encode run execution context digest: %w", err)
@@ -201,8 +225,8 @@ func executionContextDigest(value statestore.RunExecutionContext) (string, error
 
 func scanRunExecutionContext(row rowScanner) (statestore.RunExecutionContext, error) {
 	var value statestore.RunExecutionContext
-	var inputsJSON, outputsJSON, frameJSON string
-	if err := row.Scan(&value.SchemaVersion, &value.RunID, &value.Revision, &inputsJSON, &outputsJSON, &frameJSON, &value.Digest); err != nil {
+	var inputsJSON, outputsJSON, frameJSON, pinsJSON string
+	if err := row.Scan(&value.SchemaVersion, &value.RunID, &value.Revision, &inputsJSON, &outputsJSON, &frameJSON, &value.Digest, &pinsJSON, &value.Provider); err != nil {
 		return statestore.RunExecutionContext{}, err
 	}
 	decoder := json.NewDecoder(strings.NewReader(inputsJSON))
@@ -214,6 +238,9 @@ func scanRunExecutionContext(row rowScanner) (statestore.RunExecutionContext, er
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&value.AcceptedOutputs); err != nil {
 		return statestore.RunExecutionContext{}, fmt.Errorf("decode accepted outputs: %w", err)
+	}
+	if err := json.Unmarshal([]byte(pinsJSON), &value.ExtensionPins); err != nil {
+		return statestore.RunExecutionContext{}, err
 	}
 	value.FrameSnapshot = json.RawMessage(frameJSON)
 	normalized, _, _, _, err := normalizeRunExecutionContext(value)

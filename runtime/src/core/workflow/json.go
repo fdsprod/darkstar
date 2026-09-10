@@ -391,6 +391,7 @@ func decodeNodes(data []byte, apiVersion string) (map[Identifier]Node, error) {
 
 func decodeNode(data []byte, apiVersion string) (Node, error) {
 	type nodeWire struct {
+		Extension         json.RawMessage   `json:"extension"`
 		DisplayName       json.RawMessage   `json:"displayName"`
 		Type              NodeType          `json:"type"`
 		Entry             *bool             `json:"entry"`
@@ -437,6 +438,9 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("displayName: %w", err)
 	}
+	if wire.Type == NodeExtension && apiVersion != APIVersionV1Alpha3 {
+		return nil, errors.New("extensions require apiVersion darkstar.local/v1alpha3")
+	}
 	if !validNodeType(wire.Type) {
 		return nil, fmt.Errorf("unsupported node type %q", wire.Type)
 	}
@@ -456,6 +460,13 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 	validators, err := decodeValidators(wire.Validators)
 	if err != nil {
 		return nil, fmt.Errorf("validators: %w", err)
+	}
+	if apiVersion != APIVersionV1Alpha3 {
+		for _, validator := range validators {
+			if _, ok := validator.(ExtensionValidator); ok {
+				return nil, errors.New("extension validators require apiVersion darkstar.local/v1alpha3")
+			}
+		}
 	}
 	retry, err := decodeRetry(wire.Retry)
 	if err != nil {
@@ -498,7 +509,7 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 	executors := []struct {
 		kind NodeType
 		raw  json.RawMessage
-	}{{NodeReasoning, wire.Reasoning}, {NodeGate, wire.Gate}, {NodeCommand, wire.Command}, {NodeApproval, wire.Approval}, {NodeSubworkflow, wire.Call}, {NodePointExecution, wire.Points}, {NodeRouting, wire.Routing}, {NodeImplementation, wire.Implementation}, {NodeWorkspacePrepare, wire.WorkspacePrepare}, {NodeWorkspaceValidate, wire.WorkspaceValidate}}
+	}{{NodeExtension, wire.Extension}, {NodeReasoning, wire.Reasoning}, {NodeGate, wire.Gate}, {NodeCommand, wire.Command}, {NodeApproval, wire.Approval}, {NodeSubworkflow, wire.Call}, {NodePointExecution, wire.Points}, {NodeRouting, wire.Routing}, {NodeImplementation, wire.Implementation}, {NodeWorkspacePrepare, wire.WorkspacePrepare}, {NodeWorkspaceValidate, wire.WorkspaceValidate}}
 	for _, executor := range executors {
 		kind, raw := executor.kind, executor.raw
 		if kind != wire.Type && len(raw) != 0 {
@@ -517,6 +528,15 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 	}
 
 	switch wire.Type {
+	case NodeExtension:
+		var executor ExtensionExecutor
+		if err := strictDecode(wire.Extension, &executor); err != nil {
+			return nil, err
+		}
+		if err := executor.Validate(); err != nil {
+			return nil, err
+		}
+		return ExtensionNode{Common: common, Executor: executor}, nil
 	case NodeReasoning:
 		executor, err := decodeReasoning(wire.Reasoning)
 		if err != nil {
@@ -950,13 +970,24 @@ func decodeValidators(raw []json.RawMessage) ([]Validator, error) {
 	result := make([]Validator, 0, len(raw))
 	for index, data := range raw {
 		type validatorWire struct {
-			Output  Identifier `json:"output"`
-			Schema  string     `json:"schema"`
-			Command []string   `json:"command"`
+			Extension *ExtensionExecutor `json:"extension"`
+			Output    Identifier         `json:"output"`
+			Schema    string             `json:"schema"`
+			Command   []string           `json:"command"`
 		}
 		var wire validatorWire
 		if err := strictDecode(data, &wire); err != nil {
 			return nil, fmt.Errorf("%d: %w", index, err)
+		}
+		if wire.Extension != nil {
+			if wire.Output != "" || wire.Schema != "" || wire.Command != nil {
+				return nil, fmt.Errorf("%d: extension validator cannot contain schema or command settings", index)
+			}
+			if err := wire.Extension.Validate(); err != nil {
+				return nil, err
+			}
+			result = append(result, ExtensionValidator{Extension: *wire.Extension})
+			continue
 		}
 		hasSchema := wire.Output != "" || wire.Schema != ""
 		hasCommand := wire.Command != nil
@@ -1332,7 +1363,7 @@ func validateValueType(value ValueType) error {
 
 func validNodeType(value NodeType) bool {
 	switch value {
-	case NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution, NodeRouting, NodeImplementation, NodeWorkspacePrepare, NodeWorkspaceValidate:
+	case NodeExtension, NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution, NodeRouting, NodeImplementation, NodeWorkspacePrepare, NodeWorkspaceValidate:
 		return true
 	default:
 		return false

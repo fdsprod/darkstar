@@ -82,3 +82,20 @@ func repositoryRootForWorkflowTest(t *testing.T) string {
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "..", ".."))
 }
+
+func TestNormalDaemonDoesNotRediscoverShippedExamples(t *testing.T) {
+	root := t.TempDir()
+	service := daemonAPIService{paths: platformport.Paths{Config: filepath.Join(root, "config")}, projectRoot: root}
+	directories, err := service.workflowDirectories()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(directories) != 2 {
+		t.Fatalf("directories=%v", directories)
+	}
+	for _, directory := range directories {
+		if directory.Scope == workflowstore.ScopeDefault {
+			t.Fatal("default examples would be reinstalled")
+		}
+	}
+}

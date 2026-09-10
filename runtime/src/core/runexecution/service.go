@@ -17,6 +17,7 @@ import (
 	"darkstar/src/core/preparation"
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports"
+	"darkstar/src/ports/extension"
 	"darkstar/src/ports/provider"
 	"darkstar/src/ports/routeadvisor"
 	"darkstar/src/ports/statestore"
@@ -637,7 +638,7 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 				"runId": runID, "nodeId": entryID,
 			}),
 			pendingEvent("attempt.created", statestore.AggregateAttempt, attemptID, 0, runID, idempotencyKey, statestore.ActorSystem, "daemon", now, map[string]any{
-				"runId": runID, "visitId": visitID, "nodeId": entryID, "scenario": ScenarioWorkflow, "provider": ProviderCodex,
+				"runId": runID, "visitId": visitID, "nodeId": entryID, "scenario": ScenarioWorkflow, "provider": s.workflowProviderForRun(ctx, runID),
 				"logReference": logReference, "priority": work.Priority,
 			}),
 		)
@@ -734,7 +735,12 @@ func (s *Service) saveInitialExecutionContext(ctx context.Context, run statestor
 	for id, value := range inputs {
 		storedInputs[string(id)] = append(json.RawMessage(nil), value...)
 	}
+	var extensionPins map[string]extension.Ref
+	if source, ok := s.workflowFactory.(ExtensionPinProvider); ok {
+		extensionPins = source.ExtensionPins()
+	}
 	value, err := s.store.SaveRunExecutionContext(ctx, statestore.RunExecutionContext{
+		Provider: s.workflowProviderName(), ExtensionPins: extensionPins,
 		SchemaVersion: statestore.RunExecutionContextSchemaVersion,
 		RunID:         run.RunID, RunInputs: storedInputs,
 		AcceptedOutputs: map[string]map[string]json.RawMessage{}, FrameSnapshot: frameJSON,
@@ -963,7 +969,7 @@ func (s *Service) ensureWorkflowEntryAttempt(ctx context.Context, run statestore
 	_, err = s.store.Append(ctx,
 		pendingEvent("visit.created", statestore.AggregateVisit, visitID, 0, run.RunID, "visit-create:"+visitID, statestore.ActorSystem, "daemon", now, map[string]any{"runId": run.RunID, "nodeId": entryID}),
 		pendingEvent("attempt.created", statestore.AggregateAttempt, attemptID, 0, run.RunID, "repair-entry:"+run.RunID, statestore.ActorSystem, "daemon", now, map[string]any{
-			"runId": run.RunID, "visitId": visitID, "nodeId": entryID, "scenario": ScenarioWorkflow, "provider": ProviderCodex,
+			"runId": run.RunID, "visitId": visitID, "nodeId": entryID, "scenario": ScenarioWorkflow, "provider": s.workflowProviderForRun(ctx, run.RunID),
 			"logReference": strings.TrimPrefix(attemptID, "attempt_") + ".log", "priority": run.Priority,
 		}),
 	)
@@ -1318,6 +1324,16 @@ func (s *Service) workflowAttemptContext(ctx context.Context, attempt statestore
 	if err != nil {
 		return AttemptRequestContext{}, fmt.Errorf("read durable workflow execution context: %w", err)
 	}
+	if len(executionContext.ExtensionPins) > 0 {
+		resolver, ok := s.workflowFactory.(ExtensionPinProvider)
+		if !ok {
+			return AttemptRequestContext{}, errors.New("EXTENSION_UNAVAILABLE: pinned provider resolver is unavailable")
+		}
+		if err := resolver.ValidateExtensionPins(executionContext.ExtensionPins); err != nil {
+			return AttemptRequestContext{}, err
+		}
+	}
+
 	var frameSnapshot workflow.FrameSnapshot
 	if err := json.Unmarshal(executionContext.FrameSnapshot, &frameSnapshot); err != nil {
 		return AttemptRequestContext{}, fmt.Errorf("decode durable workflow frame: %w", err)

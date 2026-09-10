@@ -5,7 +5,6 @@ package workflowtools
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	valueschemaadapter "darkstar/src/adapters/valueschema/jsonschema"
 	"database/sql"
 	"encoding/json"
@@ -14,11 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 
 	"darkstar/src/core/workflow"
-	"darkstar/src/ports/provider"
 	_ "modernc.org/sqlite"
 )
 
@@ -48,7 +45,7 @@ func (s *Session) ValidateFinal(raw json.RawMessage) error {
 			continue
 		}
 		var staged string
-		err = db.QueryRow(`SELECT content FROM workflow_tool_events WHERE run_id=? AND attempt_id=? AND resource=? ORDER BY sequence DESC LIMIT 1`, s.RunID, s.AttemptID, "output:"+s.AttemptID+":"+string(id)).Scan(&staged)
+		err = db.QueryRow(`SELECT content FROM workflow_tool_events WHERE run_id=? AND attempt_id=? AND resource=? AND operation='submit' ORDER BY sequence DESC LIMIT 1`, s.RunID, s.AttemptID, "output:"+s.AttemptID+":"+string(id)).Scan(&staged)
 		if err != nil {
 			return fmt.Errorf("output %s must be submitted with submit_output before completion", id)
 		}
@@ -69,49 +66,8 @@ type Session struct {
 	RunID, AttemptID string
 	Node             workflow.Node
 	Inputs           map[workflow.Identifier]json.RawMessage
-}
-
-func (s *Session) Definitions() []provider.ToolDefinition {
-	makeTool := func(name, description string, properties map[string]any, required []string) provider.ToolDefinition {
-		schema, _ := json.Marshal(map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "required": required})
-		return provider.ToolDefinition{Type: "function", Name: name, Description: description, InputSchema: schema}
-	}
-	text := map[string]any{"type": "string"}
-	tools := []provider.ToolDefinition{
-		makeTool("read_input", "Read an input or template by its exact input ID.", map[string]any{"id": text}, []string{"id"}),
-		makeTool("submit_output", "Validate and stage one output. Correct any reported errors and submit again. The daemon collects validated submissions; do not repeat their contents in your final message.", map[string]any{"id": text, "value": map[string]any{}}, []string{"id", "value"}),
-	}
-	if s.Node.Type() == workflow.NodeImplementation {
-		tools = append(tools, makeTool("inspect_workspace_changes", "Read the actual added, modified, and deleted files since this attempt began. Use these exact paths in changeset.files. This does not modify or publish anything.", map[string]any{}, []string{}))
-	}
-	ids := make([]string, 0, len(s.Inputs))
-	for id := range s.Inputs {
-		ids = append(ids, string(id))
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		kind, _ := s.journal(workflow.Identifier(id))
-		if kind == "" {
-			continue
-		}
-		operations := []string{"read", "add", "resolve", "defer"}
-		if kind == "decision_log" {
-			operations = []string{"read", "record", "supersede"}
-		}
-		tools = append(tools, makeTool("journal_"+id, "Use this append-only "+kind+" journal. Use entryId for an existing item; use an empty entryId to create one. key is a stable operation key, reused on retry. text records the item, decision, or resolution rationale.", map[string]any{"operation": map[string]any{"type": "string", "enum": operations}, "entryId": text, "text": text, "key": text}, []string{"operation", "entryId", "text", "key"}))
-	}
-	return tools
-}
-
-func (s *Session) journal(id workflow.Identifier) (string, string) {
-	var ref struct {
-		Kind       string `json:"kind"`
-		ResourceID string `json:"resourceId"`
-	}
-	if json.Unmarshal(s.Inputs[id], &ref) != nil || (ref.Kind != "open_items" && ref.Kind != "decision_log") || ref.ResourceID == "" {
-		return "", ""
-	}
-	return ref.Kind, ref.ResourceID
+	ResourcePlugin   *ResourcePlugin
+	AdditionalTools  []Tool
 }
 
 func (s *Session) open(ctx context.Context) (*sql.DB, error) {
@@ -138,85 +94,44 @@ CREATE TABLE IF NOT EXISTS workflow_tool_events (
 	return db, nil
 }
 
-func (s *Session) Call(ctx context.Context, callID, name string, raw json.RawMessage) (json.RawMessage, error) {
-	if len(raw) > 1024*1024 {
-		return nil, errors.New("tool arguments exceed 1 MiB")
-	}
-	if name == "inspect_workspace_changes" && s.Node.Type() == workflow.NodeImplementation {
-		changes, err := s.workspaceChanges(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(map[string]any{"files": changes})
-	}
-	if name == "read_input" {
-		var args struct {
-			ID workflow.Identifier `json:"id"`
-		}
-		if err := json.Unmarshal(raw, &args); err != nil {
-			return nil, err
-		}
-		value, ok := s.Inputs[args.ID]
-		if !ok {
-			return nil, errors.New("input is not connected")
-		}
-		return value, nil
-	}
-	if name == "submit_output" {
-		var args struct {
-			ID    workflow.Identifier `json:"id"`
-			Value json.RawMessage     `json:"value"`
-		}
-		if err := json.Unmarshal(raw, &args); err != nil {
-			return nil, err
-		}
-		if err := workflow.ValidateDeliverable(s.Node, args.ID, args.Value, s.Inputs, valueschemaadapter.Validator{}); err != nil {
-			return nil, s.recordRejectedOutput(ctx, callID, args.ID, err)
-		}
-		if s.Node.Type() == workflow.NodeImplementation && args.ID == "changeset" {
-			if err := s.validateWorkspaceResult(ctx, args.Value); err != nil {
-				return nil, s.recordRejectedOutput(ctx, callID, args.ID, err)
-			}
-		}
-		return s.append(ctx, "output:"+s.AttemptID+":"+string(args.ID), "submit", string(args.ID), callID, string(args.Value), false)
-	}
-	id := workflow.Identifier(strings.TrimPrefix(name, "journal_"))
-	kind, resource := s.journal(id)
-	if !strings.HasPrefix(name, "journal_") || kind == "" {
-		return nil, errors.New("tool is not connected to this node")
-	}
+func (s *Session) readInput(ctx context.Context, callID string, raw json.RawMessage) (json.RawMessage, error) {
 	var args struct {
-		Operation string `json:"operation"`
-		EntryID   string `json:"entryId"`
-		Text      string `json:"text"`
-		Key       string `json:"key"`
+		ID workflow.Identifier `json:"id"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
-	if args.Operation == "read" {
-		return s.read(ctx, resource)
+	value, ok := s.Inputs[args.ID]
+	if !ok {
+		return nil, errors.New("input is not connected")
 	}
-	create := args.Operation == "add" && kind == "open_items" || args.Operation == "record" && kind == "decision_log"
-	update := kind == "open_items" && (args.Operation == "resolve" || args.Operation == "defer") || kind == "decision_log" && args.Operation == "supersede"
-	if !create && !update {
-		return nil, errors.New("operation is not allowed for this journal")
-	}
-	if strings.TrimSpace(args.Text) == "" || strings.TrimSpace(args.Key) == "" {
-		return nil, errors.New("text and a stable operation key are required")
-	}
-	if create {
-		if args.EntryID != "" {
-			return nil, errors.New("new items must not supply entryId")
-		}
-		args.EntryID = fmt.Sprintf("item_%x", sha256.Sum256([]byte(s.RunID+"\x00"+resource+"\x00"+args.Key)))[:29]
-	} else if args.EntryID == "" {
-		return nil, errors.New("entryId is required")
-	}
-	return s.append(ctx, resource, args.Operation, args.EntryID, args.Key, args.Text, update)
+	return value, nil
 }
 
-func (s *Session) append(ctx context.Context, resource, operation, entry, key, content string, requiresEntry bool) (json.RawMessage, error) {
+func (s *Session) submitOutput(ctx context.Context, callID string, raw json.RawMessage) (json.RawMessage, error) {
+	var args struct {
+		ID    workflow.Identifier `json:"id"`
+		Value json.RawMessage     `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &args); err != nil {
+		return nil, err
+	}
+	if err := workflow.ValidateDeliverable(s.Node, args.ID, args.Value, s.Inputs, valueschemaadapter.Validator{}); err != nil {
+		return nil, s.recordRejectedOutput(ctx, callID, args.ID, err)
+	}
+	if s.Node.Type() == workflow.NodeImplementation && args.ID == "changeset" {
+		if err := s.validateWorkspaceResult(ctx, args.Value); err != nil {
+			return nil, s.recordRejectedOutput(ctx, callID, args.ID, err)
+		}
+	}
+	return s.append(ctx, "output:"+s.AttemptID+":"+string(args.ID), "submit", string(args.ID), callID, string(args.Value), false)
+}
+
+func (s *Session) append(ctx context.Context, resource, operation, entry, key, content string, requiresEntry bool, creationOperations ...string) (json.RawMessage, error) {
+	return s.appendEvent(ctx, resource, operation, entry, key, content, requiresEntry, nil, creationOperations...)
+}
+
+func (s *Session) appendEvent(ctx context.Context, resource, operation, entry, key, content string, requiresEntry bool, expectedRevision *uint64, creationOperations ...string) (json.RawMessage, error) {
 	db, err := s.open(ctx)
 	if err != nil {
 		return nil, err
@@ -228,19 +143,40 @@ func (s *Session) append(ctx context.Context, resource, operation, entry, key, c
 	}
 	defer tx.Rollback()
 	var previousOp, previousEntry, previousContent string
-	err = tx.QueryRowContext(ctx, `SELECT operation,entry_id,content FROM workflow_tool_events WHERE run_id=? AND resource=? AND operation_key=?`, s.RunID, resource, key).Scan(&previousOp, &previousEntry, &previousContent)
+	var previousSequence int64
+	err = tx.QueryRowContext(ctx, `SELECT sequence,operation,entry_id,content FROM workflow_tool_events WHERE run_id=? AND resource=? AND operation_key=?`, s.RunID, resource, key).Scan(&previousSequence, &previousOp, &previousEntry, &previousContent)
 	if err == nil {
 		if previousOp != operation || previousEntry != entry || previousContent != content {
 			return nil, errors.New("operation key was reused with different content")
 		}
-		return json.Marshal(map[string]any{"entryId": entry, "status": "already_recorded"})
+		var revision uint64
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM workflow_tool_events WHERE run_id=? AND resource=? AND sequence<=?`, s.RunID, resource, previousSequence).Scan(&revision); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{"entryId": entry, "status": "already_recorded", "revision": revision})
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
+	var revision uint64
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM workflow_tool_events WHERE run_id=? AND resource=?`, s.RunID, resource).Scan(&revision); err != nil {
+		return nil, err
+	}
+	if expectedRevision != nil && *expectedRevision != revision {
+		return nil, fmt.Errorf("RESOURCE_REVISION_CONFLICT: expected %d, current %d", *expectedRevision, revision)
+	}
 	if requiresEntry {
 		var count int
-		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM workflow_tool_events WHERE run_id=? AND resource=? AND entry_id=? AND operation IN ('add','record')`, s.RunID, resource, entry).Scan(&count)
+		if len(creationOperations) == 0 {
+			creationOperations = []string{"add", "record"}
+		}
+		placeholders := make([]string, len(creationOperations))
+		arguments := []any{s.RunID, resource, entry}
+		for i, operation := range creationOperations {
+			placeholders[i] = "?"
+			arguments = append(arguments, operation)
+		}
+		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM workflow_tool_events WHERE run_id=? AND resource=? AND entry_id=? AND operation IN (`+strings.Join(placeholders, ",")+`)`, arguments...).Scan(&count)
 		if err != nil {
 			return nil, err
 		}
@@ -255,7 +191,7 @@ func (s *Session) append(ctx context.Context, resource, operation, entry, key, c
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]any{"entryId": entry, "status": "recorded"})
+	return json.Marshal(map[string]any{"entryId": entry, "status": "recorded", "revision": revision + 1})
 }
 
 func (s *Session) read(ctx context.Context, resource string) (json.RawMessage, error) {
@@ -270,8 +206,10 @@ func (s *Session) read(ctx context.Context, resource string) (json.RawMessage, e
 	}
 	defer rows.Close()
 	var md strings.Builder
+	var revision uint64
 	fmt.Fprintf(&md, "# %s\n", resource)
 	for rows.Next() {
+		revision++
 		var id, op, content, attempt string
 		if err := rows.Scan(&id, &op, &content, &attempt); err != nil {
 			return nil, err
@@ -281,7 +219,7 @@ func (s *Session) read(ctx context.Context, resource string) (json.RawMessage, e
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]string{"markdown": md.String()})
+	return json.Marshal(map[string]any{"markdown": md.String(), "revision": revision})
 }
 
 // Rejections are diagnostic evidence, never successful output submissions.
@@ -305,14 +243,14 @@ func (s *Session) ResolveSubmittedOutputs(ctx context.Context) (json.RawMessage,
 	outputs := map[workflow.Identifier]json.RawMessage{}
 	for id, declaration := range s.Node.Fields().Outputs {
 		var staged string
-		err = db.QueryRowContext(ctx, "SELECT content FROM workflow_tool_events WHERE run_id=? AND attempt_id=? AND resource=? ORDER BY sequence DESC LIMIT 1", s.RunID, s.AttemptID, "output:"+s.AttemptID+":"+string(id)).Scan(&staged)
+		err = db.QueryRowContext(ctx, "SELECT content FROM workflow_tool_events WHERE run_id=? AND attempt_id=? AND resource=? AND operation='submit' ORDER BY sequence DESC LIMIT 1", s.RunID, s.AttemptID, "output:"+s.AttemptID+":"+string(id)).Scan(&staged)
 		if errors.Is(err, sql.ErrNoRows) && declaration.Required != nil && !*declaration.Required {
 			continue
 		}
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				var rejected string
-				rejectionErr := db.QueryRowContext(ctx, "SELECT content FROM workflow_tool_events WHERE run_id=? AND attempt_id=? AND resource=? ORDER BY sequence DESC LIMIT 1", s.RunID, s.AttemptID, "rejected_output:"+s.AttemptID+":"+string(id)).Scan(&rejected)
+				rejectionErr := db.QueryRowContext(ctx, "SELECT content FROM workflow_tool_events WHERE run_id=? AND attempt_id=? AND resource=? AND operation='reject' ORDER BY sequence DESC LIMIT 1", s.RunID, s.AttemptID, "rejected_output:"+s.AttemptID+":"+string(id)).Scan(&rejected)
 				if rejectionErr == nil {
 					var reason string
 					if json.Unmarshal([]byte(rejected), &reason) == nil {

@@ -327,6 +327,39 @@
     },
     "responses":{"Error":{"description":"Stable API error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"}}}}},
     "schemas": {
+      "ExtensionDescriptor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ref",
+          "protocol",
+          "displayName",
+          "configurationSchema",
+          "requiredCapabilities"
+        ],
+        "properties": {
+          "ref": {
+            "$ref": "./workflow-v1alpha3.schema.json#/$defs/extensionRef"
+          },
+          "protocol": {
+            "type": "string",
+            "const": "darkstar.extension/v1"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "configurationSchema": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "requiredCapabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "WorkflowChatModel":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string"},"name":{"type":"string"},"efforts":{"type":"array","items":{"type":"string"}},"defaultEffort":{"type":"string"},"isDefault":{"type":"boolean"}},"required":["id","name","efforts","defaultEffort","isDefault"]},
       "WorkflowChatGeneration":{"type":"object","additionalProperties":false,"properties":{"model":{"type":"string","minLength":1,"maxLength":200},"effort":{"type":"string","minLength":1,"maxLength":40}},"required":["model","effort"]},
       "WorkflowChatTarget":{"oneOf":[{"type":"object","additionalProperties":false,"properties":{"kind":{"const":"new","type":"string"}},"required":["kind"]},{"type":"object","additionalProperties":false,"properties":{"kind":{"const":"draft","type":"string"},"id":{"type":"string"},"revision":{"type":"integer","minimum":1}},"required":["kind","id","revision"]},{"type":"object","additionalProperties":false,"properties":{"kind":{"const":"version","type":"string"},"name":{"type":"string"},"version":{"type":"string"}},"required":["kind","name","version"]}]},
@@ -382,7 +415,116 @@
       "NodeDefinitionVersionRequest":{"type":"object","additionalProperties":false,"required":["source","version"],"properties":{"source":{"$ref":"#/components/schemas/NodeDefinitionRef"},"version":{"type":"string","minLength":1}}},
       "NodeDefinitionArchiveRequest":{"type":"object","additionalProperties":false,"required":["ref"],"properties":{"ref":{"$ref":"#/components/schemas/NodeDefinitionRef"}}},
       "WorkflowLibrary":{"type":"object","additionalProperties":false,"required":["versions","drafts","archives"],"properties":{"versions":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowVersionSummary"}},"drafts":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowDraft"}},"archives":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowArchive"}}}},
-      "WorkflowAuthoringCatalog":{"type":"object","additionalProperties":false,"required":["schemaVersion","nodeTypes","valueTypes","checkpointModes","predicateOps","agents","policies","schemas","skills","tools","workflows"],"properties":{"schemaVersion":{"const":1},"nodeTypes":{"type":"array","items":{"enum":["reasoning","implementation","gate","command","approval","subworkflow","point_execution","workspace_prepare","workspace_validate"]},"uniqueItems":true},"valueTypes":{"type":"array","items":{"enum":["null","boolean","integer","number","string","array","object"]},"uniqueItems":true},"checkpointModes":{"type":"array","items":{"enum":["none","acknowledge","approve","approve_on_change","external"]},"uniqueItems":true},"predicateOps":{"type":"array","items":{"enum":["const","eq","ne","lt","lte","gt","gte","present","all","any","not"]},"uniqueItems":true},"agents":{"$ref":"#/components/schemas/WorkflowStringReferenceGroup"},"policies":{"$ref":"#/components/schemas/WorkflowStringReferenceGroup"},"schemas":{"$ref":"#/components/schemas/WorkflowStringReferenceGroup"},"skills":{"$ref":"#/components/schemas/WorkflowCapabilityReferenceGroup"},"tools":{"$ref":"#/components/schemas/WorkflowCapabilityReferenceGroup"},"workflows":{"$ref":"#/components/schemas/WorkflowInstalledReferenceGroup"}}},
+      "WorkflowAuthoringCatalog":{
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "nodeTypes",
+          "valueTypes",
+          "checkpointModes",
+          "predicateOps",
+          "agents",
+          "policies",
+          "schemas",
+          "skills",
+          "tools",
+          "workflows"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "nodeTypes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "reasoning",
+                "implementation",
+                "gate",
+                "command",
+                "approval",
+                "subworkflow",
+                "point_execution",
+                "workspace_prepare",
+                "workspace_validate"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "valueTypes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "null",
+                "boolean",
+                "integer",
+                "number",
+                "string",
+                "array",
+                "object"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "checkpointModes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "none",
+                "acknowledge",
+                "approve",
+                "approve_on_change",
+                "external"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "predicateOps": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "const",
+                "eq",
+                "ne",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "present",
+                "all",
+                "any",
+                "not"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "agents": {
+            "$ref": "#/components/schemas/WorkflowStringReferenceGroup"
+          },
+          "policies": {
+            "$ref": "#/components/schemas/WorkflowStringReferenceGroup"
+          },
+          "schemas": {
+            "$ref": "#/components/schemas/WorkflowStringReferenceGroup"
+          },
+          "skills": {
+            "$ref": "#/components/schemas/WorkflowCapabilityReferenceGroup"
+          },
+          "tools": {
+            "$ref": "#/components/schemas/WorkflowCapabilityReferenceGroup"
+          },
+          "workflows": {
+            "$ref": "#/components/schemas/WorkflowInstalledReferenceGroup"
+          },
+          "extensions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionDescriptor"
+            }
+          }
+        }
+      },
       "WorkflowStringReferenceGroup":{"oneOf":[{"type":"object","additionalProperties":false,"required":["status","items"],"properties":{"status":{"const":"known"},"items":{"type":"array","items":{"type":"string"},"uniqueItems":true}}},{"type":"object","additionalProperties":false,"required":["status","reason"],"properties":{"status":{"const":"unavailable"},"reason":{"enum":["not_configured","discovery_unsupported","read_failed"]}}}]},
       "WorkflowCapabilityReference":{"type":"object","additionalProperties":false,"required":["name","kind","class","fingerprint","availability"],"properties":{"name":{"type":"string","minLength":1},"kind":{"enum":["skill","tool"]},"class":{"enum":["guaranteed","registered","inherited","unsupported_discovery"]},"version":{"type":"string"},"fingerprint":{"type":"string","pattern":"^[0-9a-f]{64}$"},"availability":{"enum":["available","unavailable","unhealthy"]}}},
       "WorkflowCapabilityReferenceGroup":{"oneOf":[{"type":"object","additionalProperties":false,"required":["status","items"],"properties":{"status":{"const":"known"},"items":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowCapabilityReference"}}}},{"type":"object","additionalProperties":false,"required":["status","reason"],"properties":{"status":{"const":"unavailable"},"reason":{"enum":["not_configured","discovery_unsupported","read_failed"]}}}]},
@@ -419,7 +561,36 @@
       "ArtifactProducer":{"type":"object","additionalProperties":false,"required":["name","version"],"properties":{"name":{"type":"string","minLength":1},"version":{"type":"string","minLength":1}}},
       "ArtifactProvenance":{"oneOf":[{"type":"object","additionalProperties":false,"required":["origin","operationId"],"properties":{"origin":{"const":"operation"},"operationId":{"type":"string","minLength":1},"source":{"$ref":"#/components/schemas/ArtifactVersionRef"}}},{"type":"object","additionalProperties":false,"required":["origin","runId","nodeId","attemptId","operationId"],"properties":{"origin":{"const":"attempt"},"runId":{"type":"string","minLength":1},"nodeId":{"type":"string","minLength":1},"attemptId":{"type":"string","minLength":1},"operationId":{"type":"string","minLength":1},"source":{"$ref":"#/components/schemas/ArtifactVersionRef"}}}]},
       "Artifact":{"type":"object","additionalProperties":false,"required":["artifactId","version","sourceKind","sourceName","blobDigest","size","declaredMediaType","detectedMediaType","locator","sensitivity","trust","creator","status","producer","roles","tags","metadata","provenance","createdAt"],"properties":{"artifactId":{"type":"string","pattern":"^artifact_"},"version":{"type":"integer","minimum":1},"sourceKind":{"enum":["file","paste","stdin","generated","external"]},"sourceName":{"type":"string"},"blobDigest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"size":{"type":"integer","minimum":0},"declaredMediaType":{"type":"string","minLength":1},"detectedMediaType":{"type":"string","minLength":1},"locator":{"type":"string","minLength":1},"sensitivity":{"enum":["unknown","public","internal","sensitive","secret"]},"trust":{"const":"untrusted"},"creator":{"type":"string","minLength":1},"status":{"enum":["stored","stored_uninspectable","quarantined"]},"producer":{"$ref":"#/components/schemas/ArtifactProducer"},"roles":{"type":"array","items":{"type":"string"},"uniqueItems":true},"tags":{"type":"array","items":{"type":"string"},"uniqueItems":true},"metadata":{"type":"object","additionalProperties":{"type":"string"}},"provenance":{"$ref":"#/components/schemas/ArtifactProvenance"},"createdAt":{"type":"string","format":"date-time"}}},
-      "ContentProcessorDescriptor":{"type":"object","additionalProperties":false,"required":["name","version","mediaTypes"],"properties":{"name":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"mediaTypes":{"type":"array","items":{"type":"string"},"uniqueItems":true}}},
+      "ContentProcessorDescriptor":{
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "version",
+          "mediaTypes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mediaTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      },
       "ContentProcessorSupport":{"type":"object","additionalProperties":false,"required":["state","mediaType","diagnostics"],"properties":{"state":{"enum":["supported","unsupported","quarantined"]},"mediaType":{"type":"string"},"diagnostics":{"type":"array","items":{"type":"string"}}}},
       "ArtifactRepresentation":{"type":"object","additionalProperties":false,"required":["representationId","artifact","representationKind","processor","mediaType","locator","digest","size","tokenEstimate","truncated","disclosure","diagnostics","metadata","createdAt"],"properties":{"representationId":{"type":"string","pattern":"^representation_"},"artifact":{"$ref":"#/components/schemas/ArtifactVersionRef"},"representationKind":{"enum":["text","structured","table","image","preview","descriptor"]},"processor":{"$ref":"#/components/schemas/ContentProcessorDescriptor"},"mediaType":{"type":"string","minLength":1},"locator":{"type":"string","minLength":1},"digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"size":{"type":"integer","minimum":0},"tokenEstimate":{"type":"integer","minimum":0},"truncated":{"type":"boolean"},"disclosure":{"enum":["raw","redacted","withheld"]},"diagnostics":{"type":"array","items":{"type":"string"}},"metadata":{"type":"object","additionalProperties":{"type":"string"}},"createdAt":{"type":"string","format":"date-time"}}},
       "ArtifactBinding":{"type":"object","additionalProperties":false,"required":["bindingId","version","state","artifact","target","createdAt"],"properties":{"bindingId":{"type":"string","pattern":"^binding_"},"version":{"type":"integer","minimum":1},"state":{"enum":["bound","unbound"]},"artifact":{"$ref":"#/components/schemas/ArtifactVersionRef"},"target":{"$ref":"#/components/schemas/ArtifactTarget"},"createdAt":{"type":"string","format":"date-time"}}},

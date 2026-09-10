@@ -18,6 +18,7 @@ import (
 
 	"darkstar/src/core/config"
 	registryport "darkstar/src/ports/capabilityregistry"
+	"darkstar/src/ports/extension"
 	"darkstar/src/ports/workflowstore"
 )
 
@@ -80,6 +81,7 @@ type Library struct {
 // references observed in immutable installed definitions. Empty reference
 // groups are truthful: the editor must not invent unavailable profiles.
 type AuthoringCatalog struct {
+	Extensions      []extension.Descriptor   `json:"extensions,omitempty"`
 	SchemaVersion   int                      `json:"schemaVersion"`
 	NodeTypes       []NodeType               `json:"nodeTypes"`
 	ValueTypes      []ValueType              `json:"valueTypes"`
@@ -271,6 +273,7 @@ type RoutePreview struct {
 
 // Catalog coordinates scope-aware loading, version installation, and run snapshots.
 type Catalog struct {
+	extensions   []extension.Descriptor
 	valueSchemas valueschema.Validator
 	publishMu    sync.Mutex
 	source       workflowstore.Source
@@ -522,8 +525,8 @@ func (c *Catalog) AuthoringCatalog(ctx context.Context) (AuthoringCatalog, error
 			})
 		}
 	}
-	return AuthoringCatalog{SchemaVersion: 1,
-		NodeTypes:       []NodeType{NodeWorkspacePrepare, NodeWorkspaceValidate, NodeReasoning, NodeImplementation, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution},
+	return AuthoringCatalog{SchemaVersion: 1, Extensions: cloneExtensionDescriptors(c.extensions),
+		NodeTypes:       []NodeType{NodeExtension, NodeWorkspacePrepare, NodeWorkspaceValidate, NodeReasoning, NodeImplementation, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution},
 		ValueTypes:      []ValueType{ValueTask, ValueRepository, ValueWorkspace, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog, ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject},
 		CheckpointModes: []CheckpointMode{CheckpointNone, CheckpointAcknowledge, CheckpointApprove, CheckpointApproveOnChange, CheckpointExternal},
 		PredicateOps:    []string{"const", "eq", "ne", "lt", "lte", "gt", "gte", "present", "all", "any", "not"},
@@ -1520,4 +1523,20 @@ func validateValueSchemas(document Document, validators ...valueschema.Validator
 		}
 	}
 	return nil
+}
+
+// WithNodeExtensions exposes host registrations as data for authoring. Clients
+// cannot install code or grant capabilities through this catalog.
+func (c *Catalog) WithNodeExtensions(descriptors []extension.Descriptor) *Catalog {
+	c.extensions = cloneExtensionDescriptors(descriptors)
+	return c
+}
+func cloneExtensionDescriptors(descriptors []extension.Descriptor) []extension.Descriptor {
+	if len(descriptors) == 0 {
+		return nil
+	}
+	encoded, _ := json.Marshal(descriptors)
+	var copy []extension.Descriptor
+	_ = json.Unmarshal(encoded, &copy)
+	return copy
 }

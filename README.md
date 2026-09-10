@@ -85,3 +85,10 @@ Install the exact versions in `.go-version`, `.node-version`, and
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the individual build and test commands.
+
+The daemon embeds its built-in TypeScript tool package as JavaScript. Running
+plugin-backed workflows requires Node.js on the daemon's configured toolchain or
+PATH; the dashboard compiler is not required for installed use. Open items,
+decision logs, and work-item workspace tools share the
+[plugin SDK](packages/plugin-sdk/README.md). Work-item files live under the daemon's
+data directory; published artifacts retain the existing immutable artifact store.

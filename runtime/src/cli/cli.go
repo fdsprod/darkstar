@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	valueschemaadapter "darkstar/src/adapters/valueschema/jsonschema"
+	"darkstar/src/ports/extension"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 	routeadvice "darkstar/src/adapters/routeadvisor/reasoning"
 	"darkstar/src/adapters/statestore/sqlite"
 	workflowfilesystem "darkstar/src/adapters/workflowstore/filesystem"
+	workspacefolder "darkstar/src/adapters/workspace/folder"
 	localapi "darkstar/src/api"
 	clientapi "darkstar/src/api/client"
 	"darkstar/src/core/artifactcheckpoint"
@@ -343,9 +345,16 @@ type daemonAPIService struct {
 	defaultWorkflowDirectory string
 	database                 *sqlite.Database
 	executions               *runexecution.Service
+	workspaces               *workspacefolder.Folder
 }
 
-func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) error {
+func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) (startErr error) {
+	defer func() {
+		if startErr != nil && service.workspaces != nil {
+			_ = service.workspaces.Close()
+			service.workspaces = nil
+		}
+	}()
 	if err := os.MkdirAll(service.paths.Data, 0o700); err != nil {
 		return fmt.Errorf("create daemon data directory: %w", err)
 	}
@@ -458,6 +467,9 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	}
 	providerWiring.configuration = configurationMutations
 	providerWiring.workflows = workflowCatalog
+	if descriptors, ok := providerWiring.nodeExtensions.(interface{ Descriptors() []extension.Descriptor }); ok {
+		workflowCatalog.WithNodeExtensions(descriptors.Descriptors())
+	}
 	if err := service.server.SetConfigurationMutations(configurationMutations); err != nil {
 		_ = database.Close()
 		service.database = nil
@@ -474,11 +486,24 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
-	work, err := workmanagement.New(database)
+	workspaces, err := workspacefolder.New(filepath.Join(service.paths.Data, "workspaces"), workspacefolder.Limits{})
+	if err != nil {
+		_ = database.Close()
+		service.database = nil
+		return fmt.Errorf("configure work-item workspaces: %w", err)
+	}
+	service.workspaces = workspaces
+	providerWiring.workspaces = workspaces
+	work, err := workmanagement.NewWithWorkspaces(database, workspaces)
 	if err != nil {
 		_ = database.Close()
 		service.database = nil
 		return err
+	}
+	if err := work.ReconcileWorkspaces(ctx); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return fmt.Errorf("reconcile work-item workspaces: %w", err)
 	}
 	if err := service.server.SetWork(work); err != nil {
 		_ = database.Close()
@@ -617,6 +642,7 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	if err != nil {
 		return closeArtifactSetup(err)
 	}
+	providerWiring.pluginArtifacts = artifacts
 	if err := service.server.SetArtifacts(artifacts); err != nil {
 		return closeArtifactSetup(err)
 	}
@@ -684,7 +710,15 @@ func (service *daemonAPIService) workflowDirectories() ([]workflowfilesystem.Dir
 		}
 		defaultDirectory = filepath.Join(filepath.Dir(executable), "workflows")
 	}
-	return workflowfilesystem.ResolveDirectories(defaultDirectory, service.paths, service.projectRoot)
+	directories, err := workflowfilesystem.ResolveDirectories(defaultDirectory, service.paths, service.projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	// Shipped examples are fixtures, not automatically installed workflows.
+	if service.defaultWorkflowDirectory == "" {
+		return directories[1:], nil
+	}
+	return directories, nil
 }
 
 func (service *daemonAPIService) Close() error {
@@ -699,7 +733,12 @@ func (service *daemonAPIService) Close() error {
 		databaseErr = service.database.Close()
 		service.database = nil
 	}
-	return errors.Join(executionErr, serverErr, databaseErr)
+	var workspaceErr error
+	if service.workspaces != nil {
+		workspaceErr = service.workspaces.Close()
+		service.workspaces = nil
+	}
+	return errors.Join(executionErr, serverErr, databaseErr, workspaceErr)
 }
 
 type daemonRunEvent struct {

@@ -1,0 +1,17 @@
+{
+  "name": "@darkstar/plugin-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json && node build.mjs",
+    "check": "tsc --noEmit -p tsconfig.json && node build.mjs --check"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "acorn": "8.15.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

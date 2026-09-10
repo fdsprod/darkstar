@@ -18,7 +18,7 @@ import (
 var _ representationregistry.Registry = (*Database)(nil)
 
 const representationSelect = `SELECT representation_id, idempotency_key, artifact_id, artifact_version,
-	representation_kind, processor_name, processor_version, media_type, locator, digest, size,
+	representation_kind, processor_name, processor_version, processor_digest, media_type, locator, digest, size,
 	token_estimate, truncated, disclosure, diagnostics_json, metadata_json, created_at
 	FROM artifact_representations`
 
@@ -51,11 +51,11 @@ func (d *Database) RegisterRepresentation(ctx context.Context, request represent
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO artifact_representations(
 		representation_id, idempotency_key, artifact_id, artifact_version, representation_kind,
-		processor_name, processor_version, media_type, locator, digest, size, token_estimate,
+		processor_name, processor_version, processor_digest, media_type, locator, digest, size, token_estimate,
 		truncated, disclosure, diagnostics_json, metadata_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		normalized.RepresentationID, normalized.IdempotencyKey, normalized.Artifact.ArtifactID,
-		normalized.Artifact.Version, normalized.Kind, normalized.Processor.Name, normalized.Processor.Version,
+		normalized.Artifact.Version, normalized.Kind, normalized.Processor.Name, normalized.Processor.Version, normalized.Processor.Digest,
 		normalized.MediaType, normalized.Locator, normalized.Digest, normalized.Size, normalized.TokenEstimate,
 		normalized.Truncated, normalized.Disclosure, string(diagnosticsJSON), string(metadataJSON), formatTime(normalized.CreatedAt))
 	if err != nil {
@@ -141,7 +141,7 @@ func scanRepresentation(row rowScanner) (representationregistry.Representation, 
 	var value representationregistry.Representation
 	var key, diagnosticsJSON, metadataJSON, createdAt string
 	if err := row.Scan(&value.RepresentationID, &key, &value.Artifact.ArtifactID, &value.Artifact.Version,
-		&value.Kind, &value.Processor.Name, &value.Processor.Version, &value.MediaType, &value.Locator,
+		&value.Kind, &value.Processor.Name, &value.Processor.Version, &value.Processor.Digest, &value.MediaType, &value.Locator,
 		&value.Digest, &value.Size, &value.TokenEstimate, &value.Truncated, &value.Disclosure,
 		&diagnosticsJSON, &metadataJSON, &createdAt); err != nil {
 		return representationregistry.Representation{}, "", err

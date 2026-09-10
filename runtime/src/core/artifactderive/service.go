@@ -14,12 +14,14 @@ import (
 	"darkstar/src/ports/artifactregistry"
 	"darkstar/src/ports/artifactstore"
 	"darkstar/src/ports/contentprocessor"
+	"darkstar/src/ports/extension"
 	"darkstar/src/ports/representationregistry"
 )
 
 var ErrProcessorTimeout = errors.New("artifact processor timed out")
 
 type Request struct {
+	Processor      *extension.Ref
 	Artifact       artifactregistry.VersionRef
 	OperationID    string
 	IdempotencyKey string
@@ -38,7 +40,7 @@ type Service struct {
 	store           artifactstore.Store
 	artifacts       artifactregistry.Registry
 	representations representationregistry.Registry
-	processors      []contentprocessor.Processor
+	processors      *ProcessorCatalog
 	policy          artifactsafety.Policy
 }
 
@@ -53,26 +55,17 @@ func NewWithPolicy(store artifactstore.Store, artifacts artifactregistry.Registr
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	for _, processor := range processors {
-		if processor == nil {
-			return nil, errors.New("content processors must not be nil")
-		}
+	catalog, err := NewProcessorCatalog(processors...)
+	if err != nil {
+		return nil, err
 	}
-	return &Service{store: store, artifacts: artifacts, representations: representations, processors: append([]contentprocessor.Processor(nil), processors...), policy: policy}, nil
+	return &Service{store: store, artifacts: artifacts, representations: representations, processors: catalog, policy: policy}, nil
 }
 
 // Supports reports the first installed processor in stable configured order.
 func (service *Service) Supports(ctx context.Context, source contentprocessor.SourceDescriptor) (contentprocessor.Support, error) {
-	for _, processor := range service.processors {
-		support, err := processor.Supports(ctx, source)
-		if err != nil {
-			return contentprocessor.Support{}, err
-		}
-		if support.State == contentprocessor.SupportSupported || support.State == contentprocessor.SupportQuarantined {
-			return support, nil
-		}
-	}
-	return contentprocessor.Support{State: contentprocessor.SupportUnsupported, MediaType: source.DetectedMediaType}, nil
+	_, support, err := service.processors.Select(ctx, source)
+	return support, err
 }
 
 func (service *Service) Derive(ctx context.Context, request Request) (Result, error) {
@@ -93,23 +86,12 @@ func (service *Service) Derive(ctx context.Context, request Request) (Result, er
 		ArtifactID: artifact.ArtifactID, DeclaredMediaType: artifact.DeclaredMediaType,
 		DetectedMediaType: artifact.DetectedMediaType, Digest: artifact.BlobDigest, Size: artifact.Size,
 	}
-	var selected contentprocessor.Processor
-	var support contentprocessor.Support
-	for _, processor := range service.processors {
-		support, err = processor.Supports(ctx, source)
-		if err != nil {
-			return Result{}, fmt.Errorf("inspect processor support: %w", err)
-		}
-		if support.State == contentprocessor.SupportSupported {
-			selected = processor
-			break
-		}
-		if support.State == contentprocessor.SupportQuarantined {
-			return Result{Support: support, Diagnostics: support.Diagnostics}, nil
-		}
+	selected, support, err := service.processors.SelectPinned(ctx, source, request.Processor)
+	if err != nil {
+		return Result{}, fmt.Errorf("inspect processor support: %w", err)
 	}
 	if selected == nil {
-		return Result{Support: contentprocessor.Support{State: contentprocessor.SupportUnsupported, MediaType: artifact.DetectedMediaType}}, nil
+		return Result{Support: support, Diagnostics: support.Diagnostics}, nil
 	}
 	content, err := service.store.Open(ctx, artifactstore.OpenRequest{Locator: artifact.Locator, ExpectedDigest: artifact.BlobDigest})
 	if err != nil {
@@ -213,6 +195,23 @@ func (sink *registrySink) Store(ctx context.Context, representation contentproce
 
 func stableRepresentationID(source artifactregistry.VersionRef, processor contentprocessor.Descriptor, kind contentprocessor.RepresentationKind, key string) string {
 	seed := fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s\x00%s", source.ArtifactID, source.Version, processor.Name, processor.Version, kind, key)
+	if processor.Digest != "" {
+		seed += "\x00" + processor.Digest
+	}
 	digest := sha256.Sum256([]byte(seed))
 	return "representation_" + hex.EncodeToString(digest[:16])
+}
+
+// NewWithProcessorCatalog composes an immutable extension catalog with the
+// existing artifact safety, lineage, and durable storage boundaries.
+func NewWithProcessorCatalog(store artifactstore.Store, artifacts artifactregistry.Registry, representations representationregistry.Registry, catalog *ProcessorCatalog) (*Service, error) {
+	if catalog == nil {
+		return nil, errors.New("processor catalog is required")
+	}
+	service, err := New(store, artifacts, representations)
+	if err != nil {
+		return nil, err
+	}
+	service.processors = catalog
+	return service, nil
 }

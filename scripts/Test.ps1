@@ -13,6 +13,11 @@ Push-Location $repositoryRoot
 try {
     $env:GOTOOLCHAIN = "local"
 
+    & npm run check --prefix packages/plugin-sdk
+    if ($LASTEXITCODE -ne 0) {
+        throw "Plugin SDK typecheck or embedded bundle check failed with exit code $LASTEXITCODE."
+    }
+
     $goFiles = @(& (Join-Path $PSScriptRoot "Get-TrackedGoFiles.ps1"))
     $unformatted = foreach ($goFile in $goFiles) {
         & gofmt -l $goFile

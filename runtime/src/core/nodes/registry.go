@@ -31,6 +31,8 @@ type DeterministicHandler interface {
 // not execution support. Unsupported types fail without invoking a provider.
 func Lookup(node workflow.Node) (Handler, error) {
 	switch n := node.(type) {
+	case workflow.ExtensionNode:
+		return Extension{Node: n}, nil
 	case workflow.ReasoningNode:
 		return Reasoning{Node: n}, nil
 	case workflow.ImplementationNode:

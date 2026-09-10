@@ -3,7 +3,7 @@ import type { components } from "../api/schema.generated";
 type Schemas = components["schemas"];
 export type JsonObject = Record<string, unknown>;
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
-export type WorkflowNodeType = "workspace_prepare" | "workspace_validate" | "reasoning" | "implementation" | "gate" | "command" | "approval" | "subworkflow" | "point_execution" | "routing";
+export type WorkflowNodeType = "extension" | "workspace_prepare" | "workspace_validate" | "reasoning" | "implementation" | "gate" | "command" | "approval" | "subworkflow" | "point_execution" | "routing";
 export type WorkflowEdgeKind = "normal" | "conditional" | "bounded_repair" | "subworkflow";
 export type AuthoredTransitionKind = Exclude<WorkflowEdgeKind, "subworkflow">;
 export type EditorView = "canvas" | "structure";
@@ -49,6 +49,7 @@ export type CheckpointConfig =
   | { mode: "approve_on_change"; when: WorkflowPredicate; maxRevisions?: number }
   | { mode: "external"; externalCondition: string };
 export type NodeExecutor =
+  | { type:"extension"; ref:{id:string;version:string;digest:string}; configuration:JsonObject }
   | {type:"workspace_prepare"; repositoryInput:string; checkout:{mode:"current_checkout"}|{mode:"new_worktree";baseRef:string;branch:string}}
   | {type:"workspace_validate";workspaceInput:string;checks:string[][]}
   | { type: "implementation"; taskInput: string; workspaceInput?: string; instructions: string }
@@ -62,7 +63,7 @@ export type NodeExecutor =
 export type ValueType = `schema:${string}` | "null" | "boolean" | "integer" | "number" | "string" | "array" | "object" | "task" | "repository" | "workspace" | "template" | "markdown" | "open_items" | "decision_log";
 export interface BindingConfig { id: string; from: string; pointer?: string; type: ValueType; required: boolean; default?: JsonValue; description?: string; raw?: JsonObject }
 export interface OutputConfig { id: string; type: ValueType; schema?: string; description?: string; required: boolean; raw?: JsonObject }
-export type ValidatorConfig = { kind: "schema"; output: string; schema: string; raw?: JsonObject } | { kind: "command"; command: string[]; raw?: JsonObject };
+export type ValidatorConfig = {kind:"extension"; extension:Omit<Extract<NodeExecutor,{type:"extension"}>,"type">; raw?:JsonObject} | { kind: "schema"; output: string; schema: string; raw?: JsonObject } | { kind: "command"; command: string[]; raw?: JsonObject };
 export interface RetryConfig { maxAttempts: number; on: Array<"provider_unavailable" | "provider_rate_limit" | "process_failure" | "validator_failure" | "timeout" | "interrupted">; raw?: JsonObject }
 export interface ReadinessConfig {
   recommendedEvidence: Array<{ role: string; description: string; raw?: JsonObject }>;
@@ -102,7 +103,7 @@ export interface VisualNode {
 export interface VisualEdge { id: string; transitionId: string; from: string; to: string; kind: WorkflowEdgeKind; conditional: boolean; maxTraversals?: number }
 export interface EditorGraph { nodes: VisualNode[]; edges: VisualEdge[]; entry?: string; terminals?: string[]; bindings?: {source:string;target:string}[] }
 
-const nodeTypes: readonly WorkflowNodeType[] = ["workspace_prepare", "workspace_validate", "reasoning", "implementation", "gate", "command", "approval", "subworkflow", "point_execution", "routing"];
+const nodeTypes: readonly WorkflowNodeType[] = ["extension", "workspace_prepare", "workspace_validate", "reasoning", "implementation", "gate", "command", "approval", "subworkflow", "point_execution", "routing"];
 const identifier = /^[a-z][a-z0-9_]{0,63}$/;
 const workflowName = /^[a-z][a-z0-9._/-]{0,127}$/;
 const semanticVersion = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
@@ -117,6 +118,7 @@ export function nodeTypeAvailability(type: WorkflowNodeType, catalog?: Schemas["
 }
 export function nodeExecutorComplete(value: NodeExecutor): boolean {
   switch (value.type) {
+    case "extension": return /^[a-z][a-z0-9.-]*\/[a-z][a-z0-9._-]*$/.test(value.ref.id) && semanticVersion.test(value.ref.version) && /^[a-f0-9]{64}$/.test(value.ref.digest);
     case "reasoning": return value.agent.trim() !== "";
     case "workspace_prepare": return identifier.test(value.repositoryInput) && (value.checkout.mode === "current_checkout" || Boolean(value.checkout.baseRef.trim() && value.checkout.branch.trim()));
     case "workspace_validate": return identifier.test(value.workspaceInput) && value.checks.length > 0 && value.checks.every(argv=>argv.length>0 && Boolean(argv[0].trim()));
@@ -319,6 +321,7 @@ export function inspectNode(document: unknown, nodeId: string): AuthoringNode | 
     ...(decodeJoin(raw.join) ? { join: decodeJoin(raw.join) } : {}),
   };
   switch (raw.type) {
+    case "extension": { const value=record(raw.extension); const ref=record(value.ref); return {...common,executor:{type:"extension",ref:{id:stringValue(ref.id),version:stringValue(ref.version),digest:stringValue(ref.digest)},configuration:clone(record(value.configuration))}}; }
     case "reasoning": {
       const value = record(raw.reasoning);
       return { ...common, executor: { type: "reasoning", agent: stringValue(value.agent), instructions:stringValue(value.instructions), skills: stringArray(value.skills), tools: stringArray(value.tools) } };
@@ -365,6 +368,7 @@ export function updateNodeExecutor(document: JsonObject, nodeId: string, executo
   const next = clone(document); const node = record(workflowNodes(next)[nodeId]);
   if (node.type !== executor.type) return next;
   switch (executor.type) {
+    case "extension": node.extension={ref:{...executor.ref},configuration:clone(executor.configuration)}; next.apiVersion="darkstar.local/v1alpha3"; break;
     case "reasoning": node.reasoning = { ...record(node.reasoning), agent: executor.agent, instructions:executor.instructions ?? "", skills: uniqueStrings(executor.skills), tools: uniqueStrings(executor.tools) }; break;
     case "workspace_prepare": node.workspacePrepare={repositoryInput:executor.repositoryInput,checkout:clone(executor.checkout)};break;
     case "workspace_validate":node.workspaceValidate={workspaceInput:executor.workspaceInput,checks:clone(executor.checks)};break;
@@ -404,7 +408,7 @@ export function updateNodeShared(document: JsonObject, nodeId: string, change: S
   switch (change.kind) {
     case "inputs": if (validUniqueIDs(change.value.map((value) => value.id))) node.inputs = Object.fromEntries(change.value.map((value) => [value.id, encodeBinding(value)])); break;
     case "outputs": if (validUniqueIDs(change.value.map((value) => value.id))) node.outputs = Object.fromEntries(change.value.map((value) => [value.id, encodeOutput(value)])); break;
-    case "validators": { const outputs = new Set(Object.keys(record(node.outputs))); if (change.value.every((value) => value.kind === "command" ? value.command.length > 0 : outputs.has(value.output) && value.schema.trim() !== "")) node.validators = change.value.map((value) => value.kind === "schema" ? { ...value.raw, output: value.output, schema: value.schema } : { ...value.raw, command: value.command }); break; }
+    case "validators": { const outputs = new Set(Object.keys(record(node.outputs))); if (change.value.every((value) => value.kind === "extension" ? nodeExecutorComplete({type:"extension",...value.extension}) : value.kind === "command" ? value.command.length > 0 : outputs.has(value.output) && value.schema.trim() !== "")) node.validators = change.value.map((value) => value.kind === "extension" ? {extension:clone(value.extension)} : value.kind === "schema" ? { ...value.raw, output: value.output, schema: value.schema } : { ...value.raw, command: value.command }); break; }
     case "retry": if (change.value) node.retry = { ...change.value.raw, maxAttempts: clampInteger(change.value.maxAttempts, 1, 100), on: uniqueStrings(change.value.on) }; else delete node.retry; break;
     case "permissions": node.permissions = uniqueStrings(change.value); break;
     case "readiness": if (change.value) node.readiness = encodeReadiness(change.value); else delete node.readiness; break;
@@ -549,6 +553,7 @@ export function decodePredicate(value: unknown, depth = 0): WorkflowPredicate {
 function createNode(type: WorkflowNodeType, displayName: string, flags: { entry?: boolean; terminal?: boolean } = {}): JsonObject {
   const common: JsonObject = { displayName, type, entry: flags.entry ?? false, terminal: flags.terminal ?? false, inputs: {}, outputs: {}, transitions: [] };
   switch (type) {
+    case "extension": return {...common,extension:{ref:{id:"custom/operation",version:"1.0.0",digest:""},configuration:{}}};
     case "reasoning": return { ...common, reasoning: { agent: "authoring-agent" } };
     case "gate": return { ...common, outputs: { passed: { type: "boolean" }, gate_evidence: { type: "object" } }, gate: { policy: "authoring-policy", condition: { const: true } } };
     case "workspace_prepare": return {...common,inputs:{repository:{type:"repository",from:"run.input.repository"}},outputs:{workspace:{type:"workspace"}},workspacePrepare:{repositoryInput:"repository",checkout:{mode:"current_checkout"}}};
@@ -599,7 +604,7 @@ function stringRecord(value: unknown) { return Object.fromEntries(Object.entries
 function decodeNodeDefinitionRef(value: unknown): NodeDefinitionRef|undefined { if(value===undefined)return undefined; const raw=record(value); if((raw.scope!=="built_in"&&raw.scope!=="project"&&raw.scope!=="user")||typeof raw.name!=="string"||!workflowName.test(raw.name)||typeof raw.version!=="string"||!semanticVersion.test(raw.version)||typeof raw.digest!=="string"||!/^[0-9a-f]{64}$/.test(raw.digest))return undefined; if(raw.scope==="built_in")return raw.owner===undefined&&hasOnlyKeys(raw,["scope","name","version","digest"])?raw as NodeDefinitionRef:undefined; return typeof raw.owner==="string"&&raw.owner.length>0&&hasOnlyKeys(raw,["scope","owner","name","version","digest"])?raw as NodeDefinitionRef:undefined; }
 function decodeBindings(value: unknown): BindingConfig[] { return Object.entries(record(value)).map(([id, candidate]) => { const raw = record(candidate); return { id, from: stringValue(raw.from), ...(typeof raw.pointer === "string" ? { pointer: raw.pointer } : {}), type: raw.type as ValueType, required: raw.required !== false, ...(raw.required === false && Object.hasOwn(raw, "default") && isJsonValue(raw.default) ? { default: raw.default } : {}), ...(typeof raw.description === "string" ? { description: raw.description } : {}), raw: clone(raw) }; }); }
 function decodeOutputs(value: unknown): OutputConfig[] { return Object.entries(record(value)).map(([id, candidate]) => { const raw = record(candidate); return { id, type: raw.type as ValueType, ...(typeof raw.schema === "string" ? { schema: raw.schema } : {}), ...(typeof raw.description === "string" ? { description: raw.description } : {}), required: raw.required !== false, raw: clone(raw) }; }); }
-function decodeValidators(value: unknown): ValidatorConfig[] { return (Array.isArray(value) ? value : []).map((candidate): ValidatorConfig => { const raw = record(candidate); if (Array.isArray(raw.command)) return { kind: "command", command: stringArray(raw.command), raw: clone(raw) }; return { kind: "schema", output: raw.output as string, schema: raw.schema as string, raw: clone(raw) }; }); }
+function decodeValidators(value: unknown): ValidatorConfig[] { return (Array.isArray(value) ? value : []).map((candidate): ValidatorConfig => { const raw = record(candidate); if (isPlainRecord(raw.extension)) return {kind:"extension",extension:clone(raw.extension) as Omit<Extract<NodeExecutor,{type:"extension"}>,"type">,raw:clone(raw)}; if (Array.isArray(raw.command)) return { kind: "command", command: stringArray(raw.command), raw: clone(raw) }; return { kind: "schema", output: raw.output as string, schema: raw.schema as string, raw: clone(raw) }; }); }
 function decodeRetry(value: unknown): RetryConfig | undefined { const raw = record(value); if (!positiveInteger(raw.maxAttempts) || !Array.isArray(raw.on)) return undefined; return { maxAttempts: raw.maxAttempts as number, on: raw.on as RetryConfig["on"], raw: clone(raw) }; }
 function decodeReadiness(value: unknown): ReadinessConfig | undefined { if (value === undefined) return undefined; const raw = record(value); return { recommendedEvidence: (raw.recommendedEvidence as unknown[]).map((item) => record(item)).map((item) => ({ role: item.role as string, description: item.description as string, raw: clone(item) })), policyGates: (raw.policyGates as unknown[]).map((item) => record(item)).map((item) => ({ policy: item.policy as string, enforcement: item.enforcement as ReadinessConfig["policyGates"][number]["enforcement"], description: item.description as string, raw: clone(item) })), invariants: raw.invariants as string[], remedies: (raw.remedies as unknown[]).map((item) => record(item)).map((item) => ({ code: item.code as string, target: item.target as string, action: item.action as ReadinessConfig["remedies"][number]["action"], description: item.description as string, raw: clone(item) })), raw: clone(raw) }; }
 function decodeJoin(value: unknown): { mode: "one" | "all"; from: string[] } | undefined { if (value === undefined) return undefined; const raw = record(value); return { mode: raw.mode === "all" ? "all" : "one", from: stringArray(raw.from) }; }
@@ -614,11 +619,11 @@ function validUniqueIDs(values: readonly string[]) { return values.every((value)
 export function isPlanValueType(value: unknown): boolean { return value === "markdown" || value === "object" || typeof value === "string" && /^schema:[a-z][a-z0-9_]{0,63}$/.test(value); }
 function supportedSharedSections(node: JsonObject) {
   const values = ["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "workspace", "template", "markdown", "open_items", "decision_log"];
-  if (!hasOnlyKeys(node, ["displayName", "type", "entry", "terminal", "inputs", "outputs", "readiness", "definition", "reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate", "validators", "retry", "checkpoint", "transitionMode", "join", "permissions", "transitions"])) return false;
+  if (!hasOnlyKeys(node, ["displayName", "type", "entry", "terminal", "inputs", "outputs", "readiness", "definition", "reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate", "extension", "validators", "retry", "checkpoint", "transitionMode", "join", "permissions", "transitions"])) return false;
   if (typeof node.entry !== "boolean" || typeof node.terminal !== "boolean" || node.displayName !== undefined && (typeof node.displayName !== "string" || node.displayName.length === 0)) return false;
   if (!isPlainRecord(node.inputs) || !Object.entries(node.inputs).every(([id, value]) => identifier.test(id) && isPlainRecord(value) && hasOnlyKeys(value, ["from", "pointer", "type", "required", "default", "description"]) && typeof value.from === "string" && /^(run\.input\.[a-z][a-z0-9_]{0,63}|node\.[a-z][a-z0-9_]{0,63}\.output\.[a-z][a-z0-9_]{0,63})$/.test(value.from) && (values.includes(String(value.type)) || /^schema:[a-z][a-z0-9_]{0,63}$/.test(String(value.type))) && (value.required === undefined || typeof value.required === "boolean") && (value.pointer === undefined || typeof value.pointer === "string" && /^(?:|(?:\/(?:[^~/]|~[01])*)+)$/.test(value.pointer)) && (value.description === undefined || typeof value.description === "string") && (!Object.hasOwn(value, "default") || value.required === false && isJsonValue(value.default)))) return false;
   if (!isPlainRecord(node.outputs) || !Object.entries(node.outputs).every(([id, value]) => identifier.test(id) && isPlainRecord(value) && hasOnlyKeys(value, ["type", "schema", "description", "required", "artifact", "schemaDefinition"]) && (value.schemaDefinition === undefined || isPlainRecord(value.schemaDefinition)) && (value.artifact === undefined || isPlainRecord(value.artifact) && hasOnlyKeys(value.artifact, ["filename", "templateInput"]) && typeof value.artifact.filename === "string" && value.artifact.filename.length > 0 && (value.artifact.templateInput === undefined || typeof value.artifact.templateInput === "string" && identifier.test(value.artifact.templateInput))) && (values.includes(String(value.type)) || /^schema:[a-z][a-z0-9_]{0,63}$/.test(String(value.type))) && (value.required === undefined || typeof value.required === "boolean") && (value.schema === undefined || typeof value.schema === "string" && value.schema.length > 0) && (value.description === undefined || typeof value.description === "string"))) return false;
-  if (node.validators !== undefined && (!Array.isArray(node.validators) || !node.validators.every((value) => isPlainRecord(value) && hasOnlyKeys(value, Array.isArray(value.command) ? ["command"] : ["output", "schema"]) && (Array.isArray(value.command) && value.command.length > 0 && value.command.every((item) => typeof item === "string")) !== (typeof value.output === "string" && identifier.test(value.output) && typeof value.schema === "string" && value.schema.length > 0)))) return false;
+  if (node.validators !== undefined && (!Array.isArray(node.validators) || !node.validators.every((value) => (isPlainRecord(value) && isPlainRecord(value.extension) ? hasOnlyKeys(value,["extension"]) && supportedExecutor({type:"extension",extension:value.extension}) : isPlainRecord(value) && hasOnlyKeys(value, Array.isArray(value.command) ? ["command"] : ["output", "schema"]) && (Array.isArray(value.command) && value.command.length > 0 && value.command.every((item) => typeof item === "string")) !== (typeof value.output === "string" && identifier.test(value.output) && typeof value.schema === "string" && value.schema.length > 0))))) return false;
   const retryKinds = ["provider_unavailable", "provider_rate_limit", "process_failure", "validator_failure", "timeout", "interrupted"];
   if (node.retry !== undefined && (!isPlainRecord(node.retry) || !hasOnlyKeys(node.retry, ["maxAttempts", "on"]) || !positiveInteger(node.retry.maxAttempts) || Number(node.retry.maxAttempts) > 100 || !Array.isArray(node.retry.on) || !node.retry.on.every((value) => typeof value === "string" && retryKinds.includes(value)) || new Set(node.retry.on).size !== node.retry.on.length)) return false;
   if (node.readiness !== undefined && !supportedReadiness(node.readiness)) return false;
@@ -630,10 +635,11 @@ function supportedSharedSections(node: JsonObject) {
   return true;
 }
 function supportedExecutor(node: JsonObject) {
-  const executorFields = ["reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate"];
+  const executorFields = ["reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate", "extension"];
   const expected = node.type === "workspace_prepare" ? "workspacePrepare" : node.type === "workspace_validate" ? "workspaceValidate" : node.type === "subworkflow" ? "call" : node.type === "point_execution" ? "points" : String(node.type);
   if (executorFields.some((field) => field !== expected && node[field] !== undefined)) return false;
   switch (node.type) {
+    case "extension": { const v=node.extension; if(!isPlainRecord(v)||!hasOnlyKeys(v,["ref","configuration"])||!isPlainRecord(v.ref)||!isPlainRecord(v.configuration)) return false; return hasOnlyKeys(v.ref,["id","version","digest"]) && [v.ref.id,v.ref.version,v.ref.digest].every(x=>typeof x==="string"); }
     case "reasoning": { const value = node.reasoning; return isPlainRecord(value) && hasOnlyKeys(value, ["agent", "skills", "tools", "instructions"]) && typeof value.agent === "string" && value.agent.length > 0 && (value.skills === undefined || Array.isArray(value.skills) && value.skills.every((item) => typeof item === "string") && new Set(value.skills).size === value.skills.length) && (value.tools === undefined || Array.isArray(value.tools) && value.tools.every((item) => typeof item === "string") && new Set(value.tools).size === value.tools.length); }
     case "gate": { const value = node.gate; return isPlainRecord(value) && hasOnlyKeys(value, ["policy", "condition"]) && typeof value.policy === "string" && value.policy.length > 0 && value.condition !== undefined && decodePredicate(value.condition).kind !== "unsupported"; }
     case "command": { const value = node.command; return isPlainRecord(value) && hasOnlyKeys(value, ["argv", "cwd", "timeoutSeconds"]) && Array.isArray(value.argv) && value.argv.length > 0 && value.argv.every((item) => typeof item === "string") && (value.cwd === undefined || typeof value.cwd === "string") && (value.timeoutSeconds === undefined || positiveInteger(value.timeoutSeconds)); }

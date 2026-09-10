@@ -347,6 +347,15 @@ func (s *Service) executeBuiltinWorkflowAttempt(ctx context.Context, attempt sta
 	}
 	var output json.RawMessage
 	switch node := dispatch.Node.(type) {
+	case workflow.ExtensionNode:
+		executor, ok := s.requestBuilder.(interface {
+			ExecuteExtensionNode(context.Context, AttemptRequestContext) (json.RawMessage, error)
+		})
+		if !ok {
+			err = errors.New("extension execution is not configured")
+		} else {
+			output, err = executor.ExecuteExtensionNode(ctx, dispatch)
+		}
 	case workflow.WorkspacePrepareNode, workflow.WorkspaceValidateNode:
 		s.mu.Lock()
 		executor, ok := s.requestBuilder.(interface {
@@ -403,9 +412,6 @@ func (s *Service) completeWorkflowSucceeded(ctx context.Context, attempt statest
 	if err != nil {
 		return &workflowAdmissionError{code: "WORKFLOW_DEFINITION_MISMATCH", message: err.Error()}
 	}
-	if handled, reviewErr := s.completeReviewAttempt(ctx, dispatch, attempt, run, visit, result); handled {
-		return reviewErr
-	}
 	outputs, err := decodeNodeOutputs(dispatch.Node, result.StructuredOutput)
 	if err != nil {
 		return &workflowAdmissionError{code: "RUN_OUTPUT_INVALID", message: err.Error()}
@@ -414,6 +420,13 @@ func (s *Service) completeWorkflowSucceeded(ctx context.Context, attempt statest
 		if err := workflow.ValidateDeliverable(dispatch.Node, id, value, dispatch.NodeInputs, s.valueSchemas); err != nil {
 			return &workflowAdmissionError{code: "RUN_OUTPUT_INVALID", message: err.Error()}
 		}
+	}
+	validationEvidence, err := s.validateExtensionOutputs(ctx, dispatch, outputs)
+	if err != nil {
+		return err
+	}
+	if handled, reviewErr := s.completeReviewAttempt(ctx, dispatch, attempt, run, visit, result, validationEvidence); handled {
+		return reviewErr
 	}
 	checkpoint := dispatch.Node.Fields().Checkpoint
 	waiting := checkpoint != nil && checkpoint.Mode() != workflow.CheckpointNone
@@ -441,6 +454,9 @@ func (s *Service) completeWorkflowSucceeded(ctx context.Context, attempt statest
 	}
 
 	data := map[string]any{"lastSequence": attempt.LastSequence, "logReference": attempt.LogReference, "output": json.RawMessage(result.StructuredOutput)}
+	if len(validationEvidence) > 0 {
+		data["validationEvidence"] = validationEvidence
+	}
 	now := s.now()
 	events := []statestore.PendingEvent{
 		pendingEvent("attempt.result_received", statestore.AggregateAttempt, attempt.AttemptID, attempt.ResourceVersion, run.RunID, "result:"+attempt.AttemptID, statestore.ActorProvider, attempt.Provider, now, data),
@@ -483,7 +499,10 @@ func (s *Service) finishWorkflowAdvance(ctx context.Context, dispatch AttemptReq
 	activation := saved.Revision
 	visitID := stableID("visit_", fmt.Sprintf("%s\x00%s\x00%d", run.RunID, advance.successor, activation))
 	attemptID := stableID("attempt_", fmt.Sprintf("%s\x00%s\x00%d", run.RunID, advance.successor, activation))
-	providerName := ProviderCodex
+	providerName := dispatch.ExecutionContext.Provider
+	if providerName == "" {
+		providerName = s.workflowProviderName()
+	}
 	handler, lookupErr := nodes.Lookup(successorNode)
 	// Preserve the successful predecessor even when the successor is unsupported.
 	// execute rejects that successor before contacting a provider.
