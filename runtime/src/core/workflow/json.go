@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"darkstar/src/ports/contentstore"
 )
 
 var (
@@ -399,35 +401,36 @@ func decodeNodes(data []byte, apiVersion string) (map[Identifier]Node, error) {
 
 func decodeNode(data []byte, apiVersion string) (Node, error) {
 	type nodeWire struct {
-		GitCommit         json.RawMessage   `json:"gitCommit"`
-		GitPush           json.RawMessage   `json:"gitPush"`
-		CreatePR          json.RawMessage   `json:"createPR"`
-		Extension         json.RawMessage   `json:"extension"`
-		DisplayName       json.RawMessage   `json:"displayName"`
-		Type              NodeType          `json:"type"`
-		Entry             *bool             `json:"entry"`
-		Terminal          *bool             `json:"terminal"`
-		Inputs            json.RawMessage   `json:"inputs"`
-		Outputs           json.RawMessage   `json:"outputs"`
-		Readiness         json.RawMessage   `json:"readiness"`
-		Reasoning         json.RawMessage   `json:"reasoning"`
-		Gate              json.RawMessage   `json:"gate"`
-		Command           json.RawMessage   `json:"command"`
-		Approval          json.RawMessage   `json:"approval"`
-		Call              json.RawMessage   `json:"call"`
-		Points            json.RawMessage   `json:"points"`
-		WorkspacePrepare  json.RawMessage   `json:"workspacePrepare"`
-		WorkspaceValidate json.RawMessage   `json:"workspaceValidate"`
-		Implementation    json.RawMessage   `json:"implementation"`
-		Routing           json.RawMessage   `json:"routing"`
-		Definition        json.RawMessage   `json:"definition"`
-		Validators        []json.RawMessage `json:"validators"`
-		Retry             json.RawMessage   `json:"retry"`
-		Checkpoint        json.RawMessage   `json:"checkpoint"`
-		TransitionMode    TransitionMode    `json:"transitionMode"`
-		Join              json.RawMessage   `json:"join"`
-		Permissions       []string          `json:"permissions"`
-		Transitions       []json.RawMessage `json:"transitions"`
+		Prompt            *contentstore.Reference `json:"prompt"`
+		GitCommit         json.RawMessage         `json:"gitCommit"`
+		GitPush           json.RawMessage         `json:"gitPush"`
+		CreatePR          json.RawMessage         `json:"createPR"`
+		Extension         json.RawMessage         `json:"extension"`
+		DisplayName       json.RawMessage         `json:"displayName"`
+		Type              NodeType                `json:"type"`
+		Entry             *bool                   `json:"entry"`
+		Terminal          *bool                   `json:"terminal"`
+		Inputs            json.RawMessage         `json:"inputs"`
+		Outputs           json.RawMessage         `json:"outputs"`
+		Readiness         json.RawMessage         `json:"readiness"`
+		Reasoning         json.RawMessage         `json:"reasoning"`
+		Gate              json.RawMessage         `json:"gate"`
+		Command           json.RawMessage         `json:"command"`
+		Approval          json.RawMessage         `json:"approval"`
+		Call              json.RawMessage         `json:"call"`
+		Points            json.RawMessage         `json:"points"`
+		WorkspacePrepare  json.RawMessage         `json:"workspacePrepare"`
+		WorkspaceValidate json.RawMessage         `json:"workspaceValidate"`
+		Implementation    json.RawMessage         `json:"implementation"`
+		Routing           json.RawMessage         `json:"routing"`
+		Definition        json.RawMessage         `json:"definition"`
+		Validators        []json.RawMessage       `json:"validators"`
+		Retry             json.RawMessage         `json:"retry"`
+		Checkpoint        json.RawMessage         `json:"checkpoint"`
+		TransitionMode    TransitionMode          `json:"transitionMode"`
+		Join              json.RawMessage         `json:"join"`
+		Permissions       []string                `json:"permissions"`
+		Transitions       []json.RawMessage       `json:"transitions"`
 	}
 	var wire nodeWire
 	if err := strictDecode(data, &wire); err != nil {
@@ -516,6 +519,18 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 		return nil, fmt.Errorf("definition: %w", err)
 	}
 	common.Definition = definition
+	if wire.Prompt != nil {
+		if apiVersion != APIVersionV1Alpha3 {
+			return nil, errors.New("linked prompts require apiVersion darkstar.local/v1alpha3")
+		}
+		if err := wire.Prompt.Validate(); err != nil {
+			return nil, fmt.Errorf("prompt: %w", err)
+		}
+		if wire.Type != NodeReasoning && wire.Type != NodeImplementation {
+			return nil, errors.New("linked prompts require a reasoning or implementation executor")
+		}
+		common.Prompt = wire.Prompt
+	}
 
 	executors := []struct {
 		kind NodeType
@@ -1487,6 +1502,9 @@ func nodeObject(common NodeFields, nodeType NodeType, executorName string, execu
 	}
 	if common.Definition != nil {
 		result["definition"] = common.Definition
+	}
+	if common.Prompt != nil {
+		result["prompt"] = common.Prompt
 	}
 	if len(common.Validators) != 0 {
 		result["validators"] = common.Validators

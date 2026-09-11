@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"darkstar/src/ports/contentstore"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,15 @@ type TemplateResource struct {
 	Version          string   `json:"version"`
 	RequiredHeadings []string `json:"requiredHeadings,omitempty"`
 }
+
+// TemplateReferenceResource resolves to a template value before run inputs freeze.
+// The published reference is the authority; workflow files do not copy its body.
+type TemplateReferenceResource struct {
+	Reference contentstore.Reference `json:"reference"`
+}
+
+func (TemplateReferenceResource) resourceSource() {}
+
 type ConstantResource struct {
 	Value json.RawMessage `json:"value"`
 }
@@ -56,6 +66,8 @@ func (r Resource) MarshalJSON() ([]byte, error) {
 		kind = "repository"
 	case TemplateResource:
 		kind = "template"
+	case TemplateReferenceResource:
+		kind = "template_reference"
 	case ConstantResource:
 		kind = "constant"
 	case ConfigResource:
@@ -118,6 +130,15 @@ func (r *Resource) UnmarshalJSON(b []byte) error {
 		}
 		if strings.TrimSpace(value.Content) == "" || !semanticVersionPattern.MatchString(value.Version) {
 			return errors.New("template content and semantic version are required")
+		}
+		source = value
+	case "template_reference":
+		var value TemplateReferenceResource
+		if err := strictDecode(body, &value); err != nil {
+			return err
+		}
+		if err := value.Reference.Validate(); err != nil {
+			return err
 		}
 		source = value
 	case "constant":
@@ -282,7 +303,7 @@ func (state *validationState) validateResources() {
 			want = ValueTask
 		case RepositoryResource:
 			want = ValueRepository
-		case TemplateResource:
+		case TemplateResource, TemplateReferenceResource:
 			want = ValueTemplate
 		case OpenItemsResource:
 			want = ValueOpenItems
@@ -348,7 +369,9 @@ func (state *validationState) validateResources() {
 					state.add(ValidationBindingIncompatible, "template input must bind a template resource", location, nil)
 					continue
 				}
-				if _, ok := resource.Source.(TemplateResource); !ok {
+				switch resource.Source.(type) {
+				case TemplateResource, TemplateReferenceResource:
+				default:
 					state.add(ValidationBindingIncompatible, "template input must bind a template resource", location, nil)
 				}
 			}

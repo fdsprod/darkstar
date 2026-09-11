@@ -1,6 +1,7 @@
 package statestore
 
 import (
+	"darkstar/src/ports/contentstore"
 	"darkstar/src/ports/extension"
 	"encoding/json"
 	"errors"
@@ -33,6 +34,7 @@ func (e *RunExecutionContextRevisionConflictError) Unwrap() error {
 // Digest is an integrity checksum calculated by the store over the versioned
 // content; it is verified on every read rather than serving as separate truth.
 type RunExecutionContext struct {
+	PromptSnapshots map[string]contentstore.Version       `json:"promptSnapshots,omitempty"`
 	Provider        string                                `json:"provider,omitempty"`
 	ExtensionPins   map[string]extension.Ref              `json:"extensionPins,omitempty"`
 	SchemaVersion   uint64                                `json:"schemaVersion"`

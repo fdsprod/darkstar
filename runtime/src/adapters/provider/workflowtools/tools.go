@@ -112,6 +112,10 @@ func (s *Session) toolCatalog() ([]Tool, error) {
 			return host.Call(ctx, "journal.mutate", args)
 		})
 		entry.ResultSchema = resource.Tool.ResultSchema
+		if s.Node.Fields().Prompt != nil {
+			entry.Definition.Description = "Read this connected journal. Propose changes through the declared findings output."
+			entry.Definition.InputSchema = objectSchema(map[string]any{"operation": map[string]any{"type": "string", "enum": []string{"read"}}}, "operation")
+		}
 		entries = append(entries, entry)
 	}
 	entries = append(entries, s.AdditionalTools...)
@@ -218,6 +222,9 @@ func (s *Session) resourceCall(ctx context.Context, resource plugin.Resource, bi
 	}
 	if method != "journal.mutate" {
 		return nil, errors.New("host service is not granted")
+	}
+	if s.Node.Fields().Prompt != nil {
+		return nil, errors.New("linked prompt tasks submit journal change proposals through outputs")
 	}
 	if err := (valueschemaadapter.Validator{}).Validate(resource.Tool.InputSchema, raw); err != nil {
 		return nil, err

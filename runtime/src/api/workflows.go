@@ -119,6 +119,26 @@ func (s *Server) serveWorkflows(response http.ResponseWriter, request *http.Requ
 	}
 	action := strings.TrimPrefix(clean, "/api/v1/workflows/")
 	switch action {
+	case "content-usage":
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writeWorkflowMethod(response, requestID, "GET, HEAD")
+			return
+		}
+		contentID := request.URL.Query().Get("contentId")
+		if contentID == "" {
+			writeWorkflowError(response, requestID, errors.New("contentId is required"))
+			return
+		}
+		usages, err := service.ContentUsages(request.Context(), contentID)
+		if err != nil {
+			writeWorkflowError(response, requestID, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, struct {
+			Usages []workflow.ContentUsage `json:"usages"`
+		}{usages})
+	case "patterns/assessment-router":
+		serveAssessmentRouterPattern(response, request, requestID)
 	case "node-definitions":
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			writeWorkflowMethod(response, requestID, "GET, HEAD")

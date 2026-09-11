@@ -1,0 +1,2227 @@
+{
+  "apiVersion": "darkstar.local/v1alpha3",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "workflow/adaptive-planning",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "inputs": {
+      "assessment_design_approved": {
+        "description": "Explicit human attestation that the supplied design_approved artifact is approved; omitted means review required.",
+        "type": "boolean"
+      },
+      "assessment_task": {
+        "resource": {
+          "kind": "task"
+        },
+        "type": "task"
+      },
+      "assessment_technical_design_approved": {
+        "description": "Explicit human attestation that the supplied technical_design_approved artifact is approved; omitted means review required.",
+        "type": "boolean"
+      },
+      "assessment_template": {
+        "resource": {
+          "kind": "template_reference",
+          "reference": {
+            "digest": "18c33cc35ef0e312c819a6751e6ad6958d555ca7c6fe4682a3c628f7c66aca20",
+            "id": "builtin-assessment-template",
+            "version": "1.0.0"
+          }
+        },
+        "type": "template"
+      },
+      "context": {
+        "description": "Only relevant supplied context, constraints, and accepted decisions.",
+        "type": "markdown"
+      },
+      "implementation_template": {
+        "resource": {
+          "kind": "template_reference",
+          "reference": {
+            "digest": "b40911ed86c37038637e64f2cd579b32719d29c06ca91bde75820c4c3bd5c258",
+            "id": "builtin-implementation-template",
+            "version": "1.0.0"
+          }
+        },
+        "type": "template"
+      },
+      "plan_template": {
+        "resource": {
+          "kind": "template_reference",
+          "reference": {
+            "digest": "0e30a790d6a4c2ae242e12530bcdc90265199b550821022e80626097fe282345",
+            "id": "builtin-plan-template",
+            "version": "1.0.0"
+          }
+        },
+        "type": "template"
+      },
+      "pr_summary_template": {
+        "resource": {
+          "kind": "template_reference",
+          "reference": {
+            "digest": "709aca9a81851856e58e5cc16244e1cee83a3119dbdee192868b90c4c2bb8a60",
+            "id": "builtin-pr-summary-template",
+            "version": "1.0.0"
+          }
+        },
+        "type": "template"
+      },
+      "product_design_template": {
+        "resource": {
+          "kind": "template_reference",
+          "reference": {
+            "digest": "ded941fd77cba32bf4ceb3e2dee6b87b16c043084122ac9e20d84acf74963148",
+            "id": "builtin-product-design-template",
+            "version": "1.0.0"
+          }
+        },
+        "type": "template"
+      },
+      "questions_template": {
+        "resource": {
+          "kind": "template_reference",
+          "reference": {
+            "digest": "4e749e25e41b8c9d2ced563cdd1a9ec57a06afb1afd7252969f3dab405cae5d4",
+            "id": "builtin-questions-template",
+            "version": "1.0.0"
+          }
+        },
+        "type": "template"
+      },
+      "repository": {
+        "resource": {
+          "kind": "repository"
+        },
+        "type": "repository"
+      },
+      "research_template": {
+        "resource": {
+          "kind": "template_reference",
+          "reference": {
+            "digest": "1823f0375e304cb16cec474f0f635299596f6a6a50b8891f00a0209ccc63f203",
+            "id": "builtin-research-template",
+            "version": "1.0.0"
+          }
+        },
+        "type": "template"
+      },
+      "supplied_design": {
+        "description": "Optional existing design evidence for entry after that stage.",
+        "type": "markdown"
+      },
+      "supplied_questions": {
+        "description": "Optional existing questions evidence for entry after that stage.",
+        "type": "markdown"
+      },
+      "supplied_research": {
+        "description": "Optional existing research evidence for entry after that stage.",
+        "type": "markdown"
+      },
+      "supplied_technical_design": {
+        "description": "Optional existing technical design evidence for entry after that stage.",
+        "type": "markdown"
+      },
+      "task": {
+        "resource": {
+          "kind": "task"
+        },
+        "type": "task"
+      },
+      "technical_design_template": {
+        "resource": {
+          "kind": "template_reference",
+          "reference": {
+            "digest": "df6cd3011e311061702a582f79d649c0c6db6917213c7a22f77ca1aea0e41f64",
+            "id": "builtin-technical-design-template",
+            "version": "1.0.0"
+          }
+        },
+        "type": "template"
+      },
+      "tracking": {
+        "resource": {
+          "kind": "open_items"
+        },
+        "type": "open_items"
+      }
+    },
+    "nodes": {
+      "assessment": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Assessment Router",
+        "entry": true,
+        "inputs": {
+          "context": {
+            "from": "run.input.context",
+            "required": false,
+            "type": "markdown"
+          },
+          "deferred_work": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "open_items": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "supplied_design": {
+            "from": "run.input.supplied_design",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_questions": {
+            "from": "run.input.supplied_questions",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_research": {
+            "from": "run.input.supplied_research",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_technical_design": {
+            "from": "run.input.supplied_technical_design",
+            "required": false,
+            "type": "markdown"
+          },
+          "task": {
+            "from": "run.input.assessment_task",
+            "type": "task"
+          },
+          "template": {
+            "from": "run.input.assessment_template",
+            "type": "template"
+          }
+        },
+        "outputs": {
+          "document": {
+            "artifact": {
+              "filename": "assessment.md",
+              "templateInput": "template"
+            },
+            "type": "markdown"
+          },
+          "findings": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "blockers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "proposed_changes": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "enum": [
+                          "add",
+                          "resolve",
+                          "update"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "type": "string"
+                      },
+                      "item_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "open_item",
+                          "deferred_work"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "action",
+                      "item_id",
+                      "summary",
+                      "evidence"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "blockers",
+                "proposed_changes"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_findings_v1"
+          },
+          "readiness": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "design_ready": {
+                  "type": "boolean"
+                },
+                "evidence": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "design_ready": {
+                      "type": "string"
+                    },
+                    "questions_ready": {
+                      "type": "string"
+                    },
+                    "research_ready": {
+                      "type": "string"
+                    },
+                    "technical_design_ready": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "questions_ready",
+                    "research_ready",
+                    "design_ready",
+                    "technical_design_ready"
+                  ],
+                  "type": "object"
+                },
+                "questions_ready": {
+                  "type": "boolean"
+                },
+                "research_ready": {
+                  "type": "boolean"
+                },
+                "technical_design_ready": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "questions_ready",
+                "research_ready",
+                "design_ready",
+                "technical_design_ready",
+                "evidence"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_readiness_v1"
+          }
+        },
+        "prompt": {
+          "digest": "bab5cba899877fc0ab589b22d9dd0be29c0142544180a4950a494cfd4a95e466",
+          "id": "builtin-assessment-prompt",
+          "version": "1.0.0"
+        },
+        "reasoning": {
+          "agent": "assessment"
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "assessment_assessed",
+            "to": "assessment_questions_gate"
+          }
+        ],
+        "type": "reasoning"
+      },
+      "assessment_design_gate": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Assessment: design_ready",
+        "entry": false,
+        "gate": {
+          "condition": {
+            "args": [
+              {
+                "args": [
+                  {
+                    "ref": "input.readiness.design_ready"
+                  },
+                  {
+                    "literal": true
+                  }
+                ],
+                "op": "eq"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "input.approved"
+                  },
+                  {
+                    "literal": true
+                  }
+                ],
+                "op": "eq"
+              }
+            ],
+            "op": "all"
+          },
+          "policy": "assessment-entry-v1"
+        },
+        "inputs": {
+          "approved": {
+            "default": false,
+            "from": "run.input.assessment_design_approved",
+            "required": false,
+            "type": "boolean"
+          },
+          "readiness": {
+            "from": "node.assessment.output.readiness",
+            "type": "schema:planning_readiness_v1"
+          }
+        },
+        "outputs": {
+          "gate_evidence": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "policy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_gate_evidence_v1"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "assessment_design_gate_ready",
+            "to": "assessment_technical_gate",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ],
+              "op": "eq"
+            }
+          },
+          {
+            "id": "assessment_design_gate_needed",
+            "to": "product_design",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ],
+              "op": "eq"
+            }
+          }
+        ],
+        "type": "gate"
+      },
+      "assessment_questions_gate": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Assessment: questions_ready",
+        "entry": false,
+        "gate": {
+          "condition": {
+            "args": [
+              {
+                "ref": "input.readiness.questions_ready"
+              },
+              {
+                "literal": true
+              }
+            ],
+            "op": "eq"
+          },
+          "policy": "assessment-entry-v1"
+        },
+        "inputs": {
+          "readiness": {
+            "from": "node.assessment.output.readiness",
+            "type": "schema:planning_readiness_v1"
+          }
+        },
+        "outputs": {
+          "gate_evidence": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "policy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_gate_evidence_v1"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "assessment_questions_gate_ready",
+            "to": "assessment_research_gate",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ],
+              "op": "eq"
+            }
+          },
+          {
+            "id": "assessment_questions_gate_needed",
+            "to": "questions",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ],
+              "op": "eq"
+            }
+          }
+        ],
+        "type": "gate"
+      },
+      "assessment_research_gate": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Assessment: research_ready",
+        "entry": false,
+        "gate": {
+          "condition": {
+            "args": [
+              {
+                "ref": "input.readiness.research_ready"
+              },
+              {
+                "literal": true
+              }
+            ],
+            "op": "eq"
+          },
+          "policy": "assessment-entry-v1"
+        },
+        "inputs": {
+          "readiness": {
+            "from": "node.assessment.output.readiness",
+            "type": "schema:planning_readiness_v1"
+          }
+        },
+        "outputs": {
+          "gate_evidence": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "policy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_gate_evidence_v1"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "assessment_research_gate_ready",
+            "to": "assessment_design_gate",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ],
+              "op": "eq"
+            }
+          },
+          {
+            "id": "assessment_research_gate_needed",
+            "to": "research",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ],
+              "op": "eq"
+            }
+          }
+        ],
+        "type": "gate"
+      },
+      "assessment_technical_gate": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Assessment: technical_design_ready",
+        "entry": false,
+        "gate": {
+          "condition": {
+            "args": [
+              {
+                "args": [
+                  {
+                    "ref": "input.readiness.technical_design_ready"
+                  },
+                  {
+                    "literal": true
+                  }
+                ],
+                "op": "eq"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "input.approved"
+                  },
+                  {
+                    "literal": true
+                  }
+                ],
+                "op": "eq"
+              }
+            ],
+            "op": "all"
+          },
+          "policy": "assessment-entry-v1"
+        },
+        "inputs": {
+          "approved": {
+            "default": false,
+            "from": "run.input.assessment_technical_design_approved",
+            "required": false,
+            "type": "boolean"
+          },
+          "readiness": {
+            "from": "node.assessment.output.readiness",
+            "type": "schema:planning_readiness_v1"
+          }
+        },
+        "outputs": {
+          "gate_evidence": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "policy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_gate_evidence_v1"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "assessment_technical_gate_ready",
+            "to": "plan",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ],
+              "op": "eq"
+            }
+          },
+          {
+            "id": "assessment_technical_gate_needed",
+            "to": "technical_design",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ],
+              "op": "eq"
+            }
+          }
+        ],
+        "type": "gate"
+      },
+      "commit_changes": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Commit changes",
+        "entry": false,
+        "gitCommit": {
+          "changesetInput": "changeset",
+          "textInput": "text",
+          "workspaceInput": "workspace"
+        },
+        "inputs": {
+          "changeset": {
+            "from": "node.implement.output.changeset",
+            "required": true,
+            "type": "schema:changeset_v1"
+          },
+          "text": {
+            "from": "node.prepare_pr.output.text",
+            "required": true,
+            "type": "schema:delivery_text_v1"
+          },
+          "workspace": {
+            "from": "node.prepare_workspace.output.workspace",
+            "required": true,
+            "type": "workspace"
+          }
+        },
+        "outputs": {
+          "commit": {
+            "type": "schema:commit_v1"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "commit_to_push",
+            "to": "push_branch"
+          }
+        ],
+        "type": "git_commit"
+      },
+      "create_pr": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "createPR": {
+          "base": "remote_default",
+          "branchInput": "branch",
+          "draft": false,
+          "textInput": "text",
+          "workspaceInput": "workspace"
+        },
+        "displayName": "Create pull request",
+        "entry": false,
+        "inputs": {
+          "branch": {
+            "from": "node.push_branch.output.branch",
+            "required": true,
+            "type": "schema:published_branch_v1"
+          },
+          "text": {
+            "from": "node.prepare_pr.output.text",
+            "required": true,
+            "type": "schema:delivery_text_v1"
+          },
+          "workspace": {
+            "from": "node.prepare_workspace.output.workspace",
+            "required": true,
+            "type": "workspace"
+          }
+        },
+        "outputs": {
+          "pull_request": {
+            "type": "schema:pull_request_v1"
+          }
+        },
+        "terminal": true,
+        "transitions": [],
+        "type": "create_pr"
+      },
+      "implement": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Implement approved plan",
+        "entry": false,
+        "implementation": {
+          "instructions": "Implement the scoped work described by the connected approved plan. Follow its accepted decisions and exclusions. Record the actual changes and unresolved gaps. This workflow intentionally has no separate validation stage: do not add a validation phase or claim validation passed. Report any checks actually performed and identify checks not run. Do not commit, push, or create the pull request; those are separate daemon-owned steps.",
+          "taskInput": "task",
+          "workspaceInput": "workspace"
+        },
+        "inputs": {
+          "deferred_work": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "open_items": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "plan": {
+            "from": "node.plan.output.document",
+            "required": true,
+            "type": "markdown"
+          },
+          "task": {
+            "from": "run.input.task",
+            "type": "task"
+          },
+          "template": {
+            "from": "run.input.implementation_template",
+            "type": "template"
+          },
+          "workspace": {
+            "from": "node.prepare_workspace.output.workspace",
+            "required": true,
+            "type": "workspace"
+          }
+        },
+        "outputs": {
+          "changeset": {
+            "type": "schema:changeset_v1"
+          },
+          "document": {
+            "artifact": {
+              "filename": "implementation.md",
+              "templateInput": "template"
+            },
+            "type": "markdown"
+          },
+          "findings": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "blockers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "proposed_changes": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "enum": [
+                          "add",
+                          "resolve",
+                          "update"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "type": "string"
+                      },
+                      "item_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "open_item",
+                          "deferred_work"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "action",
+                      "item_id",
+                      "summary",
+                      "evidence"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "blockers",
+                "proposed_changes"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_findings_v1"
+          }
+        },
+        "permissions": [
+          "process.run",
+          "workspace.write"
+        ],
+        "prompt": {
+          "digest": "07f822f141fd33fa0fc05dc4a33c30dce2f8f952dd793e7fc532d6df8795b541",
+          "id": "builtin-implementation-prompt",
+          "version": "1.0.0"
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "implementation_to_pr_summary",
+            "to": "prepare_pr"
+          }
+        ],
+        "type": "implementation"
+      },
+      "plan": {
+        "checkpoint": {
+          "mode": "approve"
+        },
+        "displayName": "Implementation Plan",
+        "entry": true,
+        "inputs": {
+          "context": {
+            "from": "run.input.context",
+            "required": false,
+            "type": "markdown"
+          },
+          "deferred_work": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "design": {
+            "from": "node.product_design.output.document",
+            "required": false,
+            "type": "markdown"
+          },
+          "open_items": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "supplied_design": {
+            "from": "run.input.supplied_design",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_technical_design": {
+            "from": "run.input.supplied_technical_design",
+            "required": false,
+            "type": "markdown"
+          },
+          "task": {
+            "from": "run.input.task",
+            "type": "task"
+          },
+          "technical_design": {
+            "from": "node.technical_design.output.document",
+            "required": false,
+            "type": "markdown"
+          },
+          "template": {
+            "from": "run.input.plan_template",
+            "type": "template"
+          }
+        },
+        "join": {
+          "from": [
+            "assessment_technical_gate_ready",
+            "technical_review_evidence_product_change_required_no"
+          ],
+          "mode": "one"
+        },
+        "outputs": {
+          "document": {
+            "artifact": {
+              "filename": "plan.md",
+              "templateInput": "template"
+            },
+            "type": "markdown"
+          },
+          "findings": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "blockers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "proposed_changes": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "enum": [
+                          "add",
+                          "resolve",
+                          "update"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "type": "string"
+                      },
+                      "item_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "open_item",
+                          "deferred_work"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "action",
+                      "item_id",
+                      "summary",
+                      "evidence"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "blockers",
+                "proposed_changes"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_findings_v1"
+          }
+        },
+        "prompt": {
+          "digest": "d3a59f95be2a42f60db7eda0dd2c9fa9a7e1737fc60e5ea5faa31475368e03d1",
+          "id": "builtin-plan-prompt",
+          "version": "1.0.0"
+        },
+        "reasoning": {
+          "agent": "plan",
+          "instructions": "Use the declared Tracer Bullets skill. Lead with a compact delivery map and new matters needing review. Order slices to prove, harden, then expand. Each slice names a demonstrable result, question proved, scope, dependencies, resolved inputs, execution detail, and observable validation. Keep detailed supporting material beneath its related change. Do not repeat the complete research or designs. Plan only: no implementation or delivery. Keep artifacts proportional to the task. Use generated evidence when available; otherwise identify the supplied source that covers a skipped stage. Never invent missing evidence or approval.",
+          "skills": [
+            "darkstar:tracer-bullets"
+          ]
+        },
+        "terminal": true,
+        "transitions": [
+          {
+            "id": "approved_plan_to_workspace",
+            "to": "prepare_workspace"
+          }
+        ],
+        "type": "reasoning"
+      },
+      "prepare_pr": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Prepare PR title and description",
+        "entry": false,
+        "inputs": {
+          "changeset": {
+            "from": "node.implement.output.changeset",
+            "required": true,
+            "type": "schema:changeset_v1"
+          },
+          "deferred_work": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "implementation_findings": {
+            "from": "node.implement.output.findings",
+            "required": true,
+            "type": "schema:planning_findings_v1"
+          },
+          "implementation_report": {
+            "from": "node.implement.output.document",
+            "required": true,
+            "type": "markdown"
+          },
+          "open_items": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "task": {
+            "from": "run.input.task",
+            "type": "task"
+          },
+          "template": {
+            "from": "run.input.pr_summary_template",
+            "type": "template"
+          }
+        },
+        "outputs": {
+          "document": {
+            "artifact": {
+              "filename": "pr_summary.md",
+              "templateInput": "template"
+            },
+            "type": "markdown"
+          },
+          "findings": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "blockers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "proposed_changes": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "enum": [
+                          "add",
+                          "resolve",
+                          "update"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "type": "string"
+                      },
+                      "item_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "open_item",
+                          "deferred_work"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "action",
+                      "item_id",
+                      "summary",
+                      "evidence"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "blockers",
+                "proposed_changes"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_findings_v1"
+          },
+          "text": {
+            "type": "schema:delivery_text_v1"
+          }
+        },
+        "prompt": {
+          "digest": "64e69dc6dd888c4a90906695129bdfe6cd829a0aeb8706992289ae1af5cbef56",
+          "id": "builtin-pr-summary-prompt",
+          "version": "1.0.0"
+        },
+        "reasoning": {
+          "agent": "pr_summary",
+          "instructions": "Prepare the PR document using the linked template and submit the text output with commitSubject, commitBody, prTitle, prBody, and changesetSnapshot. Copy changesetSnapshot exactly from the connected changeset.snapshotDigest. Ground the title and body in the supplied task, actual changes, and findings. This workflow skips a separate validation stage; say so clearly, distinguish checks actually performed from checks not run, and never imply an automated validation pass. Include unresolved blockers and relevant deferred work. Do not execute Git commands or publish the PR yourself."
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "pr_summary_to_commit",
+            "to": "commit_changes"
+          }
+        ],
+        "type": "reasoning"
+      },
+      "prepare_workspace": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Prepare implementation workspace",
+        "entry": false,
+        "inputs": {
+          "repository": {
+            "from": "run.input.repository",
+            "required": true,
+            "type": "repository"
+          }
+        },
+        "outputs": {
+          "workspace": {
+            "type": "workspace"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "workspace_to_implementation",
+            "to": "implement"
+          }
+        ],
+        "type": "workspace_prepare",
+        "workspacePrepare": {
+          "checkout": {
+            "baseRef": "project_default",
+            "branch": "codex/{runId}",
+            "mode": "new_worktree"
+          },
+          "repositoryInput": "repository"
+        }
+      },
+      "product_design": {
+        "checkpoint": {
+          "mode": "approve"
+        },
+        "displayName": "Product Design",
+        "entry": true,
+        "inputs": {
+          "context": {
+            "from": "run.input.context",
+            "required": false,
+            "type": "markdown"
+          },
+          "deferred_work": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "open_items": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "research": {
+            "from": "node.research.output.document",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_design": {
+            "from": "run.input.supplied_design",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_research": {
+            "from": "run.input.supplied_research",
+            "required": false,
+            "type": "markdown"
+          },
+          "task": {
+            "from": "run.input.task",
+            "type": "task"
+          },
+          "technical_feedback": {
+            "from": "node.technical_review_evidence.output.evidence",
+            "required": false,
+            "type": "schema:technical_review_evidence_v1"
+          },
+          "template": {
+            "from": "run.input.product_design_template",
+            "type": "template"
+          }
+        },
+        "join": {
+          "from": [
+            "assessment_design_gate_needed",
+            "research_next",
+            "technical_review_evidence_product_change_required_yes"
+          ],
+          "mode": "one"
+        },
+        "outputs": {
+          "document": {
+            "artifact": {
+              "filename": "product_design.md",
+              "templateInput": "template"
+            },
+            "type": "markdown"
+          },
+          "findings": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "blockers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "proposed_changes": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "enum": [
+                          "add",
+                          "resolve",
+                          "update"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "type": "string"
+                      },
+                      "item_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "open_item",
+                          "deferred_work"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "action",
+                      "item_id",
+                      "summary",
+                      "evidence"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "blockers",
+                "proposed_changes"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_findings_v1"
+          }
+        },
+        "prompt": {
+          "digest": "d1da898ad8ad301baf6c95cac9f22aed54618390161dfe8d4506705759c8d643",
+          "id": "builtin-product-design-prompt",
+          "version": "1.0.0"
+        },
+        "reasoning": {
+          "agent": "product_design",
+          "instructions": "Organize review around meaningful changes. Keep today versus proposed behavior, a concrete example or visual, rules, consequences, and the decision needed together. Summarize only current-state evidence needed for that change. If technical feedback changes the proposal, make that revision explicit. Keep artifacts proportional to the task. Use generated evidence when available; otherwise identify the supplied source that covers a skipped stage. Never invent missing evidence or approval."
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "product_ready_for_check",
+            "to": "product_review_evidence"
+          }
+        ],
+        "type": "reasoning"
+      },
+      "product_review_evidence": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Review product unknowns",
+        "entry": false,
+        "inputs": {
+          "document": {
+            "from": "node.product_design.output.document",
+            "required": true,
+            "type": "markdown"
+          }
+        },
+        "outputs": {
+          "evidence": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "new_unknown": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "new_unknown",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "schema:product_review_evidence_v1"
+          }
+        },
+        "reasoning": {
+          "agent": "readiness",
+          "instructions": "Assess only the connected final reviewed document. Report whether it explicitly leaves a consequential unknown requiring investigation. Include concise evidence in reason. Ordinary caveats or already recorded future work do not imply a new unknown. Do not rewrite artifacts or approve work. Supply evidence only; the daemon evaluates it. Keep the response brief."
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "product_design_evidence_recorded",
+            "to": "product_unknown_gate"
+          }
+        ],
+        "type": "reasoning"
+      },
+      "product_unknown_gate": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Product: new unknown?",
+        "entry": false,
+        "gate": {
+          "condition": {
+            "args": [
+              {
+                "ref": "input.evidence.new_unknown"
+              },
+              {
+                "literal": true
+              }
+            ],
+            "op": "eq"
+          },
+          "policy": "reviewed-planning-feedback-v1"
+        },
+        "inputs": {
+          "evidence": {
+            "from": "node.product_review_evidence.output.evidence",
+            "required": true,
+            "type": "schema:product_review_evidence_v1"
+          }
+        },
+        "outputs": {
+          "gate_evidence": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "policy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_gate_evidence_v1"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "product_review_evidence_new_unknown_yes",
+            "kind": "bounded",
+            "maxTraversals": 2,
+            "to": "questions",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ],
+              "op": "eq"
+            }
+          },
+          {
+            "id": "product_review_evidence_new_unknown_no",
+            "to": "technical_design",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ],
+              "op": "eq"
+            }
+          }
+        ],
+        "type": "gate"
+      },
+      "push_branch": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Push branch",
+        "entry": false,
+        "gitPush": {
+          "commitInput": "commit",
+          "remote": "origin",
+          "workspaceInput": "workspace"
+        },
+        "inputs": {
+          "commit": {
+            "from": "node.commit_changes.output.commit",
+            "required": true,
+            "type": "schema:commit_v1"
+          },
+          "workspace": {
+            "from": "node.prepare_workspace.output.workspace",
+            "required": true,
+            "type": "workspace"
+          }
+        },
+        "outputs": {
+          "branch": {
+            "type": "schema:published_branch_v1"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "push_to_pull_request",
+            "to": "create_pr"
+          }
+        ],
+        "type": "git_push"
+      },
+      "questions": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Questions",
+        "entry": true,
+        "inputs": {
+          "context": {
+            "from": "run.input.context",
+            "required": false,
+            "type": "markdown"
+          },
+          "deferred_work": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "open_items": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "product_feedback": {
+            "from": "node.product_review_evidence.output.evidence",
+            "required": false,
+            "type": "schema:product_review_evidence_v1"
+          },
+          "task": {
+            "from": "run.input.task",
+            "type": "task"
+          },
+          "technical_feedback": {
+            "from": "node.technical_review_evidence.output.evidence",
+            "required": false,
+            "type": "schema:technical_review_evidence_v1"
+          },
+          "template": {
+            "from": "run.input.questions_template",
+            "type": "template"
+          }
+        },
+        "join": {
+          "from": [
+            "assessment_questions_gate_needed",
+            "product_review_evidence_new_unknown_yes",
+            "technical_review_evidence_new_unknown_yes"
+          ],
+          "mode": "one"
+        },
+        "outputs": {
+          "document": {
+            "artifact": {
+              "filename": "questions.md",
+              "templateInput": "template"
+            },
+            "type": "markdown"
+          },
+          "findings": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "blockers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "proposed_changes": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "enum": [
+                          "add",
+                          "resolve",
+                          "update"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "type": "string"
+                      },
+                      "item_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "open_item",
+                          "deferred_work"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "action",
+                      "item_id",
+                      "summary",
+                      "evidence"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "blockers",
+                "proposed_changes"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_findings_v1"
+          }
+        },
+        "prompt": {
+          "digest": "94112c173a711386ef2924c44553d7f6664ba4d0a039115d7246e6a13aa61602",
+          "id": "builtin-questions-prompt",
+          "version": "1.0.0"
+        },
+        "reasoning": {
+          "agent": "questions",
+          "instructions": "Group product and engineering questions by the decision they could change. Use connected feedback from later reviews to focus follow-up investigation. Preserve resolved answers; do not repeat questions without new evidence. Keep artifacts proportional to the task. Use generated evidence when available; otherwise identify the supplied source that covers a skipped stage. Never invent missing evidence or approval."
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "questions_next",
+            "to": "research"
+          }
+        ],
+        "type": "reasoning"
+      },
+      "research": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Research",
+        "entry": true,
+        "inputs": {
+          "context": {
+            "from": "run.input.context",
+            "required": false,
+            "type": "markdown"
+          },
+          "deferred_work": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "open_items": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "questions": {
+            "from": "node.questions.output.document",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_questions": {
+            "from": "run.input.supplied_questions",
+            "required": false,
+            "type": "markdown"
+          },
+          "task": {
+            "from": "run.input.task",
+            "type": "task"
+          },
+          "template": {
+            "from": "run.input.research_template",
+            "type": "template"
+          }
+        },
+        "join": {
+          "from": [
+            "assessment_research_gate_needed",
+            "questions_next"
+          ],
+          "mode": "one"
+        },
+        "outputs": {
+          "document": {
+            "artifact": {
+              "filename": "research.md",
+              "templateInput": "template"
+            },
+            "type": "markdown"
+          },
+          "findings": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "blockers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "proposed_changes": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "enum": [
+                          "add",
+                          "resolve",
+                          "update"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "type": "string"
+                      },
+                      "item_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "open_item",
+                          "deferred_work"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "action",
+                      "item_id",
+                      "summary",
+                      "evidence"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "blockers",
+                "proposed_changes"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_findings_v1"
+          }
+        },
+        "prompt": {
+          "digest": "e58caae990d3c6811f06fd5faf4e029b51a9badffdbde82f07abe34182cd8693",
+          "id": "builtin-research-prompt",
+          "version": "1.0.0"
+        },
+        "reasoning": {
+          "agent": "research",
+          "instructions": "Own the observed current state. Put evidence next to each finding. Distinguish supplied claims, inspected code, and observed runtime behavior. Keep raw investigation output out of the main review and do not turn proposals into facts. Keep artifacts proportional to the task. Use generated evidence when available; otherwise identify the supplied source that covers a skipped stage. Never invent missing evidence or approval."
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "research_next",
+            "to": "product_design"
+          }
+        ],
+        "type": "reasoning"
+      },
+      "technical_design": {
+        "checkpoint": {
+          "mode": "approve"
+        },
+        "displayName": "Technical Design",
+        "entry": true,
+        "inputs": {
+          "context": {
+            "from": "run.input.context",
+            "required": false,
+            "type": "markdown"
+          },
+          "deferred_work": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "design": {
+            "from": "node.product_design.output.document",
+            "required": false,
+            "type": "markdown"
+          },
+          "open_items": {
+            "from": "run.input.tracking",
+            "required": true,
+            "type": "open_items"
+          },
+          "research": {
+            "from": "node.research.output.document",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_design": {
+            "from": "run.input.supplied_design",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_research": {
+            "from": "run.input.supplied_research",
+            "required": false,
+            "type": "markdown"
+          },
+          "supplied_technical_design": {
+            "from": "run.input.supplied_technical_design",
+            "required": false,
+            "type": "markdown"
+          },
+          "task": {
+            "from": "run.input.task",
+            "type": "task"
+          },
+          "template": {
+            "from": "run.input.technical_design_template",
+            "type": "template"
+          }
+        },
+        "join": {
+          "from": [
+            "assessment_technical_gate_needed",
+            "product_review_evidence_new_unknown_no"
+          ],
+          "mode": "one"
+        },
+        "outputs": {
+          "document": {
+            "artifact": {
+              "filename": "technical_design.md",
+              "templateInput": "template"
+            },
+            "type": "markdown"
+          },
+          "findings": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "blockers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "proposed_changes": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "enum": [
+                          "add",
+                          "resolve",
+                          "update"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "type": "string"
+                      },
+                      "item_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "open_item",
+                          "deferred_work"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "action",
+                      "item_id",
+                      "summary",
+                      "evidence"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "blockers",
+                "proposed_changes"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_findings_v1"
+          }
+        },
+        "prompt": {
+          "digest": "ab2470eacb016670b7c47825ab5a0b3df7f685e593e0c3f5984879fd5e4ab0dd",
+          "id": "builtin-technical-design-prompt",
+          "version": "1.0.0"
+        },
+        "reasoning": {
+          "agent": "technical_design",
+          "instructions": "Map product outcomes to responsible system components. Group technical changes by responsibility, with current-to-proposed comparisons. Use data cards, interface cards, and state diagrams where useful. Highlight feasibility findings that change product behavior. Proposed code is useful only when it resolves an important ambiguity. Keep artifacts proportional to the task. Use generated evidence when available; otherwise identify the supplied source that covers a skipped stage. Never invent missing evidence or approval."
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "technical_ready_for_check",
+            "to": "technical_review_evidence"
+          }
+        ],
+        "type": "reasoning"
+      },
+      "technical_feasibility_gate": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Feasibility changes the proposal?",
+        "entry": false,
+        "gate": {
+          "condition": {
+            "args": [
+              {
+                "ref": "input.evidence.product_change_required"
+              },
+              {
+                "literal": true
+              }
+            ],
+            "op": "eq"
+          },
+          "policy": "reviewed-planning-feedback-v1"
+        },
+        "inputs": {
+          "evidence": {
+            "from": "node.technical_review_evidence.output.evidence",
+            "required": true,
+            "type": "schema:technical_review_evidence_v1"
+          }
+        },
+        "outputs": {
+          "gate_evidence": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "policy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_gate_evidence_v1"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "technical_review_evidence_product_change_required_yes",
+            "kind": "bounded",
+            "maxTraversals": 2,
+            "to": "product_design",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ],
+              "op": "eq"
+            }
+          },
+          {
+            "id": "technical_review_evidence_product_change_required_no",
+            "to": "plan",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ],
+              "op": "eq"
+            }
+          }
+        ],
+        "type": "gate"
+      },
+      "technical_review_evidence": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Review technical findings",
+        "entry": false,
+        "inputs": {
+          "design": {
+            "from": "node.product_design.output.document",
+            "required": false,
+            "type": "markdown"
+          },
+          "document": {
+            "from": "node.technical_design.output.document",
+            "required": true,
+            "type": "markdown"
+          },
+          "supplied_design": {
+            "from": "run.input.supplied_design",
+            "required": false,
+            "type": "markdown"
+          }
+        },
+        "outputs": {
+          "evidence": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "new_unknown": {
+                  "type": "boolean"
+                },
+                "product_change_required": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "new_unknown",
+                "product_change_required",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "schema:technical_review_evidence_v1"
+          }
+        },
+        "reasoning": {
+          "agent": "readiness",
+          "instructions": "Assess only the connected final reviewed document against the supplied product design. Report whether it explicitly leaves a consequential unknown requiring investigation and whether feasibility findings require changing agreed product behavior. Include concise evidence in reason. Ordinary caveats or already recorded future work do not imply a new unknown. Do not rewrite artifacts or approve work. Supply evidence only; the daemon evaluates it. Keep the response brief."
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "technical_design_evidence_recorded",
+            "to": "technical_unknown_gate"
+          }
+        ],
+        "type": "reasoning"
+      },
+      "technical_unknown_gate": {
+        "checkpoint": {
+          "mode": "none"
+        },
+        "displayName": "Technical: new unknown?",
+        "entry": false,
+        "gate": {
+          "condition": {
+            "args": [
+              {
+                "ref": "input.evidence.new_unknown"
+              },
+              {
+                "literal": true
+              }
+            ],
+            "op": "eq"
+          },
+          "policy": "reviewed-planning-feedback-v1"
+        },
+        "inputs": {
+          "evidence": {
+            "from": "node.technical_review_evidence.output.evidence",
+            "required": true,
+            "type": "schema:technical_review_evidence_v1"
+          }
+        },
+        "outputs": {
+          "gate_evidence": {
+            "schemaDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "policy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "policy",
+                "passed"
+              ],
+              "type": "object"
+            },
+            "type": "schema:planning_gate_evidence_v1"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "terminal": false,
+        "transitions": [
+          {
+            "id": "technical_review_evidence_new_unknown_yes",
+            "kind": "bounded",
+            "maxTraversals": 2,
+            "to": "questions",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": true
+                }
+              ],
+              "op": "eq"
+            }
+          },
+          {
+            "id": "technical_review_evidence_new_unknown_no",
+            "to": "technical_feasibility_gate",
+            "when": {
+              "args": [
+                {
+                  "ref": "output.passed"
+                },
+                {
+                  "literal": false
+                }
+              ],
+              "op": "eq"
+            }
+          }
+        ],
+        "type": "gate"
+      }
+    },
+    "routeDefaults": {
+      "entry": "assessment",
+      "terminals": [
+        "create_pr"
+      ]
+    }
+  }
+}

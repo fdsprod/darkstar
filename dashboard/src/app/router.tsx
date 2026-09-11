@@ -21,8 +21,9 @@ import { RunReadinessPage } from "../pages/RunReadinessPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { WorkDetailPage } from "../pages/WorkDetailPage";
 import { WorkflowsPage } from "../pages/WorkflowsPage";
+import { TemplatesPage } from "../pages/TemplatesPage";
 
-export type AppRouteId = "board" | "work" | "run" | "readiness" | "checkpoints" | "artifact-review" | "agents" | "workflows" | "settings" | "artifacts" | "artifact" | "not-found";
+export type AppRouteId = "board" | "work" | "run" | "readiness" | "checkpoints" | "artifact-review" | "agents" | "workflows" | "templates" | "settings" | "artifacts" | "artifact" | "not-found";
 
 export interface AppRoute {
   id: AppRouteId;
@@ -41,6 +42,7 @@ const routePatterns = [
   { id: "checkpoints", path: "/checkpoints", title: "Checkpoints", section: "Checkpoints" },
   { id: "agents", path: "/agents", title: "Agents", section: "Checkpoints" },
   { id: "workflows", path: "/workflows", title: "Workflows", section: "Workflows" },
+  { id: "templates", path: "/templates", title: "Templates", section: "Templates" },
   { id: "settings", path: "/settings", title: "Settings", section: "Settings" },
   { id: "artifacts", path: "/artifacts", title: "Artifacts", section: "Board" },
   { id: "artifact", path: "/artifacts/:artifactId", title: "Artifact", section: "Board" },
@@ -136,6 +138,7 @@ export function RouteView() {
     case "artifact-review": return <ArtifactReviewPage />;
     case "agents": return <AgentsPage />;
     case "workflows": return <WorkflowsPage />;
+    case "templates": return <TemplatesPage />;
     case "artifacts": return <ArtifactsPage />;
     case "settings": return <SettingsPage />;
     case "work": return <WorkDetailPage />;

@@ -10,6 +10,7 @@ const primaryNavigation: NavItem[] = [
   { label: "Board", to: "/board", icon: "board", routeIds: ["board", "work", "run", "readiness", "artifacts", "artifact"] },
   { label: "Checkpoints", to: "/checkpoints", icon: "checkpoints", routeIds: ["checkpoints", "artifact-review", "agents"] },
   { label: "Workflows", to: "/workflows", icon: "workflow", routeIds: ["workflows"] },
+  { label: "Templates", to: "/templates", icon: "artifact", routeIds: ["templates"] },
   { label: "Settings", to: "/settings", icon: "settings", routeIds: ["settings"] },
 ];
 

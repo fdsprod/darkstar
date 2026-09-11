@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"darkstar/src/core/attention"
+	"darkstar/src/core/contentlibrary"
 	"darkstar/src/core/health"
 	"darkstar/src/core/readinesscontrol"
 	"darkstar/src/core/workflow"
@@ -63,6 +64,7 @@ type Server struct {
 	attention      AttentionService
 	readiness      ReadinessService
 	workflows      WorkflowService
+	contentLibrary *contentlibrary.Service
 	workflowChat   workflowchat.Runner
 	dashboard      fs.FS
 
@@ -312,6 +314,7 @@ func (s *Server) SetApprovals(approvals ApprovalService) error {
 
 // WorkflowService is the daemon-owned workflow command/query boundary.
 type WorkflowService interface {
+	ContentUsages(context.Context, string) ([]workflow.ContentUsage, error)
 	List(context.Context, string) ([]workflow.VersionSummary, error)
 	Library(context.Context) (workflow.Library, error)
 	AuthoringCatalog(context.Context) (workflow.AuthoringCatalog, error)
@@ -596,6 +599,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/input-requests" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/input-requests/") {
 		s.serveInputRequests(response, request, requestID)
+		return
+	}
+	if clean := path.Clean(request.URL.Path); clean == "/api/v1/content-library" || strings.HasPrefix(clean, "/api/v1/content-library/") {
+		s.serveContentLibrary(response, request, requestID)
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/workflows" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/workflows/") {

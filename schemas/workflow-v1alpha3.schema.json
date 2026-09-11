@@ -1160,6 +1160,9 @@
         },
         "createPR": {
           "$ref": "#/$defs/createPR"
+        },
+        "prompt": {
+          "$ref": "#/$defs/contentReference"
         }
       },
       "oneOf": [
@@ -2311,6 +2314,25 @@
             ]
           }
         }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "prompt"
+            ]
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "reasoning",
+                  "implementation"
+                ]
+              }
+            }
+          }
+        }
       ]
     },
     "transition": {
@@ -2637,6 +2659,22 @@
               "type": "string"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "template_reference"
+            },
+            "reference": {
+              "$ref": "#/$defs/contentReference"
+            }
+          },
+          "required": [
+            "kind",
+            "reference"
+          ]
         }
       ]
     },
@@ -2847,6 +2885,29 @@
           "type": "boolean"
         }
       }
+    },
+    "contentReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ]
     }
   }
 }

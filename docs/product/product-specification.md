@@ -284,6 +284,11 @@ DARKSTAR ships the versioned `darkstar/software-delivery` workflow as its defaul
 
 The normative `v1alpha1` execution model, normalized schema, stable errors, and executable examples are defined in the [workflow execution semantics](../architecture/workflow/execution-semantics.md). In particular, `terminal: true` means terminal-capable for route selection; it does not require the node to be a graph sink.
 
+Reusable prompts and artifact templates are managed in the Templates library and
+linked by immutable version and digest. Stage presets and the Assessment Router
+authoring action follow the [workflow content library contract](workflow-content-library.md),
+including conditional input handling and required design/planning review.
+
 Each workflow node shall declare:
 
 - a stable node identifier and display name;

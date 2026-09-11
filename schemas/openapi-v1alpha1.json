@@ -4,6 +4,16 @@
   "servers": [{"url":"http://127.0.0.1:{port}","variables":{"port":{"default":"0"}}}],
   "security": [{"bearerAuth":[]}],
   "paths": {
+    "/api/v1/content-library": {"get":{"operationId":"listContentLibrary","responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentLibrary"}}}},"default":{"$ref":"#/components/responses/Error"}}},"post":{"operationId":"createContentItem","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentCreateRequest"}}}},"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentItem"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
+    "/api/v1/content-library/preview": {"post":{"operationId":"previewContentPrompt","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentPreviewRequest"}}}},"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentPromptPreview"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
+    "/api/v1/content-library/{id}": {"get":{"operationId":"getContentItem","parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentItem"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
+    "/api/v1/content-library/{id}/draft": {"put":{"operationId":"updateContentDraft","parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentUpdateRequest"}}}},"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentItem"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
+    "/api/v1/content-library/{id}/publish": {"post":{"operationId":"publishContentVersion","parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentPublishRequest"}}}},"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentItem"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
+    "/api/v1/content-library/{id}/duplicate": {"post":{"operationId":"duplicateContentItem","parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"properties":{"name":{"type":"string"}},"required":["name"]}}}},"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentItem"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
+    "/api/v1/content-library/{id}/archive": {"post":{"operationId":"archiveContentItem","parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"properties":{},"required":[]}}}},"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentItem"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
+    "/api/v1/content-library/{id}/restore": {"post":{"operationId":"restoreContentItem","parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"properties":{},"required":[]}}}},"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentItem"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
+    "/api/v1/workflows/content-usage": {"get":{"operationId":"getContentUsages","parameters":[{"name":"contentId","in":"query","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ContentUsages"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
+    "/api/v1/workflows/patterns/assessment-router": {"post":{"operationId":"buildAssessmentRouter","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/AssessmentRouterPatternRequest"}}}},"responses":{"200":{"description":"Successful operation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/AssessmentRouterPatternResult"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
     "/api/v1/workflows/chat/models":{"get":{"operationId":"listWorkflowChatModels","summary":"List provider models and their supported reasoning efforts","responses":{"200":{"description":"Currently available model choices","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowChatModel"}}}}},"default":{"$ref":"#/components/responses/Error"}}}},
     "/api/v1/workflows/chat":{"post":{"operationId":"chatWorkflow","summary":"Stream a draft-only workflow authoring turn","description":"Authenticated NDJSON stream. Each line is a WorkflowChatEvent. Chat history is client-owned; draft changes are durable. Disconnect cancels remaining work without rolling back saved revisions. Publishing is not an agent capability.","security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WorkflowChatRequest"}}}},"responses":{"200":{"description":"Ordered chat events ending in done or error; each draft event contains a saved revision.","content":{"application/x-ndjson":{"schema":{"$ref":"#/components/schemas/WorkflowChatEvent"}}}},"400":{"description":"Invalid request"},"401":{"description":"Unauthenticated"},"503":{"description":"Chat provider unavailable"}}}},
     "/api/v1/runs/{runId}/transcript":{"get":{"operationId":"getRunTranscript","parameters":[{"$ref":"#/components/parameters/RunId"},{"name":"after","in":"query","schema":{"type":"integer","minimum":0}},{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":1000}}],"responses":{"200":{"description":"Persisted run history page","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RunTranscriptPage"}}}},"default":{"$ref":"#/components/responses/Error"}}}},
@@ -327,6 +337,24 @@
     },
     "responses":{"Error":{"description":"Stable API error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"}}}}},
     "schemas": {
+      "ContentReference": {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","minLength":1},"version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"},"digest":{"type":"string","pattern":"^[a-f0-9]{64}$"}},"required":["id","version","digest"]},
+      "ContentCondition": {"oneOf":[{"type":"object","additionalProperties":false,"properties":{"kind":{"enum":["input_linked","input_absent"]},"input":{"type":"string","minLength":1}},"required":["kind","input"]},{"type":"object","additionalProperties":false,"properties":{"kind":{"enum":["always","revision"]}},"required":["kind"]}]},
+      "ContentSection": {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string"},"when":{"$ref":"#/components/schemas/ContentCondition"},"instructions":{"type":"string"}},"required":["id","when","instructions"]},
+      "ContentDocument": {"oneOf":[{"type":"object","additionalProperties":false,"properties":{"kind":{"const":"template"},"content":{"type":"string","minLength":1},"requiredHeadings":{"type":"array","items":{"type":"string"},"uniqueItems":true}},"required":["kind","content"]},{"type":"object","additionalProperties":false,"properties":{"kind":{"const":"prompt"},"instructions":{"type":"string","minLength":1},"sections":{"type":"array","items":{"$ref":"#/components/schemas/ContentSection"}}},"required":["kind","instructions"]}]},
+      "ContentDraft": {"type":"object","additionalProperties":false,"properties":{"revision":{"type":"integer","minimum":1},"document":{"$ref":"#/components/schemas/ContentDocument"}},"required":["revision","document"]},
+      "ContentVersion": {"type":"object","additionalProperties":false,"properties":{"reference":{"$ref":"#/components/schemas/ContentReference"},"document":{"$ref":"#/components/schemas/ContentDocument"},"createdAt":{"type":"string","format":"date-time"}},"required":["reference","document","createdAt"]},
+      "ContentItem": {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"kind":{"enum":["template","prompt"]},"archivedAt":{"type":"string","format":"date-time"},"draft":{"$ref":"#/components/schemas/ContentDraft"},"versions":{"type":"array","items":{"$ref":"#/components/schemas/ContentVersion"}}},"required":["id","name","description","kind","draft","versions"]},
+      "ContentLibrary": {"type":"object","additionalProperties":false,"properties":{"items":{"type":"array","items":{"$ref":"#/components/schemas/ContentItem"}}},"required":["items"]},
+      "ContentCreateRequest": {"type":"object","additionalProperties":false,"properties":{"name":{"type":"string","minLength":1},"description":{"type":"string"},"document":{"$ref":"#/components/schemas/ContentDocument"}},"required":["name","document"]},
+      "ContentUpdateRequest": {"type":"object","additionalProperties":false,"properties":{"expectedRevision":{"type":"integer","minimum":1},"name":{"type":"string"},"description":{"type":"string"},"document":{"$ref":"#/components/schemas/ContentDocument"}},"required":["expectedRevision","document"]},
+      "ContentPublishRequest": {"type":"object","additionalProperties":false,"properties":{"expectedRevision":{"type":"integer","minimum":1},"version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"}},"required":["expectedRevision","version"]},
+      "ContentPreviewRequest": {"type":"object","additionalProperties":false,"properties":{"document":{"$ref":"#/components/schemas/ContentDocument"},"linkedInputs":{"type":"array","items":{"type":"string"}},"revision":{"type":"boolean"}},"required":["document","linkedInputs","revision"]},
+      "ContentPromptPreview": {"type":"object","additionalProperties":false,"properties":{"instructions":{"type":"string"},"sections":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string"},"included":{"type":"boolean"},"reason":{"type":"string"}},"required":["id","included","reason"]}},"estimatedTokens":{"type":"integer","minimum":0},"tokenEstimateMethod":{"type":"string"}},"required":["instructions","sections","estimatedTokens","tokenEstimateMethod"]},
+      "ContentUsage": {"type":"object","additionalProperties":false,"properties":{"kind":{"enum":["draft","published"]},"workflowName":{"type":"string"},"workflowVersion":{"type":"string"},"draftId":{"type":"string"},"nodeId":{"type":"string"},"inputId":{"type":"string"},"reference":{"$ref":"#/components/schemas/ContentReference"}},"required":["kind","workflowName","workflowVersion","reference"]},
+      "ContentUsages": {"type":"object","additionalProperties":false,"properties":{"usages":{"type":"array","items":{"$ref":"#/components/schemas/ContentUsage"}}},"required":["usages"]},
+      "WorkflowStagePreset": {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"node":{"$ref":"workflow-v1alpha3.schema.json#/$defs/node"},"inputs":{"type":"object","additionalProperties":{"$ref":"workflow-v1alpha3.schema.json#/$defs/valueDeclaration"}},"optionalInputs":{"type":"object","additionalProperties":{"$ref":"workflow-v1alpha3.schema.json#/$defs/valueDeclaration"}}},"required":["id","name","description","node","inputs","optionalInputs"]},
+      "AssessmentRouterPatternRequest": {"type":"object","additionalProperties":false,"properties":{"document":{"$ref":"#/components/schemas/WorkflowDocument"},"id":{"type":"string","pattern":"^[a-z][a-z0-9_]{0,34}$"},"agent":{"type":"string"},"inputNames":{"type":"array","items":{"type":"string"}},"targets":{"type":"object","additionalProperties":false,"properties":{"questions":{"type":"string"},"research":{"type":"string"},"design":{"type":"string"},"technical_design":{"type":"string"},"plan":{"type":"string"}},"required":["questions","research","design","technical_design","plan"]}},"required":["document","targets"]},
+      "AssessmentRouterPatternResult": {"type":"object","additionalProperties":false,"properties":{"document":{"$ref":"#/components/schemas/WorkflowDocument"},"assessmentId":{"type":"string"},"gateIds":{"type":"array","items":{"type":"string"}}},"required":["document","assessmentId","gateIds"]},
       "ExtensionDescriptor": {
         "type": "object",
         "additionalProperties": false,
@@ -404,7 +432,7 @@
       "StoryProjection":{"type":"object","additionalProperties":false,"required":["id","workItemId","title","sourceHash","priority","position","status","resourceVersion","lastGlobalPosition","createdAt","updatedAt"],"properties":{"id":{"type":"string","pattern":"^story_[0-9A-HJKMNP-TV-Z]{26}$"},"workItemId":{"type":"string","pattern":"^work_[0-9A-HJKMNP-TV-Z]{26}$"},"title":{"type":"string","minLength":1},"sourceHash":{"type":"string","pattern":"^[0-9a-f]{64}$"},"priority":{"type":"integer","minimum":0},"position":{"type":"integer","minimum":0},"status":{"enum":["planned","ready","running","completed","cancelled","retired"]},"resourceVersion":{"type":"integer","minimum":1},"lastGlobalPosition":{"type":"integer","minimum":1},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}},
       "PointProjection":{"type":"object","additionalProperties":false,"required":["id","storyId","revision","title","sourceHash","priority","position","dependencies","status","resourceVersion","lastGlobalPosition","createdAt","updatedAt"],"properties":{"id":{"type":"string","pattern":"^point_[0-9A-HJKMNP-TV-Z]{26}$"},"storyId":{"type":"string","pattern":"^story_[0-9A-HJKMNP-TV-Z]{26}$"},"revision":{"type":"integer","minimum":1},"title":{"type":"string","minLength":1},"sourceHash":{"type":"string","pattern":"^[0-9a-f]{64}$"},"priority":{"type":"integer","minimum":0},"position":{"type":"integer","minimum":0},"dependencies":{"type":"array","uniqueItems":true,"items":{"type":"string","pattern":"^point_[0-9A-HJKMNP-TV-Z]{26}$"}},"status":{"enum":["planned","ready","running","validating","awaiting_approval","accepted","committed","published","failed","rejected","superseded","reconcile_required"]},"resourceVersion":{"type":"integer","minimum":1},"lastGlobalPosition":{"type":"integer","minimum":1},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}},
       "WorkItemView":{"type":"object","additionalProperties":false,"required":["schemaVersion","work","runs","stories","points"],"properties":{"schemaVersion":{"const":1},"work":{"$ref":"#/components/schemas/WorkItem"},"runs":{"type":"array","items":{"$ref":"#/components/schemas/Run"}},"stories":{"type":"array","items":{"$ref":"#/components/schemas/StoryProjection"}},"points":{"type":"array","items":{"$ref":"#/components/schemas/PointProjection"}}}},
-      "WorkflowDocument":{"oneOf":[{"$ref":"./workflow-v1alpha1.schema.json"},{"$ref":"./workflow-v1alpha2.schema.json"}]},
+      "WorkflowDocument":{"oneOf":[{"$ref":"./workflow-v1alpha1.schema.json"},{"$ref":"./workflow-v1alpha2.schema.json"},{"$ref":"./workflow-v1alpha3.schema.json"}]},
       "WorkflowVersionSummary":{"type":"object","additionalProperties":false,"required":["name","version","digest","sourceScope","sourceReference","installedAt"],"properties":{"name":{"type":"string"},"version":{"type":"string"},"digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"sourceScope":{"enum":["default","user","project"]},"sourceReference":{"type":"string"},"installedAt":{"type":"string","format":"date-time"}}},
       "WorkflowDraft":{"type":"object","additionalProperties":false,"required":["id","name","scope","scopeReference","revision","document","layout","documentDigest","updatedAt"],"properties":{"id":{"type":"string","pattern":"^draft_"},"name":{"type":"string","minLength":1},"scope":{"enum":["user","project"]},"scopeReference":{"type":"string","minLength":1},"baseVersion":{"type":"string"},"revision":{"type":"integer","minimum":1},"document":{"type":"object","additionalProperties":true},"layout":{"type":"object","additionalProperties":true},"documentDigest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"updatedAt":{"type":"string","format":"date-time"}}},
       "WorkflowArchive":{"type":"object","additionalProperties":false,"required":["name","version","archivedAt"],"properties":{"name":{"type":"string"},"version":{"type":"string"},"archivedAt":{"type":"string","format":"date-time"}}},
@@ -415,116 +443,7 @@
       "NodeDefinitionVersionRequest":{"type":"object","additionalProperties":false,"required":["source","version"],"properties":{"source":{"$ref":"#/components/schemas/NodeDefinitionRef"},"version":{"type":"string","minLength":1}}},
       "NodeDefinitionArchiveRequest":{"type":"object","additionalProperties":false,"required":["ref"],"properties":{"ref":{"$ref":"#/components/schemas/NodeDefinitionRef"}}},
       "WorkflowLibrary":{"type":"object","additionalProperties":false,"required":["versions","drafts","archives"],"properties":{"versions":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowVersionSummary"}},"drafts":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowDraft"}},"archives":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowArchive"}}}},
-      "WorkflowAuthoringCatalog":{
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "schemaVersion",
-          "nodeTypes",
-          "valueTypes",
-          "checkpointModes",
-          "predicateOps",
-          "agents",
-          "policies",
-          "schemas",
-          "skills",
-          "tools",
-          "workflows"
-        ],
-        "properties": {
-          "schemaVersion": {
-            "const": 1
-          },
-          "nodeTypes": {
-            "type": "array",
-            "items": {
-              "enum": [
-                "reasoning",
-                "implementation",
-                "gate",
-                "command",
-                "approval",
-                "subworkflow",
-                "point_execution",
-                "workspace_prepare",
-                "workspace_validate"
-              ]
-            },
-            "uniqueItems": true
-          },
-          "valueTypes": {
-            "type": "array",
-            "items": {
-              "enum": [
-                "null",
-                "boolean",
-                "integer",
-                "number",
-                "string",
-                "array",
-                "object"
-              ]
-            },
-            "uniqueItems": true
-          },
-          "checkpointModes": {
-            "type": "array",
-            "items": {
-              "enum": [
-                "none",
-                "acknowledge",
-                "approve",
-                "approve_on_change",
-                "external"
-              ]
-            },
-            "uniqueItems": true
-          },
-          "predicateOps": {
-            "type": "array",
-            "items": {
-              "enum": [
-                "const",
-                "eq",
-                "ne",
-                "lt",
-                "lte",
-                "gt",
-                "gte",
-                "present",
-                "all",
-                "any",
-                "not"
-              ]
-            },
-            "uniqueItems": true
-          },
-          "agents": {
-            "$ref": "#/components/schemas/WorkflowStringReferenceGroup"
-          },
-          "policies": {
-            "$ref": "#/components/schemas/WorkflowStringReferenceGroup"
-          },
-          "schemas": {
-            "$ref": "#/components/schemas/WorkflowStringReferenceGroup"
-          },
-          "skills": {
-            "$ref": "#/components/schemas/WorkflowCapabilityReferenceGroup"
-          },
-          "tools": {
-            "$ref": "#/components/schemas/WorkflowCapabilityReferenceGroup"
-          },
-          "workflows": {
-            "$ref": "#/components/schemas/WorkflowInstalledReferenceGroup"
-          },
-          "extensions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ExtensionDescriptor"
-            }
-          }
-        }
-      },
+      "WorkflowAuthoringCatalog":{"type":"object","additionalProperties":false,"required":["schemaVersion","nodeTypes","valueTypes","checkpointModes","predicateOps","agents","policies","schemas","skills","tools","workflows"],"properties":{"schemaVersion":{"const":1},"nodeTypes":{"type":"array","items":{"enum":["reasoning","gate","command","approval","subworkflow","point_execution","routing","implementation","workspace_prepare","workspace_validate","extension","git_commit","git_push","create_pr"]},"uniqueItems":true},"valueTypes":{"type":"array","items":{"type":"string"},"uniqueItems":true},"checkpointModes":{"type":"array","items":{"enum":["none","acknowledge","approve","approve_on_change","external"]},"uniqueItems":true},"predicateOps":{"type":"array","items":{"enum":["const","eq","ne","lt","lte","gt","gte","present","all","any","not"]},"uniqueItems":true},"agents":{"$ref":"#/components/schemas/WorkflowStringReferenceGroup"},"policies":{"$ref":"#/components/schemas/WorkflowStringReferenceGroup"},"schemas":{"$ref":"#/components/schemas/WorkflowStringReferenceGroup"},"skills":{"$ref":"#/components/schemas/WorkflowCapabilityReferenceGroup"},"tools":{"$ref":"#/components/schemas/WorkflowCapabilityReferenceGroup"},"workflows":{"$ref":"#/components/schemas/WorkflowInstalledReferenceGroup"},"extensions":{"type":"array","items":{"$ref":"#/components/schemas/ExtensionDescriptor"}},"stagePresets":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowStagePreset"}}}},
       "WorkflowStringReferenceGroup":{"oneOf":[{"type":"object","additionalProperties":false,"required":["status","items"],"properties":{"status":{"const":"known"},"items":{"type":"array","items":{"type":"string"},"uniqueItems":true}}},{"type":"object","additionalProperties":false,"required":["status","reason"],"properties":{"status":{"const":"unavailable"},"reason":{"enum":["not_configured","discovery_unsupported","read_failed"]}}}]},
       "WorkflowCapabilityReference":{"type":"object","additionalProperties":false,"required":["name","kind","class","fingerprint","availability"],"properties":{"name":{"type":"string","minLength":1},"kind":{"enum":["skill","tool"]},"class":{"enum":["guaranteed","registered","inherited","unsupported_discovery"]},"version":{"type":"string"},"fingerprint":{"type":"string","pattern":"^[0-9a-f]{64}$"},"availability":{"enum":["available","unavailable","unhealthy"]}}},
       "WorkflowCapabilityReferenceGroup":{"oneOf":[{"type":"object","additionalProperties":false,"required":["status","items"],"properties":{"status":{"const":"known"},"items":{"type":"array","items":{"$ref":"#/components/schemas/WorkflowCapabilityReference"}}}},{"type":"object","additionalProperties":false,"required":["status","reason"],"properties":{"status":{"const":"unavailable"},"reason":{"enum":["not_configured","discovery_unsupported","read_failed"]}}}]},

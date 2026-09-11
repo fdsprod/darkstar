@@ -108,13 +108,16 @@ export function main(argv = process.argv.slice(2)) {
   const encoded = encodedManifest();
   const bundledPath = resolve(root, "runtime/src/cli/rich-artifacts.md");
   const rich = normalizedBytes(resolve(skillsRoot, "rich-artifacts/SKILL.md"));
+  const tracerPath = resolve(root, "runtime/src/cli/tracer-bullets.md");
+  const tracer = normalizedBytes(resolve(skillsRoot, "tracer-bullets/SKILL.md"));
   if (argv[0] === "generate") {
     writeFileSync(manifestPath, encoded, "utf8");
     writeFileSync(bundledPath, rich, "utf8");
+    writeFileSync(tracerPath, tracer, "utf8");
     process.stdout.write(`Generated ${relative(root, manifestPath)} with ${buildManifest().skills.length} skills.\n`);
     return 0;
   }
-  if (!existsSync(bundledPath) || normalizedBytes(bundledPath) !== rich || !existsSync(manifestPath) || normalizedBytes(manifestPath) !== encoded) {
+  if (!existsSync(tracerPath) || normalizedBytes(tracerPath) !== tracer || !existsSync(bundledPath) || normalizedBytes(bundledPath) !== rich || !existsSync(manifestPath) || normalizedBytes(manifestPath) !== encoded) {
     process.stderr.write("skills/builtin/manifest.json is stale; run: node scripts/builtin-skills.mjs generate\n");
     return 1;
   }

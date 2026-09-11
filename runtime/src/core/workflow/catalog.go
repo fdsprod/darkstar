@@ -81,6 +81,7 @@ type Library struct {
 // references observed in immutable installed definitions. Empty reference
 // groups are truthful: the editor must not invent unavailable profiles.
 type AuthoringCatalog struct {
+	StagePresets    []StagePreset            `json:"stagePresets"`
 	Extensions      []extension.Descriptor   `json:"extensions,omitempty"`
 	SchemaVersion   int                      `json:"schemaVersion"`
 	NodeTypes       []NodeType               `json:"nodeTypes"`
@@ -273,6 +274,7 @@ type RoutePreview struct {
 
 // Catalog coordinates scope-aware loading, version installation, and run snapshots.
 type Catalog struct {
+	content      ContentResolver
 	extensions   []extension.Descriptor
 	valueSchemas valueschema.Validator
 	publishMu    sync.Mutex
@@ -534,7 +536,7 @@ func (c *Catalog) AuthoringCatalog(ctx context.Context) (AuthoringCatalog, error
 	for _, kind := range nominalTypes {
 		valueTypes = append(valueTypes, ValueType(kind))
 	}
-	return AuthoringCatalog{SchemaVersion: 1, Extensions: cloneExtensionDescriptors(c.extensions),
+	return AuthoringCatalog{SchemaVersion: 1, StagePresets: StagePresets(), Extensions: cloneExtensionDescriptors(c.extensions),
 		NodeTypes:       []NodeType{NodeGitCommit, NodeGitPush, NodeCreatePR, NodeExtension, NodeWorkspacePrepare, NodeWorkspaceValidate, NodeReasoning, NodeImplementation, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution},
 		ValueTypes:      valueTypes,
 		CheckpointModes: []CheckpointMode{CheckpointNone, CheckpointAcknowledge, CheckpointApprove, CheckpointApproveOnChange, CheckpointExternal},
@@ -883,6 +885,7 @@ func (c *Catalog) resolveCandidateSubworkflows(ctx context.Context, candidate wo
 		return LoadedDefinition{}, nil, err
 	}
 	issues := make(ValidationErrors, 0)
+	issues = append(issues, c.validateContentReferences(ctx, definition.Document)...)
 	rootKey := definition.Document.Metadata.Name + "\x00" + definition.Document.Metadata.Version
 	for _, nodeID := range sortedNodeIDs(definition.Document.Spec.Nodes) {
 		fields := definition.Document.Spec.Nodes[nodeID].Fields()

@@ -36,6 +36,7 @@ import (
 	"darkstar/src/core/artifactops"
 	"darkstar/src/core/attention"
 	"darkstar/src/core/configmutation"
+	"darkstar/src/core/contentlibrary"
 	"darkstar/src/core/health"
 	"darkstar/src/core/lateevidence"
 	"darkstar/src/core/preparation"
@@ -67,6 +68,7 @@ Commands:
   attention  Resolve workflow-control and external-delivery attention
   checkpoint List and inspect artifact review checkpoints
   configuration Inspect, preview, apply, and restore typed settings
+  content    Create, edit, publish, and inspect templates and prompts
   daemon     Run and control the per-user daemon
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
@@ -77,6 +79,15 @@ Commands:
   work       Create, import, list, and inspect work
   workflow   Author, validate, publish, list, show, graph, and preview workflows
   version    Show version information
+
+Content library commands:
+  content list|show <id> [--json]
+  content create <request.json> [--json]
+  content update <id> <request.json> [--json]
+  content publish <id> <version> --revision <n> [--json]
+  content duplicate <id> <new-name> [--json]
+  content archive|restore <id> [--json]
+  content preview <request.json> [--json]
 
 API commands:
   api status [--json]      Discover or autostart the daemon and verify its API
@@ -170,6 +181,7 @@ Artifact commands:
 
 Workflow commands:
   workflow list [--json]
+  workflow content-usage <content-id> [--json]
   workflow show <name> [--version <version>] [--json]
   workflow validate <file> [--json]
   workflow install <file> [--json]
@@ -280,6 +292,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runRun(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "work":
 		return runWork(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "content":
+		return runContent(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "workflow":
 		return runWorkflow(cleanArgs[1:], jsonOutput, stdout, stderr)
 	default:
@@ -388,7 +402,14 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
-	workflowCatalog.WithCapabilityRegistry(database)
+	contentLibrary := contentlibrary.New(database)
+	if err := contentLibrary.Seed(ctx, contentlibrary.BuiltinItems()); err != nil {
+		return fmt.Errorf("seed content library: %w", err)
+	}
+	if err := service.server.SetContentLibrary(contentLibrary); err != nil {
+		return err
+	}
+	workflowCatalog.WithCapabilityRegistry(database).WithContentResolver(contentLibrary)
 	if _, err := workflowCatalog.InstallConfigured(ctx); err != nil {
 		_ = database.Close()
 		service.database = nil

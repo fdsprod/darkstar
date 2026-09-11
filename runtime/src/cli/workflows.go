@@ -86,8 +86,49 @@ func runWorkflow(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	}
 	command := "darkstar workflow " + args[0]
 	switch args[0] {
+	case "assessment-router":
+		if len(args) != 2 {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected assessment-router <request.json>"))
+		}
+		data, err := os.ReadFile(args[1])
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		var input workflow.AssessmentRouterPattern
+		if err := json.Unmarshal(data, &input); err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		result, err := workflow.BuildAssessmentRouter(input)
+		if err != nil {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, err)
+		}
+		return writeWorkflowResult(result, "Assessment router pattern created. Save the returned document to a workflow draft.", false, jsonOutput, stdout, stderr, command)
 	case "node-definition":
 		return runNodeDefinition(args[1:], jsonOutput, stdout, stderr)
+	case "content-usage":
+		if len(args) != 2 || strings.TrimSpace(args[1]) == "" {
+			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected workflow content-usage <content-id>"))
+		}
+		session, code := connectRunSession(command, jsonOutput, stdout, stderr)
+		if session == nil {
+			return code
+		}
+		var result struct {
+			Usages []workflow.ContentUsage `json:"usages"`
+		}
+		if err := session.DoJSON(context.Background(), http.MethodGet, "workflows/content-usage?contentId="+url.QueryEscape(args[1]), nil, &result); err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		var human strings.Builder
+		_, _ = fmt.Fprintf(&human, "%d workflow reference(s).", len(result.Usages))
+		for _, usage := range result.Usages {
+			location := "node " + usage.NodeID
+			if usage.InputID != "" {
+				location = "input " + usage.InputID
+			}
+			_, _ = fmt.Fprintf(&human, "\n%s %s (%s) / %s -> %s", usage.WorkflowName, usage.WorkflowVersion, usage.Kind, location, usage.Reference.Version)
+		}
+		return writeWorkflowResult(result, human.String(), false, jsonOutput, stdout, stderr, command)
 	case "authoring-catalog":
 		if len(args) != 1 {
 			return workflowArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected workflow authoring-catalog"))

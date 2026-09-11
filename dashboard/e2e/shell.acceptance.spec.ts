@@ -6,6 +6,7 @@ const primaryRoutes = [
   ["/board", "Lifecycle board"],
   ["/checkpoints", "Checkpoints"],
   ["/workflows", "Workflows"],
+  ["/templates", "Templates"],
   ["/settings", "Settings"],
 ] as const;
 
@@ -24,7 +25,7 @@ for (const viewport of viewports) {
       await page.goto(path);
       await expect(page.locator("main")).toHaveCount(1);
       await expect(page.getByRole("heading", { level: 1, name: heading })).toHaveCount(1);
-      await expect(page.locator("nav[aria-label='Primary'] a")).toHaveText(["Board", "Checkpoints", "Workflows", "Settings"]);
+      await expect(page.locator("nav[aria-label='Primary'] a")).toHaveText(["Board", "Checkpoints", "Workflows", "Templates", "Settings"]);
       await expect(page.locator("body")).toHaveCSS("overflow-x", "hidden");
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
       const headingLevels = await page.locator("main h1, main h2, main h3").evaluateAll((nodes) => nodes.map((node) => Number(node.tagName.slice(1))));

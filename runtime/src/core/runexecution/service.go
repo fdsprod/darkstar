@@ -214,6 +214,7 @@ func (f WorkflowProviderFactoryFunc) Provider(ctx context.Context, request Provi
 // AttemptRequestContext is the immutable, fully rehydrated input available to
 // application composition when it constructs a provider request.
 type AttemptRequestContext struct {
+	Revision         bool
 	Attempt          statestore.AttemptProjection
 	Run              statestore.RunProjection
 	WorkItem         statestore.WorkItemProjection
@@ -742,8 +743,13 @@ func (s *Service) saveInitialExecutionContext(ctx context.Context, run statestor
 	if source, ok := s.workflowFactory.(ExtensionPinProvider); ok {
 		extensionPins = source.ExtensionPins()
 	}
+	promptSnapshots, err := resolvePromptSnapshots(ctx, s.planner, definition.Document)
+	if err != nil {
+		return statestore.RunExecutionContext{}, err
+	}
 	value, err := s.store.SaveRunExecutionContext(ctx, statestore.RunExecutionContext{
-		Provider: s.workflowProviderName(), ExtensionPins: extensionPins,
+		PromptSnapshots: promptSnapshots,
+		Provider:        s.workflowProviderName(), ExtensionPins: extensionPins,
 		SchemaVersion: statestore.RunExecutionContextSchemaVersion,
 		RunID:         run.RunID, RunInputs: storedInputs,
 		AcceptedOutputs: map[string]map[string]json.RawMessage{}, FrameSnapshot: frameJSON,
@@ -793,6 +799,19 @@ func derivedRouteContext(ctx context.Context, planner WorkflowPlanner, request C
 			value = source.Content
 		case workflow.TemplateResource:
 			value = source
+		case workflow.TemplateReferenceResource:
+			resolver, ok := planner.(publishedContentResolver)
+			if !ok {
+				return workflow.RouteContext{}, errors.New("linked template requires a content resolver")
+			}
+			version, resolveErr := resolver.ResolveContent(ctx, source.Reference)
+			if resolveErr != nil {
+				return workflow.RouteContext{}, fmt.Errorf("resolve linked template %s: %w", id, resolveErr)
+			}
+			if version.Document.Kind != "template" {
+				return workflow.RouteContext{}, fmt.Errorf("linked template %s references a different content kind", id)
+			}
+			value = workflow.TemplateResource{Content: version.Document.Content, Version: version.Reference.Version, RequiredHeadings: version.Document.RequiredHeadings}
 		case workflow.ConstantResource:
 			value = source.Value
 		case workflow.OpenItemsResource:

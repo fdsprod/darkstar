@@ -264,14 +264,49 @@ func (s *Service) reviewAttemptContext(ctx context.Context, request AttemptReque
 		feedbackContent["annotations"] = feedback.FeedbackSet.Annotations
 	}
 	instructions, _ := json.Marshal(feedbackContent)
+	return buildReviewTask(request, output, candidate, instructions), nil
+}
+
+func buildReviewTask(request AttemptRequestContext, output string, candidate, instructions json.RawMessage) AttemptRequestContext {
+	originalNode := request.Node
+	original := request.Node.Fields()
+	originalInputs := request.NodeInputs
+	request.Revision = true
 	request.NodeInputs = map[workflow.Identifier]json.RawMessage{"candidate": candidate, "feedback": instructions}
 	declaration := request.Node.Fields().Outputs[workflow.Identifier(output)]
 	declaration.Type = workflow.ValueMarkdown
-	if declaration.Artifact != nil {
-		declaration.Artifact = &workflow.ArtifactContract{Filename: declaration.Artifact.Filename}
-	}
 	request.Node = workflow.ReasoningNode{Common: workflow.NodeFields{Inputs: map[workflow.Identifier]workflow.Binding{"candidate": workflow.RequiredBinding{Type: workflow.ValueMarkdown}, "feedback": workflow.RequiredBinding{Type: workflow.ValueObject}}, Outputs: map[workflow.Identifier]workflow.OutputDeclaration{workflow.Identifier(output): declaration}}, Executor: workflow.ReasoningExecutor{Instructions: "Revise the supplied Markdown candidate using the human feedback and annotations. Return the complete revised document under output " + output + ". Preserve content outside the requested changes. Do not approve the document, edit repository files, or perform the work described in the document."}}
-	return request, nil
+	revisionNode := request.Node.(workflow.ReasoningNode)
+	if source, ok := originalNode.(workflow.ReasoningNode); ok {
+		revisionNode.Executor.Skills = append([]string(nil), source.Executor.Skills...)
+	}
+	if original.Prompt != nil {
+		revisionNode.Common.Prompt = original.Prompt
+		linkedNames := map[workflow.Identifier]bool{"open_items": true, "deferred_work": true}
+		snapshot := request.ExecutionContext.PromptSnapshots[request.Attempt.NodeID]
+		for _, section := range snapshot.Document.Sections {
+			if section.When.Kind == "input_linked" || section.When.Kind == "input_absent" {
+				linkedNames[workflow.Identifier(section.When.Input)] = true
+			}
+		}
+		for name := range linkedNames {
+			if binding, exists := original.Inputs[name]; exists {
+				revisionNode.Common.Inputs[name] = binding
+				if value, available := originalInputs[name]; available {
+					request.NodeInputs[name] = value
+				}
+			}
+		}
+	}
+	if declaration.Artifact != nil && declaration.Artifact.TemplateInput != "" {
+		name := declaration.Artifact.TemplateInput
+		revisionNode.Common.Inputs[name] = original.Inputs[name]
+		if value, exists := originalInputs[name]; exists {
+			request.NodeInputs[name] = value
+		}
+	}
+	request.Node = revisionNode
+	return request
 }
 func (s *Service) completeReviewAttempt(ctx context.Context, dispatch AttemptRequestContext, attempt statestore.AttemptProjection, run statestore.RunProjection, visit statestore.NodeProjection, result provider.SucceededResult, validationEvidence []extensions.ValidationEvidence) (bool, error) {
 	session, err := s.activeReview(ctx, attempt)

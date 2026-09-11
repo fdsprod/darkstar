@@ -4,6 +4,7 @@
 package workflow
 
 import (
+	"darkstar/src/ports/contentstore"
 	"encoding/json"
 	"strings"
 )
@@ -130,6 +131,7 @@ type Node interface {
 }
 
 type NodeFields struct {
+	Prompt         *contentstore.Reference
 	DisplayName    string
 	Definition     *ResolvedNodeDefinitionRef
 	Entry          bool

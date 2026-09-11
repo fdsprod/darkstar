@@ -1,4 +1,6 @@
 import { MarkdownFilenameDialog } from "./MarkdownFilenameDialog";
+import { WorkflowStageTools } from "./WorkflowStageTools";
+import type { StagePreset } from "./workflowStageModel";
 import { WorkflowChat } from "./WorkflowChat";
 import type { ChatEvent, ChatTarget } from "./workflowChatModel";
 import { compareWorkflowVersions, addResource, addArtifactOutput, record, type ResourceKind } from "./workflowResourceModel";
@@ -322,6 +324,7 @@ export function WorkflowsPage() {
       <section className="workflow-editor-center" aria-label="Workflow editor">
         {selected?.kind === "archived" ? <ArchivedSummary item={selected} /> : !document || !graph ? <div className="workflow-editor-empty"><h2>{loadState === "loading" ? "Loading workflows…" : "No workflow selected"}</h2>{loadState === "ready" && <p>Create a new workflow or describe one in chat to get started.</p>}</div> : <>
           <header className="workflow-editor-toolbar"><strong>{selected ? itemName(selected) : "Workflow"}</strong><span>{draft ? "Draft" : "Read only · create a new version to edit"}</span></header>
+          {draft && <WorkflowStageTools document={document} presets={(catalog?.stagePresets ?? []) as unknown as StagePreset[]} onChange={(next, id, message) => { changeDocument(next, message); select({ kind: "node", nodeId: id }); }} />}
           {draft && <ValidationSlot state={validation} currentRevision={draft.revision} onSelect={selectFinding} />}
           <WorkflowPortCanvas key={selectedKey} document={document} onAddResource={(kind, position, filename) => { if (!draft) return; const result=addResource(document,kind,filename); setLayout(moveNode(layout,result.id,position)); changeDocument(result.document,"Resource added."); select({kind:"node",nodeId:result.id}); }} graph={graph} ports={portGraph!} layout={normalizeLayout(layout)} selection={selection} onSelect={select} onConnect={connectPorts} onFocus={focusNode} onLayout={changeLayout} readOnly={!draft} onDropNode={draft ? (type, position) => void add(type, position) : undefined} />
         </>}

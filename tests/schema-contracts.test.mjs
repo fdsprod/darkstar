@@ -56,7 +56,7 @@ test("v1 run evolution preserves legacy operations and models new requests as a 
   assert.ok(api.components.schemas.Run.properties.routeSnapshot);
   assert.equal(api.components.schemas.CreateRunRequest.additionalProperties, false);
   assert.deepEqual(api.components.schemas.WorkflowDocument.oneOf.map((variant) => variant.$ref), [
-    "./workflow-v1alpha1.schema.json", "./workflow-v1alpha2.schema.json"
+    "./workflow-v1alpha1.schema.json", "./workflow-v1alpha2.schema.json", "./workflow-v1alpha3.schema.json"
   ]);
   assert.ok(api.components.schemas.WorkflowGraph.properties.nodes.items.properties.type.enum.includes("point_execution"));
 });

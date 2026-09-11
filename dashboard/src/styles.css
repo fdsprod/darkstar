@@ -1098,3 +1098,19 @@ div.settings-boundary p { flex-basis: 100%; margin: 2px 0 0; }
 .workflow-flow-node__body { grid-template-columns: minmax(0, 1fr) max-content; }
 .workflow-flow-node__body > span:first-child { grid-column: 1; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-flow-node__body > strong, .workflow-flow-node__body > small { grid-column: 1 / -1; }
+.content-library-layout { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 24px; }
+.content-library-layout > aside, .content-library-editor { min-width: 0; padding: 20px; border: 1px solid var(--border, #d5d9e0); border-radius: 12px; }
+.content-library-list { padding: 0; list-style: none; display: grid; gap: 8px; }
+.content-library-list button { width: 100%; padding: 12px; text-align: left; border: 1px solid var(--border, #d5d9e0); border-radius: 8px; background: transparent; color: inherit; }
+.content-library-list button[aria-pressed="true"] { border-color: var(--accent, #5384d5); background: color-mix(in srgb, var(--accent, #5384d5) 12%, transparent); }
+.content-library-list small { display: block; margin-top: 4px; }
+.content-document-editor, .content-version-comparison { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-block: 20px; }
+.content-document-editor > *, .content-version-comparison > * { min-width: 0; }
+.content-document-editor textarea { width: 100%; resize: vertical; font-family: var(--font-mono, monospace); }
+.content-document-editor fieldset { min-width: 0; margin-block: 12px; }
+.content-version-comparison pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 540px; overflow: auto; }
+.content-library-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-top: 20px; }
+.content-version-picker { margin-block: 12px; }
+.content-library-editor code { overflow-wrap: anywhere; }
+.prompt-preview { max-height: 640px; overflow: auto; }
+@media (max-width: 1000px) { .content-library-layout, .content-document-editor, .content-version-comparison { grid-template-columns: minmax(0, 1fr); } }

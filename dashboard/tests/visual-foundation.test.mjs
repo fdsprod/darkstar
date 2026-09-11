@@ -18,7 +18,7 @@ test("dashboard typography uses a readable semantic scale", async () => {
   assert.match(styles, /code, pre \{[^}]*--font-mono[^}]*overflow-wrap: anywhere/s);
 });
 
-test("dashboard navigation exposes four operator areas and one shared page heading", async () => {
+test("dashboard navigation exposes five operator areas and one shared page heading", async () => {
   const [shell, router, pageStructure, workDetail] = await Promise.all([
     read("../src/components/AppShell.tsx"),
     read("../src/app/router.tsx"),
@@ -26,8 +26,8 @@ test("dashboard navigation exposes four operator areas and one shared page headi
     read("../src/pages/WorkDetailPage.tsx"),
   ]);
   const primaryBlock = /const primaryNavigation:[\s\S]*?\n\];/.exec(shell)?.[0] ?? "";
-  assert.equal(primaryBlock.match(/label: "/g)?.length, 4);
-  for (const area of ["Board", "Checkpoints", "Workflows", "Settings"]) assert.match(primaryBlock, new RegExp(`label: "${area}"`));
+  assert.equal(primaryBlock.match(/label: "/g)?.length, 5);
+  for (const area of ["Board", "Checkpoints", "Workflows", "Templates", "Settings"]) assert.match(primaryBlock, new RegExp(`label: "${area}"`));
   assert.doesNotMatch(primaryBlock, /label: "(?:Agents|Artifacts)"/);
   assert.match(shell, /function contextualDestinations\(route: AppRoute\)/);
   for (const destination of ["Work evidence", "Work diagnostics", "Run agents", "Run evidence"]) assert.match(shell, new RegExp(`label: "${destination}"`));
@@ -36,7 +36,7 @@ test("dashboard navigation exposes four operator areas and one shared page headi
   assert.equal(pageStructure.match(/<h1>/g)?.length, 1);
   assert.match(pageStructure, /aria-label="Breadcrumb"/);
   assert.doesNotMatch(workDetail, /<h1>/);
-  for (const section of ["Board", "Checkpoints", "Workflows", "Settings"]) assert.match(router, new RegExp(`section: "${section}"`));
+  for (const section of ["Board", "Checkpoints", "Workflows", "Templates", "Settings"]) assert.match(router, new RegExp(`section: "${section}"`));
 });
 
 test("compact shell preserves responsive overflow and route focus behavior", async () => {

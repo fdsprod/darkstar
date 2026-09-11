@@ -19,6 +19,7 @@ function emptyResponse(path: string): unknown {
   if (path === "/api/v1/projects" || path === "/api/v1/work-items" || path === "/api/v1/workflows" || path === "/api/v1/artifacts") return [];
   if (path === "/api/v1/runs") return { items: [], pageInfo: { nextCursor: null } };
   if (path === "/api/v1/workflows/library") return { versions: [], drafts: [], archives: [] };
+  if (path === "/api/v1/content-library") return { items: [] };
   if (path === "/api/v1/workflows/node-definitions") return [];
   if (path === "/api/v1/workflows/authoring-catalog") return {
     schemaVersion: 1,

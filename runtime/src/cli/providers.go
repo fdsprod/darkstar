@@ -21,6 +21,7 @@ import (
 	"darkstar/src/adapters/provider/workflowtools"
 	"darkstar/src/core/config"
 	"darkstar/src/core/configmutation"
+	"darkstar/src/core/contentlibrary"
 	"darkstar/src/core/extensions"
 	"darkstar/src/core/nodes"
 	"darkstar/src/core/pluginworkspace"
@@ -73,6 +74,11 @@ type daemonProviderWiring struct {
 //
 //go:embed rich-artifacts.md
 var richArtifactSkill string
+
+// tracerBulletsSkill is generated from skills/builtin/tracer-bullets/SKILL.md.
+//
+//go:embed tracer-bullets.md
+var tracerBulletsSkill string
 
 const fakeProviderName = "fake"
 
@@ -210,6 +216,11 @@ func (wiring *daemonProviderWiring) BuildAttemptRequest(ctx context.Context, req
 		return providerport.AttemptRequest{}, err
 	}
 	session := &workflowtools.Session{Database: wiring.toolDatabase, RunID: request.Run.RunID, AttemptID: request.Attempt.AttemptID, Node: request.Node, Inputs: request.NodeInputs}
+	request.NodeInputs, err = session.SnapshotPromptInputs(ctx, request.Attempt.VisitID)
+	if err != nil {
+		return providerport.AttemptRequest{}, fmt.Errorf("snapshot linked prompt inputs: %w", err)
+	}
+	session.Inputs = request.NodeInputs
 	// Build and authorize the task before touching the prepared workspace.
 	built, err := wiring.buildScopedAttempt(ctx, request, manifest.Fingerprint)
 	if err != nil {
@@ -293,6 +304,41 @@ func buildWorkflowAttemptRequestWithNodes(ctx context.Context, request runexecut
 		}
 	}
 	agent, skills, tools, instruction := task.Agent, task.Skills, task.Tools, task.Instructions
+	if slices.Contains(skills, "darkstar:tracer-bullets") {
+		instruction += "\nLoaded planning skill:\n" + tracerBulletsSkill + "\nEnd of planning skill.\n"
+	}
+	if fields.Prompt != nil {
+		snapshot, exists := request.ExecutionContext.PromptSnapshots[request.Attempt.NodeID]
+		if !exists || snapshot.Reference != *fields.Prompt || contentlibrary.Digest(snapshot.Document) != fields.Prompt.Digest {
+			return providerport.AttemptRequest{}, errors.New("linked prompt snapshot is missing or differs from the pinned version")
+		}
+		linkedInputs := make([]string, 0, len(fields.Inputs))
+		conditionalInputs := map[string]bool{"open_items": true, "deferred_work": true}
+		for _, section := range snapshot.Document.Sections {
+			if section.When.Kind == "input_linked" || section.When.Kind == "input_absent" {
+				conditionalInputs[section.When.Input] = true
+			}
+		}
+		for name := range fields.Inputs {
+			linkedInputs = append(linkedInputs, string(name))
+		}
+		sort.Strings(linkedInputs)
+		for _, name := range linkedInputs {
+			if conditionalInputs[name] {
+				if _, exists := request.NodeInputs[workflow.Identifier(name)]; !exists {
+					return providerport.AttemptRequest{}, fmt.Errorf("linked input %s is unavailable; disconnect it or supply its value", name)
+				}
+			}
+		}
+		preview, previewErr := contentlibrary.BuildPrompt(snapshot.Document, linkedInputs, request.Revision)
+		if previewErr != nil {
+			return providerport.AttemptRequest{}, previewErr
+		}
+		instruction += "\n\n" + preview.Instructions
+		if request.Revision {
+			instruction += "\nFor this revision, apply the task guidance only to the supplied candidate and feedback. Submit only the currently declared revised deliverable; do not recreate other outputs or perform implementation work."
+		}
+	}
 	access := task.Access
 	commandPolicy, filePolicy := providerport.InteractionDeny, providerport.InteractionDeny
 	if access == providerport.AccessWorkspaceWrite {
