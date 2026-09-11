@@ -1,8 +1,10 @@
 import { serve, type Resource, type Tool } from '../../../packages/plugin-sdk/src/index';
-function journal(kind: string, id: string, createOperation: string, updateOperations: string[]): Resource {
+import { builtinResourceCategories } from '../../../packages/plugin-sdk/src/component-metadata';
+function journal(kind: 'open_items' | 'decision_log', id: string, createOperation: string, updateOperations: string[]): Resource {
   const operations = ['read', createOperation, ...updateOperations];
   return {
     kind,
+    category: builtinResourceCategories[kind],
     createOperation,
     updateOperations,
     tool: {

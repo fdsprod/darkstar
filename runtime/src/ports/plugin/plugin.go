@@ -19,6 +19,7 @@ type Tool struct {
 }
 type Resource struct {
 	Kind             string   `json:"kind"`
+	Category         string   `json:"category"`
 	Tool             Tool     `json:"tool"`
 	CreateOperation  string   `json:"createOperation"`
 	UpdateOperations []string `json:"updateOperations"`

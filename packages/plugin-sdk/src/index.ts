@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import type { ResourceCategory } from './component-metadata';
 export const protocol = 'darkstar.plugin/v1';
 export type Schema = Record<string, unknown>;
 export interface HostServices {
@@ -14,6 +15,7 @@ export interface Tool {
 }
 export interface Resource {
   kind: string;
+  category: ResourceCategory;
   createOperation: string;
   updateOperations: string[];
   tool: Tool;
@@ -33,6 +35,11 @@ export interface Plugin {
 
 /** Stdout belongs to the protocol. Use stderr for diagnostic logging. */
 export function serve(plugin: Plugin): void {
+  for (const resource of plugin.resources) {
+    if (!['data', 'artifact', 'template'].includes(resource.category)) {
+      throw new Error(`Resource ${resource.kind} must declare category`);
+    }
+  }
   for (const node of plugin.nodes ?? []) {
     if (!['deterministic', 'llm'].includes(node.executionKind)) {
       throw new Error(`Node ${node.id} must declare executionKind`);

@@ -25,7 +25,10 @@ Authors add those steps explicitly when wanted. Implementation produces a sealed
 Changeset, a separate LLM reasoning step prepares DeliveryText from that context,
 and deterministic delivery nodes perform their individual mutations. The project
 Worktree base setting supplies the default starting ref for new worktrees. Plugins
-must declare whether each node is LLM or deterministic, shown as an editor badge.
+must declare whether each executable node is LLM or deterministic. Top-right
+component badges show LLM, DETERMINISTIC, DATA, ARTIFACT, TEMPLATE, CONTROL, or
+HITL (human in the loop), according to required component metadata. Display roles
+do not alter execution permissions or workflow control.
 New structured ports require known, closed nominal schemas.
 
 The product has three surfaces over one local API:

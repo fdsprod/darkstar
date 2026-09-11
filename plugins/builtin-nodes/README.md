@@ -38,8 +38,12 @@ Run real-process integration tests with
 
 Every executable node contribution declares `executionKind: 'llm' | 'deterministic'`.
 The SDK rejects missing declarations, and the daemon rejects calls that dispatch
-an operation through the wrong execution interface. The canvas uses the shared
-built-in execution metadata for its badges. Resource cards display value types.
+an operation through the wrong execution interface. The canvas uses shared component metadata for its top-right badges: LLM,
+DETERMINISTIC, DATA, ARTIFACT, TEMPLATE, CONTROL, and HITL. Every built-in node
+declares a display category; control and HITL categories do not change the
+execution interface. Resource contributions must declare a data, artifact, or
+template category, validated by both the SDK and daemon. Input and output value
+cards use the same resource metadata. Their value types remain visible separately.
 
 New worktrees may use the reserved `baseRef: "project_default"` selector. The daemon
 resolves the project's `workspace.baseRef` setting (default `origin/HEAD`) and

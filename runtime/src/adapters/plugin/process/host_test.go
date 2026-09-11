@@ -46,6 +46,11 @@ func TestBuiltinTypeScriptTools(t *testing.T) {
 	if descriptor.Ref != BuiltinRef() || len(descriptor.Resources) != 2 || len(descriptor.Tools) != 3 {
 		t.Fatalf("unexpected descriptor %+v", descriptor)
 	}
+	for _, resource := range descriptor.Resources {
+		if resource.Category != "data" {
+			t.Fatalf("journal must declare its DATA category: %+v", resource)
+		}
+	}
 	cases := []struct{ id, args, method string }{
 		{"darkstar/open-items", `{"operation":"read"}`, "journal.read"},
 		{"darkstar/open-items", `{"operation":"add","entryId":"","text":"Investigate","key":"k","expectedRevision":0}`, "journal.mutate"},

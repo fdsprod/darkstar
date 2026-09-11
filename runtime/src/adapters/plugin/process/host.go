@@ -83,6 +83,9 @@ func (h *Host) Describe(ctx context.Context) (plugin.Descriptor, error) {
 	}
 	seenKinds, seenIDs := map[string]bool{}, map[string]bool{}
 	for _, r := range d.Resources {
+		if r.Category != "data" && r.Category != "artifact" && r.Category != "template" {
+			return d, errors.New("PLUGIN_INVALID_DESCRIPTOR: resources must declare data, artifact, or template category")
+		}
 		if r.Kind == "" || r.Tool.ID == "" || seenKinds[r.Kind] || seenIDs[r.Tool.ID] {
 			return d, errors.New("PLUGIN_INVALID_DESCRIPTOR: duplicate or empty resource/tool")
 		}

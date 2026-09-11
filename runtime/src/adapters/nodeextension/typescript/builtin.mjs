@@ -108,6 +108,25 @@ var executionKinds = {
   start: "deterministic",
   done: "deterministic"
 };
+var componentCategories = {
+  git_commit: executionKinds.git_commit,
+  git_push: executionKinds.git_push,
+  create_pr: executionKinds.create_pr,
+  delivery_text: executionKinds.delivery_text,
+  reasoning: executionKinds.reasoning,
+  implementation: executionKinds.implementation,
+  point_execution: executionKinds.point_execution,
+  workspace_prepare: executionKinds.workspace_prepare,
+  workspace_validate: executionKinds.workspace_validate,
+  command: executionKinds.command,
+  gate: "control",
+  approval: "hitl",
+  routing: "control",
+  subworkflow: "control",
+  extension: executionKinds.extension,
+  start: "control",
+  done: "control"
+};
 
 // plugins/builtin-nodes/src/git-commit.ts
 var gitCommit = defineNode("git-commit", ["delivery.commit"], {
@@ -146,6 +165,11 @@ var createPR = defineNode("create-pr", ["delivery.create_pr"], {
 import { createInterface } from "node:readline";
 var protocol = "darkstar.plugin/v1";
 function serve(plugin) {
+  for (const resource of plugin.resources) {
+    if (!["data", "artifact", "template"].includes(resource.category)) {
+      throw new Error(`Resource ${resource.kind} must declare category`);
+    }
+  }
   for (const node of plugin.nodes ?? []) {
     if (!["deterministic", "llm"].includes(node.executionKind)) {
       throw new Error(`Node ${node.id} must declare executionKind`);
