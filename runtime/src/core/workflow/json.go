@@ -399,6 +399,9 @@ func decodeNodes(data []byte, apiVersion string) (map[Identifier]Node, error) {
 
 func decodeNode(data []byte, apiVersion string) (Node, error) {
 	type nodeWire struct {
+		GitCommit         json.RawMessage   `json:"gitCommit"`
+		GitPush           json.RawMessage   `json:"gitPush"`
+		CreatePR          json.RawMessage   `json:"createPR"`
 		Extension         json.RawMessage   `json:"extension"`
 		DisplayName       json.RawMessage   `json:"displayName"`
 		Type              NodeType          `json:"type"`
@@ -436,7 +439,7 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 	if apiVersion == APIVersionV1Alpha1 && (len(wire.Readiness) != 0 || len(wire.Points) != 0 || wire.Type == NodePointExecution) {
 		return nil, errors.New("readiness and point execution require apiVersion darkstar.local/v1alpha2")
 	}
-	if apiVersion != APIVersionV1Alpha3 && (len(wire.Implementation) != 0 || wire.Type == NodeImplementation || wire.Type == NodeWorkspacePrepare || wire.Type == NodeWorkspaceValidate || len(wire.WorkspacePrepare) != 0 || len(wire.WorkspaceValidate) != 0) {
+	if apiVersion != APIVersionV1Alpha3 && (wire.Type == NodeGitCommit || wire.Type == NodeGitPush || wire.Type == NodeCreatePR || len(wire.GitCommit) != 0 || len(wire.GitPush) != 0 || len(wire.CreatePR) != 0 || len(wire.Implementation) != 0 || wire.Type == NodeImplementation || wire.Type == NodeWorkspacePrepare || wire.Type == NodeWorkspaceValidate || len(wire.WorkspacePrepare) != 0 || len(wire.WorkspaceValidate) != 0) {
 		return nil, errors.New("implementation requires apiVersion darkstar.local/v1alpha3")
 	}
 	if apiVersion != APIVersionV1Alpha3 && (len(wire.Routing) != 0 || len(wire.Definition) != 0 || wire.Type == NodeRouting) {
@@ -517,7 +520,7 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 	executors := []struct {
 		kind NodeType
 		raw  json.RawMessage
-	}{{NodeExtension, wire.Extension}, {NodeReasoning, wire.Reasoning}, {NodeGate, wire.Gate}, {NodeCommand, wire.Command}, {NodeApproval, wire.Approval}, {NodeSubworkflow, wire.Call}, {NodePointExecution, wire.Points}, {NodeRouting, wire.Routing}, {NodeImplementation, wire.Implementation}, {NodeWorkspacePrepare, wire.WorkspacePrepare}, {NodeWorkspaceValidate, wire.WorkspaceValidate}}
+	}{{NodeGitCommit, wire.GitCommit}, {NodeGitPush, wire.GitPush}, {NodeCreatePR, wire.CreatePR}, {NodeExtension, wire.Extension}, {NodeReasoning, wire.Reasoning}, {NodeGate, wire.Gate}, {NodeCommand, wire.Command}, {NodeApproval, wire.Approval}, {NodeSubworkflow, wire.Call}, {NodePointExecution, wire.Points}, {NodeRouting, wire.Routing}, {NodeImplementation, wire.Implementation}, {NodeWorkspacePrepare, wire.WorkspacePrepare}, {NodeWorkspaceValidate, wire.WorkspaceValidate}}
 	for _, executor := range executors {
 		kind, raw := executor.kind, executor.raw
 		if kind != wire.Type && len(raw) != 0 {
@@ -593,6 +596,24 @@ func decodeNode(data []byte, apiVersion string) (Node, error) {
 			return nil, err
 		}
 		return WorkspaceValidateNode{Common: common, Executor: executor}, nil
+	case NodeGitCommit:
+		var executor GitCommitExecutor
+		if err := strictDecode(wire.GitCommit, &executor); err != nil {
+			return nil, err
+		}
+		return GitCommitNode{Common: common, Executor: executor}, nil
+	case NodeGitPush:
+		var executor GitPushExecutor
+		if err := strictDecode(wire.GitPush, &executor); err != nil {
+			return nil, err
+		}
+		return GitPushNode{Common: common, Executor: executor}, nil
+	case NodeCreatePR:
+		var executor CreatePRExecutor
+		if err := strictDecode(wire.CreatePR, &executor); err != nil {
+			return nil, err
+		}
+		return CreatePRNode{Common: common, Executor: executor}, nil
 	case NodeImplementation:
 		var executor ImplementationExecutor
 		if err := strictDecode(wire.Implementation, &executor); err != nil {
@@ -1371,7 +1392,7 @@ func validateValueType(value ValueType) error {
 
 func validNodeType(value NodeType) bool {
 	switch value {
-	case NodeExtension, NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution, NodeRouting, NodeImplementation, NodeWorkspacePrepare, NodeWorkspaceValidate:
+	case NodeGitCommit, NodeGitPush, NodeCreatePR, NodeExtension, NodeReasoning, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution, NodeRouting, NodeImplementation, NodeWorkspacePrepare, NodeWorkspaceValidate:
 		return true
 	default:
 		return false

@@ -360,6 +360,7 @@ func workflowOutputSchemaWithNodes(ctx context.Context, node workflow.Node, outp
 	for _, id := range ids {
 		declaration := outputs[workflow.Identifier(id)]
 		property := map[string]any{"type": string(declaration.Type.StorageType())}
+		declaration.SchemaDefinition = workflow.ValueSchema(declaration.Type, declaration.SchemaDefinition)
 		if len(declaration.SchemaDefinition) != 0 {
 			if err := json.Unmarshal(declaration.SchemaDefinition, &property); err != nil {
 				return nil, err

@@ -1,10 +1,12 @@
+import { executionKinds } from './execution-kinds';
 import { defineNode, changeset, writable } from './shared';
 
 const implementationInstructions = (c: Record<string, any>) => {
-  return 'Implement the task in the connected input ' + c.taskInput + " in the supplied workspace. Read optional connected Markdown instructions and supporting inputs when present; a plan is not required. Modify the actual files and run relevant checks. Preserve unrelated work. Do not commit, push, publish, or deploy. Use inspect_workspace_changes to see file changes relative to this attempt's durable baseline. Return changeset with disposition (changed, unchanged, or blocked), summary, files (exact relative paths reported by inspect_workspace_changes), and validation (checks actually run and results). Use unchanged only if the request is already satisfied and no files changed. Use blocked to report a blocker; blocked is not a successful completion. The runtime verifies files against the workspace; merely returning proposed content does not implement the task. " + (c.instructions ?? '');
+  return 'Implement the task in the connected input ' + c.taskInput + " in the supplied workspace. Read optional connected Markdown instructions and supporting inputs when present; a plan is not required. Modify the actual files. Run checks when required by the task instructions; report only checks actually run. Preserve unrelated work. Do not commit, push, publish, or deploy. Use inspect_workspace_changes to see file changes relative to this attempt's durable baseline. Return changeset with disposition (changed, unchanged, or blocked), summary, files (exact relative paths reported by inspect_workspace_changes), and validation (checks actually run and results). Use unchanged only if the request is already satisfied and no files changed. Use blocked to report a blocker; blocked is not a successful completion. The runtime verifies files against the workspace; merely returning proposed content does not implement the task. " + (c.instructions ?? '');
 };
 
 export const implementation = defineNode('implementation', [], {
+  executionKind: executionKinds.implementation,
   buildTask: (args) => {
     writable(args.permissions);
     return {

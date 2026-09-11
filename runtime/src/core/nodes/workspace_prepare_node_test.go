@@ -73,3 +73,24 @@ func TestWorkspacePreparationRejectsForeignInputBeforeSideEffects(t *testing.T) 
 		t.Fatal("foreign repository accepted")
 	}
 }
+
+func TestWorkspacePreparationUsesProjectDefault(t *testing.T) {
+	store := &workspaceStoreFake{loadErr: ErrWorkspaceNotFound, resolveErr: errors.New("not attached")}
+	repo := &workspaceRepositoryFake{store: store}
+	services := WorkspaceServices{DefaultBaseRef: "origin/trunk", Identity: WorkspaceIdentity{Root: t.TempDir(), RunID: "run", NodeID: "prepare", ProjectID: "project", SourceHash: "hash", WorkItemID: "work"}, Store: store, Repository: repo}
+	input := json.RawMessage(`{"projectId":"project","sourceHash":"hash"}`)
+	plan := workflow.NewWorktree{BaseRef: "project_default", Branch: "darkstar/{runId}"}
+	if _, err := PrepareWorkspace(t.Context(), input, plan, services); err != nil {
+		t.Fatal(err)
+	}
+	if repo.refs[0] != "origin/trunk" || store.record.BaseRef != "origin/trunk" {
+		t.Fatal("project default was not resolved")
+	}
+	services.DefaultBaseRef = "origin/other"
+	if _, err := PrepareWorkspace(t.Context(), input, plan, services); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.refs) != 2 || store.record.BaseRef != "origin/trunk" {
+		t.Fatal("retry changed the frozen default")
+	}
+}

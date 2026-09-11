@@ -47,7 +47,7 @@ func New(executable, directory string) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	host, err := pluginprocess.New(pluginprocess.Config{Executable: executable, Entrypoint: path, Ref: BuiltinRef(), GrantedCapabilities: []string{"workspace.prepare", "workspace.resolve", "process.run"}, Timeout: 10 * time.Minute})
+	host, err := pluginprocess.New(pluginprocess.Config{Executable: executable, Entrypoint: path, Ref: BuiltinRef(), GrantedCapabilities: []string{"delivery.commit", "delivery.push", "delivery.create_pr", "workspace.prepare", "workspace.resolve", "process.run"}, Timeout: 10 * time.Minute})
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,16 @@ func New(executable, directory string) (*Engine, error) {
 }
 func contribution(node workflow.Node) (string, any, error) {
 	switch n := node.(type) {
+	case workflow.GitCommitNode:
+		return "git-commit", n.Executor, nil
+	case workflow.GitPushNode:
+		return "git-push", n.Executor, nil
+	case workflow.CreatePRNode:
+		return "create-pr", n.Executor, nil
 	case workflow.ReasoningNode:
+		if n.Executor.Agent == "delivery-text" {
+			return "delivery-text", n.Executor, nil
+		}
 		return "reasoning", n.Executor, nil
 	case workflow.ImplementationNode:
 		return "implementation", n.Executor, nil
@@ -156,6 +165,15 @@ func (e *Engine) Execute(ctx context.Context, node workflow.Node, inputs nodes.I
 	if err != nil {
 		return nil, err
 	}
+	switch node.(type) {
+	case workflow.GitCommitNode, workflow.GitPushNode, workflow.CreatePRNode:
+		if host.deliveryResult == nil {
+			return nil, errors.New("delivery node omitted host operation")
+		}
+	}
+	if host.deliveryResult != nil && !sameJSON(host.deliveryResult, result) {
+		return nil, errors.New("delivery plugin output differs from observed host result")
+	}
 	// Plugin output cannot replace evidence that required host operations ran.
 	switch n := node.(type) {
 	case workflow.WorkspaceValidateNode:
@@ -175,12 +193,13 @@ func (e *Engine) Execute(ctx context.Context, node workflow.Node, inputs nodes.I
 }
 
 type executionServices struct {
-	node      workflow.Node
-	inputs    nodes.Inputs
-	services  nodes.BuiltinServices
-	workspace *nodes.Workspace
-	check     int
-	prepared  bool
+	deliveryResult json.RawMessage
+	node           workflow.Node
+	inputs         nodes.Inputs
+	services       nodes.BuiltinServices
+	workspace      *nodes.Workspace
+	check          int
+	prepared       bool
 }
 
 func sameJSON(a, b any) bool {
@@ -193,6 +212,12 @@ func sameJSON(a, b any) bool {
 }
 func (s *executionServices) Call(ctx context.Context, method string, args json.RawMessage) (json.RawMessage, error) {
 	switch n := s.node.(type) {
+	case workflow.GitCommitNode:
+		return s.delivery(ctx, method, "delivery.commit", args, n.Executor)
+	case workflow.GitPushNode:
+		return s.delivery(ctx, method, "delivery.push", args, n.Executor)
+	case workflow.CreatePRNode:
+		return s.delivery(ctx, method, "delivery.create_pr", args, n.Executor)
 	case workflow.WorkspacePrepareNode:
 		if method != "workspace.prepare" {
 			break
@@ -282,4 +307,22 @@ func (s *executionServices) Call(ctx context.Context, method string, args json.R
 		return json.Marshal(output)
 	}
 	return nil, fmt.Errorf("node host service %q is not granted", method)
+}
+
+func (s *executionServices) delivery(ctx context.Context, method, want string, raw json.RawMessage, configuration any) (json.RawMessage, error) {
+	var request struct {
+		Configuration json.RawMessage `json:"configuration"`
+		Inputs        nodes.Inputs    `json:"inputs"`
+	}
+	if err := json.Unmarshal(raw, &request); err != nil {
+		return nil, err
+	}
+	if method != want || !sameJSON(request.Configuration, configuration) || !sameJSON(request.Inputs, s.inputs) || s.services.Delivery == nil {
+		return nil, errors.New("delivery request exceeds bound node inputs/configuration")
+	}
+	result, err := s.services.Delivery.Execute(ctx, s.node, s.inputs)
+	if err == nil {
+		s.deliveryResult = result
+	}
+	return result, err
 }

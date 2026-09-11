@@ -12,6 +12,16 @@ session grants, offline behavior, audit, and idempotent API transitions
 
 ## 1. Decision
 
+**Standalone delivery clarification:** Including a standalone `git_commit`,
+`git_push`, or `create_pr` node in an authorized workflow run authorizes that
+node's declared operation on its resolved inputs. These nodes MUST NOT synthesize
+an external-delivery approval, validation gate, or accepted-point requirement.
+The author may add explicit checkpoints. References below to required delivery
+approval apply to operations whose configured contract requests it, including
+legacy composite delivery policies; they are not a global workflow prerequisite.
+Repository identity, exact commit/snapshot matching, and mutation reconciliation
+remain node contract checks.
+
 DARKSTAR represents every approval request as a typed, durable record. The request
 class is immutable, and one decision API validates an action against that class.
 An action can affect only the resource and effect named by the request.

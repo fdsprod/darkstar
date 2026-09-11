@@ -19,7 +19,10 @@ export interface Resource {
   tool: Tool;
 }
 /** Node invocations are daemon-selected behavior, never agent-visible tools. */
-export interface Node extends Tool {}
+export type ExecutionKind = 'deterministic' | 'llm';
+export interface Node extends Tool {
+  executionKind: ExecutionKind;
+}
 export interface Plugin {
   id: string;
   version: string;
@@ -30,6 +33,11 @@ export interface Plugin {
 
 /** Stdout belongs to the protocol. Use stderr for diagnostic logging. */
 export function serve(plugin: Plugin): void {
+  for (const node of plugin.nodes ?? []) {
+    if (!['deterministic', 'llm'].includes(node.executionKind)) {
+      throw new Error(`Node ${node.id} must declare executionKind`);
+    }
+  }
   const pending = new Map<string, {
     resolve(value: unknown): void;
     reject(error: Error): void;

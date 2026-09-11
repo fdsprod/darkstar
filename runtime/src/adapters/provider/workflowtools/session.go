@@ -123,6 +123,13 @@ func (s *Session) submitOutput(ctx context.Context, callID string, raw json.RawM
 		if err := s.validateWorkspaceResult(ctx, args.Value); err != nil {
 			return nil, s.recordRejectedOutput(ctx, callID, args.ID, err)
 		}
+		if s.Node.Fields().Outputs[args.ID].Type == "schema:changeset_v1" {
+			sealed, err := s.sealChangeset(ctx, args.Value)
+			if err != nil {
+				return nil, err
+			}
+			args.Value = sealed
+		}
 	}
 	return s.append(ctx, "output:"+s.AttemptID+":"+string(args.ID), "submit", string(args.ID), callID, string(args.Value), false)
 }

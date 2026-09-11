@@ -18,6 +18,16 @@ DARKSTAR is a background service that runs on a developer's computer and coordin
 
 DARKSTAR owns orchestration. AI providers supply reasoning and implementation labor, but they do not decide or remember workflow state. The daemon, CLI, workflow definitions, policies, schemas, validators, and event log do that deterministically.
 
+Workflow authors choose which activities run. Standalone `git_commit`, `git_push`,
+and `create_pr` nodes enforce their own typed inputs, outputs, and operation
+contracts; they do not require validation, point acceptance, or approval nodes.
+Authors add those steps explicitly when wanted. Implementation produces a sealed
+Changeset, a separate LLM reasoning step prepares DeliveryText from that context,
+and deterministic delivery nodes perform their individual mutations. The project
+Worktree base setting supplies the default starting ref for new worktrees. Plugins
+must declare whether each node is LLM or deterministic, shown as an editor badge.
+New structured ports require known, closed nominal schemas.
+
 The product has three surfaces over one local API:
 
 1. A **daemon** owns state, scheduling, execution, recovery, and provider processes.

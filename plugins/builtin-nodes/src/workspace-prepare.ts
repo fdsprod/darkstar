@@ -1,6 +1,8 @@
+import { executionKinds } from './execution-kinds';
 import { defineNode } from './shared';
 
 export const workspacePrepare = defineNode('workspace-prepare', ["workspace.prepare"], {
+  executionKind: executionKinds.workspace_prepare,
   execute: async (args, host) => {
     const c = args.configuration;
     if (!['current_checkout', 'new_worktree'].includes(c.checkout?.mode)) {

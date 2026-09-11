@@ -232,6 +232,15 @@ func validateChangeRequestCreation(request delivery.CreateChangeRequestRequest) 
 	var authorizedHead string
 	var draft bool
 	switch intent := request.Intent.(type) {
+	case delivery.CreateWorkflowChangeRequest:
+		if !commitPattern.MatchString(intent.HeadSHA) {
+			return changeRequestCreationSpec{}, failure(ports.FailureInvalidRequest, "PR requires an exact head commit", false)
+		}
+		if !utf8.ValidString(intent.Body) || len(intent.Body) > maximumChangeRequestBodyBytes-1024 || strings.ContainsRune(intent.Body, '\x00') || strings.Contains(intent.Body, "<!-- darkstar:") {
+			return changeRequestCreationSpec{}, failure(ports.FailureInvalidRequest, "pull-request body is invalid", false)
+		}
+		body := renderOwnedSection(request.Owner, delivery.OwnedSection{Revision: request.OperationID, Body: intent.Body})
+		return changeRequestCreationSpec{request: request, body: body, revision: request.OperationID, authorizedHead: intent.HeadSHA, draft: intent.Draft}, nil
 	case delivery.CreateFinalChangeRequest:
 		content = intent.Content
 		authorizedHead = strings.ToLower(strings.TrimSpace(intent.Authorization.ValidatedHeadSHA))

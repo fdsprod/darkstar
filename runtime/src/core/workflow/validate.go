@@ -305,7 +305,7 @@ func (state *validationState) validateImplementation(id Identifier, node Node, f
 		}
 	}
 	output, exists := fields.Outputs["changeset"]
-	if !exists || output.Type != ValueObject || (output.Required != nil && !*output.Required) {
+	if !exists || output.Type != ValueObject && output.Type != "schema:changeset_v1" || (output.Required != nil && !*output.Required) {
 		state.add(ValidationSchemaInvalid, "Implementation requires an object changeset output", location+"/outputs/changeset", nil)
 	}
 	permissions := append([]string(nil), fields.Permissions...)

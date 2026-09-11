@@ -109,7 +109,7 @@ func TestPublishedEnumsMatchTypedContract(t *testing.T) {
 	if err := json.Unmarshal(v3data, &v3); err != nil {
 		t.Fatal(err)
 	}
-	assertStringSet(t, schemaEnum(t, v3, "$defs", "node", "properties", "type", "enum"), []string{string(workflow.NodeExtension), string(workflow.NodeWorkspacePrepare), string(workflow.NodeWorkspaceValidate), string(workflow.NodeReasoning), string(workflow.NodeImplementation), string(workflow.NodeGate), string(workflow.NodeCommand), string(workflow.NodeApproval), string(workflow.NodeSubworkflow), string(workflow.NodePointExecution), string(workflow.NodeRouting)})
+	assertStringSet(t, schemaEnum(t, v3, "$defs", "node", "properties", "type", "enum"), []string{string(workflow.NodeGitCommit), string(workflow.NodeGitPush), string(workflow.NodeCreatePR), string(workflow.NodeExtension), string(workflow.NodeWorkspacePrepare), string(workflow.NodeWorkspaceValidate), string(workflow.NodeReasoning), string(workflow.NodeImplementation), string(workflow.NodeGate), string(workflow.NodeCommand), string(workflow.NodeApproval), string(workflow.NodeSubworkflow), string(workflow.NodePointExecution), string(workflow.NodeRouting)})
 	assertStringSet(t, schemaEnum(t, schema, "$defs", "valueType", "enum"), []string{
 		string(workflow.ValueNull), string(workflow.ValueBoolean), string(workflow.ValueInteger),
 		string(workflow.ValueNumber), string(workflow.ValueString), string(workflow.ValueArray),

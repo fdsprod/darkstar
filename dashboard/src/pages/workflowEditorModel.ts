@@ -3,7 +3,7 @@ import type { components } from "../api/schema.generated";
 type Schemas = components["schemas"];
 export type JsonObject = Record<string, unknown>;
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
-export type WorkflowNodeType = "extension" | "workspace_prepare" | "workspace_validate" | "reasoning" | "implementation" | "gate" | "command" | "approval" | "subworkflow" | "point_execution" | "routing";
+export type WorkflowNodeType = "extension" | "workspace_prepare" | "workspace_validate" | "git_commit" | "git_push" | "create_pr" | "reasoning" | "implementation" | "gate" | "command" | "approval" | "subworkflow" | "point_execution" | "routing";
 export type WorkflowEdgeKind = "normal" | "conditional" | "bounded_repair" | "subworkflow";
 export type AuthoredTransitionKind = Exclude<WorkflowEdgeKind, "subworkflow">;
 export type EditorView = "canvas" | "structure";
@@ -49,6 +49,9 @@ export type CheckpointConfig =
   | { mode: "approve_on_change"; when: WorkflowPredicate; maxRevisions?: number }
   | { mode: "external"; externalCondition: string };
 export type NodeExecutor =
+  | {type:"git_commit";workspaceInput:string;changesetInput:string;textInput:string}
+  | {type:"git_push";workspaceInput:string;commitInput:string;remote:string}
+  | {type:"create_pr";workspaceInput:string;branchInput:string;textInput:string;base:string;draft:boolean}
   | { type:"extension"; ref:{id:string;version:string;digest:string}; configuration:JsonObject }
   | {type:"workspace_prepare"; repositoryInput:string; checkout:{mode:"current_checkout"}|{mode:"new_worktree";baseRef:string;branch:string}}
   | {type:"workspace_validate";workspaceInput:string;checks:string[][]}
@@ -103,7 +106,7 @@ export interface VisualNode {
 export interface VisualEdge { id: string; transitionId: string; from: string; to: string; kind: WorkflowEdgeKind; conditional: boolean; maxTraversals?: number }
 export interface EditorGraph { nodes: VisualNode[]; edges: VisualEdge[]; entry?: string; terminals?: string[]; bindings?: {source:string;target:string}[] }
 
-const nodeTypes: readonly WorkflowNodeType[] = ["extension", "workspace_prepare", "workspace_validate", "reasoning", "implementation", "gate", "command", "approval", "subworkflow", "point_execution", "routing"];
+const nodeTypes: readonly WorkflowNodeType[] = ["extension", "workspace_prepare", "workspace_validate", "git_commit", "git_push", "create_pr", "reasoning", "implementation", "gate", "command", "approval", "subworkflow", "point_execution", "routing"];
 const identifier = /^[a-z][a-z0-9_]{0,63}$/;
 const workflowName = /^[a-z][a-z0-9._/-]{0,127}$/;
 const semanticVersion = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
@@ -119,6 +122,9 @@ export function nodeTypeAvailability(type: WorkflowNodeType, catalog?: Schemas["
 export function nodeExecutorComplete(value: NodeExecutor): boolean {
   switch (value.type) {
     case "extension": return /^[a-z][a-z0-9.-]*\/[a-z][a-z0-9._-]*$/.test(value.ref.id) && semanticVersion.test(value.ref.version) && /^[a-f0-9]{64}$/.test(value.ref.digest);
+    case "git_commit": return [value.workspaceInput,value.changesetInput,value.textInput].every(id=>identifier.test(id));
+    case "git_push": return [value.workspaceInput,value.commitInput].every(id=>identifier.test(id)) && Boolean(value.remote.trim());
+    case "create_pr": return [value.workspaceInput,value.branchInput,value.textInput].every(id=>identifier.test(id)) && Boolean(value.base.trim());
     case "reasoning": return value.agent.trim() !== "";
     case "workspace_prepare": return identifier.test(value.repositoryInput) && (value.checkout.mode === "current_checkout" || Boolean(value.checkout.baseRef.trim() && value.checkout.branch.trim()));
     case "workspace_validate": return identifier.test(value.workspaceInput) && value.checks.length > 0 && value.checks.every(argv=>argv.length>0 && Boolean(argv[0].trim()));
@@ -198,7 +204,7 @@ export function deriveEditorGraph(document: unknown, layoutValue: unknown, findi
 
 export function addNode(document: JsonObject, type: WorkflowNodeType, requestedId?: string): { document: JsonObject; nodeId: string } {
   const next = clone(document); const nodes = workflowNodes(next);
-  if (type === "routing" || type === "implementation" || type === "workspace_prepare" || type === "workspace_validate") next.apiVersion = "darkstar.local/v1alpha3";
+  if (type === "git_commit" || type === "git_push" || type === "create_pr" || type === "routing" || type === "implementation" || type === "workspace_prepare" || type === "workspace_validate") next.apiVersion = "darkstar.local/v1alpha3";
   const base = sanitizeIdentifier(requestedId || type); const nodeId = uniqueIdentifier(base, new Set(Object.keys(nodes)));
   nodes[nodeId] = createNode(type, humanizeIdentifier(nodeId));
   if (type === "implementation") {
@@ -342,6 +348,18 @@ export function inspectNode(document: unknown, nodeId: string): AuthoringNode | 
       const value = record(raw.call); const workflow = record(value.workflow);
       return { ...common, executor: { type: "subworkflow", workflow: { name: stringValue(workflow.name), version: stringValue(workflow.version), ...(typeof workflow.digest === "string" ? { digest: workflow.digest } : {}), ...(typeof workflow.path === "string" ? { path: workflow.path } : {}) }, entry: stringValue(value.entry), terminals: stringArray(value.terminals), inputs: stringRecord(value.inputs), outputs: stringRecord(value.outputs) } };
     }
+    case "git_commit": {
+      const value = record(raw.gitCommit);
+      return {...common,executor:{type:"git_commit",workspaceInput:stringValue(value.workspaceInput),changesetInput:stringValue(value.changesetInput),textInput:stringValue(value.textInput)}};
+    }
+    case "git_push": {
+      const value = record(raw.gitPush);
+      return {...common,executor:{type:"git_push",workspaceInput:stringValue(value.workspaceInput),commitInput:stringValue(value.commitInput),remote:stringValue(value.remote)}};
+    }
+    case "create_pr": {
+      const value = record(raw.createPR);
+      return {...common,executor:{type:"create_pr",workspaceInput:stringValue(value.workspaceInput),branchInput:stringValue(value.branchInput),textInput:stringValue(value.textInput),base:stringValue(value.base),draft:value.draft === true}};
+    }
     case "workspace_prepare": { const value=record(raw.workspacePrepare); return {...common,executor:{type:"workspace_prepare",repositoryInput:stringValue(value.repositoryInput),checkout:clone(value.checkout) as Extract<NodeExecutor,{type:"workspace_prepare"}>["checkout"]}}; }
     case "workspace_validate": {const value=record(raw.workspaceValidate);return {...common,executor:{type:"workspace_validate",workspaceInput:stringValue(value.workspaceInput),checks:clone(value.checks) as string[][]}};}
     case "implementation": { const value = record(raw.implementation); return { ...common, executor: { type: "implementation", taskInput: stringValue(value.taskInput), instructions: stringValue(value.instructions), ...(typeof value.workspaceInput === "string" ? {workspaceInput:value.workspaceInput} : {}) } }; }
@@ -370,6 +388,24 @@ export function updateNodeExecutor(document: JsonObject, nodeId: string, executo
   switch (executor.type) {
     case "extension": node.extension={ref:{...executor.ref},configuration:clone(executor.configuration)}; next.apiVersion="darkstar.local/v1alpha3"; break;
     case "reasoning": node.reasoning = { ...record(node.reasoning), agent: executor.agent, instructions:executor.instructions ?? "", skills: uniqueStrings(executor.skills), tools: uniqueStrings(executor.tools) }; break;
+    case "git_commit": {
+      const {type: _type,...configuration} = executor;
+      node.gitCommit = configuration;
+      next.apiVersion = "darkstar.local/v1alpha3";
+      break;
+    }
+    case "git_push": {
+      const {type: _type,...configuration} = executor;
+      node.gitPush = configuration;
+      next.apiVersion = "darkstar.local/v1alpha3";
+      break;
+    }
+    case "create_pr": {
+      const {type: _type,...configuration} = executor;
+      node.createPR = configuration;
+      next.apiVersion = "darkstar.local/v1alpha3";
+      break;
+    }
     case "workspace_prepare": node.workspacePrepare={repositoryInput:executor.repositoryInput,checkout:clone(executor.checkout)};break;
     case "workspace_validate":node.workspaceValidate={workspaceInput:executor.workspaceInput,checks:clone(executor.checks)};break;
     case "implementation": node.implementation = { taskInput: executor.taskInput, instructions: executor.instructions, ...(executor.workspaceInput ? {workspaceInput:executor.workspaceInput} : {}) }; break;
@@ -555,10 +591,13 @@ function createNode(type: WorkflowNodeType, displayName: string, flags: { entry?
   switch (type) {
     case "extension": return {...common,extension:{ref:{id:"custom/operation",version:"1.0.0",digest:""},configuration:{}}};
     case "reasoning": return { ...common, reasoning: { agent: "authoring-agent" } };
-    case "gate": return { ...common, outputs: { passed: { type: "boolean" }, gate_evidence: { type: "object" } }, gate: { policy: "authoring-policy", condition: { const: true } } };
+    case "gate": return { ...common, outputs: { passed: { type: "boolean" }, gate_evidence: { type: "schema:gate_evidence_v1" } }, gate: { policy: "authoring-policy", condition: { const: true } } };
+    case "git_commit": return {...common, inputs:{"workspace": {"type": "workspace", "from": "node.prepare.output.workspace"}, "changeset": {"type": "schema:changeset_v1", "from": "node.implement.output.changeset"}, "text": {"type": "schema:delivery_text_v1", "from": "node.delivery_text.output.text"}},outputs:{"commit": {"type": "schema:commit_v1"}},gitCommit:{"workspaceInput": "workspace", "changesetInput": "changeset", "textInput": "text"}};
+    case "git_push": return {...common, inputs:{"workspace": {"type": "workspace", "from": "node.prepare.output.workspace"}, "commit": {"type": "schema:commit_v1", "from": "node.commit.output.commit"}},outputs:{"branch": {"type": "schema:published_branch_v1"}},gitPush:{"workspaceInput": "workspace", "commitInput": "commit", "remote": "origin"}};
+    case "create_pr": return {...common, inputs:{"workspace": {"type": "workspace", "from": "node.prepare.output.workspace"}, "branch": {"type": "schema:published_branch_v1", "from": "node.push.output.branch"}, "text": {"type": "schema:delivery_text_v1", "from": "node.delivery_text.output.text"}},outputs:{"pull_request": {"type": "schema:pull_request_v1"}},createPR:{"workspaceInput": "workspace", "branchInput": "branch", "textInput": "text", "base": "remote_default", "draft": false}};
     case "workspace_prepare": return {...common,inputs:{repository:{type:"repository",from:"run.input.repository"}},outputs:{workspace:{type:"workspace"}},workspacePrepare:{repositoryInput:"repository",checkout:{mode:"current_checkout"}}};
-    case "workspace_validate":return {...common,inputs:{workspace:{type:"workspace",from:"node.prepare.output.workspace"}},outputs:{validation:{type:"object"}},workspaceValidate:{workspaceInput:"workspace",checks:[]}};
-    case "implementation": return { ...common, inputs: { task: { from: "run.input.task", type: "task", required: true } }, outputs: { changeset: { type: "object" } }, permissions: ["process.run", "workspace.write"], implementation: { taskInput: "task", workspaceInput:"workspace", instructions: "Perform the requested task in the repository and validate the actual changes." } };
+    case "workspace_validate":return {...common,inputs:{workspace:{type:"workspace",from:"node.prepare.output.workspace"}},outputs:{validation:{type:"schema:validation_v1"}},workspaceValidate:{workspaceInput:"workspace",checks:[]}};
+    case "implementation": return { ...common, inputs: { task: { from: "run.input.task", type: "task", required: true } }, outputs: { changeset: { type: "schema:changeset_v1" } }, permissions: ["process.run", "workspace.write"], implementation: { taskInput: "task", workspaceInput:"workspace", instructions: "Perform the requested task in the repository." } };
     case "command": return { ...common, command: { argv: ["command"] } };
     case "approval": return { ...common, approval: { actor: "workflow-owner" } };
     case "subworkflow": return { ...common, call: { workflow: { name: "workflow/name", version: "0.1.0" }, entry: "start", terminals: ["finish"], inputs: {}, outputs: {} } };
@@ -619,7 +658,7 @@ function validUniqueIDs(values: readonly string[]) { return values.every((value)
 export function isPlanValueType(value: unknown): boolean { return value === "markdown" || value === "object" || typeof value === "string" && /^schema:[a-z][a-z0-9_]{0,63}$/.test(value); }
 function supportedSharedSections(node: JsonObject) {
   const values = ["null", "boolean", "integer", "number", "string", "array", "object", "task", "repository", "workspace", "template", "markdown", "open_items", "decision_log"];
-  if (!hasOnlyKeys(node, ["displayName", "type", "entry", "terminal", "inputs", "outputs", "readiness", "definition", "reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate", "extension", "validators", "retry", "checkpoint", "transitionMode", "join", "permissions", "transitions"])) return false;
+  if (!hasOnlyKeys(node, ["displayName", "type", "entry", "terminal", "inputs", "outputs", "readiness", "definition", "reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate", "gitCommit", "gitPush", "createPR", "extension", "validators", "retry", "checkpoint", "transitionMode", "join", "permissions", "transitions"])) return false;
   if (typeof node.entry !== "boolean" || typeof node.terminal !== "boolean" || node.displayName !== undefined && (typeof node.displayName !== "string" || node.displayName.length === 0)) return false;
   if (!isPlainRecord(node.inputs) || !Object.entries(node.inputs).every(([id, value]) => identifier.test(id) && isPlainRecord(value) && hasOnlyKeys(value, ["from", "pointer", "type", "required", "default", "description"]) && typeof value.from === "string" && /^(run\.input\.[a-z][a-z0-9_]{0,63}|node\.[a-z][a-z0-9_]{0,63}\.output\.[a-z][a-z0-9_]{0,63})$/.test(value.from) && (values.includes(String(value.type)) || /^schema:[a-z][a-z0-9_]{0,63}$/.test(String(value.type))) && (value.required === undefined || typeof value.required === "boolean") && (value.pointer === undefined || typeof value.pointer === "string" && /^(?:|(?:\/(?:[^~/]|~[01])*)+)$/.test(value.pointer)) && (value.description === undefined || typeof value.description === "string") && (!Object.hasOwn(value, "default") || value.required === false && isJsonValue(value.default)))) return false;
   if (!isPlainRecord(node.outputs) || !Object.entries(node.outputs).every(([id, value]) => identifier.test(id) && isPlainRecord(value) && hasOnlyKeys(value, ["type", "schema", "description", "required", "artifact", "schemaDefinition"]) && (value.schemaDefinition === undefined || isPlainRecord(value.schemaDefinition)) && (value.artifact === undefined || isPlainRecord(value.artifact) && hasOnlyKeys(value.artifact, ["filename", "templateInput"]) && typeof value.artifact.filename === "string" && value.artifact.filename.length > 0 && (value.artifact.templateInput === undefined || typeof value.artifact.templateInput === "string" && identifier.test(value.artifact.templateInput))) && (values.includes(String(value.type)) || /^schema:[a-z][a-z0-9_]{0,63}$/.test(String(value.type))) && (value.required === undefined || typeof value.required === "boolean") && (value.schema === undefined || typeof value.schema === "string" && value.schema.length > 0) && (value.description === undefined || typeof value.description === "string"))) return false;
@@ -635,8 +674,8 @@ function supportedSharedSections(node: JsonObject) {
   return true;
 }
 function supportedExecutor(node: JsonObject) {
-  const executorFields = ["reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate", "extension"];
-  const expected = node.type === "workspace_prepare" ? "workspacePrepare" : node.type === "workspace_validate" ? "workspaceValidate" : node.type === "subworkflow" ? "call" : node.type === "point_execution" ? "points" : String(node.type);
+  const executorFields = ["reasoning", "gate", "command", "approval", "call", "points", "routing", "implementation", "workspacePrepare", "workspaceValidate", "gitCommit", "gitPush", "createPR", "extension"];
+  const expected = node.type === "git_commit" ? "gitCommit" : node.type === "git_push" ? "gitPush" : node.type === "create_pr" ? "createPR" : node.type === "workspace_prepare" ? "workspacePrepare" : node.type === "workspace_validate" ? "workspaceValidate" : node.type === "subworkflow" ? "call" : node.type === "point_execution" ? "points" : String(node.type);
   if (executorFields.some((field) => field !== expected && node[field] !== undefined)) return false;
   switch (node.type) {
     case "extension": { const v=node.extension; if(!isPlainRecord(v)||!hasOnlyKeys(v,["ref","configuration"])||!isPlainRecord(v.ref)||!isPlainRecord(v.configuration)) return false; return hasOnlyKeys(v.ref,["id","version","digest"]) && [v.ref.id,v.ref.version,v.ref.digest].every(x=>typeof x==="string"); }
@@ -645,6 +684,18 @@ function supportedExecutor(node: JsonObject) {
     case "command": { const value = node.command; return isPlainRecord(value) && hasOnlyKeys(value, ["argv", "cwd", "timeoutSeconds"]) && Array.isArray(value.argv) && value.argv.length > 0 && value.argv.every((item) => typeof item === "string") && (value.cwd === undefined || typeof value.cwd === "string") && (value.timeoutSeconds === undefined || positiveInteger(value.timeoutSeconds)); }
     case "approval": { const value = node.approval; if (!isPlainRecord(value) || !hasOnlyKeys(value, ["actor", "externalCondition", "evidenceOutput"]) || typeof value.actor !== "string" || value.actor.length === 0) return false; return value.actor === "external" ? typeof value.externalCondition === "string" && value.externalCondition.length > 0 && typeof value.evidenceOutput === "string" && identifier.test(value.evidenceOutput) : value.externalCondition === undefined && value.evidenceOutput === undefined; }
     case "subworkflow": { const value = node.call; if (!isPlainRecord(value) || !hasOnlyKeys(value, ["workflow", "entry", "terminals", "inputs", "outputs"]) || !isPlainRecord(value.workflow) || !hasOnlyKeys(value.workflow, ["name", "version", "digest", "path"])) return false; const reference = value.workflow; return typeof reference.name === "string" && workflowName.test(reference.name) && typeof reference.version === "string" && semanticVersion.test(reference.version) && (reference.digest === undefined || typeof reference.digest === "string" && /^[0-9a-f]{64}$/.test(reference.digest)) && (reference.path === undefined || typeof reference.path === "string" && reference.path.length > 0) && typeof value.entry === "string" && identifier.test(value.entry) && Array.isArray(value.terminals) && value.terminals.length > 0 && value.terminals.every((item) => typeof item === "string" && identifier.test(item)) && new Set(value.terminals).size === value.terminals.length && isPlainRecord(value.inputs) && Object.entries(value.inputs).every(([key, item]) => identifier.test(key) && typeof item === "string" && identifier.test(item)) && isPlainRecord(value.outputs) && Object.entries(value.outputs).every(([key, item]) => identifier.test(key) && typeof item === "string" && outputSource.test(item)); }
+    case "git_commit": {
+      const v = node.gitCommit;
+      return isPlainRecord(v) && hasOnlyKeys(v,["workspaceInput","changesetInput","textInput"]) && [v.workspaceInput,v.changesetInput,v.textInput].every(id=>typeof id === "string");
+    }
+    case "git_push": {
+      const v = node.gitPush;
+      return isPlainRecord(v) && hasOnlyKeys(v,["workspaceInput","commitInput","remote"]) && [v.workspaceInput,v.commitInput,v.remote].every(id=>typeof id === "string");
+    }
+    case "create_pr": {
+      const v = node.createPR;
+      return isPlainRecord(v) && hasOnlyKeys(v,["workspaceInput","branchInput","textInput","base","draft"]) && [v.workspaceInput,v.branchInput,v.textInput,v.base].every(id=>typeof id === "string") && typeof v.draft === "boolean";
+    }
     case "workspace_prepare": {const v=node.workspacePrepare;if(!isPlainRecord(v)||!hasOnlyKeys(v,["repositoryInput","checkout"])||typeof v.repositoryInput!=="string"||!isPlainRecord(v.checkout))return false;const c=v.checkout;return c.mode==="current_checkout"?hasOnlyKeys(c,["mode"]):c.mode==="new_worktree"&&hasOnlyKeys(c,["mode","baseRef","branch"])&&typeof c.baseRef==="string"&&typeof c.branch==="string";}
     case "workspace_validate":{const v=node.workspaceValidate;return isPlainRecord(v)&&hasOnlyKeys(v,["workspaceInput","checks"])&&typeof v.workspaceInput==="string"&&Array.isArray(v.checks)&&v.checks.every(a=>Array.isArray(a)&&a.every(x=>typeof x==="string"));}
     case "implementation": { const value = node.implementation; return isPlainRecord(value) && hasOnlyKeys(value, ["taskInput", "instructions", "workspaceInput"]) && (value.workspaceInput === undefined || typeof value.workspaceInput === "string") && typeof value.taskInput === "string" && identifier.test(value.taskInput) && (value.instructions === undefined || typeof value.instructions === "string"); }

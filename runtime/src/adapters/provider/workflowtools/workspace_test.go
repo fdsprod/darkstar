@@ -89,3 +89,32 @@ func TestImplementationEvidenceIncludesAddsAndDeletesButNotPreexistingDirt(t *te
 		t.Fatalf("changes: %v %v", changes, err)
 	}
 }
+
+func TestSealedChangesetDetectsEditsToSameFile(t *testing.T) {
+	workspace := t.TempDir()
+	if output, err := exec.Command("git", "-C", workspace, "init").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s %v", output, err)
+	}
+	file := filepath.Join(workspace, "a.txt")
+	s := &Session{Database: filepath.Join(t.TempDir(), "tools.db"), Workspace: workspace, RunID: "run", AttemptID: "attempt"}
+	if err := s.PrepareWorkspace(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("first"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	raw := json.RawMessage(`{"disposition":"changed","summary":"Added file","files":["a.txt"],"validation":[]}`)
+	sealed, err := s.sealChangeset(t.Context(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.validateWorkspaceResult(t.Context(), sealed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("second"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if s.validateWorkspaceResult(t.Context(), sealed) == nil {
+		t.Fatal("stale snapshot accepted because filenames were unchanged")
+	}
+}

@@ -11,8 +11,10 @@ import (
 
 	nodeprocess "darkstar/src/adapters/executor/nodeprocess"
 	gitadapter "darkstar/src/adapters/repository/git"
+	"darkstar/src/core/config"
 	"darkstar/src/core/nodes"
 	"darkstar/src/core/runexecution"
+	"darkstar/src/core/workflow"
 	"darkstar/src/ports/repository"
 	"darkstar/src/ports/statestore"
 	_ "modernc.org/sqlite"
@@ -40,6 +42,10 @@ func (w *daemonProviderWiring) authorizeWorkspaceProject(r runexecution.AttemptR
 	return nil
 }
 func (w *daemonProviderWiring) resolvePreparedWorkspace(ctx context.Context, r runexecution.AttemptRequestContext, raw json.RawMessage) (preparedWorkspace, error) {
+	return w.resolveDeliveryWorkspace(ctx, r, raw, false)
+}
+
+func (w *daemonProviderWiring) resolveDeliveryWorkspace(ctx context.Context, r runexecution.AttemptRequestContext, raw json.RawMessage, recovering bool) (preparedWorkspace, error) {
 	var ref struct {
 		ID string `json:"id"`
 	}
@@ -100,7 +106,11 @@ func (w *daemonProviderWiring) resolvePreparedWorkspace(ctx context.Context, r r
 			if b, ok := tree.Checkout.(repository.BranchCheckout); ok {
 				branch = b.Name
 			}
-			if tree.HeadSHA != p.BaseSHA || branch != p.Branch {
+			expectedHead := p.HeadSHA
+			if expectedHead == "" {
+				expectedHead = p.BaseSHA
+			}
+			if (!recovering && tree.HeadSHA != expectedHead) || branch != p.Branch {
 				return p, errors.New("workspace branch or HEAD changed since preparation; start a new run or restore the expected checkout")
 			}
 			return p, nil
@@ -176,6 +186,26 @@ func (w *daemonProviderWiring) ExecuteWorkspaceNode(ctx context.Context, r runex
 	services := nodes.BuiltinServices{
 		Workspaces: nodes.WorkspaceServices{Identity: nodes.WorkspaceIdentity{RunID: r.Run.RunID, NodeID: r.Attempt.NodeID, ProjectID: r.Project.ProjectID, SourceHash: r.Project.SourceHash, WorkItemID: r.WorkItem.WorkItemID, Root: w.projectRoot}, Store: workspaceNodeServices{w, r}, Repository: manager},
 		Commands:   nodeprocess.Runner{Environment: w.environment, OutputLimit: 65536},
+	}
+	if preparation, ok := r.Node.(workflow.WorkspacePrepareNode); ok {
+		if plan, ok := preparation.Executor.Checkout.(workflow.NewWorktree); ok && plan.BaseRef == "project_default" {
+			if w.configuration == nil {
+				return nil, errors.New("project configuration unavailable")
+			}
+			scope, scopeErr := config.ProjectMutationScope(r.Project.ProjectID)
+			if scopeErr != nil {
+				return nil, scopeErr
+			}
+			state, stateErr := w.configuration.State(ctx, scope)
+			if stateErr != nil {
+				return nil, stateErr
+			}
+			for _, setting := range state.Effective {
+				if setting.Key == "workspace.baseRef" {
+					services.Workspaces.DefaultBaseRef, _ = setting.Value.Value().(string)
+				}
+			}
+		}
 	}
 	engine, err := w.pinnedNodeEngine(r)
 	if err != nil {

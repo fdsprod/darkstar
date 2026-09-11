@@ -94,10 +94,14 @@ export function WorkflowsPage() {
 
   const items = useMemo<LibraryItem[]>(() => [
     ...library.drafts.map((value) => ({ kind: "draft" as const, draft: value })),
-    ...library.versions.slice().sort((left,right)=>left.name.localeCompare(right.name)||compareWorkflowVersions(right.version,left.version)).map((value) => ({ kind: "installed" as const, version: value })),
+    ...library.versions.filter((value) => {
+      return !library.archives.some((archive) => {
+        return archive.name === value.name && archive.version === value.version;
+      });
+    }).sort((left,right)=>left.name.localeCompare(right.name)||compareWorkflowVersions(right.version,left.version)).map((value) => ({ kind: "installed" as const, version: value })),
     ...library.archives.map((value) => ({ kind: "archived" as const, archive: value })),
   ], [library]);
-  const selected = items.find((item) => itemKey(item) === itemParam) ?? items.find((item) => item.kind === "draft") ?? items[0];
+  const selected = items.find((item) => itemKey(item) === itemParam) ?? items.find((item) => item.kind === "draft") ?? items.find((item) => item.kind === "installed");
   const selectedKey = selected ? itemKey(selected) : "";
 
   useEffect(() => {
@@ -301,14 +305,22 @@ export function WorkflowsPage() {
 
   return <div ref={pageRef} className="page workflows-page workflow-authoring-page" onKeyDown={(event) => { if (event.key === "Escape") { if (newOpen) setNewOpen(false); if (advancedOpen) setAdvancedOpen(false); if (routePreview.kind !== "loading") setRoutePreview({ kind: "closed" }); if (publish.kind !== "publishing" && publish.kind !== "closed") setPublish({ kind: "closed" }); setConnectFrom(undefined); select({ kind: "none" }); } }}>
     {markdownOwner && document && <MarkdownFilenameDialog onCancel={()=>setMarkdownOwner(undefined)} onAdd={filename=>{const result=addArtifactOutput(document,markdownOwner,filename);changeDocument(result.document,"Markdown output added.");select({kind:"node",nodeId:result.id});setMarkdownOwner(undefined);}}/>}
-    <div inert={chatBusy}><PageHeader className="workflows-header" eyebrow="" description="" title="Workflows" status={persistence ? <span className="editor-save-state">{persistenceLabel(persistence)}</span> : undefined} actions={<><select aria-label="Workflow version" value={selectedKey} onChange={event => { const item = items.find(value => itemKey(value) === event.target.value); if (item) selectItem(item); }}>{items.filter(item => item.kind !== "archived").map(item => <option key={itemKey(item)} value={itemKey(item)}>{itemName(item)} · {itemVersion(item)} · {item.kind === "draft" ? "Draft" : "Published"}</option>)}</select><button className="button" onClick={() => setNewOpen(true)}>New workflow</button>{selected?.kind === "installed" && <button className="button button--primary" disabled={Boolean(busy)} onClick={() => void duplicateInstalled(selected)}>New version</button>}{draft && <><button className="button" disabled={persistence?.kind !== "clean"} onClick={() => void validateDraft()}>Validate</button><button className="button button--primary" disabled={!validatedCurrentDocument || persistence?.kind !== "clean"} onClick={openPublish}>Publish version</button></>}</>} />
+    <div inert={chatBusy}><PageHeader className="workflows-header" eyebrow="" description="" title="Workflows" status={persistence ? <span className="editor-save-state">{persistenceLabel(persistence)}</span> : undefined} actions={<><select aria-label="Workflow version" value={selectedKey} onChange={event => { const item = items.find(value => itemKey(value) === event.target.value); if (item) selectItem(item); }}>{(!selected || selected.kind === "archived") && <option value={selectedKey}>No active workflow selected</option>}{items.filter(item => item.kind !== "archived").map(item => <option key={itemKey(item)} value={itemKey(item)}>{itemName(item)} · {itemVersion(item)} · {item.kind === "draft" ? "Draft" : "Published"}</option>)}</select><button className="button" onClick={() => setNewOpen(true)}>New workflow</button>{selected?.kind === "installed" && <button className="button button--primary" disabled={Boolean(busy)} onClick={() => void duplicateInstalled(selected)}>New version</button>}{draft && <><button className="button" disabled={persistence?.kind !== "clean"} onClick={() => void validateDraft()}>Validate</button><button className="button button--primary" disabled={!validatedCurrentDocument || persistence?.kind !== "clean"} onClick={openPublish}>Publish version</button></>}</>} />
     </div><p className="sr-only" aria-live="polite">{announcement}</p>
     {loadState === "error" && <div className="board-notice board-notice--error" role="alert">Workflow library unavailable. Check daemon health and retry.</div>}
+    {library.archives.length > 0 && <details>
+      <summary>Archived workflows ({library.archives.length})</summary>
+      <ul>{items.filter((item) => {
+        return item.kind === "archived";
+      }).map((item) => <li key={itemKey(item)}><button className="button" onClick={() => {
+        selectItem(item);
+      }}>{itemName(item)} · {itemVersion(item)} · Archived</button></li>)}</ul>
+    </details>}
     <div className="workflow-chat-layout">
     <WorkflowChat key={chatEpoch} target={chatTarget} disabled={loadState !== "ready" || Boolean(busy) || (Boolean(draft) && persistence?.kind !== "clean") || publish.kind !== "closed" && publish.kind !== "published"} onEvent={receiveChat} onBusy={setChatBusy} />
     <div inert={chatBusy} className={`workflow-editor-shell workflow-editor-shell--canvas${selection.kind === "node" ? " workflow-editor-shell--selected" : ""}`}>
       <section className="workflow-editor-center" aria-label="Workflow editor">
-        {!document || !graph ? <div className="workflow-editor-empty"><h2>{loadState === "loading" ? "Loading workflows…" : "Select a workflow"}</h2></div> : <>
+        {selected?.kind === "archived" ? <ArchivedSummary item={selected} /> : !document || !graph ? <div className="workflow-editor-empty"><h2>{loadState === "loading" ? "Loading workflows…" : "No workflow selected"}</h2>{loadState === "ready" && <p>Create a new workflow or describe one in chat to get started.</p>}</div> : <>
           <header className="workflow-editor-toolbar"><strong>{selected ? itemName(selected) : "Workflow"}</strong><span>{draft ? "Draft" : "Read only · create a new version to edit"}</span></header>
           {draft && <ValidationSlot state={validation} currentRevision={draft.revision} onSelect={selectFinding} />}
           <WorkflowPortCanvas key={selectedKey} document={document} onAddResource={(kind, position, filename) => { if (!draft) return; const result=addResource(document,kind,filename); setLayout(moveNode(layout,result.id,position)); changeDocument(result.document,"Resource added."); select({kind:"node",nodeId:result.id}); }} graph={graph} ports={portGraph!} layout={normalizeLayout(layout)} selection={selection} onSelect={select} onConnect={connectPorts} onFocus={focusNode} onLayout={changeLayout} readOnly={!draft} onDropNode={draft ? (type, position) => void add(type, position) : undefined} />

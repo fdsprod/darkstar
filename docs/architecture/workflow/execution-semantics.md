@@ -11,6 +11,14 @@
 ## 1. Decision
 
 DARKSTAR workflows are immutable, typed, directed graphs. They are not scripts.
+
+Standalone delivery nodes (`git_commit`, `git_push`, `create_pr`) are ordinary
+deterministic nodes. Their eligibility follows authored edges and input bindings;
+the scheduler MUST NOT insert validation, point acceptance, or human checkpoints
+as additional prerequisites. Their own contracts still require exact snapshots,
+repository coordinates, and retry reconciliation. Authored checkpoints retain
+their normal semantics. Existing composite point-execution nodes retain the policy
+selected in their own configuration.
 The language has only five control-flow mechanisms:
 
 1. a node becomes eligible after an entry activation or incoming transition;

@@ -399,7 +399,7 @@ func TestWorkflowDraftAuthoringUsesCASAndPublishesImmutableVersion(t *testing.T)
 	var authoringCatalog workflow.AuthoringCatalog
 	decodeJSON(t, authoringCatalogResponse, &authoringCatalog)
 	_ = authoringCatalogResponse.Body.Close()
-	if authoringCatalog.SchemaVersion != 1 || len(authoringCatalog.NodeTypes) != 10 || authoringCatalog.Workflows.Status != workflow.ReferenceKnown || len(authoringCatalog.Workflows.Items) != 0 || authoringCatalog.Agents.Status != workflow.ReferenceUnavailable || authoringCatalog.Skills.Status != workflow.ReferenceKnown || len(authoringCatalog.Skills.Items) != 1 || authoringCatalog.Skills.Items[0].Name != "project:review" {
+	if authoringCatalog.SchemaVersion != 1 || len(authoringCatalog.NodeTypes) != 13 || authoringCatalog.Workflows.Status != workflow.ReferenceKnown || len(authoringCatalog.Workflows.Items) != 0 || authoringCatalog.Agents.Status != workflow.ReferenceUnavailable || authoringCatalog.Skills.Status != workflow.ReferenceKnown || len(authoringCatalog.Skills.Items) != 1 || authoringCatalog.Skills.Items[0].Name != "project:review" {
 		t.Fatalf("authoring catalog = %#v", authoringCatalog)
 	}
 

@@ -1,6 +1,8 @@
+import { executionKinds } from './execution-kinds';
 import { defineNode } from './shared';
 
 export const reasoning = defineNode('reasoning', [], {
+  executionKind: executionKinds.reasoning,
   buildTask: (args) => {
     const c = args.configuration;
     if (args.permissions?.length) {

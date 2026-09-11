@@ -530,3 +530,17 @@ type ChangeRequestObservation struct {
 	ObservedAt  time.Time
 	EvidenceRef string
 }
+
+// PublishWorkflowCommit publishes the exact input of a standalone workflow node.
+type PublishWorkflowCommit struct{ CommitSHA string }
+
+func (PublishWorkflowCommit) isBranchPublicationTiming() {}
+
+// CreateWorkflowChangeRequest uses authored text and the connected published commit.
+type CreateWorkflowChangeRequest struct {
+	HeadSHA string
+	Body    string
+	Draft   bool
+}
+
+func (CreateWorkflowChangeRequest) isChangeRequestCreationIntent() {}

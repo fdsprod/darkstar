@@ -172,6 +172,30 @@ func ValidateDeliverable(node Node, id Identifier, value json.RawMessage, inputs
 	if !literalMatchesType(value, declaration.Type) {
 		return fmt.Errorf("output %q must have type %s", id, declaration.Type)
 	}
+	declaration.SchemaDefinition = ValueSchema(declaration.Type, declaration.SchemaDefinition)
+	if declaration.Type == "schema:delivery_text_v1" {
+		var text struct {
+			ChangesetSnapshot string `json:"changesetSnapshot"`
+		}
+		if err := json.Unmarshal(value, &text); err != nil {
+			return err
+		}
+		matched := false
+		for name, binding := range node.Fields().Inputs {
+			if binding.ValueType() != "schema:changeset_v1" {
+				continue
+			}
+			var changeset struct {
+				SnapshotDigest string `json:"snapshotDigest"`
+			}
+			if json.Unmarshal(inputs[name], &changeset) == nil && changeset.SnapshotDigest != "" && changeset.SnapshotDigest == text.ChangesetSnapshot {
+				matched = true
+			}
+		}
+		if !matched {
+			return errors.New("delivery text must reference the exact snapshot of a connected Changeset")
+		}
+	}
 	if len(declaration.SchemaDefinition) > 0 {
 		if len(validators) == 0 || validators[0] == nil {
 			return errors.New("output requires a value schema validator")
@@ -291,7 +315,7 @@ func (state *validationState) validateResources() {
 			if output.Type == ValueMarkdown && output.Artifact == nil {
 				state.add(ValidationSchemaInvalid, "Markdown output requires a filename", location, nil)
 			}
-			if strings.HasPrefix(string(output.Type), "schema:") && len(output.SchemaDefinition) == 0 && output.Schema == "" {
+			if strings.HasPrefix(string(output.Type), "schema:") && len(ValueSchema(output.Type, output.SchemaDefinition)) == 0 && output.Schema == "" {
 				state.add(ValidationSchemaInvalid, "named schema output requires its schema", location, nil)
 			}
 			if output.Artifact == nil {

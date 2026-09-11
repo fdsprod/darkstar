@@ -122,6 +122,8 @@ func validatePublicationRequest(request delivery.PublishBranchRequest) (string, 
 	}
 	var commit string
 	switch timing := request.Timing.(type) {
+	case delivery.PublishWorkflowCommit:
+		commit = timing.CommitSHA
 	case delivery.PublishAfterFinalValidation:
 		commit = timing.ValidatedCommitSHA
 	case delivery.PublishAfterPointAcceptance:

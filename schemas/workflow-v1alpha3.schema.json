@@ -988,7 +988,10 @@
             "implementation",
             "workspace_prepare",
             "workspace_validate",
-            "extension"
+            "extension",
+            "git_commit",
+            "git_push",
+            "create_pr"
           ]
         },
         "definition": {
@@ -1148,6 +1151,15 @@
         },
         "extension": {
           "$ref": "#/$defs/extensionExecutor"
+        },
+        "gitCommit": {
+          "$ref": "#/$defs/gitCommit"
+        },
+        "gitPush": {
+          "$ref": "#/$defs/gitPush"
+        },
+        "createPR": {
+          "$ref": "#/$defs/createPR"
         }
       },
       "oneOf": [
@@ -1213,6 +1225,21 @@
               {
                 "required": [
                   "extension"
+                ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
                 ]
               }
             ]
@@ -1281,6 +1308,21 @@
                 "required": [
                   "extension"
                 ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
+                ]
               }
             ]
           }
@@ -1347,6 +1389,21 @@
               {
                 "required": [
                   "extension"
+                ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
                 ]
               }
             ]
@@ -1415,6 +1472,21 @@
                 "required": [
                   "extension"
                 ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
+                ]
               }
             ]
           }
@@ -1481,6 +1553,21 @@
               {
                 "required": [
                   "extension"
+                ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
                 ]
               }
             ]
@@ -1549,6 +1636,21 @@
                 "required": [
                   "extension"
                 ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
+                ]
               }
             ]
           }
@@ -1615,6 +1717,21 @@
               {
                 "required": [
                   "extension"
+                ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
                 ]
               }
             ]
@@ -1683,6 +1800,21 @@
                 "required": [
                   "extension"
                 ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
+                ]
               }
             ]
           }
@@ -1749,6 +1881,21 @@
               {
                 "required": [
                   "extension"
+                ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
                 ]
               }
             ]
@@ -1817,6 +1964,21 @@
                 "required": [
                   "extension"
                 ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
+                ]
               }
             ]
           }
@@ -1883,6 +2045,267 @@
               {
                 "required": [
                   "workspaceValidate"
+                ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "git_commit"
+            },
+            "gitCommit": {
+              "$ref": "#/$defs/gitCommit"
+            }
+          },
+          "required": [
+            "gitCommit"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
+                ]
+              },
+              {
+                "required": [
+                  "extension"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "git_push"
+            },
+            "gitPush": {
+              "$ref": "#/$defs/gitPush"
+            }
+          },
+          "required": [
+            "gitPush"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
+                ]
+              },
+              {
+                "required": [
+                  "extension"
+                ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "createPR"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "create_pr"
+            },
+            "createPR": {
+              "$ref": "#/$defs/createPR"
+            }
+          },
+          "required": [
+            "createPR"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "gate"
+                ]
+              },
+              {
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "required": [
+                  "approval"
+                ]
+              },
+              {
+                "required": [
+                  "call"
+                ]
+              },
+              {
+                "required": [
+                  "points"
+                ]
+              },
+              {
+                "required": [
+                  "routing"
+                ]
+              },
+              {
+                "required": [
+                  "implementation"
+                ]
+              },
+              {
+                "required": [
+                  "workspacePrepare"
+                ]
+              },
+              {
+                "required": [
+                  "workspaceValidate"
+                ]
+              },
+              {
+                "required": [
+                  "extension"
+                ]
+              },
+              {
+                "required": [
+                  "gitCommit"
+                ]
+              },
+              {
+                "required": [
+                  "gitPush"
                 ]
               }
             ]
@@ -2352,6 +2775,76 @@
         },
         "configuration": {
           "type": "object"
+        }
+      }
+    },
+    "gitCommit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceInput",
+        "changesetInput",
+        "textInput"
+      ],
+      "properties": {
+        "workspaceInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "changesetInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "textInput": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "gitPush": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceInput",
+        "commitInput",
+        "remote"
+      ],
+      "properties": {
+        "workspaceInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "commitInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "remote": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "createPR": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceInput",
+        "branchInput",
+        "textInput",
+        "base",
+        "draft"
+      ],
+      "properties": {
+        "workspaceInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "branchInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "textInput": {
+          "$ref": "#/$defs/identifier"
+        },
+        "base": {
+          "type": "string",
+          "minLength": 1
+        },
+        "draft": {
+          "type": "boolean"
         }
       }
     }

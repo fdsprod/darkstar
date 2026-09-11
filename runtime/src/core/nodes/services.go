@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"context"
+	"darkstar/src/core/workflow"
 	"darkstar/src/ports/nodeextension"
 	"encoding/json"
 	"time"
@@ -17,6 +18,7 @@ type Workspace struct {
 	Repository string `json:"repository"`
 	Path       string `json:"path"`
 	Branch     string `json:"branch"`
+	HeadSHA    string `json:"headSha,omitempty"`
 	BaseSHA    string `json:"baseSha"`
 	BaseRef    string `json:"baseRef"`
 	Mode       string `json:"mode"`
@@ -39,9 +41,10 @@ type WorkspaceRepository interface {
 }
 
 type WorkspaceServices struct {
-	Identity   WorkspaceIdentity
-	Store      WorkspaceStore
-	Repository WorkspaceRepository
+	DefaultBaseRef string
+	Identity       WorkspaceIdentity
+	Store          WorkspaceStore
+	Repository     WorkspaceRepository
 }
 
 type CommandRunner interface {
@@ -52,7 +55,12 @@ type CommandRunner interface {
 // It is not passed to agents and is not a general workflow execution context.
 type LegacyCommandScope struct{ WorkflowID, NodeID, Workspace string }
 
+type DeliveryService interface {
+	Execute(context.Context, workflow.Node, Inputs) (json.RawMessage, error)
+}
+
 type BuiltinServices struct {
+	Delivery      DeliveryService
 	Extensions    nodeextension.Resolver
 	Workspaces    WorkspaceServices
 	Commands      CommandRunner

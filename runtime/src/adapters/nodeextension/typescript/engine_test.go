@@ -203,3 +203,25 @@ func TestCommandRealProcessMatchesLegacyEvidenceAndRejectsOtherScope(t *testing.
 		t.Fatal("command escaped its authorized workflow scope")
 	}
 }
+
+func TestPluginExecutionKindRejectsWrongDispatch(t *testing.T) {
+	engine := realEngine(t)
+	for _, tc := range []struct{ contribution, operation string }{{"implementation", "execute"}, {"workspace-prepare", "buildTask"}} {
+		raw, _ := json.Marshal(map[string]string{"operation": tc.operation})
+		_, err := engine.Runtime.Invoke(t.Context(), plugin.Invocation{Contribution: tc.contribution, Arguments: raw}, nil)
+		if err == nil {
+			t.Fatalf("accepted %s for %s", tc.operation, tc.contribution)
+		}
+	}
+}
+
+func TestDeliveryTextUsesScopedChangeset(t *testing.T) {
+	engine := realEngine(t)
+	task, err := engine.BuildTask(t.Context(), workflow.ReasoningNode{Executor: workflow.ReasoningExecutor{Agent: "delivery-text"}}, "describe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Agent != "delivery-text" || string(task.Access) != "read_only" || len(task.Tools) != 0 {
+		t.Fatalf("delivery text requested execution privileges: %+v", task)
+	}
+}

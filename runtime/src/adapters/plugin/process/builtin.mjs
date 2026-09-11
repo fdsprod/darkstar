@@ -2,6 +2,11 @@
 import { createInterface } from "node:readline";
 const protocol = "darkstar.plugin/v1";
 function serve(plugin) {
+  for (const node of plugin.nodes ?? []) {
+    if (!["deterministic", "llm"].includes(node.executionKind)) {
+      throw new Error(`Node ${node.id} must declare executionKind`);
+    }
+  }
   const pending = /* @__PURE__ */ new Map();
   let sequence = 0;
   const send = (message) => {

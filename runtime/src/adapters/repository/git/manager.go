@@ -200,6 +200,10 @@ func (manager *Manager) CommitCandidate(ctx context.Context, request repository.
 	if err := validateCommitRequest(request); err != nil {
 		return repository.PointCommit{}, err
 	}
+	return manager.commitCandidateMessage(ctx, request, pointCommitMessage(request))
+}
+
+func (manager *Manager) commitCandidateMessage(ctx context.Context, request repository.CommitCandidateRequest, message string) (repository.PointCommit, error) {
 	identity, worktree, parent, err := manager.ownedCandidateWorktree(ctx, request.Candidate.Repository.Root, request.Candidate.WorktreePath, request.Candidate.BranchName, request.Candidate.ParentSHA)
 	if err != nil {
 		// A changed HEAD is the expected retry shape, so reconcile it separately.
@@ -219,7 +223,6 @@ func (manager *Manager) CommitCandidate(ctx context.Context, request repository.
 	if err != nil || tree != request.Candidate.TreeSHA {
 		return repository.PointCommit{}, invalid("point candidate tree is unavailable or invalid")
 	}
-	message := pointCommitMessage(request)
 	if worktree.HeadSHA != parent {
 		return manager.reconcilePointCommit(ctx, worktree, request, parent, message)
 	}

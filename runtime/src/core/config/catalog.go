@@ -305,6 +305,12 @@ type Catalog struct {
 
 var supportedSettings = []SettingDescriptor{
 	{
+		Key: "workspace.baseRef", Title: "Worktree base", Description: "Default Git ref for new worktrees. origin/HEAD follows the remote default branch; set an explicit ref such as origin/main to override it.",
+		Type: SettingString, Default: StringValue("origin/HEAD"), Constraints: Constraints{Required: true},
+		Sensitivity: SensitivityPublic, AllowedScopes: []MutationScopeKind{MutationScopeProject}, Restart: RestartNone,
+		Actions: []SettingAction{SettingActionPreview, SettingActionApply, SettingActionRestore},
+	},
+	{
 		Key: "scheduler.maxConcurrentRuns", Title: "Maximum concurrent runs", Description: "Ready items start automatically when a slot opens. Waiting and review items release their slot. Changes apply without restarting; lowering the limit lets active runs finish.",
 		Type: SettingInteger, Default: IntegerValue(3), Constraints: Constraints{Required: true, Minimum: integerBound(1), Maximum: integerBound(32)},
 		Sensitivity: SensitivityPublic, AllowedScopes: []MutationScopeKind{MutationScopeUser}, Restart: RestartNone,

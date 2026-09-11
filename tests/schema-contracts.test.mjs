@@ -11,6 +11,26 @@ function contracts(documents) {
   return new Map(Object.entries(documents).map(([name, document]) => [name, { name, document, text: JSON.stringify(document) }]));
 }
 
+test("closed tagged request unions may add disjoint variants but cannot alter old variants", () => {
+  const old = {type:"object",additionalProperties:false,required:["type"],properties:{type:{enum:["first"]},first:{type:"string"}},oneOf:[{properties:{type:{const:"first"}},required:["first"],not:{anyOf:[]}}]};
+  const next = structuredClone(old);
+  next.properties.type.enum.push("second");
+  next.properties.second = {type:"string"};
+  next.oneOf[0].not.anyOf.push({required:["second"]});
+  next.oneOf.push({properties:{type:{const:"second"}},required:["second"],not:{anyOf:[{required:["first"]}]}});
+  const compare = value => compareContracts(contracts({"union.schema.json":old}),contracts({"union.schema.json":value}));
+  assert.deepEqual(compare(next),[]);
+  const changed = structuredClone(next);
+  changed.oneOf[0].required.push("second");
+  assert.ok(compare(changed).some(issue=>issue.includes("oneOf")));
+  const overlapping = structuredClone(next);
+  overlapping.oneOf[1].properties.type.const = "first";
+  assert.ok(compare(overlapping).some(issue=>issue.includes("oneOf")));
+  const removed = structuredClone(next);
+  removed.oneOf.shift();
+  assert.ok(compare(removed).some(issue=>issue.includes("oneOf")));
+});
+
 test("all versioned contracts are structurally valid and references resolve", () => {
   assert.deepEqual(validateContracts(loadContracts(resolve(root, "schemas"))), []);
 });

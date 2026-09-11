@@ -76,6 +76,11 @@ func (h *Host) Describe(ctx context.Context) (plugin.Descriptor, error) {
 		return d, errors.New("PLUGIN_INCOMPATIBLE: descriptor identity or protocol differs")
 	}
 	d.Ref = h.config.Ref
+	for _, node := range d.Nodes {
+		if node.ExecutionKind != "deterministic" && node.ExecutionKind != "llm" {
+			return d, errors.New("PLUGIN_INVALID_DESCRIPTOR: nodes must declare deterministic or llm executionKind")
+		}
+	}
 	seenKinds, seenIDs := map[string]bool{}, map[string]bool{}
 	for _, r := range d.Resources {
 		if r.Kind == "" || r.Tool.ID == "" || seenKinds[r.Kind] || seenIDs[r.Tool.ID] {
@@ -138,6 +143,21 @@ func (h *Host) Invoke(ctx context.Context, invocation plugin.Invocation, service
 			copy := candidate
 			tool = &copy
 			break
+		}
+	}
+	for _, candidate := range d.Nodes {
+		if candidate.ID != invocation.Contribution {
+			continue
+		}
+		var operation struct {
+			Operation string `json:"operation"`
+		}
+		if err := json.Unmarshal(invocation.Arguments, &operation); err != nil {
+			return nil, err
+		}
+		if (candidate.ExecutionKind == "llm" && operation.Operation != "buildTask" && operation.Operation != "configureOutputs") ||
+			(candidate.ExecutionKind == "deterministic" && operation.Operation != "execute") {
+			return nil, errors.New("PLUGIN_EXECUTION_KIND_MISMATCH: operation is incompatible with node execution kind")
 		}
 	}
 	if tool == nil {

@@ -7,7 +7,7 @@ import { parse } from '../../packages/plugin-sdk/node_modules/acorn/dist/acorn.m
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const allowed = new Set([
   'packages/plugin-sdk/src/index.ts',
-  ...['index', 'shared', 'reasoning', 'implementation', 'point-execution', 'command', 'workspace-prepare', 'workspace-validate'].map(name => {
+  ...['index', 'shared', 'execution-kinds', 'delivery-text', 'git-commit', 'git-push', 'create-pr', 'reasoning', 'implementation', 'point-execution', 'command', 'workspace-prepare', 'workspace-validate'].map(name => {
     return `plugins/builtin-nodes/src/${name}.ts`;
   })
 ]);

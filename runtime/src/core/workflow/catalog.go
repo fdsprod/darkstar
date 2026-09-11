@@ -525,9 +525,18 @@ func (c *Catalog) AuthoringCatalog(ctx context.Context) (AuthoringCatalog, error
 			})
 		}
 	}
+	valueTypes := []ValueType{ValueTask, ValueRepository, ValueWorkspace, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog, ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString}
+	var nominalTypes []string
+	for kind := range BuiltinValueSchemas() {
+		nominalTypes = append(nominalTypes, string(kind))
+	}
+	sort.Strings(nominalTypes)
+	for _, kind := range nominalTypes {
+		valueTypes = append(valueTypes, ValueType(kind))
+	}
 	return AuthoringCatalog{SchemaVersion: 1, Extensions: cloneExtensionDescriptors(c.extensions),
-		NodeTypes:       []NodeType{NodeExtension, NodeWorkspacePrepare, NodeWorkspaceValidate, NodeReasoning, NodeImplementation, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution},
-		ValueTypes:      []ValueType{ValueTask, ValueRepository, ValueWorkspace, ValueTemplate, ValueMarkdown, ValueOpenItems, ValueDecisionLog, ValueNull, ValueBoolean, ValueInteger, ValueNumber, ValueString, ValueArray, ValueObject},
+		NodeTypes:       []NodeType{NodeGitCommit, NodeGitPush, NodeCreatePR, NodeExtension, NodeWorkspacePrepare, NodeWorkspaceValidate, NodeReasoning, NodeImplementation, NodeGate, NodeCommand, NodeApproval, NodeSubworkflow, NodePointExecution},
+		ValueTypes:      valueTypes,
 		CheckpointModes: []CheckpointMode{CheckpointNone, CheckpointAcknowledge, CheckpointApprove, CheckpointApproveOnChange, CheckpointExternal},
 		PredicateOps:    []string{"const", "eq", "ne", "lt", "lte", "gt", "gte", "present", "all", "any", "not"},
 		Agents:          unavailableStrings, Policies: unavailableStrings, Schemas: unavailableStrings, Skills: skills, Tools: tools, Workflows: workflows}, nil

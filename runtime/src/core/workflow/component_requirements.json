@@ -1,23 +1,118 @@
 {
   "workspace_prepare": {
-    "instructions": "Connect the run repository. Choose current_checkout or new_worktree. A new worktree requires an explicit baseRef and branch; {runId} may appear in the branch name. Never assume main or master exists. Connect workspace output to Implementation and Validate workspace, and connect execution order separately.",
+    "instructions": "Connect the run repository. Choose current_checkout or new_worktree. A new worktree uses baseRef=project_default unless explicitly overridden, and requires a branch; {runId} may appear in the branch name. Never assume main or master exists. Connect workspace output to Implementation and Validate workspace, and connect execution order separately.",
     "connections": [
-      {"direction":"input","field":"repositoryInput","type":"repository"},
-      {"direction":"output","id":"workspace","type":"workspace"}
+      {
+        "direction": "input",
+        "field": "repositoryInput",
+        "type": "repository"
+      },
+      {
+        "direction": "output",
+        "id": "workspace",
+        "type": "workspace"
+      }
     ]
   },
   "implementation": {
     "instructions": "Connect task and the prepared workspace. Optional Markdown inputs provide supporting instructions, not a mandatory plan. Declare changeset and process.run/workspace.write permissions. Existing workflows without workspaceInput retain legacy project-checkout execution; all newly authored flows must explicitly connect workspaceInput.",
     "connections": [
-      {"direction":"input","field":"workspaceInput","type":"workspace","legacyOptional":true},
-      {"direction":"output","id":"changeset","type":"object"}
+      {
+        "direction": "input",
+        "field": "workspaceInput",
+        "type": "workspace",
+        "legacyOptional": true
+      },
+      {
+        "direction": "output",
+        "id": "changeset",
+        "type": "schema:changeset_v1"
+      }
     ]
   },
   "workspace_validate": {
     "instructions": "Connect the same prepared workspace used by Implementation. Place this component after Implementation in execution order. Configure required checks as executable/argument arrays, not shell command strings. At least one check is required. Nonzero exit or timeout fails the run, preventing Done. Use this component as the terminal when checks must pass before completion.",
     "connections": [
-      {"direction":"input","field":"workspaceInput","type":"workspace"},
-      {"direction":"output","id":"validation","type":"object"}
+      {
+        "direction": "input",
+        "field": "workspaceInput",
+        "type": "workspace"
+      },
+      {
+        "direction": "output",
+        "id": "validation",
+        "type": "schema:validation_v1"
+      }
+    ]
+  },
+  "git_commit": {
+    "instructions": "Commit the connected sealed Changeset using connected DeliveryText in the connected Workspace. Requires no validation or approval node. Does not push. The changeset snapshot and text must match.",
+    "connections": [
+      {
+        "direction": "input",
+        "field": "workspaceInput",
+        "type": "workspace"
+      },
+      {
+        "direction": "input",
+        "field": "changesetInput",
+        "type": "schema:changeset_v1"
+      },
+      {
+        "direction": "input",
+        "field": "textInput",
+        "type": "schema:delivery_text_v1"
+      },
+      {
+        "direction": "output",
+        "id": "commit",
+        "type": "schema:commit_v1"
+      }
+    ]
+  },
+  "git_push": {
+    "instructions": "Push the exact connected Commit to the configured GitHub remote. Connect its Workspace. No implicit validation or approval prerequisite; does not create a PR.",
+    "connections": [
+      {
+        "direction": "input",
+        "field": "workspaceInput",
+        "type": "workspace"
+      },
+      {
+        "direction": "input",
+        "field": "commitInput",
+        "type": "schema:commit_v1"
+      },
+      {
+        "direction": "output",
+        "id": "branch",
+        "type": "schema:published_branch_v1"
+      }
+    ]
+  },
+  "create_pr": {
+    "instructions": "Create or reconcile a PR from the connected PublishedBranch and DeliveryText in the connected Workspace. Set base to remote_default or an explicit target branch and choose draft true/false. No implicit approval or validation prerequisite.",
+    "connections": [
+      {
+        "direction": "input",
+        "field": "workspaceInput",
+        "type": "workspace"
+      },
+      {
+        "direction": "input",
+        "field": "branchInput",
+        "type": "schema:published_branch_v1"
+      },
+      {
+        "direction": "input",
+        "field": "textInput",
+        "type": "schema:delivery_text_v1"
+      },
+      {
+        "direction": "output",
+        "id": "pull_request",
+        "type": "schema:pull_request_v1"
+      }
     ]
   }
 }

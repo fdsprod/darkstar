@@ -1,6 +1,8 @@
+import { executionKinds } from './execution-kinds';
 import { defineNode } from './shared';
 
 export const command = defineNode('command', ["process.run"], {
+  executionKind: executionKinds.command,
   execute: async (args, host) => {
     const c = args.configuration;
     if (JSON.stringify(c.argv) !== JSON.stringify(['darkstar-project', 'validate', '--json']) || c.cwd) {

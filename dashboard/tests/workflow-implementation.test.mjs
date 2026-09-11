@@ -9,7 +9,7 @@ test('Implementation connects a task and changeset without a required plan',()=>
  assert.equal(node.executor.type,'implementation');
  assert.equal(node.executor.taskInput,'task');
  assert.deepEqual(document.spec.nodes[nodeId].permissions,['process.run','workspace.write']);
- assert.equal(document.spec.nodes[nodeId].outputs.changeset.type,'object');
+ assert.equal(document.spec.nodes[nodeId].outputs.changeset.type,'schema:changeset_v1');
  assert.equal(document.spec.inputs.task.resource.kind,'task');
  assert.equal(document.spec.inputs.plan,undefined);
  const updated=updateNodeExecutor(document,nodeId,{...node.executor,instructions:'Update README.md on disk.'});

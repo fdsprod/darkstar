@@ -38,14 +38,21 @@ export function writable(permissions: string[] = []) {
 }
 
 export type NodeBehavior = {
-  buildTask?: (args: Arguments) => unknown;
-  configureOutputs?: (args: Arguments) => unknown;
-  execute?: (args: Arguments, host: HostServices) => Promise<unknown>;
+  executionKind: 'llm';
+  buildTask: (args: Arguments) => unknown;
+  configureOutputs: (args: Arguments) => unknown;
+  execute?: never;
+} | {
+  executionKind: 'deterministic';
+  buildTask?: never;
+  configureOutputs?: never;
+  execute: (args: Arguments, host: HostServices) => Promise<unknown>;
 };
 
 export function defineNode(id: string, requiredCapabilities: string[], behavior: NodeBehavior): Node {
   return {
     id,
+    executionKind: behavior.executionKind,
     description: `Built-in ${id} node behavior`,
     requiredCapabilities,
     inputSchema: {

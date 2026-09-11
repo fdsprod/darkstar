@@ -356,6 +356,15 @@ func (s *Service) executeBuiltinWorkflowAttempt(ctx context.Context, attempt sta
 		} else {
 			output, err = executor.ExecuteExtensionNode(ctx, dispatch)
 		}
+	case workflow.GitCommitNode, workflow.GitPushNode, workflow.CreatePRNode:
+		executor, ok := s.requestBuilder.(interface {
+			ExecuteDeliveryNode(context.Context, AttemptRequestContext) (json.RawMessage, error)
+		})
+		if !ok {
+			err = errors.New("delivery execution unavailable")
+		} else {
+			output, err = executor.ExecuteDeliveryNode(ctx, dispatch)
+		}
 	case workflow.WorkspacePrepareNode, workflow.WorkspaceValidateNode:
 		s.mu.Lock()
 		executor, ok := s.requestBuilder.(interface {

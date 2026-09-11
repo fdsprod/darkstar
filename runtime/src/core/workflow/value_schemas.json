@@ -1,0 +1,206 @@
+{
+  "schema:changeset_v1": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "disposition": {
+        "enum": [
+          "changed",
+          "unchanged",
+          "blocked"
+        ]
+      },
+      "summary": {
+        "type": "string"
+      },
+      "files": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "validation": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "snapshotDigest": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "required": [
+      "disposition",
+      "summary",
+      "files",
+      "validation"
+    ]
+  },
+  "schema:delivery_text_v1": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "commitSubject": {
+        "type": "string"
+      },
+      "commitBody": {
+        "type": "string"
+      },
+      "prTitle": {
+        "type": "string"
+      },
+      "prBody": {
+        "type": "string"
+      },
+      "changesetSnapshot": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "required": [
+      "commitSubject",
+      "commitBody",
+      "prTitle",
+      "prBody",
+      "changesetSnapshot"
+    ]
+  },
+  "schema:commit_v1": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "sha": {
+        "type": "string"
+      },
+      "branch": {
+        "type": "string"
+      },
+      "workspaceId": {
+        "type": "string"
+      },
+      "snapshotDigest": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "required": [
+      "sha",
+      "branch",
+      "workspaceId",
+      "snapshotDigest"
+    ]
+  },
+  "schema:published_branch_v1": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "sha": {
+        "type": "string"
+      },
+      "branch": {
+        "type": "string"
+      },
+      "remote": {
+        "type": "string"
+      },
+      "workspaceId": {
+        "type": "string"
+      },
+      "snapshotDigest": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "required": [
+      "sha",
+      "branch",
+      "remote",
+      "workspaceId",
+      "snapshotDigest"
+    ]
+  },
+  "schema:pull_request_v1": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "url": {
+        "type": "string"
+      },
+      "number": {
+        "type": "integer"
+      },
+      "headSha": {
+        "type": "string"
+      },
+      "base": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "url",
+      "number",
+      "headSha",
+      "base"
+    ]
+  },
+  "schema:validation_v1": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "passed": {
+        "type": "boolean"
+      },
+      "checks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "output": {
+              "type": "string"
+            },
+            "exitCode": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "argv",
+            "output",
+            "exitCode"
+          ]
+        }
+      },
+      "workspaceId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "passed",
+      "checks",
+      "workspaceId"
+    ]
+  },
+  "schema:gate_evidence_v1": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "policy": {
+        "type": "string"
+      },
+      "passed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "policy",
+      "passed"
+    ]
+  }
+}

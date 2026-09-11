@@ -10,6 +10,7 @@ import (
 const Protocol = "darkstar.plugin/v1"
 
 type Tool struct {
+	ExecutionKind        string          `json:"executionKind,omitempty"`
 	ID                   string          `json:"id"`
 	Description          string          `json:"description"`
 	InputSchema          json.RawMessage `json:"inputSchema"`

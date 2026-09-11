@@ -237,3 +237,12 @@ type Worktree struct {
 	Lock           LockState
 	PrunableReason string
 }
+
+// WorkflowCommitRequest is an explicit commit node invocation without implicit validation policy.
+type WorkflowCommitRequest struct {
+	Candidate   Candidate
+	OperationID string
+	Owner       Ownership
+	Subject     string
+	Body        string
+}

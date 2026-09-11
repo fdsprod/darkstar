@@ -312,7 +312,7 @@ export function configurationScopesEqual(left: ConfigurationScope, right: Config
 
 export function settingGroup(key: string): ConfigurationGroup {
   const root = key.split(".", 1)[0].toLocaleLowerCase("en-US");
-  if (root === "project") return "Project";
+  if (root === "project" || root === "workspace") return "Project";
   if (root === "workflow" || root === "workflows") return "Workflow defaults";
   if (root === "provider" || root === "providers") return "Providers";
   if (root === "permission" || root === "permissions" || root === "approval" || root === "approvals") return "Permissions";

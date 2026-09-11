@@ -1,6 +1,8 @@
+import { executionKinds } from './execution-kinds';
 import { defineNode } from './shared';
 
 export const workspaceValidate = defineNode('workspace-validate', ["workspace.resolve","process.run"], {
+  executionKind: executionKinds.workspace_validate,
   execute: async (args, host) => {
     const c = args.configuration;
     if (!c.checks?.length) {

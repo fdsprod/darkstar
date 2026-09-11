@@ -189,6 +189,35 @@ function checksProducerCompatibility(direction) {
   return direction === "producer" || direction === "invariant";
 }
 
+// A closed request object may add disjoint tagged alternatives without making
+// any previously accepted request invalid. New forbidden fields were already
+// impossible under the old object's additionalProperties:false contract.
+function extendsClosedTaggedUnion(oldNode, newNode) {
+  if (oldNode.additionalProperties !== false || newNode.additionalProperties !== false || !Array.isArray(oldNode.oneOf) || !Array.isArray(newNode.oneOf)) return false;
+  const oldTags = oldNode.properties?.type?.enum;
+  if (!Array.isArray(oldTags) || !oldNode.required?.includes("type")) return false;
+  const oldProperties = new Set(Object.keys(oldNode.properties ?? {}));
+  const tag = variant => variant?.properties?.type?.const;
+  const seen = new Set();
+  for (const variant of newNode.oneOf) {
+    const value = tag(variant);
+    if (typeof value !== "string" || seen.has(value)) return false;
+    seen.add(value);
+  }
+  for (const oldVariant of oldNode.oneOf) {
+    const value = tag(oldVariant);
+    if (!oldTags.includes(value)) return false;
+    const next = newNode.oneOf.find(variant => tag(variant) === value);
+    if (!next) return false;
+    const normalized = structuredClone(next);
+    if (Array.isArray(normalized.not?.anyOf)) {
+      normalized.not.anyOf = normalized.not.anyOf.filter(rule => !(Object.keys(rule).length === 1 && Array.isArray(rule.required) && rule.required.length === 1 && !oldProperties.has(rule.required[0])));
+    }
+    if (JSON.stringify(stable(oldVariant)) !== JSON.stringify(stable(normalized))) return false;
+  }
+  return newNode.oneOf.every(variant => !oldTags.includes(tag(variant)) || oldNode.oneOf.some(oldVariant => tag(oldVariant) === tag(variant)));
+}
+
 function compareSchema(oldNode, newNode, path, issues, options = {}) {
   const direction = options.direction ?? "consumer";
   if (!oldNode || typeof oldNode !== "object" || Array.isArray(oldNode)) return;
@@ -295,6 +324,7 @@ function compareSchema(oldNode, newNode, path, issues, options = {}) {
   if (checksConsumerCompatibility(direction) && oldNode.uniqueItems !== true && newNode.uniqueItems === true) issues.push(`${path}: uniqueItems became more restrictive`);
   if (checksProducerCompatibility(direction) && oldNode.uniqueItems === true && newNode.uniqueItems !== true) issues.push(`${path}: uniqueItems became less restrictive for responses`);
   for (const keyword of ["oneOf", "anyOf", "allOf", "not", "if", "then", "else"]) {
+    if (keyword === "oneOf" && !checksProducerCompatibility(direction) && extendsClosedTaggedUnion(oldNode, newNode)) continue;
     const changed = JSON.stringify(stable(oldNode[keyword])) !== JSON.stringify(stable(newNode[keyword]));
     if (changed && ((checksConsumerCompatibility(direction) && newNode[keyword] !== undefined) || (checksProducerCompatibility(direction) && oldNode[keyword] !== undefined))) {
       issues.push(`${path}: ${keyword} changed; publish a new schema version for this potentially breaking change`);

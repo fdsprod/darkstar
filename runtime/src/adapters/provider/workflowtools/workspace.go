@@ -162,5 +162,51 @@ func (s *Session) workspaceChanges(ctx context.Context) ([]string, error) {
 }
 
 func (s *Session) validateWorkspaceResult(ctx context.Context, raw json.RawMessage) error {
-	return nodes.ValidateImplementationResult(ctx, raw, s.workspaceChanges)
+	if err := nodes.ValidateImplementationResult(ctx, raw, s.workspaceChanges); err != nil {
+		return err
+	}
+	var sealed struct {
+		SnapshotDigest string `json:"snapshotDigest"`
+	}
+	if err := json.Unmarshal(raw, &sealed); err != nil {
+		return err
+	}
+	if sealed.SnapshotDigest != "" {
+		current, err := WorkspaceDigest(ctx, s.Workspace)
+		if err != nil {
+			return err
+		}
+		if sealed.SnapshotDigest != current {
+			return errors.New("workspace changed after changeset submission; submit a fresh changeset")
+		}
+	}
+	return nil
+}
+
+// WorkspaceDigest binds delivery text to exact file content without another
+// model reading the diff. This is evidence, not authorization to commit or push.
+func WorkspaceDigest(ctx context.Context, workspace string) (string, error) {
+	snapshot, err := workspaceSnapshot(ctx, workspace)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func (s *Session) sealChangeset(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	digest, err := WorkspaceDigest(ctx, s.Workspace)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	fields["snapshotDigest"], _ = json.Marshal(digest)
+	return json.Marshal(fields)
 }

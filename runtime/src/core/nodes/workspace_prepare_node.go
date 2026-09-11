@@ -49,6 +49,12 @@ func PrepareWorkspace(ctx context.Context, repositoryInput json.RawMessage, chec
 		case workflow.NewWorktree:
 			p.Mode = "new_worktree"
 			p.BaseRef = plan.BaseRef
+			if p.BaseRef == "project_default" {
+				p.BaseRef = workspaces.DefaultBaseRef
+				if p.BaseRef == "" {
+					return nil, errors.New("configure the project's Worktree base before preparing a workspace")
+				}
+			}
 			p.Branch = strings.ReplaceAll(plan.Branch, "{runId}", identity.RunID)
 			// Agent tools must not traverse the daemon's private data directory.
 			// Keep editable checkouts in project-local state; the authoritative

@@ -1,8 +1,10 @@
+import { executionKinds } from './execution-kinds';
 import { defineNode, changeset, writable } from './shared';
 
 const pointInstructions = 'Read the connected Markdown implementation plan and carry out its points. Implement the requested work item in the supplied workspace. Make only the necessary repository changes. Do not claim completion unless the requested outcome exists on disk. Return changeset with summary, files, and validation; return progress with completed_points and remaining_points.';
 
 export const pointExecution = defineNode('point-execution', [], {
+  executionKind: executionKinds.point_execution,
   buildTask: (args) => {
     writable(args.permissions);
     return {

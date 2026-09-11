@@ -120,7 +120,8 @@ func (s *validationState) validateWorkspace(id Identifier, node Node, fields Nod
 	}
 	output := func(name Identifier, kind ValueType) {
 		v, ok := fields.Outputs[name]
-		if !ok || v.Type != kind || (v.Required != nil && !*v.Required) {
+		legacy := node.Type() == NodeImplementation || node.Type() == NodeWorkspaceValidate
+		if !ok || (v.Type != kind && (!legacy || v.Type != kind.StorageType())) || (v.Required != nil && !*v.Required) {
 			s.add(ValidationSchemaInvalid, fmt.Sprintf("Declare required %s output %q", kind, name), location+"/outputs/"+string(name), nil)
 		}
 	}
@@ -128,7 +129,7 @@ func (s *validationState) validateWorkspace(id Identifier, node Node, fields Nod
 	encoded, _ := json.Marshal(node)
 	_ = json.Unmarshal(encoded, &raw)
 	var executor map[string]any
-	for _, key := range []string{"workspacePrepare", "workspaceValidate", "implementation"} {
+	for _, key := range []string{"workspacePrepare", "workspaceValidate", "implementation", "gitCommit", "gitPush", "createPR"} {
 		if raw[key] != nil {
 			_ = json.Unmarshal(raw[key], &executor)
 		}
@@ -149,6 +150,14 @@ func (s *validationState) validateWorkspace(id Identifier, node Node, fields Nod
 		}
 	}
 	switch n := node.(type) {
+	case GitPushNode:
+		if strings.TrimSpace(n.Executor.Remote) == "" || strings.HasPrefix(n.Executor.Remote, "-") {
+			s.add(ValidationSchemaInvalid, "Choose a Git remote", location+"/gitPush/remote", nil)
+		}
+	case CreatePRNode:
+		if strings.TrimSpace(n.Executor.Base) == "" || strings.HasPrefix(n.Executor.Base, "-") {
+			s.add(ValidationSchemaInvalid, "Choose a target branch or remote_default", location+"/createPR/base", nil)
+		}
 	case WorkspacePrepareNode:
 
 		switch n.Executor.Checkout.(type) {
