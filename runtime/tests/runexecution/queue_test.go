@@ -52,6 +52,7 @@ func TestQueueAutomaticPickupCapacityAndRelease(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			markHistoricalNativeWork(t, db, workID)
 		}
 		run, err := s.Prepare(context.Background(), CreateRequest{WorkItemID: workID, WorkflowID: planner.preview.Workflow.Name, WorkflowVersion: planner.preview.Workflow.Version}, fmt.Sprint("prepare-queue-", i))
 		if err != nil {

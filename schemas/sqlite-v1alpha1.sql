@@ -884,3 +884,253 @@ CREATE TRIGGER content_library_events_no_update BEFORE UPDATE ON content_library
 BEGIN SELECT RAISE(ABORT,'content events are immutable'); END;
 CREATE TRIGGER content_library_events_no_delete BEFORE DELETE ON content_library_events
 BEGIN SELECT RAISE(ABORT,'content events are retained'); END;
+
+-- Compatibility columns added by migration 0021.
+ALTER TABLE work_item_projection ADD COLUMN details TEXT NOT NULL DEFAULT '';
+ALTER TABLE work_item_projection ADD COLUMN evidence_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(evidence_json));
+ALTER TABLE work_item_projection ADD COLUMN routing_intent_json TEXT NOT NULL DEFAULT '{"mode":"automatic"}' CHECK (json_valid(routing_intent_json));
+
+-- Native business truth survives execution projection rebuilds. Existing work
+-- identifiers remain the ticket identifiers; immutable legacy events stay intact.
+CREATE TABLE native_namespaces (
+  project_id TEXT PRIMARY KEY,
+  binding_revision INTEGER NOT NULL DEFAULT 1 CHECK (binding_revision > 0)
+) STRICT;
+
+CREATE TABLE native_tickets (
+  ticket_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES native_namespaces(project_id),
+  title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+  description TEXT NOT NULL,
+  business_state TEXT NOT NULL CHECK (business_state IN ('open','active','completed','cancelled')),
+  priority INTEGER NOT NULL CHECK (priority >= 0),
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  assignees_json TEXT NOT NULL CHECK (json_valid(assignees_json)),
+  labels_json TEXT NOT NULL CHECK (json_valid(labels_json)),
+  relationships_json TEXT NOT NULL CHECK (json_valid(relationships_json)),
+  evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE native_work_mappings (
+  work_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  mapping_kind TEXT NOT NULL CHECK (mapping_kind IN ('native','legacy_unresolved')),
+  ticket_id TEXT REFERENCES native_tickets(ticket_id),
+  mapping_version TEXT NOT NULL,
+  evidence_ref TEXT NOT NULL,
+  CHECK ((mapping_kind = 'native' AND ticket_id IS NOT NULL AND ticket_id = work_id) OR (mapping_kind = 'legacy_unresolved' AND ticket_id IS NULL))
+) STRICT;
+
+CREATE TABLE native_ticket_history (
+  ticket_id TEXT NOT NULL REFERENCES native_tickets(ticket_id),
+  revision INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  evidence_ref TEXT NOT NULL,
+  snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)),
+  request_json TEXT NOT NULL CHECK (json_valid(request_json)),
+  recorded_at TEXT NOT NULL,
+  PRIMARY KEY (ticket_id, revision)
+) STRICT;
+
+CREATE TABLE native_ticket_operations (
+  operation_id TEXT PRIMARY KEY,
+  fingerprint TEXT NOT NULL,
+  receipt_json TEXT NOT NULL CHECK (json_valid(receipt_json))
+) STRICT;
+
+CREATE TRIGGER native_history_no_update BEFORE UPDATE ON native_ticket_history BEGIN SELECT RAISE(ABORT, 'native history is immutable'); END;
+CREATE TRIGGER native_history_no_delete BEFORE DELETE ON native_ticket_history BEGIN SELECT RAISE(ABORT, 'native history is immutable'); END;
+CREATE TRIGGER native_operation_no_update BEFORE UPDATE ON native_ticket_operations BEGIN SELECT RAISE(ABORT, 'native receipt is immutable'); END;
+CREATE TRIGGER native_operation_no_delete BEFORE DELETE ON native_ticket_operations BEGIN SELECT RAISE(ABORT, 'native receipt is immutable'); END;
+
+INSERT INTO native_namespaces(project_id) SELECT project_id FROM project_projection;
+INSERT INTO native_tickets
+SELECT w.work_item_id,w.project_id,w.title,w.details,w.status,w.priority,1,'[]','[]','[]',w.evidence_json,w.created_at,w.updated_at
+FROM work_item_projection w
+WHERE NOT EXISTS (SELECT 1 FROM events e JOIN commands c ON c.idempotency_key=e.command_id AND c.scope='work.import' WHERE e.aggregate_id=w.work_item_id AND e.kind='work.created')
+AND NOT EXISTS (SELECT 1 FROM external_refs r WHERE r.owner_id=w.work_item_id);
+
+INSERT INTO native_work_mappings
+SELECT w.work_item_id,w.project_id,CASE WHEN n.ticket_id IS NULL THEN 'legacy_unresolved' ELSE 'native' END,n.ticket_id,'legacy-business-state/v1','event:' || w.last_global_position
+FROM work_item_projection w LEFT JOIN native_tickets n ON n.ticket_id=w.work_item_id;
+
+-- The history format is the durable NativeTicket storage DTO, not a port union.
+INSERT INTO native_ticket_history
+SELECT ticket_id,revision,'legacy_migration','legacy-business-state/v1',json_object('ID',ticket_id,'ProjectID',project_id,'Title',title,'Description',description,'State',business_state,'Priority',priority,'Revision',revision,'Assignees',json(assignees_json),'Labels',json(labels_json),'Relationships',json(relationships_json),'Evidence',json(evidence_json),'CreatedAt',created_at,'UpdatedAt',updated_at),'{}',updated_at FROM native_tickets;
+
+CREATE TRIGGER native_project_created AFTER INSERT ON project_projection BEGIN
+  INSERT OR IGNORE INTO native_namespaces(project_id) VALUES (NEW.project_id);
+END;
+
+-- The compatibility command's retained work.created event is its direct user
+-- request evidence. This is the shared transactional native creation path.
+CREATE TRIGGER native_work_created AFTER INSERT ON work_item_projection
+WHEN NOT EXISTS (SELECT 1 FROM native_work_mappings WHERE work_id=NEW.work_item_id)
+BEGIN
+  INSERT INTO native_tickets
+  SELECT NEW.work_item_id,NEW.project_id,NEW.title,NEW.details,'open',NEW.priority,1,'[]','[]','[]',NEW.evidence_json,NEW.created_at,NEW.updated_at
+  WHERE NOT EXISTS (SELECT 1 FROM events e JOIN commands c ON c.idempotency_key=e.command_id AND c.scope='work.import' WHERE e.aggregate_id=NEW.work_item_id AND e.kind='work.created')
+  AND NOT EXISTS (SELECT 1 FROM external_refs r WHERE r.owner_id=NEW.work_item_id);
+  INSERT INTO native_work_mappings
+  VALUES (NEW.work_item_id,NEW.project_id,CASE WHEN EXISTS (SELECT 1 FROM native_tickets WHERE ticket_id=NEW.work_item_id) THEN 'native' ELSE 'legacy_unresolved' END,(SELECT ticket_id FROM native_tickets WHERE ticket_id=NEW.work_item_id),'native-create/v1','event:' || NEW.last_global_position);
+  INSERT INTO native_ticket_history
+  SELECT ticket_id,revision,'created','event:' || NEW.last_global_position,json_object('ID',ticket_id,'ProjectID',project_id,'Title',title,'Description',description,'State',business_state,'Priority',priority,'Revision',revision,'Assignees',json(assignees_json),'Labels',json(labels_json),'Relationships',json(relationships_json),'Evidence',json(evidence_json),'CreatedAt',created_at,'UpdatedAt',updated_at),'{}',updated_at
+  FROM native_tickets WHERE ticket_id=NEW.work_item_id;
+END;
+
+-- Selected source, observations and refresh state are business read-side state.
+-- They neither create work/execution records nor mirror execution status.
+CREATE TABLE backlog_bindings (
+  project_id TEXT NOT NULL REFERENCES native_namespaces(project_id),
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  source_json TEXT NOT NULL CHECK (json_valid(source_json)),
+  selected_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, revision)
+) STRICT;
+
+CREATE TABLE backlog_selected_sources (
+  project_id TEXT PRIMARY KEY REFERENCES native_namespaces(project_id),
+  binding_revision INTEGER NOT NULL,
+  FOREIGN KEY (project_id,binding_revision) REFERENCES backlog_bindings(project_id,revision)
+) STRICT;
+
+CREATE TABLE backlog_refreshes (
+  project_id TEXT NOT NULL,
+  binding_revision INTEGER NOT NULL,
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  state_json TEXT NOT NULL CHECK (json_valid(state_json)),
+  PRIMARY KEY (project_id,binding_revision),
+  FOREIGN KEY (project_id,binding_revision) REFERENCES backlog_bindings(project_id,revision)
+) STRICT;
+
+CREATE TABLE backlog_observations (
+  observation_id TEXT PRIMARY KEY,
+  ticket_key TEXT NOT NULL,
+  native_revision TEXT NOT NULL CHECK (length(native_revision)>0),
+  content_digest TEXT NOT NULL CHECK (length(content_digest)=64),
+  ref_json TEXT NOT NULL CHECK (json_valid(ref_json)),
+  ticket_json TEXT NOT NULL CHECK (json_valid(ticket_json)),
+  observed_at TEXT NOT NULL,
+  evidence_ref TEXT NOT NULL CHECK (length(evidence_ref)>0),
+  UNIQUE (ticket_key,native_revision)
+) STRICT;
+
+CREATE TABLE backlog_cached_tickets (
+  project_id TEXT NOT NULL,
+  binding_revision INTEGER NOT NULL,
+  ticket_key TEXT NOT NULL,
+  observation_id TEXT NOT NULL REFERENCES backlog_observations(observation_id),
+  state TEXT NOT NULL CHECK (state IN ('available','missing','inaccessible')),
+  checked_at TEXT NOT NULL,
+  seen_generation INTEGER NOT NULL CHECK (seen_generation>=0),
+  reason TEXT NOT NULL,
+  evidence_ref TEXT NOT NULL,
+  PRIMARY KEY (project_id,binding_revision,ticket_key),
+  FOREIGN KEY (project_id,binding_revision) REFERENCES backlog_bindings(project_id,revision),
+  CHECK (state!='missing' OR length(evidence_ref)>0)
+) STRICT;
+
+CREATE TRIGGER backlog_binding_no_update BEFORE UPDATE ON backlog_bindings BEGIN SELECT RAISE(ABORT,'backlog binding history is immutable'); END;
+CREATE TRIGGER backlog_binding_no_delete BEFORE DELETE ON backlog_bindings BEGIN SELECT RAISE(ABORT,'backlog binding history is immutable'); END;
+CREATE TRIGGER backlog_observation_no_update BEFORE UPDATE ON backlog_observations BEGIN SELECT RAISE(ABORT,'source observation is immutable'); END;
+CREATE TRIGGER backlog_observation_no_delete BEFORE DELETE ON backlog_observations BEGIN SELECT RAISE(ABORT,'source observation is immutable'); END;
+
+INSERT INTO backlog_bindings(project_id,revision,source_json,selected_at)
+SELECT project_id,1,json_object('version',1,'kind','built_in','namespace',json_object('Provider','built_in','Host','darkstar.local','TenantID','local','ScopeID',project_id)),COALESCE((SELECT created_at FROM project_projection p WHERE p.project_id=n.project_id),'1970-01-01T00:00:00Z') FROM native_namespaces n;
+INSERT INTO backlog_selected_sources SELECT project_id,1 FROM native_namespaces;
+
+CREATE TRIGGER backlog_namespace_created AFTER INSERT ON native_namespaces BEGIN
+  INSERT INTO backlog_bindings VALUES (NEW.project_id,1,json_object('version',1,'kind','built_in','namespace',json_object('Provider','built_in','Host','darkstar.local','TenantID','local','ScopeID',NEW.project_id)),COALESCE((SELECT created_at FROM project_projection WHERE project_id=NEW.project_id),'1970-01-01T00:00:00Z'));
+  INSERT INTO backlog_selected_sources VALUES (NEW.project_id,1);
+END;
+
+-- Only work already present at this migration retains legacy preparation.
+CREATE TABLE source_legacy_work (work_id TEXT PRIMARY KEY REFERENCES native_work_mappings(work_id)) STRICT;
+INSERT INTO source_legacy_work SELECT work_id FROM native_work_mappings WHERE mapping_kind='native';
+CREATE TABLE source_work_lineages (
+  work_id TEXT NOT NULL REFERENCES aggregates(aggregate_id),
+  revision INTEGER NOT NULL CHECK(revision>0),
+  project_id TEXT NOT NULL,
+  binding_revision INTEGER NOT NULL,
+  ticket_key TEXT NOT NULL,
+  ref_json TEXT NOT NULL CHECK(json_valid(ref_json)),
+  origin TEXT NOT NULL CHECK(origin IN ('admitted','legacy_native','native')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(work_id,revision),
+  FOREIGN KEY(project_id,binding_revision) REFERENCES backlog_bindings(project_id,revision)
+) STRICT;
+
+CREATE TABLE source_work_bindings (
+  work_id TEXT PRIMARY KEY,
+  lineage_revision INTEGER NOT NULL,
+  project_id TEXT NOT NULL,
+  ticket_key TEXT NOT NULL,
+  UNIQUE(project_id,ticket_key),
+  FOREIGN KEY(work_id,lineage_revision) REFERENCES source_work_lineages(work_id,revision)
+) STRICT;
+
+CREATE TABLE source_ticket_admissions (
+  admission_id TEXT PRIMARY KEY,
+  request_key TEXT NOT NULL UNIQUE,
+  request_digest TEXT NOT NULL CHECK(length(request_digest)=64),
+  work_id TEXT NOT NULL,
+  lineage_revision INTEGER NOT NULL,
+  project_id TEXT NOT NULL,
+  binding_revision INTEGER NOT NULL,
+  observation_id TEXT NOT NULL REFERENCES backlog_observations(observation_id),
+  approved_at TEXT NOT NULL,
+  actor TEXT NOT NULL CHECK(length(actor)>0),
+  FOREIGN KEY(work_id,lineage_revision) REFERENCES source_work_lineages(work_id,revision),
+  FOREIGN KEY(project_id,binding_revision) REFERENCES backlog_bindings(project_id,revision)
+) STRICT;
+
+CREATE TABLE source_work_checks (
+  work_id TEXT NOT NULL,
+  lineage_revision INTEGER NOT NULL,
+  observation_id TEXT NOT NULL REFERENCES backlog_observations(observation_id),
+  state TEXT NOT NULL CHECK(state IN ('available','missing','inaccessible')),
+  checked_at TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  evidence_ref TEXT NOT NULL,
+  pin_json TEXT NOT NULL CHECK(json_valid(pin_json)),
+  PRIMARY KEY(work_id,lineage_revision),
+  FOREIGN KEY(work_id,lineage_revision) REFERENCES source_work_lineages(work_id,revision),
+  CHECK(state!='missing' OR length(evidence_ref)>0)
+) STRICT;
+
+CREATE TABLE run_source_snapshots (
+  run_id TEXT PRIMARY KEY REFERENCES aggregates(aggregate_id),
+  work_id TEXT NOT NULL,
+  admission_id TEXT NOT NULL REFERENCES source_ticket_admissions(admission_id),
+  observation_id TEXT NOT NULL REFERENCES backlog_observations(observation_id),
+  snapshot_json TEXT NOT NULL CHECK(json_valid(snapshot_json)),
+  FOREIGN KEY(work_id) REFERENCES source_work_bindings(work_id)
+) STRICT;
+
+CREATE TRIGGER source_lineage_no_update BEFORE UPDATE ON source_work_lineages BEGIN SELECT RAISE(ABORT,'source lineage is immutable'); END;
+CREATE TRIGGER source_lineage_no_delete BEFORE DELETE ON source_work_lineages BEGIN SELECT RAISE(ABORT,'source lineage is immutable'); END;
+CREATE TRIGGER source_admission_no_update BEFORE UPDATE ON source_ticket_admissions BEGIN SELECT RAISE(ABORT,'source approval is immutable'); END;
+CREATE TRIGGER source_admission_no_delete BEFORE DELETE ON source_ticket_admissions BEGIN SELECT RAISE(ABORT,'source approval is immutable'); END;
+CREATE TRIGGER run_source_no_update BEFORE UPDATE ON run_source_snapshots BEGIN SELECT RAISE(ABORT,'run source input is immutable'); END;
+CREATE TRIGGER run_source_no_delete BEFORE DELETE ON run_source_snapshots BEGIN SELECT RAISE(ABORT,'run source input is immutable'); END;
+
+-- Legacy work creation retains its native mapping. Explicit source admission
+-- already points at authoritative native/external content and must not create a
+-- shadow native ticket. The event marker survives projection replay.
+DROP TRIGGER native_work_created;
+CREATE TRIGGER native_work_created AFTER INSERT ON work_item_projection
+WHEN NOT EXISTS (SELECT 1 FROM native_work_mappings WHERE work_id=NEW.work_item_id)
+AND NOT EXISTS (SELECT 1 FROM events e WHERE e.aggregate_id=NEW.work_item_id AND e.kind='work.created' AND json_extract(e.metadata_json,'$.sourceAdmissionId') IS NOT NULL)
+BEGIN
+  INSERT INTO native_tickets
+  SELECT NEW.work_item_id,NEW.project_id,NEW.title,NEW.details,'open',NEW.priority,1,'[]','[]','[]',NEW.evidence_json,NEW.created_at,NEW.updated_at
+  WHERE NOT EXISTS (SELECT 1 FROM events e JOIN commands c ON c.idempotency_key=e.command_id AND c.scope='work.import' WHERE e.aggregate_id=NEW.work_item_id AND e.kind='work.created')
+  AND NOT EXISTS (SELECT 1 FROM external_refs r WHERE r.owner_id=NEW.work_item_id);
+  INSERT INTO native_work_mappings
+  VALUES (NEW.work_item_id,NEW.project_id,CASE WHEN EXISTS (SELECT 1 FROM native_tickets WHERE ticket_id=NEW.work_item_id) THEN 'native' ELSE 'legacy_unresolved' END,(SELECT ticket_id FROM native_tickets WHERE ticket_id=NEW.work_item_id),'native-create/v1','event:' || NEW.last_global_position);
+  INSERT INTO native_ticket_history
+  SELECT ticket_id,revision,'created','event:' || NEW.last_global_position,json_object('ID',ticket_id,'ProjectID',project_id,'Title',title,'Description',description,'State',business_state,'Priority',priority,'Revision',revision,'Assignees',json(assignees_json),'Labels',json(labels_json),'Relationships',json(relationships_json),'Evidence',json(evidence_json),'CreatedAt',created_at,'UpdatedAt',updated_at),'{}',updated_at
+  FROM native_tickets WHERE ticket_id=NEW.work_item_id;
+END;

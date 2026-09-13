@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"darkstar/src/api"
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/worklifecycle"
 	"darkstar/src/core/workmanagement"
@@ -78,8 +79,32 @@ func TestProjectAndWorkCLICommandsUseStableMachineResults(t *testing.T) {
 		SchemaVersion int `json:"schemaVersion"`
 		Result        any `json:"result"`
 	}{})
+	var refreshed api.BacklogRefreshResponse
+	runCLIJSON(t, []string{"backlog", "refresh", project.ProjectID, "--revision", "1", "--json"}, &struct {
+		Result *api.BacklogRefreshResponse `json:"result"`
+	}{Result: &refreshed})
+	var backlog api.BacklogView
+	runCLIJSON(t, []string{"backlog", "list", project.ProjectID, "--json"}, &struct {
+		Result *api.BacklogView `json:"result"`
+	}{Result: &backlog})
+	observation := ""
+	for _, ticket := range backlog.Tickets {
+		if ticket.Ref.ID == created.WorkItemID {
+			observation = ticket.ObservationID
+		}
+	}
+	if observation == "" {
+		t.Fatal("native source observation was not loaded")
+	}
+	var admitted api.TicketAdmissionResponse
+	runCLIJSON(t, []string{"ticket-execution", "admit", project.ProjectID, "--revision", "1", "--observation", observation, "--idempotency-key", "cli-work-source-approval", "--json"}, &struct {
+		Result *api.TicketAdmissionResponse `json:"result"`
+	}{Result: &admitted})
+	if admitted.WorkItemID != created.WorkItemID {
+		t.Fatal("approval replaced the existing native work identity")
+	}
 	var started statestore.RunProjection
-	runCLIJSON(t, []string{"run", "start", created.WorkItemID, "--workflow", "cli-workflow", "--version", "1.0.0", "--idempotency-key", "run-cli-command", "--json"}, &struct {
+	runCLIJSON(t, []string{"run", "start", created.WorkItemID, "--source-observation", observation, "--workflow", "cli-workflow", "--version", "1.0.0", "--idempotency-key", "run-cli-command", "--json"}, &struct {
 		SchemaVersion int                       `json:"schemaVersion"`
 		Result        *statestore.RunProjection `json:"result"`
 	}{Result: &started})
@@ -87,7 +112,7 @@ func TestProjectAndWorkCLICommandsUseStableMachineResults(t *testing.T) {
 		t.Fatalf("started = %#v", started)
 	}
 	var replayed statestore.RunProjection
-	runCLIJSON(t, []string{"run", "start", created.WorkItemID, "--workflow", "cli-workflow", "--version", "1.0.0", "--idempotency-key", "run-cli-command", "--json"}, &struct {
+	runCLIJSON(t, []string{"run", "start", created.WorkItemID, "--source-observation", observation, "--workflow", "cli-workflow", "--version", "1.0.0", "--idempotency-key", "run-cli-command", "--json"}, &struct {
 		SchemaVersion int                       `json:"schemaVersion"`
 		Result        *statestore.RunProjection `json:"result"`
 	}{Result: &replayed})

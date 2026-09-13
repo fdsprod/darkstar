@@ -7,7 +7,7 @@ import { Icon, type IconName } from "./Icon";
 interface NavItem { label: string; to: string; icon: IconName; routeIds: string[] }
 
 const primaryNavigation: NavItem[] = [
-  { label: "Board", to: "/board", icon: "board", routeIds: ["board", "work", "run", "readiness", "artifacts", "artifact"] },
+  { label: "Board", to: "/board", icon: "board", routeIds: ["board", "tickets", "work", "run", "readiness", "artifacts", "artifact"] },
   { label: "Checkpoints", to: "/checkpoints", icon: "checkpoints", routeIds: ["checkpoints", "artifact-review", "agents"] },
   { label: "Workflows", to: "/workflows", icon: "workflow", routeIds: ["workflows"] },
   { label: "Templates", to: "/templates", icon: "artifact", routeIds: ["templates"] },

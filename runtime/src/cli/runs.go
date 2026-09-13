@@ -61,6 +61,11 @@ func parseWorkRun(args []string, action string) (runexecution.CreateRequest, str
 		}
 		value := args[index+1]
 		switch args[index] {
+		case "--source-observation":
+			if request.SourceObservationID != "" || strings.TrimSpace(value) != value {
+				return runexecution.CreateRequest{}, "", errors.New("--source-observation requires one exact approved observation ID")
+			}
+			request.SourceObservationID = value
 		case "--workflow":
 			if seenWorkflow {
 				return runexecution.CreateRequest{}, "", errors.New("--workflow may be specified only once")

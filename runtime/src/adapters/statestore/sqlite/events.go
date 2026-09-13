@@ -91,6 +91,24 @@ func (d *Database) Append(ctx context.Context, pending ...statestore.PendingEven
 			_ = tx.Rollback()
 		}
 	}()
+	committed, err = d.appendInTransaction(ctx, tx, pending...)
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit event transaction: %w", err)
+	}
+	return committed, nil
+}
+
+// appendInTransaction lets explicit source admission share the same event and
+// projection transaction without creating a second event application path.
+func (d *Database) appendInTransaction(ctx context.Context, tx *sql.Tx, pending ...statestore.PendingEvent) (committed []statestore.Event, err error) {
+	for _, item := range pending {
+		if err := validatePendingEvent(item); err != nil {
+			return nil, err
+		}
+	}
 
 	var lastPosition uint64
 	if err = tx.QueryRowContext(ctx, `SELECT last_position FROM global_positions WHERE singleton = 1`).Scan(&lastPosition); err != nil {
@@ -109,6 +127,10 @@ func (d *Database) Append(ctx context.Context, pending ...statestore.PendingEven
 			}
 			committed = append(committed, existing)
 			continue
+		}
+		sourceSnapshot, sourceErr := d.prepareTicketExecutionEvent(ctx, tx, item)
+		if sourceErr != nil {
+			return nil, sourceErr
 		}
 		currentRevision, exists, readErr := readAggregateRevision(ctx, tx, item.AggregateID, item.AggregateType)
 		if readErr != nil {
@@ -150,6 +172,11 @@ func (d *Database) Append(ctx context.Context, pending ...statestore.PendingEven
 		if err = applyProjection(ctx, tx, event); err != nil {
 			return nil, fmt.Errorf("apply event %s to projections: %w", event.ID, err)
 		}
+		if sourceSnapshot != nil {
+			if err := persistRunSourceSnapshot(ctx, tx, *sourceSnapshot); err != nil {
+				return nil, err
+			}
+		}
 		committed = append(committed, event)
 	}
 
@@ -158,9 +185,6 @@ func (d *Database) Append(ctx context.Context, pending ...statestore.PendingEven
 	}
 	if err = writeProjectionCheckpoint(ctx, tx, lastPosition, recordedAt); err != nil {
 		return nil, err
-	}
-	if err = tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit event transaction: %w", err)
 	}
 	return committed, nil
 }

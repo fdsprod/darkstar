@@ -6,6 +6,8 @@ import { operationDefinitions } from "../src/api/schema.generated.ts";
 import {
   availableCardActions,
   applyTransitionPlans,
+  applySourceViews,
+  boardCardTitle,
   buildWorkTransitionRequest,
   buildPrepareRunRequest,
   buildCreateWorkItemRequest,
@@ -17,6 +19,27 @@ import {
 } from "../src/pages/boardModel.ts";
 
 const timestamp = "2026-09-03T12:00:00Z";
+
+test("an admitted later run has independent activity without rewriting ticket or work history", () => {
+  const item = work("work_ticket", "project_alpha", "Original approved title", { status: "completed" });
+  const snapshot = { projects: [], workItems: [item], runs: [run("run_old", item.id, "completed", 3), run("run_new", item.id, "ready", 5)] };
+  const original = structuredClone(snapshot);
+  const cards = deriveBoardCards(snapshot);
+  assert.equal(cards[0].lifecycle, "done");
+  const source = {
+    approval: { observationId: "approved-1" },
+    currentTicket: { title: "Current business title", businessState: { state: "known", value: { id: "open", name: "Open" } } },
+  };
+  const attached = applySourceViews(cards, { [item.id]: source });
+  assert.equal(attached[0].lifecycle, "ready");
+  assert.equal(boardCardTitle(attached[0]), "Current business title");
+  assert.equal(attached[0].work.status, "completed");
+  assert.equal(attached[0].source.currentTicket.businessState.value.id, "open");
+  assert.equal(filterBoardCards(attached, { query: "Current business" }).length, 1);
+  assert.equal(filterBoardCards(attached, { query: "Original approved" }).length, 1);
+  assert.deepEqual(snapshot, original);
+  assert.equal(applySourceViews(cards, { [item.id]: { ...source, approval: null } })[0].lifecycle, "done");
+});
 
 function project(id, name) {
   return {
@@ -303,10 +326,10 @@ test("board movement uses only the work lifecycle plan and apply operations", as
     readFile(new URL("../src/api/client.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/BoardPage.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(client, /planWorkItemTransition\([^\n]*this\.operation\("planWorkItemTransition"/);
+  assert.match(client, /planWorkItemTransition\([^}]*this\.operation\("planWorkItemTransition"/);
   assert.match(client, /applyWorkItemTransition\([^\n]*this\.operation\("applyWorkItemTransition"/);
   assert.doesNotMatch(page, /PrepareRunDialog/);
-  assert.match(page, /buildWorkTransitionRequest\(source, target\)/);
+  assert.match(page, /buildWorkTransitionRequest\(source, target[,)]/);
   assert.match(page, /apiClient\.applyWorkItemTransition\(card\.work\.id, plan\.resourceVersion,/);
   assert.doesNotMatch(page, /apiClient\.(?:prepareRun|startRun|pauseRun|resumeRun|retryRun|cancelRun)\(/);
   assert.match(page, /Advanced routing/);

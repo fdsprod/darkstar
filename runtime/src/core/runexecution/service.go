@@ -55,11 +55,12 @@ type StartRequest struct {
 
 // CreateRequest starts one work-backed run from an exact installed workflow.
 type CreateRequest struct {
-	WorkItemID      string            `json:"workItemId"`
-	WorkflowID      string            `json:"workflowId"`
-	WorkflowVersion string            `json:"workflowVersion"`
-	Profile         string            `json:"profile,omitempty"`
-	Preparation     *PreparationInput `json:"preparation,omitempty"`
+	WorkItemID          string            `json:"workItemId"`
+	SourceObservationID string            `json:"sourceObservationId,omitempty"`
+	WorkflowID          string            `json:"workflowId"`
+	WorkflowVersion     string            `json:"workflowVersion"`
+	Profile             string            `json:"profile,omitempty"`
+	Preparation         *PreparationInput `json:"preparation,omitempty"`
 }
 
 type PreparationInput struct {
@@ -104,6 +105,7 @@ type WorkflowDefinitionReader interface {
 // the durable execution timeline without reconstructing state from events.
 type View struct {
 	Assessment       *preparation.Assessment        `json:"assessment,omitempty"`
+	SourceSnapshot   *statestore.RunSourceSnapshot  `json:"sourceSnapshot,omitempty"`
 	SchemaVersion    int                            `json:"schemaVersion"`
 	Run              statestore.RunProjection       `json:"run"`
 	Nodes            []statestore.NodeProjection    `json:"nodes"`
@@ -465,7 +467,11 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	if err != nil {
 		return statestore.RunProjection{}, err
 	}
-	if work.Status.Terminal() || work.Deletion != statestore.WorkRetained {
+	sourceSnapshot, admitted, err := s.approvedSourceWork(ctx, request, &work)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if (work.Status.Terminal() && !admitted) || work.Deletion != statestore.WorkRetained {
 		return statestore.RunProjection{}, fmt.Errorf("%w: work item %s is %s", ErrInvalidRequest, work.WorkItemID, work.Status)
 	}
 	previousRuns, err := s.store.RunsForWorkItem(ctx, work.WorkItemID)
@@ -474,7 +480,8 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	}
 	preparationRuns := []statestore.RunProjection{}
 	for _, previous := range previousRuns {
-		if previous.Status.Terminal() || previous.Status == statestore.RunFailed {
+		settled := previous.Status == statestore.RunCompleted || previous.Status == statestore.RunCancelled
+		if (admitted && settled) || (!admitted && (previous.Status.Terminal() || previous.Status == statestore.RunFailed)) {
 			continue
 		}
 		var previousRoute workflow.Route
@@ -526,7 +533,7 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 			request.WorkflowVersion = definition.Version.Version
 		}
 	}
-	routeContext, err := derivedRouteContext(ctx, planner, request, work, project)
+	routeContext, err := derivedRouteContext(ctx, planner, request, work, project, sourceSnapshot)
 	if err != nil {
 		return statestore.RunProjection{}, err
 	}
@@ -613,6 +620,16 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 			"workflowDigest": preview.Workflow.Digest, "routeDigest": routeDigest, "routeSnapshot": json.RawMessage(routeJSON),
 		}),
 	)
+	if sourceSnapshot != nil {
+		for index := range events {
+			if events[index].Kind == "run.created" {
+				events[index].Metadata, err = json.Marshal(map[string]any{"sourceObservationId": sourceSnapshot.ObservationID, "sourceAdmissionId": sourceSnapshot.AdmissionID, "sourceLineageRevision": sourceSnapshot.LineageRevision, "sourcePinDigest": preparation.Digest(sourceSnapshot.Pin)})
+				if err != nil {
+					return statestore.RunProjection{}, err
+				}
+			}
+		}
+	}
 	if !start && !requiresInputs {
 		committed, appendErr := s.store.Append(ctx, events...)
 		if appendErr != nil {
@@ -718,6 +735,16 @@ func workRouteRequest(work statestore.WorkItemProjection, request CreateRequest)
 }
 
 func (s *Service) saveInitialExecutionContext(ctx context.Context, run statestore.RunProjection, route workflow.Route, inputs map[workflow.Identifier]json.RawMessage) (statestore.RunExecutionContext, error) {
+	// The assessment is committed with the route before any attempt is admitted.
+	// Recovery uses these exact declared inputs, including the approved source
+	// content, if the separately stored execution context was not yet written.
+	assessment, err := readPreparation(route)
+	if err != nil {
+		return statestore.RunExecutionContext{}, err
+	}
+	if assessment != nil {
+		inputs = assessment.Input.Context.RunInputs
+	}
 	reader, ok := s.planner.(WorkflowDefinitionReader)
 	if !ok {
 		return statestore.RunExecutionContext{}, errors.New("workflow planner cannot persist execution context without an installed definition")
@@ -760,7 +787,7 @@ func (s *Service) saveInitialExecutionContext(ctx context.Context, run statestor
 	return value, nil
 }
 
-func derivedRouteContext(ctx context.Context, planner WorkflowPlanner, request CreateRequest, work statestore.WorkItemProjection, project statestore.ProjectProjection) (workflow.RouteContext, error) {
+func derivedRouteContext(ctx context.Context, planner WorkflowPlanner, request CreateRequest, work statestore.WorkItemProjection, project statestore.ProjectProjection, sources ...*statestore.RunSourceSnapshot) (workflow.RouteContext, error) {
 	reader, ok := planner.(WorkflowDefinitionReader)
 	if !ok {
 		return workflow.RouteContext{}, errors.New("workflow planner cannot derive run inputs without an installed definition")
@@ -770,16 +797,27 @@ func derivedRouteContext(ctx context.Context, planner WorkflowPlanner, request C
 		return workflow.RouteContext{}, fmt.Errorf("read installed workflow for run inputs: %w", err)
 	}
 	inputs := make(map[workflow.Identifier]json.RawMessage)
+	var sourceTask any
+	if len(sources) > 0 && sources[0] != nil {
+		sourceTask, err = sourceTaskContent(*sources[0])
+		if err != nil {
+			return workflow.RouteContext{}, err
+		}
+	}
 	if declaration, exists := definition.Document.Spec.Inputs["repository"]; exists && declaration.Type == workflow.ValueString {
 		encoded, _ := json.Marshal(project.ProjectID)
 		inputs["repository"] = encoded
 	}
 	if declaration, exists := definition.Document.Spec.Inputs["story"]; exists && declaration.Type == workflow.ValueObject {
-		encoded, err := json.Marshal(map[string]any{
+		var story any = map[string]any{
 			"id": work.WorkItemID, "projectId": work.ProjectID, "title": work.Title,
 			"priority": work.Priority, "sourceHash": work.SourceHash,
 			"details": work.Details, "evidence": work.Evidence,
-		})
+		}
+		if sourceTask != nil {
+			story = sourceTask
+		}
+		encoded, err := json.Marshal(story)
 		if err != nil {
 			return workflow.RouteContext{}, fmt.Errorf("encode derived story input: %w", err)
 		}
@@ -793,6 +831,9 @@ func derivedRouteContext(ctx context.Context, planner WorkflowPlanner, request C
 		switch source := declaration.Resource.Source.(type) {
 		case workflow.TaskResource:
 			value = map[string]any{"id": work.WorkItemID, "projectId": work.ProjectID, "title": work.Title, "details": work.Details, "evidence": work.Evidence}
+			if sourceTask != nil {
+				value = sourceTask
+			}
 		case workflow.RepositoryResource:
 			value = map[string]any{"projectId": project.ProjectID, "name": project.Name, "sourceHash": project.SourceHash}
 		case workflow.ArtifactResource:
@@ -1133,6 +1174,15 @@ func (s *Service) Get(ctx context.Context, runID string) (View, error) {
 	commands, commandsPageInfo := summarizeCommands(evidence.Commands)
 	var frozen workflow.Route
 	var assessment *preparation.Assessment
+	var sourceSnapshot *statestore.RunSourceSnapshot
+	if sourceStore, ok := s.store.(statestore.TicketExecutionStore); ok {
+		snapshot, snapshotErr := sourceStore.RunSourceSnapshot(ctx, runID)
+		if snapshotErr == nil {
+			sourceSnapshot = &snapshot
+		} else if !sourceStateNotFound(snapshotErr) {
+			return View{}, snapshotErr
+		}
+	}
 	if evidence.Run.RouteSnapshot != "" {
 		if err := json.Unmarshal([]byte(evidence.Run.RouteSnapshot), &frozen); err != nil {
 			return View{}, err
@@ -1145,6 +1195,7 @@ func (s *Service) Get(ctx context.Context, runID string) (View, error) {
 	}
 	return View{
 		Assessment:       assessment,
+		SourceSnapshot:   sourceSnapshot,
 		SchemaVersion:    1,
 		Run:              evidence.Run,
 		Nodes:            nodes,
@@ -1337,6 +1388,17 @@ func (s *Service) workflowAttemptContext(ctx context.Context, attempt statestore
 	work, err := s.store.WorkItem(ctx, run.WorkItemID)
 	if err != nil {
 		return AttemptRequestContext{}, fmt.Errorf("read workflow attempt work item: %w", err)
+	}
+	sourceRun, err := s.frozenSourceWork(ctx, run, &work)
+	if err != nil {
+		return AttemptRequestContext{}, fmt.Errorf("read frozen source work: %w", err)
+	}
+	if sourceRun {
+		assessment, assessmentErr := readPreparation(route)
+		if assessmentErr != nil || assessment == nil {
+			return AttemptRequestContext{}, errors.New("source run has no frozen preparation input")
+		}
+		work = assessment.Input.Work
 	}
 	project, err := s.store.Project(ctx, work.ProjectID)
 	if err != nil {

@@ -137,12 +137,25 @@ func (s *Service) Launch(ctx context.Context, request ControlRequest) (statestor
 	if err != nil {
 		return statestore.RunProjection{}, err
 	}
+	sourceRun, err := s.frozenSourceWork(ctx, run, &work)
+	if err != nil {
+		return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, err)
+	}
+	if sourceRun {
+		if _, contextErr := s.store.RunExecutionContext(ctx, run.RunID); errors.Is(contextErr, statestore.ErrNotFound) {
+			if _, err := s.saveInitialExecutionContext(ctx, run, route, nil); err != nil {
+				return statestore.RunProjection{}, err
+			}
+		} else if contextErr != nil {
+			return statestore.RunProjection{}, contextErr
+		}
+	}
 	if assessment != nil {
 		project, projectErr := s.store.Project(ctx, work.ProjectID)
 		if projectErr != nil {
 			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, projectErr)
 		}
-		if project.Status != statestore.ProjectActive || project.ResourceVersion != assessment.Input.Project.ResourceVersion || work.ResourceVersion != assessment.Input.Work.ResourceVersion || work.Status.Terminal() {
+		if project.Status != statestore.ProjectActive || project.ResourceVersion != assessment.Input.Project.ResourceVersion || work.ResourceVersion != assessment.Input.Work.ResourceVersion || (work.Status.Terminal() && !sourceRun) {
 			return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, fmt.Errorf("%w: work or project changed since assessment; prepare again", ErrInvalidControl))
 		}
 		reader, ok := s.planner.(WorkflowDefinitionReader)

@@ -48,7 +48,7 @@ func TestContentLibrarySchemaSnapshotMatchesMigratedColumns(t *testing.T) {
 		}
 		return result
 	}
-	for _, table := range []string{"content_library_items", "content_library_versions", "content_library_events", "run_execution_contexts", "artifact_representations"} {
+	for _, table := range []string{"content_library_items", "content_library_versions", "content_library_events", "run_execution_contexts", "artifact_representations", "native_namespaces", "native_tickets", "native_work_mappings", "native_ticket_history", "native_ticket_operations", "backlog_bindings", "backlog_selected_sources", "backlog_refreshes", "backlog_observations", "backlog_cached_tickets", "source_legacy_work", "source_work_lineages", "source_work_bindings", "source_ticket_admissions", "source_work_checks", "run_source_snapshots"} {
 		got, want := columns(snapshot, table), columns(actual.SQL(), table)
 		if len(got) == 0 || !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s snapshot columns = %#v; migrated = %#v", table, got, want)

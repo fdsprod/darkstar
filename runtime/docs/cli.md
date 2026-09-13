@@ -164,9 +164,21 @@ darkstar work create <outcome> [--project <project-id>] [--details <text>] [--ev
 darkstar work import <source-ref> [--project <project-id>] [--title <title>] [--priority <n>]
 darkstar work list [--project <project-id>]
 darkstar work show <work-id>
+darkstar ticket list <project-id> [--search <text>] [--state <state>] [--cursor <cursor>] [--page-size <n>]
+darkstar ticket show <project-id> <ticket-id>
+darkstar ticket edit <project-id> <ticket-id> --revision <revision> --idempotency-key <key> [--title <text>] [--description <text>] [--priority <n>]
+darkstar ticket transition <project-id> <ticket-id> --revision <revision> --idempotency-key <key> --transition <id>
 darkstar work transition plan <work-id> --to <state> [--workflow <name> --version <version>] [--profile <profile>]
 darkstar work transition apply <work-id> --to <state> --if-match <work-version> [--workflow <name> --version <version>] [--profile <profile>] [--confirm] [--idempotency-key <key>]
 ```
+
+The `ticket` commands operate on native business tickets. `show` returns the
+current revision, supported editable fields and transition IDs, and preserved
+revision history. Use that observed revision and a discovered transition ID for
+a change. Retry an interrupted command with its original idempotency key;
+revision conflicts require reloading before a new command. Browsing and editing
+tickets do not schedule work or change execution status. Existing `work` commands
+and their execution history remain available independently.
 
 `project add` and `project register` are equivalent. The CLI canonicalizes an
 existing directory, sends it as registration source, and the daemon persists

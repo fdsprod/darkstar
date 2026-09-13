@@ -22,8 +22,9 @@ import { SettingsPage } from "../pages/SettingsPage";
 import { WorkDetailPage } from "../pages/WorkDetailPage";
 import { WorkflowsPage } from "../pages/WorkflowsPage";
 import { TemplatesPage } from "../pages/TemplatesPage";
+import { TicketsPage } from "../pages/TicketsPage";
 
-export type AppRouteId = "board" | "work" | "run" | "readiness" | "checkpoints" | "artifact-review" | "agents" | "workflows" | "templates" | "settings" | "artifacts" | "artifact" | "not-found";
+export type AppRouteId = "board" | "tickets" | "work" | "run" | "readiness" | "checkpoints" | "artifact-review" | "agents" | "workflows" | "templates" | "settings" | "artifacts" | "artifact" | "not-found";
 
 export interface AppRoute {
   id: AppRouteId;
@@ -35,6 +36,7 @@ export interface AppRoute {
 
 const routePatterns = [
   { id: "board", path: "/board", title: "Board", section: "Board" },
+  { id: "tickets", path: "/tickets", title: "Tickets", section: "Board" },
   { id: "readiness", path: "/work/:workId/run/:runId/readiness", title: "Readiness", section: "Board" },
   { id: "run", path: "/work/:workId/run/:runId", title: "Run", section: "Board" },
   { id: "work", path: "/work/:workId", title: "Work item", section: "Board" },
@@ -134,6 +136,8 @@ export function RouteView() {
   const { route } = useRouter();
   switch (route.id) {
     case "board": return <BoardPage />;
+    case "tickets":
+      return <TicketsPage />;
     case "checkpoints": return <CheckpointsPage />;
     case "artifact-review": return <ArtifactReviewPage />;
     case "agents": return <AgentsPage />;

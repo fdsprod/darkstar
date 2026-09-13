@@ -14,6 +14,7 @@ import (
 	"darkstar/src/core/identity"
 	"darkstar/src/core/preparation"
 	"darkstar/src/core/runexecution"
+	"darkstar/src/ports"
 	"darkstar/src/ports/statestore"
 )
 
@@ -73,9 +74,10 @@ const (
 
 // Preparation is present only when requesting Backlog -> Ready.
 type Preparation struct {
-	WorkflowID      string `json:"workflowId"`
-	WorkflowVersion string `json:"workflowVersion"`
-	Profile         string `json:"profile,omitempty"`
+	WorkflowID          string `json:"workflowId"`
+	WorkflowVersion     string `json:"workflowVersion"`
+	Profile             string `json:"profile,omitempty"`
+	SourceObservationID string `json:"sourceObservationId,omitempty"`
 }
 
 // PlanRequest is target-specific input. Preparation is rejected for non-Ready targets.
@@ -173,6 +175,8 @@ type facts struct {
 	state                                                       State
 	version                                                     uint64
 	projectArchived, checkpoint, readiness, policy, concurrency bool
+	admitted                                                    bool
+	sourceApprovalRequired                                      bool
 }
 
 // Plan derives every target from the same durable runtime snapshot shape.
@@ -184,6 +188,12 @@ func (s *Service) Plan(ctx context.Context, workItemID string, request PlanReque
 	value, err := s.facts(ctx, strings.TrimSpace(workItemID))
 	if err != nil {
 		return Plan{}, err
+	}
+	if value.admitted && request.Target == StateReady && request.Preparation != nil && request.Preparation.SourceObservationID != "" {
+		store := s.store.(statestore.TicketExecutionStore)
+		if _, approvalErr := store.ApprovedRunSource(ctx, value.work.WorkItemID, request.Preparation.SourceObservationID); approvalErr != nil {
+			value.sourceApprovalRequired = true
+		}
 	}
 	plan := Plan{SchemaVersion: 1, WorkItemID: value.work.WorkItemID, State: value.state, ResourceVersion: value.version, Targets: make([]TargetDecision, 0, len(allStates))}
 	if value.run != nil {
@@ -222,7 +232,9 @@ func normalize(request PlanRequest) (PlanRequest, error) {
 		request.Preparation.WorkflowID = strings.TrimSpace(request.Preparation.WorkflowID)
 		request.Preparation.WorkflowVersion = strings.TrimSpace(request.Preparation.WorkflowVersion)
 		request.Preparation.Profile = strings.TrimSpace(request.Preparation.Profile)
-		if request.Preparation.WorkflowID == "" || request.Preparation.WorkflowVersion == "" {
+		request.Preparation.SourceObservationID = strings.TrimSpace(request.Preparation.SourceObservationID)
+		sourceOnly := request.Preparation.SourceObservationID != "" && request.Preparation.WorkflowID == "" && request.Preparation.WorkflowVersion == "" && request.Preparation.Profile == ""
+		if !sourceOnly && (request.Preparation.WorkflowID == "" || request.Preparation.WorkflowVersion == "") {
 			return PlanRequest{}, fmt.Errorf("%w: ready preparation requires workflowId and workflowVersion", ErrInvalidRequest)
 		}
 	}
@@ -231,7 +243,7 @@ func normalize(request PlanRequest) (PlanRequest, error) {
 
 func (s *Service) reasons(value facts, target State, request PlanRequest) []DisabledReason {
 	reasons := []DisabledReason{}
-	if value.work.Status.Terminal() || value.work.Deletion != statestore.WorkRetained {
+	if (value.work.Status.Terminal() && !value.admitted) || value.work.Deletion != statestore.WorkRetained {
 		return []DisabledReason{ReasonTerminalWork}
 	}
 	if value.projectArchived {
@@ -250,8 +262,14 @@ func (s *Service) reasons(value facts, target State, request PlanRequest) []Disa
 	}
 	switch target {
 	case StateReady:
-		if value.state != StateBacklog {
+		if value.state != StateBacklog && (!value.admitted || value.state != StateDone) {
 			reasons = append(reasons, ReasonActiveRun)
+		}
+		if value.admitted && (request.Preparation == nil || request.Preparation.SourceObservationID == "") {
+			reasons = append(reasons, ReasonPreparationRequired)
+		}
+		if value.sourceApprovalRequired {
+			reasons = append(reasons, ReasonReadinessRequired)
 		}
 	case StateRunning:
 		if value.run == nil || (value.run.Status != statestore.RunReady && value.run.Status != statestore.RunWaiting && value.run.Status != statestore.RunBlocked && value.run.Status != statestore.RunFailed) {
@@ -301,11 +319,27 @@ func (s *Service) facts(ctx context.Context, id string) (facts, error) {
 		return runs[i].LastGlobalPosition > runs[j].LastGlobalPosition
 	})
 	value := facts{work: work, state: StateBacklog, projectArchived: project.Status != statestore.ProjectActive}
+	if sourceStore, ok := s.store.(statestore.TicketExecutionStore); ok {
+		lineage, lineageErr := sourceStore.WorkTicketLineage(ctx, id)
+		if lineageErr == nil {
+			value.admitted = lineage.Origin == statestore.SourceAdmitted || lineage.Origin == statestore.SourceNative
+			if !value.admitted {
+				_, approvalErr := sourceStore.LatestTicketAdmission(ctx, id)
+				value.admitted = approvalErr == nil
+				if approvalErr != nil && !sourceStateNotFound(approvalErr) {
+					return facts{}, approvalErr
+				}
+			}
+		} else if !sourceStateNotFound(lineageErr) {
+			return facts{}, lineageErr
+		}
+	}
 	advanceVersion(&value.version, work.LastGlobalPosition, project.LastGlobalPosition)
 	active := 0
 	for i := range runs {
 		advanceVersion(&value.version, runs[i].LastGlobalPosition)
-		if !runs[i].Status.Terminal() {
+		unresolved := !runs[i].Status.Terminal() || (value.admitted && runs[i].Status == statestore.RunReconcileRequired)
+		if unresolved {
 			active++
 			if value.run == nil {
 				value.run = &runs[i]
@@ -368,7 +402,11 @@ func (s *Service) facts(ctx context.Context, id string) (facts, error) {
 	} else if !errors.Is(assessErr, statestore.ErrNotFound) {
 		return facts{}, assessErr
 	}
-	value.state = deriveState(work, *run, value.checkpoint)
+	stateWork := work
+	if value.admitted && (run.Status != statestore.RunCompleted && run.Status != statestore.RunCancelled) {
+		stateWork.Status = statestore.WorkItemActive
+	}
+	value.state = deriveState(stateWork, *run, value.checkpoint)
 	if run.Status == statestore.RunReady && value.state == StateReview {
 		value.readiness = true
 	}
@@ -381,6 +419,11 @@ func advanceVersion(current *uint64, positions ...uint64) {
 			*current = position
 		}
 	}
+}
+
+func sourceStateNotFound(err error) bool {
+	var failure *ports.Failure
+	return errors.Is(err, statestore.ErrNotFound) || (errors.As(err, &failure) && failure.Code == ports.FailureNotFound)
 }
 
 func deriveState(work statestore.WorkItemProjection, run statestore.RunProjection, checkpoint bool) State {
@@ -483,6 +526,7 @@ func (s *Service) Apply(ctx context.Context, workItemID string, request ApplyReq
 		create := runexecution.CreateRequest{WorkItemID: workItemID}
 		if p != nil {
 			create.WorkflowID, create.WorkflowVersion, create.Profile = p.WorkflowID, p.WorkflowVersion, p.Profile
+			create.SourceObservationID = p.SourceObservationID
 		}
 		value, callErr := s.runtime.Prepare(ctx, create, request.IdempotencyKey)
 		err = callErr

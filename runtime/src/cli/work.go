@@ -193,6 +193,9 @@ func runWorkTransition(args []string, jsonOutput bool, stdout, stderr io.Writer)
 			if parsed.request.Preparation.Profile != "" {
 				query.Set("profile", parsed.request.Preparation.Profile)
 			}
+			if parsed.request.Preparation.SourceObservationID != "" {
+				query.Set("sourceObservationId", parsed.request.Preparation.SourceObservationID)
+			}
 		}
 		var result worklifecycle.Plan
 		if err := session.DoJSON(context.Background(), http.MethodGet, resource+"/transition-plan?"+query.Encode(), nil, &result); err != nil {
@@ -228,6 +231,7 @@ func parseWorkTransition(args []string) (parsedWorkTransition, error) {
 	}
 	result := parsedWorkTransition{action: args[0], workID: args[1]}
 	workflowID, workflowVersion, profile := "", "", ""
+	sourceObservation := ""
 	for index := 2; index < len(args); {
 		option := args[index]
 		if option == "--confirm" {
@@ -243,6 +247,11 @@ func parseWorkTransition(args []string) (parsedWorkTransition, error) {
 		}
 		value := args[index+1]
 		switch option {
+		case "--source-observation":
+			if sourceObservation != "" || strings.TrimSpace(value) != value {
+				return parsedWorkTransition{}, errors.New("--source-observation requires one exact observation ID")
+			}
+			sourceObservation = value
 		case "--to":
 			if result.request.Target != "" {
 				return parsedWorkTransition{}, errors.New("--to may be specified only once")
@@ -292,8 +301,8 @@ func parseWorkTransition(args []string) (parsedWorkTransition, error) {
 	if !validTarget {
 		return parsedWorkTransition{}, errors.New("--to must be backlog, ready, running, waiting, blocked, review, failed, or done")
 	}
-	if workflowID != "" || workflowVersion != "" || profile != "" {
-		result.request.Preparation = &worklifecycle.Preparation{WorkflowID: workflowID, WorkflowVersion: workflowVersion, Profile: profile}
+	if workflowID != "" || workflowVersion != "" || profile != "" || sourceObservation != "" {
+		result.request.Preparation = &worklifecycle.Preparation{WorkflowID: workflowID, WorkflowVersion: workflowVersion, Profile: profile, SourceObservationID: sourceObservation}
 	}
 	if result.request.Target != worklifecycle.StateReady && result.request.Preparation != nil {
 		return parsedWorkTransition{}, errors.New("workflow preparation options are valid only with --to ready")

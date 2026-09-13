@@ -11,6 +11,7 @@ import { humanize, shortIdentifier, statusTone } from "./runDetailModel";
 import { ProducedArtifacts } from "./ProducedArtifacts";
 import { DeleteWorkButton } from "./DeleteWorkButton";
 import { WorkRoutePreparation } from "./WorkRoutePreparation";
+import { WorkSourcePanel } from "./WorkSourcePanel";
 import { contextLocation, latestRun, parseWorkContextTab, type WorkContextTab, workNextAction } from "./workContextModel";
 
 type Schemas = components["schemas"];
@@ -20,6 +21,7 @@ export function WorkDetailPage() {
   const { state, refresh } = useDashboardState();
   const workId = route.params.workId;
   const [view, setView] = useState<Schemas["WorkItemView"]>();
+  const [sourceView, setSourceView] = useState<Schemas["WorkSourceView"]>();
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -61,7 +63,8 @@ export function WorkDetailPage() {
         <SummaryFact label="Next action" value={next.label} />
       </section>{currentRun ? <section className="detail-section current-run-card"><SectionHeader eyebrow="Current execution" title={currentRun.workflowId} meta={<StatusPill status={currentRun.status} />} /><p>Updated {formatDate(currentRun.updatedAt)} · workflow version {currentRun.workflowVersion}</p><AppLink className="navigation-action" to={`/work/${encodeURIComponent(view.work.id)}/run/${encodeURIComponent(currentRun.id)}`}>Open current run context →</AppLink></section> : <EmptyDetail title="No current run" message="Assess a route below before starting provider work." />}
 
-      {!view.work.deletion && <WorkRoutePreparation work={view.work} run={currentRun} onChanged={refresh} />}
+      <WorkSourcePanel key={view.work.id} workItemId={view.work.id} refreshToken={state.lastSynchronizedAt ?? undefined} onView={setSourceView} onChanged={refresh} />
+      {!view.work.deletion && <WorkRoutePreparation work={view.work} run={currentRun} sourceObservationId={sourceView?.workItemId === view.work.id ? sourceView.approvedTicket?.observationId : undefined} onChanged={refresh} />}
 
       <section className="detail-section work-plan-evidence">
         <SectionHeader eyebrow="Accepted-plan targets" title={<>Stories &amp; implementation points</>} meta={<span className="section-count">{view.stories.length} / {view.points.length}</span>} />

@@ -1,4 +1,5 @@
 import { RunLive } from "./RunLive";
+import { RunSourcePanel } from "./RunSourcePanel";
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiRequestError, apiClient } from "../api/client";
@@ -67,11 +68,13 @@ export function RunDetailPage() {
 
   const controls = availableCardActions({ work, run: view.run, lifecycle: transitionPlan?.state ?? lifecycleHint(view.run.status) }, transitionPlan)
     .filter((control) => control !== "prepare" && !(control === "resume" && view.nodes.some(node => node.status === "waiting_checkpoint")));
+  const runTitle = view.sourceSnapshot?.ticket.title ?? work.title;
   return <div className="page detail-page run-detail-page">
-    <PageHeader className="detail-header run-detail-header" eyebrow="Run" title={work.title} description={<>{view.run.workflowId} · v{view.run.workflowVersion}</>} breadcrumbs={[{ label: "Board", to: "/board" }, { label: work.title, to: `/work/${encodeURIComponent(work.id)}` }, { label: "Run" }]} status={<StatusPill status={view.run.status} />} actions={<>{controls.map(control => <button className={`button ${control === "cancel" ? "button--danger" : ""}`} key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : control === "cancel" ? "Stop" : humanize(control)}</button>)}</>} />
+    <PageHeader className="detail-header run-detail-header" eyebrow="Run" title={runTitle} description={<>{view.run.workflowId} · v{view.run.workflowVersion}</>} breadcrumbs={[{ label: "Board", to: "/board" }, { label: work.title, to: `/work/${encodeURIComponent(work.id)}` }, { label: "Run" }]} status={<StatusPill status={view.run.status} />} actions={<>{controls.map(control => <button className={`button ${control === "cancel" ? "button--danger" : ""}`} key={control} disabled={Boolean(action)} onClick={() => void invoke(control)}>{action === control ? "Requesting…" : control === "cancel" ? "Stop" : humanize(control)}</button>)}</>} />
     {actionMessage && <p role="status">{actionMessage}</p>}
     {error && <p role="alert">{error}</p>}
     {view.issue && <p className="run-inline-error">{view.issue.message}</p>}
+    {view.sourceSnapshot && <RunSourcePanel snapshot={view.sourceSnapshot} />}
     <RunLive key={view.run.id} view={view} refresh={() => load()} />
     <details className="run-details"><summary>Run details</summary><dl><div><dt>Run</dt><dd>{view.run.id}</dd></div><div><dt>Started</dt><dd>{formatDate(view.run.createdAt)}</dd></div><div><dt>Workflow steps</dt><dd>{view.nodes.map(node => `${node.nodeId}: ${humanize(node.status)}`).join(" · ")}</dd></div></dl><AppLink to={`/artifacts?targetKind=run&targetId=${encodeURIComponent(view.run.id)}&ingest=1`}>Attach an artifact to this run</AppLink>{view.nodes.map(node => <p key={node.id}><AppLink to={`/artifacts?targetKind=node&targetId=${encodeURIComponent(`${view.run.id}/${node.nodeId}`)}&ingest=1`}>Attach an artifact to {node.nodeId}</AppLink></p>)}</details>
   </div>;

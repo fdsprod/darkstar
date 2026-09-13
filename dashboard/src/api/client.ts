@@ -93,14 +93,65 @@ export class DarkstarApiClient {
   listProjects(signal?: AbortSignal) { return this.operation("listProjects", { signal }); }
   registerProject(body: Schemas["ProjectRegistration"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("registerProject", { body, idempotencyKey, signal }); }
   getProject(projectId: string, signal?: AbortSignal) { return this.operation("getProject", { path: { projectId }, signal }); }
+  getProjectBacklog(projectId: string, query: { limit?: number; cursor?: string; includePrevious?: boolean } = {}, signal?: AbortSignal) {
+    return this.operation("getProjectBacklog", { path: { projectId }, query, signal });
+  }
+  listWorkSourceViews(query: { projectId?: string } = {}, signal?: AbortSignal) {
+    return this.operation("listWorkSourceViews", { query, signal });
+  }
+  getWorkSourceView(workId: string, signal?: AbortSignal) {
+    return this.operation("getWorkSourceView", { path: { workId }, signal });
+  }
+  listTicketExecutions(projectId: string, observationId: string, signal?: AbortSignal) {
+    return this.operation("listTicketExecutions", { path: { projectId }, query: { observationId }, signal });
+  }
+  admitSourceTicket(projectId: string, body: Schemas["TicketAdmissionRequest"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("admitSourceTicket", { path: { projectId }, body, idempotencyKey, signal });
+  }
+  approveWorkSource(workId: string, body: Schemas["SourceApprovalRequest"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("approveWorkSource", { path: { workId }, body, idempotencyKey, signal });
+  }
+  refreshWorkSource(workId: string, signal?: AbortSignal) {
+    return this.operation("refreshWorkSource", { path: { workId }, signal });
+  }
+  rebindWorkSource(workId: string, body: Schemas["SourceRebindRequest"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("rebindWorkSource", { path: { workId }, body, idempotencyKey, signal });
+  }
+  getProjectBacklogSource(projectId: string, signal?: AbortSignal) {
+    return this.operation("getProjectBacklogSource", { path: { projectId }, signal });
+  }
+  selectProjectBacklogSource(projectId: string, body: Schemas["BacklogSourceRequest"], signal?: AbortSignal) {
+    return this.operation("selectProjectBacklogSource", { path: { projectId }, body, signal });
+  }
+  refreshProjectBacklog(projectId: string, body: Schemas["BacklogRefreshRequest"], signal?: AbortSignal) {
+    return this.operation("refreshProjectBacklog", { path: { projectId }, body, signal });
+  }
+  refreshProjectBacklogTicket(projectId: string, body: Schemas["BacklogTicketRefreshRequest"], signal?: AbortSignal) {
+    return this.operation("refreshProjectBacklogTicket", { path: { projectId }, body, signal });
+  }
   deleteWorkItem(workItemId: string, resourceVersion: number, idempotencyKey: string) { return this.operation("deleteWorkItem", { path: { workItemId }, resourceVersion, idempotencyKey }); }
   listWorkItems(projectId?: string, signal?: AbortSignal, includeDeleted?: boolean) { return this.operation("listWorkItems", { query: { projectId, includeDeleted }, signal }); }
+  getNativeTickets(projectId: string, query: { q?: string; state?: string; cursor?: string; pageSize?: number } = {}, signal?: AbortSignal) {
+    return this.operation("listNativeTickets", { path: { projectId }, query, signal });
+  }
+  getNativeTicket(projectId: string, ticketId: string, signal?: AbortSignal) {
+    return this.operation("getNativeTicket", { path: { projectId, ticketId }, signal });
+  }
+  editNativeTicket(projectId: string, ticketId: string, body: Schemas["NativeTicketEditRequest"], idempotencyKey: string) {
+    return this.operation("editNativeTicket", { path: { projectId, ticketId }, body, idempotencyKey });
+  }
+  transitionNativeTicket(projectId: string, ticketId: string, body: Schemas["NativeTicketTransitionRequest"], idempotencyKey: string) {
+    return this.operation("transitionNativeTicket", { path: { projectId, ticketId }, body, idempotencyKey });
+  }
   listRuns(query: { after?: string; limit?: number } = {}, signal?: AbortSignal) { return this.operation("listRuns", { query, signal }); }
   getRun(runId: string, signal?: AbortSignal) { return this.operation("getRun", { path: { runId }, signal }); }
   getRunReadiness(runId: string, signal?: AbortSignal) { return this.operation("getRunReadiness", { path: { runId }, signal }); }
   decideRunReadiness(runId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["ReadinessDecisionRequest"], signal?: AbortSignal) { return this.operation("decideRunReadiness", { path: { runId }, body, resourceVersion, idempotencyKey, signal }); }
   getWorkItem(workItemId: string, signal?: AbortSignal) { return this.operation("getWorkItem", { path: { workItemId }, signal }); }
-  planWorkItemTransition(workItemId: string, target: Schemas["WorkLifecycleState"], preparation?: Schemas["WorkTransitionPreparation"], signal?: AbortSignal) { return this.operation("planWorkItemTransition", { path: { workItemId }, query: { target, workflowId: preparation?.workflowId, workflowVersion: preparation?.workflowVersion, profile: preparation?.profile }, signal }); }
+  planWorkItemTransition(workItemId: string, target: Schemas["WorkLifecycleState"], preparation?: Schemas["WorkTransitionPreparation"], signal?: AbortSignal) {
+    const workflow = preparation && "workflowId" in preparation ? preparation : undefined;
+    return this.operation("planWorkItemTransition", { path: { workItemId }, query: { target, workflowId: workflow?.workflowId, workflowVersion: workflow?.workflowVersion, profile: workflow?.profile, sourceObservationId: preparation?.sourceObservationId }, signal });
+  }
   applyWorkItemTransition(workItemId: string, resourceVersion: number, idempotencyKey: string, body: Schemas["WorkTransitionApplyRequest"], signal?: AbortSignal) { return this.operation("applyWorkItemTransition", { path: { workItemId }, body, resourceVersion, idempotencyKey, signal }); }
   listWorkflows(name?: string, signal?: AbortSignal) { return this.operation("listWorkflows", { query: { name }, signal }); }
   getWorkflowLibrary(signal?: AbortSignal) { return this.operation("getWorkflowLibrary", { signal }); }

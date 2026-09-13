@@ -53,6 +53,16 @@ func checkpointFixture(t *testing.T) (*Service, *sqlite.Database, string, string
 	_, err = db.Append(ctx,
 		makeEvent("project.created", statestore.AggregateProject, projectID, 0, map[string]any{"name": "test", "sourceHash": digest}),
 		makeEvent("work.created", statestore.AggregateWork, workID, 0, map[string]any{"projectId": projectID, "title": "Update README", "sourceHash": digest}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This fixture restores a historical checkpoint whose run predates source
+	// admission and route assessment. Preserve that legacy execution contract.
+	if _, err := db.SQL().ExecContext(ctx, `INSERT INTO source_legacy_work(work_id) VALUES (?)`, workID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Append(ctx,
 		makeEvent("run.created", statestore.AggregateRun, runID, 0, map[string]any{"workItemId": workID, "workflowId": "test", "workflowVersion": "1.0.0"}),
 		makeEvent("run.route_frozen", statestore.AggregateRun, runID, 1, map[string]any{"workflowDigest": digest, "routeDigest": digest, "routeSnapshot": route}),
 		makeEvent("run.started", statestore.AggregateRun, runID, 2, map[string]any{}), makeEvent("run.visit_ready", statestore.AggregateRun, runID, 3, map[string]any{}),

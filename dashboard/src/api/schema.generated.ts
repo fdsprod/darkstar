@@ -3,6 +3,64 @@
 
 export interface components {
   schemas: {
+    "FrozenSourceNamespace": { "Provider": string; "Host": string; "TenantID": string; "ScopeID": string; };
+    "FrozenSourceRef": { "Namespace": components["schemas"]["FrozenSourceNamespace"]; "ID": string; };
+    "FrozenSourceScope": { "Namespace": components["schemas"]["FrozenSourceNamespace"]; "ContainerID": string; };
+    "FrozenSourceNamedID": { "ID": string; "Name": string; };
+    "FrozenSourcePin": { "ContractVersion": string; "AdapterID": string; "AdapterVersion": string; "InstallationID": string; "AccountID": string; "BindingRevision": string; "ConfigRevision": string; "ConfigDigest": string; "CapabilitiesDigest": string; };
+    "FrozenSourceTicket": { "version": "darkstar.ticket-observation/v1"; "ref": components["schemas"]["FrozenSourceRef"]; "revision": string; "key": string; "url": string; "title": string; "description": string; "businessState": { "state": "known"; "value": components["schemas"]["FrozenSourceNamedID"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "businessStateReason": { "state": "known"; "value": components["schemas"]["FrozenSourceNamedID"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "issueType": { "state": "known"; "value": components["schemas"]["FrozenSourceNamedID"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "sprint": { "state": "known"; "value": Array<components["schemas"]["FrozenSourceNamedID"]>; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "assignees": { "state": "known"; "value": Array<components["schemas"]["FrozenSourceNamedID"]>; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "labels": { "state": "known"; "value": Array<components["schemas"]["FrozenSourceNamedID"]>; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "priority": { "state": "known"; "value": components["schemas"]["FrozenSourceNamedID"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "relationships": { "state": "known"; "value": Array<{ "Kind": "child_of" | "depends_on"; "Target": components["schemas"]["FrozenSourceRef"]; }>; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "archived": { "state": "known"; "value": boolean; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "updatedAt": { "state": "known"; "value": string; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "placement": { "state": "known"; "value": components["schemas"]["FrozenSourceScope"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "freshness": { "state": "fresh"; "observedAt": string; "revision": string; } | { "state": "stale"; "lastObservedAt": string; "reason": string; } | { "state": "never_observed"; "reason": string; }; "evidenceRef": string; };
+    "RunSourceSnapshot": { "runId": string; "workItemId": string; "admissionId": string; "observationId": string; "lineageRevision": number; "bindingRevision": number; "ref": components["schemas"]["FrozenSourceRef"]; "pin": components["schemas"]["FrozenSourcePin"]; "ticket": components["schemas"]["FrozenSourceTicket"]; "approvedAt": string; "capturedAt": string; };
+    "SourceTicketObservation": { "observationId": string; "ref": components["schemas"]["BacklogTicketRef"]; "revision": string; "title": string; "description": string; "key": string; "url": string; "businessState": components["schemas"]["BacklogNamedObservation"]; "observedAt": string; "evidenceRef": string; };
+    "SourceLineage": { "workItemId": string; "projectId": string; "ticketKey": string; "revision": number; "bindingRevision": number; "ref": components["schemas"]["BacklogTicketRef"]; "origin": "admitted" | "native" | "legacy_native"; "createdAt": string; };
+    "TicketAdmission": { "id": string; "workItemId": string; "projectId": string; "observationId": string; "lineageRevision": number; "bindingRevision": number; "approvedAt": string; "actor": string; };
+    "SourceAssessment": { "state": "ready" | "action_required" | "unresolved_source"; "reasons": Array<string>; };
+    "StringObservation": { "state": "known"; "value": string; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; };
+    "WorkSourceView": { "schemaVersion": 1; "workItemId": string; "projectId": string; "localActivity": "idle" | "draft" | "ready" | "queued" | "running" | "waiting" | "blocked" | "failed" | "reconcile_required"; "runOutcome": "unobserved" | "completed" | "failed" | "cancelled"; "approvedTicket": components["schemas"]["SourceTicketObservation"] | null; "currentTicket": components["schemas"]["SourceTicketObservation"] | null; "currentObservationId": string; "lineage": components["schemas"]["SourceLineage"] | null; "lineages": Array<components["schemas"]["SourceLineage"]>; "approval": components["schemas"]["TicketAdmission"] | null; "assessment": components["schemas"]["SourceAssessment"]; "runs": Array<components["schemas"]["Run"]>; "externalAcceptance": components["schemas"]["StringObservation"]; };
+    "WorkSourceViews": { "schemaVersion": 1; "items": Array<components["schemas"]["WorkSourceView"]>; };
+    "TicketAdmissionRequest": { "schemaVersion": 1; "expectedBindingRevision": number; "observationId": string; "routingIntent"?: components["schemas"]["WorkRoutingIntent"]; };
+    "SourceApprovalRequest": { "schemaVersion": 1; "observationId": string; };
+    "SourceRebindRequest": { "schemaVersion": 1; "expectedLineageRevision": number; "expectedBindingRevision": number; "observationId": string; };
+    "TicketAdmissionResponse": { "schemaVersion": 1; "workItemId": string; "sourceObservationId": string; "source": components["schemas"]["WorkSourceView"]; };
+    "BacklogSourceSelection": components["schemas"]["BacklogSource"];
+    "BacklogNamespace": { "provider": string; "host": string; "tenantId": string; "scopeId": string; };
+    "BacklogScope": { "namespace": components["schemas"]["BacklogNamespace"]; "containerId": string; };
+    "BacklogTicketRef": { "namespace": components["schemas"]["BacklogNamespace"]; "id": string; };
+    "BacklogSource": { "kind": "built_in"; "namespace"?: components["schemas"]["BacklogNamespace"]; } | { "kind": "external"; "connectionId": string; "connectionRevision": string; "scope": components["schemas"]["BacklogScope"]; };
+    "BacklogBinding": { "projectId": string; "revision": number; "source": components["schemas"]["BacklogSource"]; "selectedAt": string; };
+    "BacklogSourceResponse": { "schemaVersion": 1; "binding": components["schemas"]["BacklogBinding"]; "history": Array<components["schemas"]["BacklogBinding"]>; };
+    "BacklogSourceRequest": { "schemaVersion": 1; "expectedRevision": number; "source": components["schemas"]["BacklogSource"]; };
+    "BacklogPredicate": { "fieldId": string; "operator": "equals" | "in" | "after"; "values": Array<string>; };
+    "BacklogQuery": { "text": string; "predicates": Array<components["schemas"]["BacklogPredicate"]>; "pageSize": number; };
+    "BacklogRefreshRequest": { "schemaVersion": 1; "expectedBindingRevision": number; "query": components["schemas"]["BacklogQuery"]; };
+    "BacklogTicketRefreshRequest": { "schemaVersion": 1; "expectedBindingRevision": number; "ref": components["schemas"]["BacklogTicketRef"]; };
+    "BacklogFailure": { "code": string; "message": string; "retryable": boolean; "details": { [key: string]: string; }; };
+    "BacklogRefresh": { "bindingRevision": number; "phase": "refreshing" | "complete" | "failed"; "generation": number; "query": components["schemas"]["BacklogQuery"]; "startedAt": string; "updatedAt": string; "lastSuccessAt": string; "nextAttemptAt": string; "failures": number; "error"?: components["schemas"]["BacklogFailure"]; };
+    "BacklogRefreshResponse": { "schemaVersion": 1; "refresh": components["schemas"]["BacklogRefresh"]; };
+    "BacklogNamedID": { "id": string; "name": string; };
+    "BacklogNamedObservation": { "state": "known"; "value": components["schemas"]["BacklogNamedID"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; };
+    "BacklogNamesObservation": { "state": "known"; "value": Array<components["schemas"]["BacklogNamedID"]>; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; };
+    "BacklogBooleanObservation": { "state": "known"; "value": boolean; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; };
+    "BacklogTicket": { "ref": components["schemas"]["BacklogTicketRef"]; "ticketKey": string; "observationId": string; "bindingRevision": number; "currentSource": boolean; "currentQueryMatch": boolean; "revision": string; "key": string; "url": string; "title": string; "description": string; "status": "cached" | "fresh" | "incomplete" | "missing" | "inaccessible" | "archived" | "out_of_scope"; "reason": string; "observedAt": string; "checkedAt": string; "evidenceRef": string; "businessState": components["schemas"]["BacklogNamedObservation"]; "priority": components["schemas"]["BacklogNamedObservation"]; "assignees": components["schemas"]["BacklogNamesObservation"]; "labels": components["schemas"]["BacklogNamesObservation"]; "archived": components["schemas"]["BacklogBooleanObservation"]; "freshness": "fresh" | "stale" | "never_observed"; };
+    "BacklogView": { "schemaVersion": 1; "binding": components["schemas"]["BacklogBinding"]; "query": components["schemas"]["BacklogQuery"]; "refresh": components["schemas"]["BacklogRefresh"] | null; "tickets": Array<components["schemas"]["BacklogTicket"]>; "nextCursor": string; "includePrevious": boolean; };
+    "TrackerConnection": { "schemaVersion": 1; "connectionId": string; "revision": string; "kind": "linear"; "configuration": { "credentialRef": string; "authentication": "personal_api_key" | "oauth"; "accountId": string; "workspaceId": string; }; "accountName": string; "observedAt": string; "evidenceRef": string; } | { "schemaVersion": 1; "connectionId": string; "revision": string; "kind": "github_token"; "configuration": { "host": string; "credentialRef": string; "accountId": string; }; "accountName": string; "observedAt": string; "evidenceRef": string; } | { "schemaVersion": 1; "connectionId": string; "revision": string; "kind": "github_cli"; "configuration": { "host": string; "login": string; "accountId": string; }; "accountName": string; "observedAt": string; "evidenceRef": string; };
+    "TrackerConnections": { "schemaVersion": 1; "connections": Array<components["schemas"]["TrackerConnection"]>; };
+    "TrackerCredentialStoreRequest": { "schemaVersion": 1; "secret": string; };
+    "TrackerCredentialStoreResult": { "schemaVersion": 1; "stored": true; };
+    "TrackerLinearSetupRequest": { "schemaVersion": 1; "connectionId": string; "revision": string; "credentialRef": string; "authentication": "personal_api_key" | "oauth"; };
+    "TrackerGitHubTokenSetupRequest": { "schemaVersion": 1; "connectionId": string; "revision": string; "host": string; "credentialRef": string; };
+    "TrackerGitHubCLISetupRequest": { "schemaVersion": 1; "connectionId": string; "revision": string; "host": string; "login": string; };
+    "TrackerConnectionHealth": { "schemaVersion": 1; "account": { "id": string; "name": string; }; "workspace"?: { "id": string; "name": string; }; "observedAt": string; "evidenceRef": string; };
+    "TrackerDestinations": { "schemaVersion": 1; "destinations": Array<{ "provider": "linear" | "github_issues"; "host": string; "tenantId": string; "scopeId": string; "containerId": string; "name": string; "url": string; "projects": Array<{ "id": string; "name": string; }>; }>; "nextCursor": string; "observedAt": string; "evidenceRefs": Array<string>; };
+    "NativeTicketNamedID": { "id": string; "name": string; };
+    "NativeTicket": { "id": string; "projectId": string; "revision": string; "key": string; "url": string; "title": string; "description": string; "businessState": components["schemas"]["NativeTicketNamedID"]; "priority": number; "assignees": Array<components["schemas"]["NativeTicketNamedID"]>; "labels": Array<components["schemas"]["NativeTicketNamedID"]>; "evidenceRef": string; "observedAt": string; };
+    "NativeTicketPage": { "schemaVersion": 1; "tickets": Array<components["schemas"]["NativeTicket"]>; "nextCursor": string; };
+    "NativeTicketCapabilities": { "edit": boolean; "transitions": boolean; };
+    "NativeTicketField": { "id": string; "name": string; "kind": "text" | "number" | "ids"; "required": boolean; };
+    "NativeTicketTransition": { "id": string; "name": string; "toState": components["schemas"]["NativeTicketNamedID"]; };
+    "NativeTicketHistory": { "revision": string; "kind": string; "recordedAt": string; "evidenceRef": string; "title": string; "description": string; "businessState": string; "priority": number; };
+    "NativeTicketDetail": { "schemaVersion": 1; "ticket": components["schemas"]["NativeTicket"]; "capabilities": components["schemas"]["NativeTicketCapabilities"]; "fields": Array<components["schemas"]["NativeTicketField"]>; "transitions": Array<components["schemas"]["NativeTicketTransition"]>; "history": Array<components["schemas"]["NativeTicketHistory"]>; };
+    "NativeTicketEditRequest": { "schemaVersion": 1; "revision": string; "title"?: string; "description"?: string; "priority"?: number; "assignees"?: Array<string>; "labels"?: Array<string>; };
+    "NativeTicketTransitionRequest": { "schemaVersion": 1; "revision": string; "transitionId": string; };
     "ContentReference": { "id": string; "version": string; "digest": string; };
     "ContentCondition": { "kind": "input_linked" | "input_absent"; "input": string; } | { "kind": "always" | "revision"; };
     "ContentSection": { "id": string; "when": components["schemas"]["ContentCondition"]; "instructions": string; };
@@ -58,7 +116,7 @@ export interface components {
     "ImportWorkItemRequest": { "projectId": string; "sourceReference": string; "title"?: string; "priority"?: number; };
     "WorkItem": { "deletion"?: "deleting" | "deleted"; "id": string; "projectId": string; "title": string; "details"?: string; "evidence": Array<string>; "routingIntent": components["schemas"]["WorkRoutingIntent"]; "sourceHash": string; "priority": number; "status": "open" | "active" | "completed" | "cancelled"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
     "WorkLifecycleState": "backlog" | "ready" | "running" | "waiting" | "blocked" | "review" | "failed" | "done";
-    "WorkTransitionPreparation": { "workflowId": string; "workflowVersion": string; "profile"?: string; };
+    "WorkTransitionPreparation": { "sourceObservationId": string; } | { "workflowId": string; "workflowVersion": string; "profile"?: string; "sourceObservationId"?: string; };
     "WorkTransitionTargetDecision": { "target": components["schemas"]["WorkLifecycleState"]; "availability": "enabled" | "disabled"; "disabledReasons": Array<"current_state" | "unsupported_target" | "preparation_required" | "project_archived" | "terminal_work" | "active_run" | "unresolved_checkpoint" | "readiness_required" | "policy_blocked" | "concurrency_conflict" | "run_not_ready">; "confirmation": "none" | "required"; };
     "WorkTransitionPlan": { "schemaVersion": 1; "workItemId": string; "state": components["schemas"]["WorkLifecycleState"]; "runId"?: string; "resourceVersion": number; "targets": Array<components["schemas"]["WorkTransitionTargetDecision"]>; };
     "WorkTransitionApplyRequest": { "target": "ready"; "preparation"?: components["schemas"]["WorkTransitionPreparation"]; } | { "target": "done"; "confirmation": "confirmed"; } | { "target": "backlog" | "running" | "waiting" | "blocked" | "review" | "failed"; };
@@ -202,7 +260,7 @@ export interface components {
     "PreparationInputSnapshot": { "work": components["schemas"]["WorkItem"]; "project": components["schemas"]["Project"]; "workflow": components["schemas"]["WorkflowDocument"]; "workflowDigest": string; "policy": components["schemas"]["PreparationPolicy"]; "context": components["schemas"]["PreparationContext"]; "answers": { [key: string]: string; } | null; "evidence": Array<components["schemas"]["PreparationEvidence"]> | null; "override"?: { "from"?: string; "until"?: Array<string> | null; }; };
     "PreparationAlternative": { "entry": string; "nodeCount": number; "rationale": string; "validation": Array<components["schemas"]["WorkflowValidationIssue"]> | null; "missing": Array<components["schemas"]["FrozenRouteInputRequirement"]> | null; "terminals": Array<string>; };
     "RoutePreparationAssessment": { "schemaVersion": 1; "input": components["schemas"]["PreparationInputSnapshot"]; "inputDigest": string; "advice": components["schemas"]["PreparationAdvice"]; "route": components["schemas"]["FrozenRoute"]; "rationale": string; "questions": Array<components["schemas"]["PreparationQuestion"]> | null; "confirmationReasons": Array<string> | null; "alternatives": Array<components["schemas"]["PreparationAlternative"]> | null; "digest": string; };
-    "CreateRunRequest": { "workItemId": string; "workflowId"?: string; "workflowVersion"?: string; "profile"?: string; "preparation"?: components["schemas"]["RunPreparationInput"]; };
+    "CreateRunRequest": { "workItemId": string; "workflowId"?: string; "workflowVersion"?: string; "profile"?: string; "preparation"?: components["schemas"]["RunPreparationInput"]; "sourceObservationId"?: string; };
     "StartFakeRunRequest": { "scenario": "fake-success" | "fake-restart"; };
     "RetryRunRequest": { "nodeId"?: string; };
     "ContinueRunRequest": { "until": string; };
@@ -236,12 +294,36 @@ export interface components {
     "RunCommandSummary": { "scope": string; "status": string; "responseStatus"?: number; "firstEventPosition"?: number; "lastEventPosition"?: number; "createdAt": string; "completedAt"?: string; };
     "RunCommandPageInfo": { "hasEarlier": boolean; };
     "RunIssueSummary": { "kind": "input_required" | "failure" | "reconcile_required"; "code": string; "message": string; };
-    "RunView": { "schemaVersion": 1; "run": components["schemas"]["Run"]; "nodes": Array<components["schemas"]["NodeVisit"]>; "attempts": Array<components["schemas"]["Attempt"]>; "timeline": Array<components["schemas"]["RunTimelineEntry"]>; "timelinePageInfo": components["schemas"]["RunTimelinePageInfo"]; "commands": Array<components["schemas"]["RunCommandSummary"]>; "commandsPageInfo": components["schemas"]["RunCommandPageInfo"]; "issue"?: components["schemas"]["RunIssueSummary"]; "assessment"?: components["schemas"]["RoutePreparationAssessment"] | null; };
+    "RunView": { "schemaVersion": 1; "run": components["schemas"]["Run"]; "nodes": Array<components["schemas"]["NodeVisit"]>; "attempts": Array<components["schemas"]["Attempt"]>; "timeline": Array<components["schemas"]["RunTimelineEntry"]>; "timelinePageInfo": components["schemas"]["RunTimelinePageInfo"]; "commands": Array<components["schemas"]["RunCommandSummary"]>; "commandsPageInfo": components["schemas"]["RunCommandPageInfo"]; "issue"?: components["schemas"]["RunIssueSummary"]; "assessment"?: components["schemas"]["RoutePreparationAssessment"] | null; "sourceSnapshot"?: components["schemas"]["RunSourceSnapshot"]; };
     "RunPage": { "items": Array<components["schemas"]["Run"]>; "pageInfo": { "nextCursor": string | null; }; };
   };
 }
 
 export interface ApiOperations {
+    "listWorkSourceViews": { method: "GET"; path: "/api/v1/work-items/source-views"; response: components["schemas"]["WorkSourceViews"]; body: never; };
+    "getWorkSourceView": { method: "GET"; path: "/api/v1/work-items/{workId}/source"; response: components["schemas"]["WorkSourceView"]; body: never; };
+    "refreshWorkSource": { method: "POST"; path: "/api/v1/work-items/{workId}/source/refresh"; response: components["schemas"]["WorkSourceView"]; body: never; };
+    "approveWorkSource": { method: "POST"; path: "/api/v1/work-items/{workId}/source/approve"; response: components["schemas"]["TicketAdmissionResponse"]; body: components["schemas"]["SourceApprovalRequest"]; };
+    "rebindWorkSource": { method: "POST"; path: "/api/v1/work-items/{workId}/source/rebind"; response: components["schemas"]["TicketAdmissionResponse"]; body: components["schemas"]["SourceRebindRequest"]; };
+    "listTicketExecutions": { method: "GET"; path: "/api/v1/projects/{projectId}/backlog/executions"; response: components["schemas"]["WorkSourceViews"]; body: never; };
+    "admitSourceTicket": { method: "POST"; path: "/api/v1/projects/{projectId}/backlog/admit"; response: components["schemas"]["TicketAdmissionResponse"]; body: components["schemas"]["TicketAdmissionRequest"]; };
+    "getProjectBacklog": { method: "GET"; path: "/api/v1/projects/{projectId}/backlog"; response: components["schemas"]["BacklogView"]; body: never; };
+    "getProjectBacklogSource": { method: "GET"; path: "/api/v1/projects/{projectId}/backlog/source"; response: components["schemas"]["BacklogSourceResponse"]; body: never; };
+    "selectProjectBacklogSource": { method: "PUT"; path: "/api/v1/projects/{projectId}/backlog/source"; response: components["schemas"]["BacklogSourceResponse"]; body: components["schemas"]["BacklogSourceRequest"]; };
+    "refreshProjectBacklog": { method: "POST"; path: "/api/v1/projects/{projectId}/backlog/refresh"; response: components["schemas"]["BacklogRefreshResponse"]; body: components["schemas"]["BacklogRefreshRequest"]; };
+    "refreshProjectBacklogTicket": { method: "POST"; path: "/api/v1/projects/{projectId}/backlog/refresh-ticket"; response: components["schemas"]["BacklogRefreshResponse"]; body: components["schemas"]["BacklogTicketRefreshRequest"]; };
+    "storeTrackerCredential": { method: "POST"; path: "/api/v1/tracker/credentials/{credentialRef}"; response: components["schemas"]["TrackerCredentialStoreResult"]; body: components["schemas"]["TrackerCredentialStoreRequest"]; };
+    "createLinearTrackerConnection": { method: "POST"; path: "/api/v1/tracker/connections/linear"; response: components["schemas"]["TrackerConnection"]; body: components["schemas"]["TrackerLinearSetupRequest"]; };
+    "createGitHubTokenTrackerConnection": { method: "POST"; path: "/api/v1/tracker/connections/github-token"; response: components["schemas"]["TrackerConnection"]; body: components["schemas"]["TrackerGitHubTokenSetupRequest"]; };
+    "createGitHubCLITrackerConnection": { method: "POST"; path: "/api/v1/tracker/connections/github-cli"; response: components["schemas"]["TrackerConnection"]; body: components["schemas"]["TrackerGitHubCLISetupRequest"]; };
+    "listTrackerConnections": { method: "GET"; path: "/api/v1/tracker/connections"; response: components["schemas"]["TrackerConnections"]; body: never; };
+    "getTrackerConnection": { method: "GET"; path: "/api/v1/tracker/connections/{connectionId}/revisions/{revision}"; response: components["schemas"]["TrackerConnection"]; body: never; };
+    "getTrackerConnectionHealth": { method: "GET"; path: "/api/v1/tracker/connections/{connectionId}/revisions/{revision}/health"; response: components["schemas"]["TrackerConnectionHealth"]; body: never; };
+    "getTrackerDestinations": { method: "GET"; path: "/api/v1/tracker/connections/{connectionId}/revisions/{revision}/destinations"; response: components["schemas"]["TrackerDestinations"]; body: never; };
+    "listNativeTickets": { method: "GET"; path: "/api/v1/projects/{projectId}/tickets"; response: components["schemas"]["NativeTicketPage"]; body: never; };
+    "getNativeTicket": { method: "GET"; path: "/api/v1/projects/{projectId}/tickets/{ticketId}"; response: components["schemas"]["NativeTicketDetail"]; body: never; };
+    "editNativeTicket": { method: "POST"; path: "/api/v1/projects/{projectId}/tickets/{ticketId}/edit"; response: components["schemas"]["NativeTicketDetail"]; body: components["schemas"]["NativeTicketEditRequest"]; };
+    "transitionNativeTicket": { method: "POST"; path: "/api/v1/projects/{projectId}/tickets/{ticketId}/transition"; response: components["schemas"]["NativeTicketDetail"]; body: components["schemas"]["NativeTicketTransitionRequest"]; };
     "listContentLibrary": { method: "GET"; path: "/api/v1/content-library"; response: components["schemas"]["ContentLibrary"]; body: never; };
     "createContentItem": { method: "POST"; path: "/api/v1/content-library"; response: components["schemas"]["ContentItem"]; body: components["schemas"]["ContentCreateRequest"]; };
     "previewContentPrompt": { method: "POST"; path: "/api/v1/content-library/preview"; response: components["schemas"]["ContentPromptPreview"]; body: components["schemas"]["ContentPreviewRequest"]; };
@@ -361,6 +443,30 @@ export interface ApiOperations {
 export type ApiOperationId = keyof ApiOperations;
 
 export const operationDefinitions: Record<ApiOperationId, { method: string; path: string }> = {
+  "listWorkSourceViews": { method: "GET", path: "/api/v1/work-items/source-views" },
+  "getWorkSourceView": { method: "GET", path: "/api/v1/work-items/{workId}/source" },
+  "refreshWorkSource": { method: "POST", path: "/api/v1/work-items/{workId}/source/refresh" },
+  "approveWorkSource": { method: "POST", path: "/api/v1/work-items/{workId}/source/approve" },
+  "rebindWorkSource": { method: "POST", path: "/api/v1/work-items/{workId}/source/rebind" },
+  "listTicketExecutions": { method: "GET", path: "/api/v1/projects/{projectId}/backlog/executions" },
+  "admitSourceTicket": { method: "POST", path: "/api/v1/projects/{projectId}/backlog/admit" },
+  "getProjectBacklog": { method: "GET", path: "/api/v1/projects/{projectId}/backlog" },
+  "getProjectBacklogSource": { method: "GET", path: "/api/v1/projects/{projectId}/backlog/source" },
+  "selectProjectBacklogSource": { method: "PUT", path: "/api/v1/projects/{projectId}/backlog/source" },
+  "refreshProjectBacklog": { method: "POST", path: "/api/v1/projects/{projectId}/backlog/refresh" },
+  "refreshProjectBacklogTicket": { method: "POST", path: "/api/v1/projects/{projectId}/backlog/refresh-ticket" },
+  "storeTrackerCredential": { method: "POST", path: "/api/v1/tracker/credentials/{credentialRef}" },
+  "createLinearTrackerConnection": { method: "POST", path: "/api/v1/tracker/connections/linear" },
+  "createGitHubTokenTrackerConnection": { method: "POST", path: "/api/v1/tracker/connections/github-token" },
+  "createGitHubCLITrackerConnection": { method: "POST", path: "/api/v1/tracker/connections/github-cli" },
+  "listTrackerConnections": { method: "GET", path: "/api/v1/tracker/connections" },
+  "getTrackerConnection": { method: "GET", path: "/api/v1/tracker/connections/{connectionId}/revisions/{revision}" },
+  "getTrackerConnectionHealth": { method: "GET", path: "/api/v1/tracker/connections/{connectionId}/revisions/{revision}/health" },
+  "getTrackerDestinations": { method: "GET", path: "/api/v1/tracker/connections/{connectionId}/revisions/{revision}/destinations" },
+  "listNativeTickets": { method: "GET", path: "/api/v1/projects/{projectId}/tickets" },
+  "getNativeTicket": { method: "GET", path: "/api/v1/projects/{projectId}/tickets/{ticketId}" },
+  "editNativeTicket": { method: "POST", path: "/api/v1/projects/{projectId}/tickets/{ticketId}/edit" },
+  "transitionNativeTicket": { method: "POST", path: "/api/v1/projects/{projectId}/tickets/{ticketId}/transition" },
   "listContentLibrary": { method: "GET", path: "/api/v1/content-library" },
   "createContentItem": { method: "POST", path: "/api/v1/content-library" },
   "previewContentPrompt": { method: "POST", path: "/api/v1/content-library/preview" },

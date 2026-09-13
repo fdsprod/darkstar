@@ -99,6 +99,28 @@ Project commands:
 
 Work commands:
   work create <outcome> [--project <project-id>] [--details <text>] [--evidence <ref>] [--routing <automatic|override>] [--workflow <name>] [--workflow-version <version>] [--entry-node <id>] [--terminal-node <id>] [--priority <n>] [--idempotency-key <key>] [--json]
+  ticket list <project-id> [--search <text>] [--state <state>] [--cursor <cursor>] [--page-size <n>] [--json]
+  ticket show <project-id> <ticket-id> [--json]
+  backlog list <project-id> [--limit <n>] [--cursor <cursor>] [--include-previous <true|false>] [--json]
+  backlog source <project-id> [--json]
+  backlog select-native <project-id> --revision <revision> [--json]
+  backlog select <project-id> --revision <revision> --source-file <json-file> [--json]
+  backlog refresh <project-id> --revision <revision> [--search <text>] [--state <id>] [--page-size <n>] [--query-file <json-file>] [--json]
+  backlog refresh-ticket <project-id> --revision <revision> --ref-file <json-file> [--json]
+  ticket-execution list [--project <project-id>] [--json]
+  ticket-execution show <work-id> [--json]
+  ticket-execution admit <project-id> --revision <binding-revision> --observation <observation-id> [--idempotency-key <key>] [--json]
+  ticket-execution approve <work-id> --observation <observation-id> [--idempotency-key <key>] [--json]
+  ticket-execution refresh <work-id> [--json]
+  ticket-execution rebind <work-id> --lineage-revision <revision> --revision <binding-revision> --observation <observation-id> [--idempotency-key <key>] [--json]
+  tracker credential store <ref> --stdin [--json]
+  tracker connection add-linear <id> --revision <rev> --credential-ref <ref> --authentication <personal_api_key|oauth> [--json]
+  tracker connection add-github-token <id> --revision <rev> --host <host> --credential-ref <ref> [--json]
+  tracker connection add-github-cli <id> --revision <rev> --host <host> --login <login> [--json]
+  tracker connection list [--json]
+  tracker connection <show|health|destinations> <id> --revision <rev> [--json]
+  ticket edit <project-id> <ticket-id> --revision <revision> --idempotency-key <key> [--title <text>] [--description <text>] [--priority <n>] [--json]
+  ticket transition <project-id> <ticket-id> --revision <revision> --idempotency-key <key> --transition <id> [--json]
   work import <source-ref> [--project <project-id>] [--title <title>] [--priority <n>] [--idempotency-key <key>] [--json]
   work list [--project <project-id>] [--json]
   work show <work-id> [--json]
@@ -107,9 +129,9 @@ Work commands:
   work transition apply <work-id> --to <state> --if-match <version> [--workflow <name> --version <version>] [--profile <profile>] [--confirm] [--idempotency-key <key>] [--json]
 
 Run commands:
-  run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--idempotency-key <key>] [--json]
+  run prepare <work-id> [--source-observation <approved-observation-id>] [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--idempotency-key <key>] [--json]
   run launch <run-id> --if-match <version> [--confirm-assessment <digest>] [--idempotency-key <key>] [--json]
-  run start <work-id> [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--idempotency-key <key>] [--json]
+  run start <work-id> [--source-observation <approved-observation-id>] [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--idempotency-key <key>] [--json]
   run start --scenario <fake-success|fake-restart> [--idempotency-key <key>] [--json]
   run list [--limit <n>] [--after <run-id>] [--json]
   run show <run-id> [--json]
@@ -292,6 +314,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runRun(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "work":
 		return runWork(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "ticket":
+		return runTicket(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "ticket-execution":
+		return runTicketExecution(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "backlog":
+		return runBacklog(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "tracker":
+		return runTracker(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "content":
 		return runContent(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "workflow":
@@ -353,6 +383,10 @@ func runDaemon(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 }
 
 type daemonAPIService struct {
+	trackerConnectionManager *trackerConnectionManager
+	backlog                  *backlogService
+	backlogCancel            context.CancelFunc
+	backlogDone              chan struct{}
 	server                   *localapi.Server
 	paths                    platformport.Paths
 	projectRoot              string
@@ -532,6 +566,26 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return fmt.Errorf("reconcile work-item workspaces: %w", err)
 	}
 	if err := service.server.SetWork(work); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := configureNativeTickets(service.server, database, database); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.configureTrackerConnections(); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.configureBacklog(); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.configureTicketExecution(); err != nil {
 		_ = database.Close()
 		service.database = nil
 		return err
@@ -726,6 +780,7 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.executions = nil
 		return err
 	}
+	service.startBacklogPolling(ctx)
 	return nil
 }
 
@@ -750,6 +805,7 @@ func (service *daemonAPIService) workflowDirectories() ([]workflowfilesystem.Dir
 }
 
 func (service *daemonAPIService) Close() error {
+	service.stopBacklogPolling()
 	var executionErr error
 	if service.executions != nil {
 		executionErr = service.executions.Close()

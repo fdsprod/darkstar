@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 
 import { DeleteWorkButton } from "./DeleteWorkButton";
+import { WorkSourceFacts } from "./WorkSourcePanel";
 import { apiClient, ApiRequestError } from "../api/client";
 import type { components } from "../api/schema.generated";
 import { AppLink, useRouter } from "../app/router";
@@ -15,6 +16,8 @@ import {
   buildCreateWorkItemRequest,
   buildWorkTransitionRequest,
   deriveBoardCards,
+  applySourceViews,
+  boardCardTitle,
   disabledTransitionReason,
   filterBoardCards,
   legalTransitionTargets,
@@ -45,6 +48,7 @@ export function BoardPage() {
   const [pendingAction, setPendingAction] = useState<{ workId: string; target: BoardLifecycle }>();
   const [actionMessage, setActionMessage] = useState<{ kind: "success" | "error"; text: string }>();
   const [transitionPlans, setTransitionPlans] = useState<Record<string, Schemas["WorkTransitionPlan"]>>({});
+  const [sourceViews, setSourceViews] = useState<Record<string, Schemas["WorkSourceView"]>>({});
   const [selectedWorkId, setSelectedWorkId] = useState("");
   const [draggedWorkId, setDraggedWorkId] = useState("");
 
@@ -54,7 +58,7 @@ export function BoardPage() {
     void apiClient.listWorkItems(undefined, undefined, true).then((items) => { if (live) setDeletedItems(items.filter((item) => item.deletion === "deleted")); }).catch(() => { if (live) setActionMessage({kind:"error", text:"Deleted history could not be loaded. Try again."}); });
     return () => { live = false; };
   }, [showDeleted, state.lastSynchronizedAt]);
-  const allCards = useMemo(() => deriveBoardCards({ ...state.snapshot, workItems: [...state.snapshot.workItems, ...(showDeleted ? deletedItems.filter((item) => !state.snapshot.workItems.some((current) => current.id === item.id)) : [])] }), [state.snapshot, showDeleted, deletedItems]);
+  const allCards = useMemo(() => applySourceViews(deriveBoardCards({ ...state.snapshot, workItems: [...state.snapshot.workItems, ...(showDeleted ? deletedItems.filter((item) => !state.snapshot.workItems.some((current) => current.id === item.id)) : [])] }), sourceViews), [state.snapshot, showDeleted, deletedItems, sourceViews]);
   const boardCards = useMemo(() => applyTransitionPlans(allCards, transitionPlans), [allCards, transitionPlans]);
   const cards = useMemo(
     () => filterBoardCards(boardCards.filter((card) => showDeleted || card.work.deletion !== "deleted"), { projectId: projectId || undefined, workflowId: workflowId || undefined, query, view }),
@@ -68,6 +72,16 @@ export function BoardPage() {
   const selectedCard = boardCards.find((card) => card.work.id === selectedWorkId);
 
   useEffect(() => {
+    const abort = new AbortController();
+    void apiClient.operation("listWorkSourceViews", { signal: abort.signal }).then((value) => {
+      if (!abort.signal.aborted) {
+        setSourceViews(Object.fromEntries(value.items.map((item) => [item.workItemId, item])));
+      }
+    }).catch(() => undefined);
+    return () => abort.abort();
+  }, [state.lastSynchronizedAt]);
+
+  useEffect(() => {
     if (new URLSearchParams(search).get("create") === "1" && !createDialog.current?.open) createDialog.current?.showModal();
   }, [search]);
   useEffect(() => {
@@ -77,7 +91,10 @@ export function BoardPage() {
   }, [state.lastSynchronizedAt]);
   useEffect(() => {
     let live = true;
-    void Promise.allSettled(allCards.map(async (card) => [card.work.id, await apiClient.planWorkItemTransition(card.work.id, card.lifecycle)] as const))
+    void Promise.allSettled(allCards.map(async (card) => {
+      const preparation = approvedSourcePreparation(card);
+      return [card.work.id, await apiClient.planWorkItemTransition(card.work.id, preparation ? "ready" : card.lifecycle, preparation)] as const;
+    }))
       .then((results) => {
         if (!live) return;
         setTransitionPlans(Object.fromEntries(results.flatMap((result) => result.status === "fulfilled" ? [result.value] : [])));
@@ -94,7 +111,7 @@ export function BoardPage() {
     setActionMessage(undefined);
     try {
       const idempotencyKey = `dashboard-work-transition-${crypto.randomUUID()}`;
-      const result = await apiClient.applyWorkItemTransition(card.work.id, plan.resourceVersion, idempotencyKey, buildWorkTransitionRequest(source, target));
+      const result = await apiClient.applyWorkItemTransition(card.work.id, plan.resourceVersion, idempotencyKey, buildWorkTransitionRequest(source, target, target === "ready" ? approvedSourcePreparation(card) : undefined));
       setTransitionPlans((current) => ({ ...current, [card.work.id]: result.after }));
       await refresh();
       setActionMessage({ kind: "success", text: `${card.work.title} moved to ${lifecycleLabels[target]}.` });
@@ -117,6 +134,7 @@ export function BoardPage() {
 
       <div className="board-toolbar" aria-label="Board controls">
         <div className="view-tabs" aria-label="Board view">
+          <AppLink to="/tickets" className="navigation-action">Tickets</AppLink>
           <button className="view-tab" type="button" aria-pressed={view === "all"} onClick={() => setView("all")}>All work <span>{allCards.filter((card) => card.work.deletion !== "deleted").length}</span></button>
           <button className="view-tab" type="button" aria-pressed={view === "attention"} onClick={() => setView("attention")}>Needs attention</button>
         </div>
@@ -173,11 +191,12 @@ function WorkCard({ card, plan, pending, onSelect, onDrag, onMove, onChanged }: 
       else if (keyboardTarget !== undefined && event.key === "Enter") { event.preventDefault(); const target = LIFECYCLE_COLUMNS[keyboardTarget]; if (!pending && (plan && transitionDecision(plan, target))?.availability === "enabled") { void onMove(card, target, "keyboard"); setKeyboardTarget(undefined); onDrag(""); } }
       else if (event.key === "Escape") { setKeyboardTarget(undefined); onDrag(""); }
     }} onBlur={(event) => { if (keyboardTarget !== undefined && !event.currentTarget.contains(event.relatedTarget)) { setKeyboardTarget(undefined); onDrag(""); } }}
-    aria-label={`${card.work.title}, ${lifecycleLabels[card.lifecycle]}`}
+    aria-label={`${boardCardTitle(card)}, ${lifecycleLabels[card.lifecycle]}`}
     onDragStart={(event) => { setKeyboardTarget(undefined); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", card.work.id); onDrag(card.work.id); }}
     onDragEnd={() => onDrag("")}>
     <div aria-live="polite" className="sr-only">{keyboardTarget !== undefined && `${lifecycleLabels[LIFECYCLE_COLUMNS[keyboardTarget]]}: ${disabledTransitionReason(plan, LIFECYCLE_COLUMNS[keyboardTarget])}`}</div><div className="work-card__project"><span aria-hidden="true">{initials(projectName)}</span><span>{projectName}</span></div>
-    <button className="work-card__title" draggable={true} type="button" onClick={() => onSelect(card.work.id)}>{card.work.title}</button>
+    <button className="work-card__title" draggable={true} type="button" onClick={() => onSelect(card.work.id)}>{boardCardTitle(card)}</button>
+    {card.source?.currentTicket && <p className="work-card__tracker-status">Tracker: {card.source.currentTicket.businessState.state === "known" ? card.source.currentTicket.businessState.value.name : humanize(card.source.currentTicket.businessState.state)}</p>}
     <div className="work-card__metadata"><span>Priority {card.work.priority}</span></div>
     {card.run ? <div className="work-card__run"><AppLink to={`/work/${encodeURIComponent(card.work.id)}/run/${encodeURIComponent(card.run.id)}`}>{card.run.workflowId} · v{card.run.workflowVersion}</AppLink><span className={`run-status run-status--${card.lifecycle}`}><span aria-hidden="true" />{humanize(card.run.status)}</span></div> : <p className="work-card__unrouted">Route not selected</p>}
     <div className="work-card__actions" aria-label={`Actions for ${card.work.title}`}><DeleteWorkButton work={card.work} onChanged={onChanged} /></div>
@@ -188,7 +207,8 @@ function WorkQuickPanel({ card, plan, events, onClose, onChanged }: { onChanged(
   const activity = events.filter((event) => event.aggregateId === card.work.id || event.aggregateId === card.run?.id).slice(-5).reverse();
   const blockers = plan?.targets.flatMap((target) => target.disabledReasons).filter((reason) => !["current_state", "unsupported_target", "run_not_ready", "active_run", "terminal_work"].includes(reason)) ?? [];
   return <aside className="work-quick-panel" aria-labelledby="quick-panel-title">
-    <header><div><p className="eyebrow">Quick view</p><h2 id="quick-panel-title">{card.work.title}</h2></div><button className="icon-button" type="button" aria-label="Close quick view" onClick={onClose}><Icon name="x" /></button></header>
+    <header><div><p className="eyebrow">Quick view</p><h2 id="quick-panel-title">{boardCardTitle(card)}</h2></div><button className="icon-button" type="button" aria-label="Close quick view" onClick={onClose}><Icon name="x" /></button></header>
+    {card.source && <section><h3>Tracker and execution</h3><WorkSourceFacts view={card.source} /></section>}
     <section><h3>Requested outcome</h3><p>{card.work.details || card.work.title}</p></section>
     <section><h3>Blocker</h3><p>{blockers.length ? [...new Set(blockers)].map((reason) => DISABLED_REASON_LABELS[reason]).join("; ") : "No blocking condition is reported by the lifecycle plan."}</p></section>
     <section><h3>Readiness</h3><p>{readinessSummary(card, plan)}</p>{card.run && <AppLink to={`/work/${encodeURIComponent(card.work.id)}/run/${encodeURIComponent(card.run.id)}/readiness`}>Open readiness →</AppLink>}</section>
@@ -240,6 +260,11 @@ function CreateWorkDialog({ dialogRef, projects, workflows, onCreated }: { dialo
     {error && <p className="form-error" role="alert">{error}</p>}
     <footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button className="button" type="button" disabled={submitting} onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || activeProjects.length === 0}>{submitting ? "Creating…" : "Create work"}</button></footer>
   </form></dialog>;
+}
+
+function approvedSourcePreparation(card: BoardCard): Schemas["WorkTransitionPreparation"] | undefined {
+  const observationId = card.source?.approvedTicket?.observationId;
+  return observationId ? { sourceObservationId: observationId } : undefined;
 }
 
 function countByLifecycle(cards: readonly BoardCard[]) { const counts = Object.fromEntries(LIFECYCLE_COLUMNS.map((lifecycle) => [lifecycle, 0])) as Record<BoardLifecycle, number>; for (const card of cards) counts[card.lifecycle] += 1; return counts; }

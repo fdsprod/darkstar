@@ -36,6 +36,18 @@ type WorkService interface {
 }
 
 func (s *Server) serveProjects(response http.ResponseWriter, request *http.Request, requestID string) {
+	if strings.HasSuffix(path.Clean(request.URL.Path), "/backlog/admit") || strings.HasSuffix(path.Clean(request.URL.Path), "/backlog/executions") {
+		s.serveTicketExecution(response, request, requestID)
+		return
+	}
+	if strings.Contains(path.Clean(request.URL.Path), "/backlog") {
+		s.serveBacklog(response, request, requestID)
+		return
+	}
+	if strings.Contains(path.Clean(request.URL.Path), "/tickets") {
+		s.serveNativeTickets(response, request, requestID)
+		return
+	}
 	service := s.workService()
 	if service == nil {
 		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "WORK_SERVICE_UNAVAILABLE", Message: "Project and work operations are not configured.", RequestID: requestID, Retryable: true})
@@ -120,6 +132,10 @@ func existingAbsoluteDirectory(value string) (string, error) {
 }
 
 func (s *Server) serveWorkItems(response http.ResponseWriter, request *http.Request, requestID string) {
+	if strings.Contains(path.Clean(request.URL.Path), "/source") {
+		s.serveTicketExecution(response, request, requestID)
+		return
+	}
 	service := s.workService()
 	if service == nil {
 		writeAPIError(response, http.StatusServiceUnavailable, apiError{SchemaVersion: 1, Code: "WORK_SERVICE_UNAVAILABLE", Message: "Project and work operations are not configured.", RequestID: requestID, Retryable: true})
@@ -269,7 +285,7 @@ func (s *Server) serveWorkTransitionPlan(response http.ResponseWriter, request *
 		return
 	}
 	query := request.URL.Query()
-	allowed := map[string]bool{"target": true, "workflowId": true, "workflowVersion": true, "profile": true}
+	allowed := map[string]bool{"target": true, "workflowId": true, "workflowVersion": true, "profile": true, "sourceObservationId": true}
 	for key, values := range query {
 		if !allowed[key] || len(values) != 1 {
 			writeWorkTransitionError(response, requestID, worklifecycle.ErrInvalidRequest)
@@ -277,8 +293,8 @@ func (s *Server) serveWorkTransitionPlan(response http.ResponseWriter, request *
 		}
 	}
 	planRequest := worklifecycle.PlanRequest{Target: worklifecycle.State(query.Get("target"))}
-	if query.Has("workflowId") || query.Has("workflowVersion") || query.Has("profile") {
-		planRequest.Preparation = &worklifecycle.Preparation{WorkflowID: query.Get("workflowId"), WorkflowVersion: query.Get("workflowVersion"), Profile: query.Get("profile")}
+	if query.Has("workflowId") || query.Has("workflowVersion") || query.Has("profile") || query.Has("sourceObservationId") {
+		planRequest.Preparation = &worklifecycle.Preparation{WorkflowID: query.Get("workflowId"), WorkflowVersion: query.Get("workflowVersion"), Profile: query.Get("profile"), SourceObservationID: query.Get("sourceObservationId")}
 	}
 	plan, err := service.Plan(request.Context(), workID, planRequest)
 	if err != nil {

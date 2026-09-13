@@ -9,7 +9,7 @@ import { assessmentPresentation, buildPreparationRequest, emptyPreparationDraft,
 
 type Schemas = components["schemas"];
 
-export function WorkRoutePreparation({ work, run, onChanged }: { work: Schemas["WorkItem"]; run?: Schemas["Run"]; onChanged(): Promise<void> }) {
+export function WorkRoutePreparation({ work, run, sourceObservationId, onChanged }: { work: Schemas["WorkItem"]; run?: Schemas["Run"]; sourceObservationId?: string; onChanged(): Promise<void> }) {
   const [view, setView] = useState<Schemas["RunView"]>();
   const [workflows, setWorkflows] = useState<Schemas["WorkflowVersionSummary"][]>([]);
   const [state, setState] = useState<PreparationState>({ kind: "idle", draft: emptyPreparationDraft() });
@@ -35,7 +35,12 @@ export function WorkRoutePreparation({ work, run, onChanged }: { work: Schemas["
   function updateDraft(change: Partial<PreparationDraft>) { setState({ kind: "idle", draft: { ...draft, ...change } }); setMessage(""); }
   async function prepare() {
     let request: Schemas["CreateRunRequest"];
-    try { request = buildPreparationRequest(work.id, draft); }
+    try {
+      request = buildPreparationRequest(work.id, draft);
+      if (sourceObservationId) {
+        request.sourceObservationId = sourceObservationId;
+      }
+    }
     catch (cause) { setState({ kind: "error", draft, message: cause instanceof Error ? cause.message : "Preparation input is invalid." }); return; }
     const before = view?.run.routeSnapshot;
     setState({ kind: "preparing", draft, priorRoute: before }); setMessage("");

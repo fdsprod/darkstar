@@ -29,6 +29,19 @@ export interface BoardCard {
   project?: Schemas["Project"];
   run?: Schemas["Run"];
   lifecycle: BoardLifecycle;
+  source?: Schemas["WorkSourceView"];
+}
+
+export function boardCardTitle(card: BoardCard): string {
+  return card.source?.currentTicket?.title ?? card.source?.approvedTicket?.title ?? card.work.title;
+}
+
+export function applySourceViews(cards: readonly BoardCard[], views: Readonly<Record<string, Schemas["WorkSourceView"]>>): BoardCard[] {
+  return cards.map((card) => {
+    const source = views[card.work.id];
+    const admittedRun = Boolean(source?.approval && card.run && !["completed", "cancelled"].includes(card.run.status));
+    return { ...card, source, lifecycle: admittedRun ? lifecycleFor(card.work, card.run, true) : card.lifecycle };
+  });
 }
 
 export interface BoardFilters {
@@ -96,7 +109,7 @@ export function filterBoardCards(cards: readonly BoardCard[], filters: BoardFilt
     if (filters.projectId && card.work.projectId !== filters.projectId) return false;
     if (filters.workflowId && card.run?.workflowId !== filters.workflowId) return false;
     if (filters.view === "attention" && !(["waiting", "blocked", "review", "failed"] as BoardLifecycle[]).includes(card.lifecycle)) return false;
-    if (query && !`${card.work.title} ${card.work.id} ${card.project?.name ?? ""} ${card.run?.workflowId ?? ""}`.toLocaleLowerCase().includes(query)) return false;
+    if (query && !`${boardCardTitle(card)} ${card.work.title} ${card.work.id} ${card.project?.name ?? ""} ${card.run?.workflowId ?? ""}`.toLocaleLowerCase().includes(query)) return false;
     return true;
   });
 }
@@ -198,8 +211,8 @@ function newestRun(runs: readonly Schemas["Run"][]) {
   })[0];
 }
 
-function lifecycleFor(work: Schemas["WorkItem"], run?: Schemas["Run"]): BoardLifecycle {
-  if (work.status === "completed" || work.status === "cancelled") return "done";
+function lifecycleFor(work: Schemas["WorkItem"], run?: Schemas["Run"], admittedRun = false): BoardLifecycle {
+  if (!admittedRun && (work.status === "completed" || work.status === "cancelled")) return "done";
   if (!run) return "backlog";
   switch (run.status) {
     case "pending":

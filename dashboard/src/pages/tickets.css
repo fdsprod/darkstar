@@ -1,0 +1,112 @@
+.ticket-project, .ticket-toolbar label, .ticket-editor label {
+  display: grid;
+  gap: 0.45rem;
+}
+.ticket-project {
+  max-width: 26rem;
+  margin-bottom: 1rem;
+}
+.ticket-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.ticket-layout {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) minmax(20rem, 2fr);
+  gap: 1.5rem;
+}
+.ticket-list__item {
+  width: 100%;
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  text-align: left;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border, #343b49);
+  border-radius: 0.5rem;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.ticket-list__item[aria-pressed="true"] {
+  border-color: var(--accent, #7fb5ed);
+}
+.ticket-editor fieldset {
+  display: grid;
+  gap: 1rem;
+  border: 0;
+  padding: 0;
+}
+.ticket-editor input, .ticket-editor textarea, .ticket-toolbar input, .ticket-project select {
+  padding: 0.6rem;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border, #343b49);
+  border-radius: 0.4rem;
+  font: inherit;
+  max-width: 100%;
+}
+.ticket-history article {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border, #343b49);
+}
+.ticket-history pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.ticket-source-settings {
+  padding: 1rem;
+  border: 1px solid var(--border, #343b49);
+  border-radius: 0.5rem;
+}
+.ticket-source-settings fieldset, .ticket-source-settings label {
+  display: grid;
+  gap: 0.75rem;
+}
+.ticket-source-settings fieldset {
+  border: 0;
+  padding: 0;
+  max-width: 40rem;
+}
+.ticket-source-settings select {
+  max-width: 100%;
+  padding: 0.6rem;
+}
+.ticket-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 1rem 0;
+}
+.ticket-native-history {
+  margin-top: 2rem;
+}
+.ticket-detail dd {
+  overflow-wrap: anywhere;
+  margin-bottom: 0.5rem;
+}
+.work-source-facts {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 2fr);
+  gap: 0.4rem 0.8rem;
+}
+.work-source-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ticket-admission {
+  border-block: 1px solid var(--border, #343b49);
+  padding: 1rem 0;
+  margin: 1rem 0;
+}
+.ticket-source-comparison, .work-source-panel > details {
+  margin: 1rem 0;
+}
+@media (max-width: 760px) {
+  .ticket-layout {
+    grid-template-columns: 1fr;
+  }
+}

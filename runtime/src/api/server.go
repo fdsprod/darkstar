@@ -44,29 +44,33 @@ type Server struct {
 	endpointPath string
 	now          func() time.Time
 
-	mu             sync.RWMutex
-	state          serverState
-	endpoint       Endpoint
-	http           *http.Server
-	recovery       RecoveryStatus
-	doctor         DoctorReporter
-	configuration  ConfigurationReporter
-	configMutation ConfigurationMutationService
-	streams        *StreamServices
-	exporter       RunExporter
-	runs           RunService
-	agents         AgentService
-	inputs         InputRequestService
-	work           WorkService
-	workLifecycle  WorkLifecycleService
-	artifacts      ArtifactService
-	approvals      ApprovalService
-	attention      AttentionService
-	readiness      ReadinessService
-	workflows      WorkflowService
-	contentLibrary *contentlibrary.Service
-	workflowChat   workflowchat.Runner
-	dashboard      fs.FS
+	mu                 sync.RWMutex
+	state              serverState
+	endpoint           Endpoint
+	http               *http.Server
+	recovery           RecoveryStatus
+	doctor             DoctorReporter
+	configuration      ConfigurationReporter
+	configMutation     ConfigurationMutationService
+	streams            *StreamServices
+	exporter           RunExporter
+	runs               RunService
+	agents             AgentService
+	inputs             InputRequestService
+	work               WorkService
+	nativeTickets      NativeTicketService
+	trackerConnections TrackerConnectionService
+	backlog            BacklogService
+	ticketExecution    TicketExecutionService
+	workLifecycle      WorkLifecycleService
+	artifacts          ArtifactService
+	approvals          ApprovalService
+	attention          AttentionService
+	readiness          ReadinessService
+	workflows          WorkflowService
+	contentLibrary     *contentlibrary.Service
+	workflowChat       workflowchat.Runner
+	dashboard          fs.FS
 
 	streamPollInterval      time.Duration
 	streamKeepaliveInterval time.Duration
@@ -549,6 +553,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/runs" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/runs/") {
 		s.serveRuns(response, request, requestID)
+		return
+	}
+	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/tracker/") {
+		s.serveTrackerConnections(response, request, requestID)
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/projects" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/projects/") {

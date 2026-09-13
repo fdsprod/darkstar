@@ -139,6 +139,7 @@ func TestPrepareUsesPersistedRoutingOverrideAndResolvesOmittedVersion(t *testing
 		t.Fatal(err)
 	}
 	planner := &routeCapturePlanner{workflowDispatchPlanner: workflowDispatchPlannerFor(workflow.NoCheckpoint{}, false)}
+	markHistoricalNativeWork(t, database, workID)
 	if err := service.SetWorkflowPlanner(planner); err != nil {
 		t.Fatal(err)
 	}
@@ -177,6 +178,7 @@ func TestPrepareRejectsInvalidRoutingOverrideBeforeRunCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	planner := &routeCapturePlanner{workflowDispatchPlanner: workflowDispatchPlannerFor(workflow.NoCheckpoint{}, false), issues: workflow.ValidationErrors{{Code: workflow.ValidationRouteEntryInvalid, Message: "unknown entry"}}}
+	markHistoricalNativeWork(t, database, workID)
 	if err := service.SetWorkflowPlanner(planner); err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +422,17 @@ func seedWorkflowWork(t *testing.T, database *sqlite.Database) (string, string) 
 	); err != nil {
 		t.Fatal(err)
 	}
+	markHistoricalNativeWork(t, database, workID)
 	return projectID, workID
+}
+
+// Existing workflow tests exercise retained pre-source-admission work. New
+// native/source admission behavior has separate version-bound integration tests.
+func markHistoricalNativeWork(t *testing.T, db *sqlite.Database, work string) {
+	t.Helper()
+	if _, err := db.SQL().Exec(`INSERT OR IGNORE INTO source_legacy_work(work_id) VALUES (?)`, work); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertRunFailureCode(t *testing.T, database *sqlite.Database, runID, code string) {

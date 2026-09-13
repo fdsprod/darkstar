@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,8 +14,24 @@ const aggregateSourceHash = "0123456789abcdef0123456789abcdef0123456789abcdef012
 
 func TestWorkAggregateHierarchyPersistsAndRebuilds(t *testing.T) {
 	t.Parallel()
-	database := openEventTestDatabase(t)
 	ctx := context.Background()
+	// This fixture exercises legacy aggregate replay across the source-admission
+	// migration; new native run approval is covered by source execution tests.
+	connection, err := openSQLite(filepath.Join(t.TempDir(), "legacy-hierarchy.db"), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = connection.Close()
+	})
+	migrations, err := embeddedMigrationSet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(ctx, connection, migrations[:28], fixedNow); err != nil {
+		t.Fatal(err)
+	}
+	database := &Database{sql: connection, now: fixedNow}
 
 	projectID := testID("project", 'A')
 	workID := testID("work", 'B')
@@ -24,7 +41,7 @@ func TestWorkAggregateHierarchyPersistsAndRebuilds(t *testing.T) {
 	runID := testID("run", 'F')
 	attemptID := testID("attempt", 'G')
 
-	_, err := database.Append(ctx,
+	_, err = database.Append(ctx,
 		pendingEvent(testID("event", 'A'), statestore.AggregateProject, projectID, 0, "project.created",
 			`{"name":"DARKSTAR","sourceHash":"`+aggregateSourceHash+`"}`),
 		pendingEvent(testID("event", 'B'), statestore.AggregateWork, workID, 0, "work.created",
@@ -44,6 +61,9 @@ func TestWorkAggregateHierarchyPersistsAndRebuilds(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("append hierarchy: %v", err)
+	}
+	if err := applyMigration(ctx, connection, migrations[28], fixedNow()); err != nil {
+		t.Fatal(err)
 	}
 
 	assertWorkHierarchy(t, database, projectID, workID, storyID, dependencyID, pointID, runID, attemptID)
