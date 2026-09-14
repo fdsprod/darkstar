@@ -13,6 +13,28 @@ one-statement-per-line rule. `packages/plugin-sdk/scripts/lint-control-flow.mjs`
 enforces it in SDK build/check commands and the repository build. Generated
 plugin bundles are checked for freshness rather than hand-formatted.
 
+# Test selection
+
+- Follow [the test selection guide](CONTRIBUTING.md#test-selection). Start with
+  tests for the changed behavior and affected consumers, including relevant
+  integration tests. Do not run the full suite after every edit or atomic commit.
+- Run focused browser acceptance tests when UI interactions, routing, rendering,
+  or API bindings change. Run daemon/CLI end-to-end tests when lifecycle,
+  persistence, recovery, or transport wiring changes. Explain which changed
+  boundary requires an expensive test before launching it.
+- Broaden coverage for shared contracts, migrations, provider/security boundaries,
+  dependencies, or uncertain impact. For a connected sequence of issues, run
+  focused checks per issue and a full regression pass at the integration checkpoint
+  before handoff; run earlier if a cross-cutting change needs it.
+- Reuse passing results while their code, dependencies, configuration, and test
+  environment remain unchanged. A new commit or issue number alone is not a
+  reason to repeat tests. After a fix, rerun affected checks and broaden only if
+  the failure indicates wider impact.
+- Documentation-only changes need link/content and diff checks unless they alter
+  executable contracts or generated inputs. Keep full CI verification intact.
+- Report the checks actually run, known failures, and meaningful coverage gaps.
+  Focused checks must not be described as a full-suite pass.
+
 # Grounding and architectural boundaries
 
 Before changing behavior, read the relevant sections of

@@ -50,7 +50,7 @@ Prove that two clean binary/package builds are byte-for-byte identical:
 GitHub Actions runs these commands on a `windows-2025` runner for every
 push and pull request. Third-party actions are pinned to immutable commit SHAs.
 
-For a shorter edit loop, run the phases independently:
+The full verification phases can also be run independently:
 
 ```powershell
 ./scripts/Format.ps1
@@ -70,13 +70,90 @@ tracked Go module: `govet`, `staticcheck`, `errcheck`, `ineffassign`, and
 `unused`. `Test.ps1` is the canonical local check command and fails with an
 actionable `Format.ps1` hint when any tracked Go file is not canonical. It also
 runs the same linter configuration before the Go, contract, and dashboard test
-suites. `Verify.ps1` adds the full build and is the command used by Windows CI.
+suites. `Verify.ps1` adds browser acceptance tests and the full build and is the
+command used by Windows CI. Neither command is the default for every local edit.
 
 If only the linter is missing or its pinned version changed, install it with:
 
 ```powershell
 ./scripts/Install-Lint.ps1
 ```
+
+## Test selection
+
+During development, select tests by the behavior and dependencies changed. Run
+the affected unit/contract tests first, then integration or end-to-end checks
+that exercise the changed boundaries. Include consumers of changed interfaces;
+testing only the package where a type is defined is insufficient.
+
+| Change | Local checks |
+| --- | --- |
+| Isolated runtime behavior | Changed Go package and relevant consumer tests |
+| Git, SQLite, scheduling, or permissions | Relevant integration/negative tests; include migration or recovery tests when those behaviors change |
+| Daemon lifecycle or API/CLI wiring | Focused daemon/CLI acceptance scenario plus affected transport tests |
+| Dashboard behavior | Dashboard type checks and unit tests; browser specs for affected interactions, routing, rendering, or API bindings |
+| Shared UI primitives, styles, or Storybook setup | Relevant browser specs; full browser or Storybook catalog checks when impact spans the application |
+| Schemas or provider protocols | Contract, compatibility, and affected consumer/adapter checks |
+| Documentation only | Check links, content, and diff; run relevant validation if the document is an executable input |
+
+For a connected sequence of issues, run focused checks for each atomic change
+and one full regression pass at the integration checkpoint before handoff.
+Broaden earlier for shared contracts, migrations, provider/security boundaries,
+toolchain or dependency changes, or unclear impact. Do not rerun a passing check
+just because a new commit was made: reuse its result until relevant source,
+dependencies, configuration, or the test environment changes. After a failure,
+rerun the affected checks after fixing it; widen coverage if the failure exposes
+a broader problem. Full CI verification remains required.
+
+Load the project toolchain once in the PowerShell session:
+
+```powershell
+. ./scripts/Use-ProjectToolchain.ps1
+```
+
+Go already supports selecting packages and individual scenarios. For example:
+
+```powershell
+# Runner behavior and output contracts, without unrelated runtime packages.
+go -C runtime test -mod=readonly ./src/core/investigationrunner ./tests/investigationrunner
+
+# Snapshot and investigation integration tests, including real Git/SQLite work.
+go -C runtime test -mod=readonly ./tests/repositoryscope
+
+# One daemon/CLI/restart acceptance scenario, when that boundary changes.
+go -C runtime test -mod=readonly ./src/cli -run '^TestNoCodeInvestigationPersistsArtifactAcrossDaemonRestart$'
+```
+
+Check that a filtered command actually selects tests; Go can succeed with
+`[no tests to run]`. `-run` limits test execution but still compiles the selected
+package and its dependencies. Avoid `-count=1` unless an uncached run is needed;
+Go normally reuses eligible passing results. The current suite does not use
+`testing.Short()`, so adding `-short` does not skip integration or end-to-end work.
+
+Dashboard checks and browser acceptance checks are separate:
+
+```powershell
+# Generated API freshness, type checks, and Node unit tests; no browser startup.
+npm run check
+
+# Only the affected browser spec, with API fixtures.
+npm run test:browser -- dashboard/e2e/project-repositories.mutations.spec.ts
+
+# Full browser acceptance suite, for changes with broad UI impact.
+npm run test:browser
+
+# Full Storybook catalog, for changes affecting shared component rendering.
+npm run test:stories
+```
+
+Browser tests with API fixtures validate UI behavior, not a live daemon/provider
+deployment. Go tests include both unit and integration tests, and some CLI tests
+exercise the daemon end to end. Choose by the boundary under test rather than
+assuming all Go tests are cheap or all browser tests use a full deployment.
+
+Record which checks ran and any known failures or gaps. A targeted pass is not
+evidence that the full suite passed. Existing unrelated failures should be
+reported separately, without repeated full runs when nothing relevant changed.
 
 ## Schema contracts
 
