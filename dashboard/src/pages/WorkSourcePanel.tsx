@@ -87,7 +87,7 @@ export function WorkSourceFacts({ view }: { view: Schemas["WorkSourceView"] }) {
   return <dl className="work-source-facts">
     <dt>Tracker status</dt><dd>{state?.state === "known" ? state.value.name || state.value.id : state ? humanize(state.state) : "No resolved source observation"}</dd>
     <dt>Local activity</dt><dd>{humanize(view.localActivity)}</dd>
-    <dt>Run outcome</dt><dd>{humanize(view.runOutcome)}</dd>
+    <dt>Run outcome</dt><dd>{view.runOutcome === "completed" ? "Workflow complete" : humanize(view.runOutcome)}</dd>
     <dt>External acceptance</dt><dd>{view.externalAcceptance.state === "known" ? view.externalAcceptance.value : humanize(view.externalAcceptance.state)}</dd>
     {ticket?.url && /^https?:\/\//i.test(ticket.url) && <><dt>Original ticket</dt><dd><a href={ticket.url} target="_blank" rel="noreferrer">{ticket.key || ticket.ref.id}</a></dd></>}
   </dl>;

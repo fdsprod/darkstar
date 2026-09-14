@@ -5,6 +5,11 @@ import type { components } from "../api/schema.generated";
 import { AsyncPanel, EmptyState } from "../components/InteractionPatterns";
 import { TrackerSourcePicker, type SourceSelection } from "./TrackerSourcePicker";
 import { TicketExecutionAdmission } from "./WorkSourcePanel";
+import { AppLink } from "../app/router";
+import { trackerMappingApi, type TrackerBoardView } from "../api/trackerMapping";
+import { TrackerBoard } from "./TrackerBoard";
+import { TrackerMappingSettings } from "./TrackerMappingSettings";
+import { trackerTicketKey, type TrackerAction } from "./trackerBoardModel";
 
 type Schemas = components["schemas"];
 
@@ -23,6 +28,52 @@ export function BacklogBrowser({ projectId, renderNativeDetail }: {
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   const initializedQuery = useRef(false);
+  const [presentation, setPresentation] = useState<"list" | "board">("list");
+  const [mappingSettings, setMappingSettings] = useState(false);
+  const [board, setBoard] = useState<TrackerBoardView>();
+  const [executions, setExecutions] = useState<Schemas["WorkSourceView"][]>([]);
+  const [boardError, setBoardError] = useState("");
+
+  useEffect(() => {
+    if (presentation !== "board") {
+      return;
+    }
+    const abort = new AbortController();
+    void Promise.all([trackerMappingApi.board(projectId, abort.signal), apiClient.listWorkSourceViews({ projectId }, abort.signal)]).then(([projection, activity]) => {
+      if (!abort.signal.aborted) {
+        setBoard(projection);
+        setExecutions(activity.items);
+        setBoardError("");
+      }
+    }).catch(() => {
+      if (!abort.signal.aborted) {
+        setBoardError("Board configuration or execution activity could not be refreshed. Source actions are unavailable until reload succeeds.");
+      }
+    });
+    return () => abort.abort();
+  }, [projectId, presentation, view, reload]);
+
+  async function transitionTicket(ticket: Schemas["BacklogTicket"], action: TrackerAction) {
+    if (!view || !board || pending || boardError || action.availability !== "available") {
+      return;
+    }
+    const consequences = action.automation.length > 0 ? ` Configured automation: ${action.automation.join(" ")}` : "";
+    if (!window.confirm(`Request “${action.name}” for ${ticket.key || ticket.title}?${consequences}`)) {
+      return;
+    }
+    setPending(true);
+    setError("");
+    try {
+      await trackerMappingApi.transition(projectId, ticket.observationId, view.binding.revision, board.activeRevision, action.id);
+      setReload((value) => value + 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Source transition was not confirmed. Reload before retrying.");
+      setBoardError("Reload the board before requesting another source transition.");
+      setReload((value) => value + 1);
+    } finally {
+      setPending(false);
+    }
+  }
 
   useEffect(() => {
     const abort = new AbortController();
@@ -122,6 +173,9 @@ export function BacklogBrowser({ projectId, renderNativeDetail }: {
   const visible = view?.tickets.filter((ticket) => !onlyReturned || ticket.currentQueryMatch);
   return <section aria-label="Configured project backlog">
     <div className="ticket-toolbar">
+      <button className="button" type="button" aria-pressed={presentation === "list"} onClick={() => setPresentation("list")}>Ticket list</button>
+      <button className="button" type="button" aria-pressed={presentation === "board"} onClick={() => setPresentation("board")}>Tracker board</button>
+      <button className="button" type="button" aria-pressed={mappingSettings} onClick={() => setMappingSettings((value) => !value)}>Workflow mappings</button>
       <strong>{view ? sourceLabel(view.binding.source) : "Project source"}</strong>
       {view && <span>Source revision {view.binding.revision}</span>}
       <button className="button" type="button" disabled={pending || !view} onClick={() => setSettings((value) => !value)}>{settings ? "Close source settings" : "Change source"}</button>
@@ -131,9 +185,11 @@ export function BacklogBrowser({ projectId, renderNativeDetail }: {
       }}>Reload backlog</button>
     </div>
     {settings && view && <TrackerSourcePicker key={view.binding.revision} pending={pending} onSelect={selectSource} />}
+    {mappingSettings && view && <TrackerMappingSettings projectId={projectId} bindingRevision={view.binding.revision} tickets={view.tickets} onChanged={() => setReload((value) => value + 1)} />}
     {error && <AsyncPanel compact state="error" title="Backlog needs attention" message={error} />}
     {!view && !error && <AsyncPanel compact state="loading" title="Loading backlog" message="Reading retained source observations." />}
     {view && <>
+      {view.binding.source.kind === "built_in" ? <AppLink to={`/board?create=1&project=${encodeURIComponent(projectId)}`} className="navigation-action">Create ticket and work</AppLink> : <p>Create ticket is unavailable from this source browser. Create it in the selected tracker, then refresh this backlog. Approved story drafts publish through the selected destination writer.</p>}
       <form className="ticket-toolbar" onSubmit={(event) => void refreshSource(event)}>
         <label>Refresh filter<input value={text} onChange={(event) => setText(event.target.value)} placeholder="Title or description" disabled={pending} /></label>
         <button className="button button--primary" type="submit" disabled={pending}>{pending ? "Checking source…" : view.refresh?.phase === "refreshing" ? "Continue refresh" : "Refresh source"}</button>
@@ -147,9 +203,15 @@ export function BacklogBrowser({ projectId, renderNativeDetail }: {
           setSelectedKey("");
         }} /> Include previous sources</label>
       </div>
+      {presentation === "board" && <>
+        {boardError && <AsyncPanel compact state="error" title="Tracker board needs attention" message={boardError} />}
+        {board?.reason && <p role="status">{board.reason}</p>}
+        <TrackerBoard tickets={visible ?? []} columns={board?.columns ?? []} unknownGroup={board?.unknownGroup} executions={executions} actions={boardError ? {} : Object.fromEntries((view.tickets ?? []).map((ticket) => [trackerTicketKey(ticket), board?.actions[ticket.observationId] ?? []]))} pending={pending} selectedKey={selectedKey} onSelect={setSelectedKey} onTransition={(ticket, action) => void transitionTicket(ticket, action)} />
+        {view.nextCursor && <p>This board shows one retained page. Use Next page to inspect additional tickets.</p>}
+      </>}
       <div className="ticket-layout">
         <section aria-label="Retained backlog tickets" className="ticket-list">
-          {visible?.map((ticket) => <button type="button" key={`${ticket.bindingRevision}/${ticket.ticketKey}`} className="ticket-list__item" aria-pressed={selectedKey === `${ticket.bindingRevision}/${ticket.ticketKey}`} onClick={() => setSelectedKey(`${ticket.bindingRevision}/${ticket.ticketKey}`)}>
+          {presentation === "list" && visible?.map((ticket) => <button type="button" key={`${ticket.bindingRevision}/${ticket.ticketKey}`} className="ticket-list__item" aria-pressed={selectedKey === `${ticket.bindingRevision}/${ticket.ticketKey}`} onClick={() => setSelectedKey(`${ticket.bindingRevision}/${ticket.ticketKey}`)}>
             <strong>{ticket.title}</strong>
             <span>{namedObservation(ticket.businessState)} · {statusLabel(ticket.status)}</span>
             <span>{ticket.ref.namespace.provider} · {ticket.key || ticket.ref.id}</span>

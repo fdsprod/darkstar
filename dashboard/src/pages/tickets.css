@@ -105,6 +105,51 @@
 .ticket-source-comparison, .work-source-panel > details {
   margin: 1rem 0;
 }
+.tracker-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(18rem, 1fr);
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+}
+.tracker-board .board-column {
+  min-width: 18rem;
+}
+.tracker-execution, .tracker-actions {
+  display: grid;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border, #343b49);
+  padding-top: 0.75rem;
+}
+.tracker-mapping {
+  margin: 1rem 0;
+}
+.tracker-mapping > fieldset {
+  max-width: none;
+}
+.mapping-rule, .mapping-revision, .mapping-preview {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border, #343b49);
+  border-radius: 0.5rem;
+}
+.mapping-rule select[multiple] {
+  min-height: 7rem;
+}
+.tracker-mapping pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tracker-mapping input, .tracker-mapping textarea, .tracker-mapping select {
+  max-width: 100%;
+  padding: 0.6rem;
+  color: inherit;
+  background: var(--surface, #151922);
+  border: 1px solid var(--border, #343b49);
+  font: inherit;
+}
 @media (max-width: 760px) {
   .ticket-layout {
     grid-template-columns: 1fr;

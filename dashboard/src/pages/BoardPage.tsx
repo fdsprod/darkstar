@@ -32,7 +32,7 @@ type Schemas = components["schemas"];
 
 const lifecycleLabels: Record<BoardLifecycle, string> = {
   backlog: "Backlog", ready: "Ready", running: "Running", waiting: "Waiting",
-  blocked: "Blocked", review: "Review", failed: "Failed", done: "Done",
+  blocked: "Blocked", review: "Review", failed: "Failed", done: "Workflow complete",
 };
 export function BoardPage() {
   const { state, refresh } = useDashboardState();
@@ -134,7 +134,7 @@ export function BoardPage() {
 
       <div className="board-toolbar" aria-label="Board controls">
         <div className="view-tabs" aria-label="Board view">
-          <AppLink to="/tickets" className="navigation-action">Tickets</AppLink>
+          <AppLink to="/tickets" className="navigation-action">Tracker board and tickets</AppLink>
           <button className="view-tab" type="button" aria-pressed={view === "all"} onClick={() => setView("all")}>All work <span>{allCards.filter((card) => card.work.deletion !== "deleted").length}</span></button>
           <button className="view-tab" type="button" aria-pressed={view === "attention"} onClick={() => setView("attention")}>Needs attention</button>
         </div>
@@ -234,10 +234,39 @@ function CreateWorkDialog({ dialogRef, projects, workflows, onCreated }: { dialo
   const [projectId, setProjectId] = useState(""); const [title, setTitle] = useState(""); const [details, setDetails] = useState(""); const [evidence, setEvidence] = useState("");
   const [routingMode, setRoutingMode] = useState<"automatic" | "override">("automatic"); const [workflowSelection, setWorkflowSelection] = useState(""); const [entryNodeId, setEntryNodeId] = useState(""); const [terminalNodeIds, setTerminalNodeIds] = useState("");
   const [submitting, setSubmitting] = useState(false); const [error, setError] = useState("");
+  const [creationSource, setCreationSource] = useState<{ projectId: string; state: "native" | "unavailable"; reason: string }>();
+  useEffect(() => {
+    if (!projectId) {
+      return;
+    }
+    const abort = new AbortController();
+    setCreationSource(undefined);
+    void apiClient.getProjectBacklogSource(projectId, abort.signal).then((value) => {
+      if (!abort.signal.aborted) {
+        setCreationSource({ projectId, state: value.binding.source.kind === "built_in" ? "native" : "unavailable", reason: value.binding.source.kind === "built_in" ? "" : "Create ticket is unavailable here for the selected external source. Create it in that tracker, then refresh and admit the source ticket." });
+      }
+    }).catch(() => {
+      if (!abort.signal.aborted) {
+        setCreationSource({ projectId, state: "unavailable", reason: "The selected ticket source could not be checked. Reload before creating a ticket." });
+      }
+    });
+    return () => abort.abort();
+  }, [projectId]);
+  useEffect(() => {
+    const requestedProject = new URLSearchParams(window.location.search).get("project");
+    if (requestedProject && activeProjects.some((project) => project.id === requestedProject)) {
+      setProjectId(requestedProject);
+    }
+  }, []);
   useEffect(() => { if (!projectId && activeProjects.length === 1) setProjectId(activeProjects[0].id); }, [activeProjects, projectId]);
   function close() { if (!submitting) { dialogRef.current?.close(); if (new URLSearchParams(window.location.search).has("create")) navigate("/board", { replace: true }); } }
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(""); setSubmitting(true);
+    event.preventDefault();
+    if (creationSource?.projectId !== projectId || creationSource.state !== "native") {
+      return;
+    }
+    setError("");
+    setSubmitting(true);
     try {
       const [workflowId, workflowVersion] = workflowSelection.split("\u0000");
       const routingIntent: Schemas["WorkRoutingIntent"] = routingMode === "automatic" ? { mode: "automatic" } : { mode: "override", workflowId: workflowId ?? "", ...(workflowVersion ? { workflowVersion } : {}), ...(entryNodeId.trim() ? { entryNodeId } : {}), ...(terminalNodeIds.trim() ? { terminalNodeIds: terminalNodeIds.split(",") } : {}) };
@@ -250,6 +279,8 @@ function CreateWorkDialog({ dialogRef, projects, workflows, onCreated }: { dialo
     <header className="work-dialog__header"><div><p className="eyebrow">New work item</p><h2>Create requested outcome</h2></div><button className="icon-button" type="button" aria-label="Close create work dialog" disabled={submitting} onClick={close}><Icon name="x" /></button></header>
     <p className="work-dialog__intro">Create authored work in a registered project. Route selection happens from the durable work record.</p>
     <label className="field"><span>Project</span><select required autoFocus value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="" disabled>Choose a project</option>{activeProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+    {projectId && (!creationSource || creationSource.projectId !== projectId) && <p role="status">Checking selected ticket source…</p>}
+    {creationSource?.reason && <p role="status">{creationSource.reason}</p>}
     <label className="field"><span>Requested outcome</span><textarea required rows={4} maxLength={500} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Describe the result you want DARKSTAR to deliver" /><small>{title.length}/500</small></label>
     <label className="field"><span>Details <small>(optional)</small></span><textarea rows={3} value={details} onChange={(event) => setDetails(event.target.value)} placeholder="Constraints, context, or success criteria" /></label>
     <label className="field"><span>Evidence <small>(optional)</small></span><textarea rows={2} value={evidence} onChange={(event) => setEvidence(event.target.value)} placeholder="One file, URL, or reference per line" /><small>Evidence is attached to the work record and does not start a run.</small></label>
@@ -258,7 +289,7 @@ function CreateWorkDialog({ dialogRef, projects, workflows, onCreated }: { dialo
       {routingMode === "override" && <><label className="field"><span>Workflow</span><select required value={workflowSelection} onChange={(event) => setWorkflowSelection(event.target.value)}><option value="" disabled>Choose a workflow</option>{workflowNames.map((name) => <option key={`${name}:latest`} value={`${name}\u0000`}>{name} · latest installed</option>)}{workflows.map((workflow) => <option key={`${workflow.name}:${workflow.version}:${workflow.digest}`} value={`${workflow.name}\u0000${workflow.version}`}>{workflow.name} · {workflow.version}</option>)}</select><small>Latest installed resolves by semantic version when the run is prepared.</small></label><label className="field"><span>Entry node <small>(optional)</small></span><input value={entryNodeId} onChange={(event) => setEntryNodeId(event.target.value)} /></label><label className="field"><span>Terminal nodes <small>(optional, comma-separated)</small></span><input value={terminalNodeIds} onChange={(event) => setTerminalNodeIds(event.target.value)} /></label></>}
     </div></details>
     {error && <p className="form-error" role="alert">{error}</p>}
-    <footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button className="button" type="button" disabled={submitting} onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || activeProjects.length === 0}>{submitting ? "Creating…" : "Create work"}</button></footer>
+    <footer className="work-dialog__footer"><p className="dialog-draft-note">Closing discards unsaved changes.</p><button className="button" type="button" disabled={submitting} onClick={close}>Cancel</button><button className="button button--primary" type="submit" disabled={submitting || activeProjects.length === 0 || creationSource?.projectId !== projectId || creationSource.state !== "native"}>{submitting ? "Creating…" : "Create work"}</button></footer>
   </form></dialog>;
 }
 
