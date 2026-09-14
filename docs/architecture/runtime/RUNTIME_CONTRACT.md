@@ -50,7 +50,7 @@ position.
 
 | Resource | Stable meaning | State authority |
 |---|---|---|
-| Project | repository/configuration boundary | project event stream |
+| Project | product/planning/configuration boundary with zero or more repository memberships | project event stream |
 | Work item | requested deliverable and owned delivery line | work event stream |
 | Run | one pinned workflow execution for a work item | run event stream |
 | Node visit | one activation of a workflow node and immutable input digest | run events/projection |
@@ -59,6 +59,15 @@ position.
 | Approval | one typed, scoped pending decision | approval event stream |
 | Operation | durable intent/result for a side effect | operation event stream/outbox |
 | Event | immutable fact at a global position | events table |
+
+[DS-230](../work/PROJECT_REPOSITORY_TRACKER_MODEL.md) defines the target repository,
+membership, source-ticket, and tracker-binding relationships. Its
+[migration plan](../../planning/project-tracker-migration.md) preserves existing
+IDs, event payloads, and command responses. DS-231/DS-246/DS-248 must version the
+concrete resource schemas, ID prefixes, API, and storage representations before
+exposing them; this architecture definition does not make unimplemented fields
+valid in the current schemas. Ticket business status belongs to the selected
+tracker; existing work/run status is execution state, not a source transition.
 
 Provider thread/turn/item IDs live in an `external_refs` boundary keyed to an
 attempt. Git SHAs and pull-request IDs live in work/operation evidence. Raw

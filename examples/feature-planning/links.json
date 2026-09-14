@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "projectId": "project-factory",
+  "featureKey": "FEATURE-1",
+  "artifactType": "story_links",
+  "backlog": {
+    "artifactId": "artifact-backlog",
+    "version": 1,
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "destination": {
+    "kind": "linear",
+    "connectorId": "connector-linear",
+    "accountId": "account-primary",
+    "workspaceId": "workspace-darkstar",
+    "teamId": "team-product"
+  },
+  "destinationBindingRevision": 1,
+  "links": [
+    {
+      "storyKey": "STORY-1",
+      "ticketId": "native-ticket-1",
+      "url": "https://linear.app/example/issue/EX-1",
+      "observedRevision": "revision-1",
+      "evidence": {
+        "artifactId": "artifact-evidence",
+        "version": 1,
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  ]
+}

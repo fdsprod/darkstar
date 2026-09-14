@@ -4,7 +4,13 @@
 
 **Decision:** DS-004
 
-**Status:** Accepted for MVP
+**Status:** Superseded by [DS-230](PROJECT_REPOSITORY_TRACKER_MODEL.md), 2026-09-12
+
+**Historical decision:** Accepted for MVP on 2026-08-31. The original body below
+is retained as decision history. DS-230 replaces the one-repository project
+assumption and permits zero/multiple-repository planning, while carrying forward
+the repository-level delivery ownership, revision, and recovery rules. Read
+DS-230 for current scope and the standalone delivery-node compatibility boundary.
 
 **Scope:** Work identity, repository topology, mutation ownership, publication,
 revision, reconciliation, and non-destructive recovery

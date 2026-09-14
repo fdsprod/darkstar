@@ -48,7 +48,11 @@ $planningTemplateRoot = Join-Path $repositoryRoot "templates/planning"
 $files += Get-ChildItem -LiteralPath $planningTemplateRoot -File -Filter "*.md" | ForEach-Object {
     [pscustomobject]@{ Source = $_.FullName; Entry = "templates/planning/$($_.Name)" }
 }
-$files += @("planning-artifact-v1alpha1.schema.json", "delivery-evidence-v1alpha1.schema.json") | ForEach-Object {
+$featureTemplateRoot = Join-Path $repositoryRoot "templates/feature-planning"
+$files += Get-ChildItem -LiteralPath $featureTemplateRoot -File -Filter "*.md" | ForEach-Object {
+    [pscustomobject]@{ Source = $_.FullName; Entry = "templates/feature-planning/$($_.Name)" }
+}
+$files += @("planning-artifact-v1alpha1.schema.json", "delivery-evidence-v1alpha1.schema.json", "feature-planning-v1alpha1.schema.json") | ForEach-Object {
     [pscustomobject]@{
         Source = (Join-Path $repositoryRoot "schemas/$_")
         Entry = "schemas/$_"

@@ -32,7 +32,7 @@
       "document": "docs/architecture/work/WORK_AND_GIT_MODEL.md",
       "sourceIssue": {"id": "DAR-7", "url": "https://linear.app/darkstar-dev/issue/DAR-7"},
       "affectedIssues": ["DS-025", "DS-110", "DS-112", "DS-113", "DS-118", "DS-150"],
-      "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
+      "lifecycle": {"state": "superseded", "supersededAt": "2026-09-12", "supersededBy": "DS-230"}
     },
     {
       "id": "DS-005",
@@ -63,7 +63,7 @@
       "title": "Use versioned resources and an append-only event log",
       "document": "docs/architecture/runtime/RUNTIME_CONTRACT.md",
       "sourceIssue": {"id": "DAR-13", "url": "https://linear.app/darkstar-dev/issue/DAR-13"},
-      "affectedIssues": ["DS-023", "DS-024", "DS-031", "DS-032", "DS-034", "DS-090", "DS-093", "DS-113"],
+      "affectedIssues": ["DS-023", "DS-024", "DS-031", "DS-032", "DS-034", "DS-090", "DS-093", "DS-113", "DS-231", "DS-246", "DS-248"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
     },
     {
@@ -81,6 +81,14 @@
       "sourceIssue": {"id": "DAR-14", "url": "https://linear.app/darkstar-dev/issue/DAR-14"},
       "affectedIssues": ["DS-071", "DS-072", "DS-073", "DS-080", "DS-113", "DS-114", "DS-115", "DS-190", "DS-191", "DS-192", "DS-193", "DS-200"],
       "lifecycle": {"state": "accepted", "acceptedAt": "2026-08-31"}
+    },
+    {
+      "id": "DS-230",
+      "title": "Separate projects, repositories, and ticket trackers",
+      "document": "docs/architecture/work/PROJECT_REPOSITORY_TRACKER_MODEL.md",
+      "sourceIssue": {"id": "DAR-153", "url": "https://linear.app/darkstar-dev/issue/DAR-153"},
+      "affectedIssues": ["DS-025", "DS-110", "DS-112", "DS-113", "DS-118", "DS-150", "DS-231", "DS-235", "DS-238", "DS-246", "DS-247", "DS-248", "DS-249"],
+      "lifecycle": {"state": "accepted", "acceptedAt": "2026-09-12"}
     }
   ]
 }

@@ -15,7 +15,10 @@ This directory separates documentation by the kind of decision or work it repres
 
 - [Workflow execution semantics](architecture/workflow/execution-semantics.md) — normative graph, binding, gate, transition, join, retry, checkpoint, and error behavior.
 - [Artifact and context contract](architecture/artifacts/ARTIFACT_AND_CONTEXT_CONTRACT.md) — immutable ingest, support matrix, representations, binding, selection budgets, and safe degradation.
-- [MVP work and Git model](architecture/work/WORK_AND_GIT_MODEL.md) — normative work identity, delivery topology, mutation ownership, revision, and recovery behavior.
+- [Feature planning contract](architecture/artifacts/FEATURE_PLANNING_CONTRACT.md) — DS-235: versioned briefs, stable story identity, repository impact, revision lineage, external links, and typed handoffs.
+- [Project, repository, and tracker model](architecture/work/PROJECT_REPOSITORY_TRACKER_MODEL.md) — DS-230: current project membership, immutable run scope, ticket authority, and source/publication bindings.
+- [Tracker adapter contract](architecture/work/TRACKER_ADAPTER_CONTRACT.md) — DS-238: versioned source/writer ports, provider capability matrix, canonical relationship preservation, and reconciliation evidence.
+- [MVP work and Git model](architecture/work/WORK_AND_GIT_MODEL.md) — historical DS-004 decision; delivery ownership and recovery rules retained by DS-230.
 - [Crash recovery and idempotency model](architecture/recovery/RECOVERY_MODEL.md) — normative leases, process identity, interruption matrix, commit points, reconciliation, and failure-injection contract.
 - [Windows platform contract](architecture/platform/WINDOWS_PLATFORM_CONTRACT.md) — paths, locks, endpoint discovery, atomic state, Job Object ownership, shutdown, ConPTY, and support matrix.
 - [Runtime contract](architecture/runtime/RUNTIME_CONTRACT.md) — stable resources and events, command transactions, SQLite model, projections, API, SSE replay, pagination, and CLI errors.
@@ -46,6 +49,7 @@ This directory separates documentation by the kind of decision or work it repres
 ## Planning
 
 - [MVP backlog](planning/mvp-backlog.md) — dependencies, spikes, initiatives, acceptance coverage, and the suggested first iteration.
+- [Project and tracker migration](planning/project-tracker-migration.md) — DS-230 rollout, single-repository compatibility, preserved history, native ticket migration, and implementation acceptance matrix.
 
 ## Executable contracts and evidence
 

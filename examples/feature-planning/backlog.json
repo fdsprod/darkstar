@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "projectId": "project-factory",
+  "featureKey": "FEATURE-1",
+  "artifactType": "story_backlog",
+  "lineage": {
+    "kind": "initial"
+  },
+  "brief": {
+    "artifactId": "artifact-brief",
+    "version": 1,
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "stories": [
+    {
+      "key": "STORY-1",
+      "title": "Author a feature brief",
+      "outcome": "An owner can review intent",
+      "acceptanceCriteria": [
+        "Requirements retain stable keys"
+      ],
+      "scope": {
+        "included": [
+          "Brief authoring"
+        ],
+        "excluded": [
+          "Ticket mutation"
+        ]
+      },
+      "requirementKeys": [
+        "REQ-1"
+      ],
+      "repositoryImpact": {
+        "kind": "none",
+        "rationale": "Planning needs no source changes"
+      },
+      "dependencies": [],
+      "evidenceKeys": [
+        "E-2"
+      ],
+      "decisionKeys": [
+        "D-2"
+      ],
+      "lifecycle": {
+        "kind": "active"
+      }
+    },
+    {
+      "key": "STORY-2",
+      "title": "Investigate publication",
+      "outcome": "An owner can review intent",
+      "acceptanceCriteria": [
+        "Requirements retain stable keys"
+      ],
+      "scope": {
+        "included": [
+          "Brief authoring"
+        ],
+        "excluded": [
+          "Ticket mutation"
+        ]
+      },
+      "requirementKeys": [
+        "REQ-1"
+      ],
+      "repositoryImpact": {
+        "kind": "unknown",
+        "reason": "Investigation pending"
+      },
+      "dependencies": [
+        "STORY-1"
+      ],
+      "evidenceKeys": [
+        "E-2"
+      ],
+      "decisionKeys": [
+        "D-2"
+      ],
+      "lifecycle": {
+        "kind": "active"
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "key": "E-2",
+      "artifact": {
+        "artifactId": "artifact-evidence",
+        "version": 1,
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "locator": "section 3",
+      "finding": "Explicit publication configuration is required."
+    }
+  ],
+  "decisions": [
+    {
+      "key": "D-2",
+      "question": "Does publication require code changes?",
+      "evidenceKeys": [
+        "E-2"
+      ],
+      "state": {
+        "kind": "open",
+        "blocking": true
+      }
+    }
+  ]
+}

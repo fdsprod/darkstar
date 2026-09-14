@@ -15,12 +15,22 @@ those interfaces. A concrete adapter is never a dependency of core code.
 See [extension registration and execution](EXTENSIONS.md) for immutable catalogs,
 exact implementation pins, and the boundary for future out-of-process plugins.
 
+[DS-230](../work/PROJECT_REPOSITORY_TRACKER_MODEL.md) separates project membership,
+shared repository identity, ticket sources, and publication destinations. Current
+`ports/worksource.Source` remains the existing import boundary;
+[DS-238](../work/TRACKER_ADAPTER_CONTRACT.md) adds versioned capability-based
+source/browser and separate `ports/ticketwriter` contracts. Reading a ticket, publishing a
+backlog, observing delivery facts, and mutating Git are independent authorities.
+Neither repository registration nor a source adapter grants a writer capability.
+
 The required external-effect port families are:
 
 | Package | Owns |
 |---|---|
 | `ports/provider` | Provider health, capabilities, attempt lifecycle, normalized events, interaction, cancellation, result, and recovery metadata. |
 | `ports/worksource` | Read-only, revision-bound external work import and refresh observations. |
+| `ports/tracker` | Versioned normalized ticket identities, capabilities, observations, desired effects and receipts. |
+| `ports/ticketwriter` | Scoped writer discovery, deterministic ticket effects and read-only effect reconciliation. |
 | `ports/nodeextension` | Scoped custom-node input/configuration and candidate-output execution. |
 | `ports/outputvalidator` | Deterministic candidate checks and inspectable diagnostics. |
 | `ports/tool` | Provider-neutral tool definitions, result schemas, and invocation handlers. |

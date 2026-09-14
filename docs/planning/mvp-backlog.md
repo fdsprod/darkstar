@@ -506,3 +506,171 @@ The MVP backlog is complete only when:
 - DARKSTAR completes the self-hosting run in DS-213/DS-214;
 - no unresolved high-severity security or data-loss risk remains; and
 - the released binary, CLI, dashboard, default workflow, schemas, documentation, and exported self-hosting evidence agree on behavior.
+
+
+---
+
+## 9. Feature intake and tracker publication expansion
+
+Added 2026-09-12 after review of the feature-planning scope. These 16 issues are
+tracked in the existing DARKSTAR MVP Linear project as a separate expansion
+workstream; their placement does not add them to the original MVP release exit
+criteria. Linear owns live status and relationships. Priority, assignee, cycle,
+and delivery dates remain unset pending prioritization.
+
+**Outcome:** Accept a high-level Product request, investigate zero, one, or multiple
+repositories, develop and review a versioned story backlog, and publish that
+approved backlog to one selected destination: Linear or GitHub Issues.
+
+**Boundaries:** GitHub Issues only; GitHub Projects boards and custom fields,
+unrestricted bidirectional field mirroring, simultaneous publication to both trackers,
+and coordinated multi-repository implementation are deferred. The extension in
+section 10 adds external backlog observation and explicitly configured intake,
+progress reporting, and transition synchronization; a production Jira adapter
+remains deferred. Read-only planning
+across repositories does not authorize multi-repository Git writes. The daemon
+continues to own scheduling, validation, approvals, retries, and external effects.
+
+DS-230 establishes the explicit replacement decision and migration for the
+accepted single-repository project assumption before dependent implementation.
+DS-238 derives the tracker abstraction from both adapters. DS-241 owns shared
+publication recovery; DS-242 and DS-243 own provider translation. Collection
+execution in DS-234 is limited to the bounded repository investigation needed by
+this workflow. Existing artifact review and execution foundations are extended,
+not replaced by a read-only viewer or model-controlled orchestration.
+
+| Planning key | Linear | Type | Size | Ticket | Depends on | Outcome |
+|---|---|---|---|---|---|---|
+| DS-230 | [DAR-153](https://linear.app/darkstar-dev/issue/DAR-153/ds-230-define-the-project-repository-and-tracker-model) | Task | M | Define the project, repository, and tracker model | — | Separate product/project identity from Git repository identity and tracker destinations so feature planning works with zero, one, or multiple repositories. |
+| DS-231 | [DAR-154](https://linear.app/darkstar-dev/issue/DAR-154/ds-231-implement-project-repository-membership) | Feature | L | Implement project repository membership | DS-230 | Allow projects to register zero or multiple repositories through durable state and public API/CLI operations. |
+| DS-232 | [DAR-155](https://linear.app/darkstar-dev/issue/DAR-155/ds-232-add-project-repository-management-ui) | Feature | M | Add project repository management UI | DS-231 | Let users create projects without code and manage the repositories that contribute to a project. |
+| DS-233 | [DAR-156](https://linear.app/darkstar-dev/issue/DAR-156/ds-233-prepare-reproducible-repository-investigation-scopes) | Task | L | Prepare reproducible repository investigation scopes | DS-231 | Prepare a durable read-only scope for repository investigation without modifying user checkouts. |
+| DS-234 | [DAR-158](https://linear.app/darkstar-dev/issue/DAR-158/ds-234-implement-investigation-across-repositories) | Feature | L | Implement investigation across repositories | DS-233, DS-235 | Investigate each relevant repository and synthesize evidence about the feature's cross-system impact. |
+| DS-235 | [DAR-157](https://linear.app/darkstar-dev/issue/DAR-157/ds-235-define-feature-brief-and-story-backlog-contracts) | Task | M | Define feature brief and story backlog contracts | DS-230 | Extend the existing planning artifacts into a provider-neutral, versioned feature brief and publishable story backlog. |
+| DS-236 | [DAR-166](https://linear.app/darkstar-dev/issue/DAR-166/ds-236-build-the-feature-to-reviewed-stories-workflow) | Feature | L | Build the feature-to-reviewed-stories workflow | DS-234, DS-237, DS-241 | Ship an executable workflow from a high-level Product request through investigation, clarification, story decomposition, review, and a typed publication handoff. |
+| DS-237 | [DAR-159](https://linear.app/darkstar-dev/issue/DAR-159/ds-237-add-backlog-review-and-revision) | Feature | L | Add backlog review and revision | DS-235 | Extend existing artifact review so humans can inspect and revise the complete story backlog before publication. |
+| DS-238 | [DAR-160](https://linear.app/darkstar-dev/issue/DAR-160/ds-238-define-ticket-source-and-writer-contracts-for-built-in-linear) | Task | M | Define ticket-source and writer contracts for built-in, Linear, and GitHub Issues | DS-230, DS-235 | Define built-in and external ticket sources, separate writers, capability discovery, and Jira-informed custom workflow semantics. |
+| DS-239 | [DAR-161](https://linear.app/darkstar-dev/issue/DAR-161/ds-239-implement-linear-connection-and-backlog-source-adapter) | Feature | M | Implement Linear connection and backlog source adapter | DS-238 | Connect Linear and supply authoritative scoped backlog observations, listing, and refresh capabilities. |
+| DS-240 | [DAR-162](https://linear.app/darkstar-dev/issue/DAR-162/ds-240-implement-github-issues-connection-and-backlog-source-adapter) | Feature | M | Implement GitHub Issues connection and backlog source adapter | DS-238 | Connect GitHub Issues and supply scoped backlog observations independently of investigated code repositories. |
+| DS-241 | [DAR-163](https://linear.app/darkstar-dev/issue/DAR-163/ds-241-implement-durable-tracker-publication-coordination) | Task | L | Implement durable tracker publication coordination | DS-237, DS-238 | Let the daemon publish an approved backlog reliably across partial failure, restart, and uncertain external outcomes. |
+| DS-242 | [DAR-164](https://linear.app/darkstar-dev/issue/DAR-164/ds-242-implement-linear-backlog-publisher) | Feature | M | Implement Linear backlog publisher | DS-239, DS-241 | Translate the approved canonical backlog into Linear issues and supported relationships through the shared publication coordinator. |
+| DS-243 | [DAR-165](https://linear.app/darkstar-dev/issue/DAR-165/ds-243-implement-github-issues-backlog-publisher) | Feature | M | Implement GitHub Issues backlog publisher | DS-240, DS-241 | Publish the same canonical backlog to GitHub Issues using provider-specific translation behind the shared contract. |
+| DS-244 | [DAR-167](https://linear.app/darkstar-dev/issue/DAR-167/ds-244-add-tracker-configuration-and-publication-uicli) | Feature | L | Add tracker configuration and publication UI/CLI | DS-232, DS-236, DS-242, DS-243 | Let users configure either tracker, preview the exact publication, and inspect or recover its results. |
+| DS-245 | [DAR-168](https://linear.app/darkstar-dev/issue/DAR-168/ds-245-verify-feature-planning-and-both-tracker-adapters-end-to-end) | Test | L | Verify feature planning and both tracker adapters end to end | DS-244 | Prove the complete user outcome and recovery guarantees through shared adapter scenarios and a documented dogfood example. |
+
+**Workstream exit:** The same feature-planning workflow runs with no repository,
+one repository, and multiple repositories, preserves review history, and publishes
+to either selected tracker with verified receipts and recoverable partial
+failures. Provider contract tests and real-service verification are distinguished
+in the recorded evidence. This planning workflow does not automatically start
+implementation; any later automatic intake is a separate explicit project rule
+under section 10.
+
+---
+
+## 10. Tracker-backed factory and configurable workflow mappings
+
+Recorded 2026-09-12 as an extension of section 9: eight additional issues, with
+the original 16 issues updated to preserve consistent boundaries. All new issues
+are in the existing DARKSTAR MVP project backlog. These expansion issues do not
+change the original MVP release exit criteria.
+
+**Product direction:** DARKSTAR is an agentic software-factory dashboard and
+execution runtime. A selected tracker owns ticket business data and status;
+DARKSTAR owns execution, immutable evidence, and durable synchronization
+operations. External review, CI, acceptance, and deployment systems own their
+reported facts. DARKSTAR need not be the authoritative store for everything.
+
+### Source and ownership model
+
+- One ticket source per project initially: built-in, Linear, or GitHub Issues,
+  with multiple adapter implementations/accounts supported across projects.
+- The built-in tracker uses the same contracts and preserves current behavior.
+  Source scope, publication destination, and code repository membership remain
+  independent.
+- External backlog listings are observations, not a second independently editable
+  backlog. Browsing does not schedule work. Explicit or configured admission
+  creates/reuses execution records and captures the source version.
+- Supported Create ticket uses the selected source's writer. Generated stories
+  remain local draft artifacts until approved publication. Unsupported creation
+  is surfaced rather than silently falling back to a hidden native ticket.
+- Cache freshness, missing/inaccessible tickets, source switching, source edits,
+  and external cancellation are explicit. Active-run snapshots and raw history
+  remain durable; source refresh cannot silently rewrite a running task.
+
+### Configurable workflow integration
+
+Projects configure three distinct concerns: intake rules, outbound
+milestone-to-transition intents, and board presentation mappings. Rules are scoped
+to applicable tracker workflows/issue types, versioned, and deterministic. They
+can use supported fields such as sprint membership separately from status.
+Automatic start is an explicit policy subject to normal readiness, permissions,
+and human checkpoints.
+
+A named handoff milestone has a typed evidence contract. Teams may choose
+validated implementation, a created PR, approved PR, or staging deployment as a
+handoff boundary; these are not interchangeable. Generic run completion cannot
+mean ready for test, accepted, deployed, or externally closed.
+
+| Jira-style example event | Configurable DARKSTAR behavior | Optional outbound effect |
+|---|---|---|
+| Backlog | Display only | None |
+| Added to a sprint | Include in eligible scope; sprint is separate from status | None |
+| Ready for Dev plus configured conditions | Prepare/queue selected workflow, manually or automatically | None until execution starts |
+| Implementation starts | Running | Request In Progress |
+| Clarification needed | Waiting for input | Keep status; optionally report blocker |
+| Validated implementation handoff | Complete bounded run | Request Ready for Test |
+| Ready for Test | Observe or admit a testing workflow | Request Test when testing starts |
+| Tests fail | Offer/admit bounded repair workflow | Configured allowed return transition |
+| Externally Done | Display reported outcome | No closure inferred from local run completion |
+
+This is a Jira-informed design/test fixture, not a hard-coded state machine or a
+commitment to implement Jira now. Actual provider statuses, transitions,
+conditions, required fields, and permissions must be discovered and respected.
+GitHub remains Issues-only; unsupported rich mappings require an explicit
+supported fallback or rejection.
+
+### Board and synchronization behavior
+
+A tracker-oriented board supports custom columns/groupings with independent
+DARKSTAR activity on each card. An execution-oriented view groups by agent
+activity instead. Tracker-board drags request source transitions; explicit
+queue/start/pause/retry controls operate on execution. Configured automation
+consequences are visible before an action.
+
+Workflow complete is separate from external acceptance. A finished run may
+report a handoff while the ticket remains open; an authored external waiting node
+keeps its run waiting. Completed execution plus failed synchronization is a valid
+state, and retrying the update must not rerun successful implementation.
+
+Observe-only, report-progress, and selected-transition policies use read-only
+sources and separate daemon-owned writers. Durable receipts, current-state
+checks, conflict handling, stable operation/event identities, and loop suppression
+cover duplicate observations, echoes, lost responses, and restart. No generic
+completion automatically closes a ticket. Any future automated closure requires
+a separately authored policy backed by the required external acceptance evidence.
+
+### Implementation tickets
+
+| Planning key | Linear | Type | Size | Ticket | Depends on | Outcome |
+|---|---|---|---|---|---|---|
+| DS-246 | [DAR-169](https://linear.app/darkstar-dev/issue/DAR-169/ds-246-provide-the-built-in-ticket-tracker-through-the-shared-adapter) | Feature | M | Provide the built-in ticket tracker through the shared adapter contract | DS-230, DS-238 | Preserve today's native ticket experience as a first-class built-in tracker adapter, alongside external ticket sources. |
+| DS-247 | [DAR-170](https://linear.app/darkstar-dev/issue/DAR-170/ds-247-load-and-refresh-tracker-backed-project-backlogs) | Feature | L | Load and refresh tracker-backed project backlogs | DS-239, DS-240 | Populate a project's backlog directly from its selected external tracker, with filters, paging, cached observations, and visible freshness. |
+| DS-248 | [DAR-171](https://linear.app/darkstar-dev/issue/DAR-171/ds-248-separate-source-ticket-identity-from-darkstar-execution) | Task | L | Separate source ticket identity from DARKSTAR execution lifecycle | DS-246, DS-247 | Attach durable execution records to source tickets while preserving external business status and independent DARKSTAR run state. |
+| DS-249 | [DAR-172](https://linear.app/darkstar-dev/issue/DAR-172/ds-249-implement-versioned-tracker-to-workflow-intake-and-milestone) | Feature | L | Implement versioned tracker-to-workflow intake and milestone rules | DS-238, DS-248 | Let projects configure deterministic intake and outbound intent rules against their tracker workflows instead of imposing a universal status mapping. |
+| DS-250 | [DAR-173](https://linear.app/darkstar-dev/issue/DAR-173/ds-250-show-configurable-tracker-boards-alongside-darkstar-execution) | Feature | L | Show configurable tracker boards alongside DARKSTAR execution activity | DS-248 | Render a project's own tracker stages and custom columns while keeping agent execution activity independently visible. |
+| DS-251 | [DAR-174](https://linear.app/darkstar-dev/issue/DAR-174/ds-251-add-project-tracker-workflow-mapping-configuration-and-previews) | Feature | L | Add project tracker workflow mapping configuration and previews | DS-249, DS-250 | Let users configure and inspect intake rules, outbound milestone mappings, and board presentation without coding provider-specific integrations. |
+| DS-252 | [DAR-175](https://linear.app/darkstar-dev/issue/DAR-175/ds-252-synchronize-configured-progress-and-tracker-transitions-with) | Feature | L | Synchronize configured progress and tracker transitions with durable receipts | DS-241, DS-242, DS-243, DS-249 | Apply explicitly configured outbound progress reports and allowed tracker transitions while keeping execution success independent of synchronization success. |
+| DS-253 | [DAR-176](https://linear.app/darkstar-dev/issue/DAR-176/ds-253-verify-tracker-owned-work-and-custom-workflow-mappings-with) | Test | L | Verify tracker-owned work and custom workflow mappings with Jira-style fixtures | DS-251, DS-252 | Prove configurable tracker workflows across built-in, Linear, and GitHub Issues, and preserve Jira's richer requirements without building Jira yet. |
+
+**Deferred:** Production Jira adapter, GitHub Projects boards/custom fields,
+unrestricted bidirectional field mirroring, aggregation of multiple ticket sources
+inside one project, simultaneous publication to both trackers, and coordinated
+multi-repository implementation. Jira semantics are retained in DS-249 and DS-253
+so the first adapters do not lock in a model that cannot support them.
+
+**Extension exit:** Built-in, Linear, and GitHub Issues backlogs work through the
+shared contracts; project rules and board mappings are configurable and
+version-bound; source business state, execution outcome, and sync failure remain
+distinct; recovery does not duplicate work or effects; and Jira-style fixtures
+exercise richer workflows without claiming a production Jira integration.

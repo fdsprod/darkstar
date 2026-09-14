@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "projectId": "project-factory",
+  "featureKey": "FEATURE-1",
+  "artifactType": "handoff_observation",
+  "backlog": {
+    "artifactId": "artifact-backlog",
+    "version": 1,
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "storyKeys": [
+    "STORY-1"
+  ],
+  "milestone": {
+    "kind": "plan_approved",
+    "approvalId": "approval-1",
+    "backlog": {
+      "artifactId": "artifact-backlog",
+      "version": 1,
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  "authority": {
+    "kind": "daemon",
+    "operationId": "operation-approval-1"
+  },
+  "observedAt": "2026-09-12T00:00:00Z",
+  "evidence": [
+    {
+      "artifactId": "artifact-evidence",
+      "version": 1,
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ]
+}

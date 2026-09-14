@@ -31,7 +31,7 @@ did not prove stable semantic versions for arbitrary discovered skills or tools.
 Canonical names are lowercase ASCII `<namespace>:<name>`, where namespaces are:
 
 - `darkstar:` for guaranteed built-ins;
-- `project:` for repository-owned explicit registrations;
+- `project:` for explicit registrations owned by the selected project;
 - `user:` and `admin:` for explicit local policy registrations;
 - `plugin:<plugin-id>/` for an installed plugin capability;
 - `mcp:<server>/` for an explicitly registered MCP tool; and
@@ -41,6 +41,15 @@ Names are identifiers, not permission scopes. Duplicate canonical names are a
 hard registry conflict; DARKSTAR does not choose by search order. A Codex skill
 name collision remains two observations distinguished by canonical path and
 scope, and neither silently shadows a registered record.
+
+Under [DS-230](../work/PROJECT_REPOSITORY_TRACKER_MODEL.md), repository membership
+does not merge or register repository capability catalogs. A project registration
+selects an explicit source root/repository, path, and fingerprint; relative paths
+resolve against that recorded root. Legacy single-repository registrations retain
+their original source and names through migration. Duplicate names from separate
+member repositories remain conflicts requiring explicit project bindings. A
+zero-repository project may register capabilities from its configuration root;
+discovery still grants no authority and runs pin only selected capabilities.
 
 A registry record contains:
 

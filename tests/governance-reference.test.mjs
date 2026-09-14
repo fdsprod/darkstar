@@ -20,7 +20,11 @@ function load() {
 test("every foundational spike decision is discoverable and linked to work", () => {
   const { decisions, risks } = load();
   assert.deepEqual(validateGovernance(decisions, risks, root), []);
-  assert.deepEqual(decisions.decisions.map((entry) => entry.id), Array.from({ length: 10 }, (_, index) => `DS-${String(index + 1).padStart(3, "0")}`));
+  const ids = new Set(decisions.decisions.map((entry) => entry.id));
+  for (let index = 1; index <= 10; index++) {
+    assert.ok(ids.has(`DS-${String(index).padStart(3, "0")}`));
+  }
+  assert.ok(ids.has("DS-230"));
   for (const entry of decisions.decisions) {
     assert.match(entry.sourceIssue.id, /^DAR-\d+$/);
     assert.ok(entry.sourceIssue.url.includes(entry.sourceIssue.id));
@@ -30,7 +34,7 @@ test("every foundational spike decision is discoverable and linked to work", () 
 
 test("implementation preflight accepts current decisions and surfaces related risks", () => {
   const { decisions, risks } = load();
-  const result = implementationPreflight(decisions, risks, ["DS-004", "DS-010"]);
+  const result = implementationPreflight(decisions, risks, ["DS-230", "DS-010"]);
   assert.equal(result.status, "passed");
   assert.deepEqual(result.checked.map((entry) => entry.state), ["accepted", "accepted"]);
   assert.ok(result.relatedRisks.some((risk) => risk.id === "RSK-005"));
@@ -38,12 +42,13 @@ test("implementation preflight accepts current decisions and surfaces related ri
 
 test("implementation preflight blocks a superseded decision and names its replacement", () => {
   const { decisions, risks } = load();
-  const decision = decisions.decisions.find((entry) => entry.id === "DS-004");
-  decision.lifecycle = { state: "superseded", supersededAt: "2026-09-01", supersededBy: "DS-010" };
   const result = implementationPreflight(decisions, risks, ["DS-004"]);
   assert.equal(result.status, "blocked");
   assert.equal(result.failures[0].code, "GOVERNANCE_DECISION_NOT_CURRENT");
-  assert.match(result.failures[0].message, /DS-010/);
+  assert.match(result.failures[0].message, /DS-230/);
+  const replacement = implementationPreflight(decisions, risks, ["DS-230"]);
+  assert.equal(replacement.status, "passed");
+  assert.ok(replacement.relatedRisks.some((risk) => risk.id === "RSK-005"));
 });
 
 test("tagged lifecycles reject contradictory sibling-state fields", () => {

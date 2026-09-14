@@ -79,9 +79,14 @@ try {
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "templates/planning") -File -Filter "*.md" | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $planningTemplateDirectory $_.Name) -Force
     }
+    $featureTemplateDirectory = Join-Path $OutputDirectory "templates/feature-planning"
+    New-Item -ItemType Directory -Force -Path $featureTemplateDirectory | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "templates/feature-planning") -File -Filter "*.md" | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $featureTemplateDirectory $_.Name) -Force
+    }
     $schemaDirectory = Join-Path $OutputDirectory "schemas"
     New-Item -ItemType Directory -Force -Path $schemaDirectory | Out-Null
-    foreach ($schemaName in @("planning-artifact-v1alpha1.schema.json", "delivery-evidence-v1alpha1.schema.json")) {
+    foreach ($schemaName in @("planning-artifact-v1alpha1.schema.json", "delivery-evidence-v1alpha1.schema.json", "feature-planning-v1alpha1.schema.json")) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot "schemas/$schemaName") -Destination $schemaDirectory -Force
     }
 }

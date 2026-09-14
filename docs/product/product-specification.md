@@ -119,7 +119,10 @@ A node completes only when its declared outputs exist and its deterministic vali
 
 | Concept | Definition |
 |---|---|
-| **Project** | A source repository plus its DARKSTAR configuration, workflow bindings, validation commands, and integration settings. |
+| **Project** | A durable product/planning identity with DARKSTAR configuration, workflows, zero or more shared repository memberships, and one selected ticket source. |
+| **Repository** | Shared local Git identity independent of a project; project memberships supply per-repository settings and runs freeze explicitly selected scope. |
+| **Ticket source** | The selected built-in namespace or external tracker/account/scope that owns ticket business data and status, independently of DARKSTAR execution state. |
+| **Publication destination** | One selected Linear or GitHub Issues destination for an approved backlog, independent of its source tracker and investigated repositories. |
 | **Work item** | The user's requested outcome and its source material. It is stable across retries and runs. |
 | **Workflow definition** | A versioned graph of typed nodes and transitions. |
 | **Workflow version** | An immutable snapshot of a workflow used by one or more runs. Editing a workflow creates a new version. |
@@ -231,21 +234,57 @@ DARKSTAR preserves the original, extracts or derives usable representations when
 The system shall:
 
 - initialize a project from the CLI;
-- discover the project from any child directory;
-- support system, user, and project configuration with a documented precedence order;
+- register zero, one, or multiple repositories without changing project identity;
+- discover candidate projects from a repository child directory, requiring selection when a repository is shared;
+- support system, user, project, and membership configuration with a documented precedence order;
 - print the fully resolved configuration and the source of every value;
 - validate configuration without starting a run;
 - keep secrets out of committed project files;
 - snapshot run-affecting configuration at run creation; and
 - reject unknown required fields while permitting versioned extension namespaces.
 
-Recommended precedence, highest first:
+Configuration precedence, highest first:
 
 1. explicit CLI flag;
 2. work-item/run override;
-3. project configuration;
-4. user configuration;
-5. shipped default.
+3. project-repository membership override, for repository-scoped settings;
+4. project configuration;
+5. shared repository defaults, for repository-scoped settings;
+6. user configuration;
+7. system configuration;
+8. shipped default.
+
+Permission ceilings remain intersections, regardless of value precedence. Each
+resolved setting records provenance and is frozen with the run. The
+[DS-230 model](../architecture/work/PROJECT_REPOSITORY_TRACKER_MODEL.md) defines
+identity, field scope, merge rules, removal semantics, and immutable run scope;
+its [migration plan](../planning/project-tracker-migration.md) preserves existing
+single-repository behavior. These target capabilities roll out under DS-231 and
+the linked tracker work; existing schema versions are not silently widened.
+
+A run selects no repositories, an explicit read-only set, or one write target
+with optional read-only context repositories. Multi-repository planning does not
+authorize coordinated Git writes. Membership removal affects future selection,
+retains history and frozen runs, and never deletes Git files or releases a writer
+lease. Explicit access revocation separately blocks/reconciles active effects.
+
+The project selects one authoritative built-in or external ticket source. Source
+binding, publication destination, and code repository membership are configured
+independently. An approved feature backlog publishes to one selected Linear or
+GitHub Issues destination; project planning can run without repositories. Ticket
+business status belongs to the selected tracker; DARKSTAR owns execution,
+immutable observations, evidence, and sync operations. External review/CI/
+acceptance/deployment systems own their reported facts. Generic workflow
+completion never closes an external ticket. Intake, progress, and transitions
+require explicit versioned rules and supported capabilities.
+
+Source switches select future intake without rewriting existing work or pending
+operations. Native tracker migration is a separate explicit, reconciled mapping
+that preserves native history and source snapshots; DARKSTAR need not create or
+own every observed ticket or delivery lifecycle. Production Jira support, GitHub
+Projects boards/custom fields, simultaneous publication to both trackers,
+unrestricted field mirroring, and coordinated multi-repository implementation
+remain deferred. Jira workflows serve as design/test fixtures in this workstream.
 
 Illustrative MVP project configuration:
 
@@ -557,7 +596,7 @@ Artifacts shall be:
 - validated against a node-defined schema or linter when applicable; and
 - immutable by version, with a new version created for revision.
 
-The MVP `folder` connector stores artifacts in a configurable directory, defaulting to `.darkstar/artifacts/` in the project. That directory may itself be an ordinary Git repository, live inside the source repository, or point to a separate checked-out repository; DARKSTAR does not require any of those layouts. The connector contract owns path allocation, reads, writes, versions, hashes, listing, and atomic replacement. Operational state remains in the user's application-data directory rather than the artifact folder.
+The MVP `folder` connector stores artifacts in a configurable directory, defaulting to `.darkstar/artifacts/` under the project's explicit configuration root. Legacy projects retain their existing root in the sole repository. A zero-repository project receives a daemon-managed project directory under user application data when no explicit root is supplied; that directory need not contain Git. Adding or removing repositories never moves the artifact root. That directory may itself be an ordinary Git repository, live inside a source repository, or point to a separate checked-out repository; DARKSTAR does not require any of those layouts. The connector contract owns path allocation, reads, writes, versions, hashes, listing, and atomic replacement. Operational state remains in the user's application-data state directory rather than the artifact folder.
 
 Later artifact backends—such as a dedicated Git-backed store, object storage, Google Drive, or a document system—must implement the same connector contract. Workflow and lineage code depend on artifact identifiers and content streams, never concrete filesystem paths.
 

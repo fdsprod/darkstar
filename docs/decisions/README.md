@@ -35,7 +35,7 @@ Before implementing work governed by an architecture decision:
 5. update the affected-issue lists when the new work is not already linked.
 
 ```powershell
-node scripts/governance-reference.mjs docs/decisions/decision-register.json docs/risks/risk-register.json DS-004 DS-010
+node scripts/governance-reference.mjs docs/decisions/decision-register.json docs/risks/risk-register.json DS-230 DS-010
 ```
 
 The validation suite also checks every registered document, issue link,

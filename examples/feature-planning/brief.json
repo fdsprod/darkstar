@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "projectId": "project-factory",
+  "featureKey": "FEATURE-1",
+  "artifactType": "feature_brief",
+  "lineage": {
+    "kind": "initial"
+  },
+  "title": "Reviewed feature planning",
+  "problem": "Planning must preserve intent through publication.",
+  "users": [
+    "Product owner"
+  ],
+  "outcomes": [
+    "Publish a reviewed backlog"
+  ],
+  "scope": {
+    "included": [
+      "Repository-free planning"
+    ],
+    "excluded": [
+      "Coordinated writes"
+    ]
+  },
+  "requirements": [
+    {
+      "key": "REQ-1",
+      "outcome": "Retain reviewed intent",
+      "acceptanceCriteria": [
+        "Story keys survive edits"
+      ],
+      "evidenceKeys": [
+        "E-1"
+      ]
+    }
+  ],
+  "repositories": [
+    {
+      "repositoryId": "repo-runtime",
+      "membershipRevision": 1
+    }
+  ],
+  "evidence": [
+    {
+      "key": "E-1",
+      "artifact": {
+        "artifactId": "artifact-evidence",
+        "version": 1,
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "locator": "section 2",
+      "finding": "Existing drafts require stable references."
+    }
+  ],
+  "decisions": [
+    {
+      "key": "D-1",
+      "question": "Which destination will receive the backlog?",
+      "evidenceKeys": [
+        "E-1"
+      ],
+      "state": {
+        "kind": "open",
+        "blocking": true
+      }
+    }
+  ]
+}
