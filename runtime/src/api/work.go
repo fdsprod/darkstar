@@ -36,6 +36,10 @@ type WorkService interface {
 }
 
 func (s *Server) serveProjects(response http.ResponseWriter, request *http.Request, requestID string) {
+	if strings.Contains(path.Clean(request.URL.Path), "/tracker-mapping") || strings.Contains(path.Clean(request.URL.Path), "/tracker-board") {
+		s.serveTrackerMapping(response, request, requestID)
+		return
+	}
 	if strings.HasSuffix(path.Clean(request.URL.Path), "/backlog/admit") || strings.HasSuffix(path.Clean(request.URL.Path), "/backlog/executions") {
 		s.serveTicketExecution(response, request, requestID)
 		return

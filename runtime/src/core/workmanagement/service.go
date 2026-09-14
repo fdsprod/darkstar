@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"darkstar/src/core/identity"
+	"darkstar/src/ports"
 	"darkstar/src/ports/statestore"
 	"darkstar/src/ports/workspace"
 )
@@ -273,6 +274,23 @@ func (s *Service) createWork(ctx context.Context, scope, projectID, title, sourc
 	if project.Status != statestore.ProjectActive {
 		return statestore.WorkItemProjection{}, fmt.Errorf("%w: project %s is archived", ErrInvalidRequest, projectID)
 	}
+	// Authored work creates a native business ticket. A selected
+	// external source must never fall back to that path when no writer exists.
+	// Existing command replays retain their original native lineage.
+	workID := identity.Deterministic("work_", scope+"\x00"+idempotencyKey)
+	if _, existingErr := s.store.WorkItem(ctx, workID); scope == workCreateScope && errors.Is(existingErr, statestore.ErrNotFound) {
+		if sources, ok := s.store.(statestore.BacklogStore); ok {
+			binding, bindingErr := sources.BacklogBinding(ctx, projectID)
+			if bindingErr != nil {
+				return statestore.WorkItemProjection{}, bindingErr
+			}
+			if _, native := binding.Source.(statestore.NativeBacklogSource); !native {
+				return statestore.WorkItemProjection{}, &ports.Failure{Code: ports.FailureUnsupported, Message: "The selected external source does not expose ticket creation through this command. Create the ticket in its source and admit its observation; no native shadow ticket was created."}
+			}
+		}
+	} else if existingErr != nil && !errors.Is(existingErr, statestore.ErrNotFound) {
+		return statestore.WorkItemProjection{}, existingErr
+	}
 	command, reused, err := s.begin(ctx, scope, idempotencyKey, request)
 	if err != nil {
 		return statestore.WorkItemProjection{}, err
@@ -284,7 +302,6 @@ func (s *Service) createWork(ctx context.Context, scope, projectID, title, sourc
 		}
 		return value, s.ensureWorkspace(ctx, value.WorkItemID)
 	}
-	workID := identity.Deterministic("work_", scope+"\x00"+idempotencyKey)
 	if reused {
 		value, getErr := s.store.WorkItem(ctx, workID)
 		if getErr != nil {

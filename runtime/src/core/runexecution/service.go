@@ -61,6 +61,7 @@ type CreateRequest struct {
 	WorkflowVersion     string            `json:"workflowVersion"`
 	Profile             string            `json:"profile,omitempty"`
 	Preparation         *PreparationInput `json:"preparation,omitempty"`
+	intakeActor         bool
 }
 
 type PreparationInput struct {
@@ -407,6 +408,23 @@ func (s *Service) Prepare(ctx context.Context, request CreateRequest, idempotenc
 	return s.createWorkflowRun(ctx, request, idempotencyKey, false)
 }
 
+// PrepareIntake prepares an automatically admitted source without creating a
+// user message or bypassing launch confirmation and workflow checkpoints.
+func (s *Service) PrepareIntake(ctx context.Context, work, observation, key string) (statestore.RunProjection, error) {
+	store, ok := s.store.(statestore.TicketExecutionStore)
+	if !ok {
+		return statestore.RunProjection{}, ErrInvalidRequest
+	}
+	snapshot, err := store.ApprovedRunSource(ctx, work, observation)
+	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if snapshot.RulePin == nil || snapshot.RulePin.AdmissionMode != "automatic" || snapshot.RulePin.ReadinessPolicy != "require_approval" {
+		return statestore.RunProjection{}, fmt.Errorf("%w: automatic preparation requires a pinned intake rule", ErrInvalidRequest)
+	}
+	return s.createWorkflowRun(ctx, CreateRequest{WorkItemID: work, SourceObservationID: observation, WorkflowID: snapshot.RulePin.WorkflowID, WorkflowVersion: snapshot.RulePin.WorkflowVersion, intakeActor: true}, key, false)
+}
+
 func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, idempotencyKey string, start bool) (result statestore.RunProjection, failure error) {
 	if !s.schedulingAdmitted() {
 		return statestore.RunProjection{}, ErrSchedulingBlocked
@@ -511,6 +529,12 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	if request.WorkflowID == "" {
 		return statestore.RunProjection{}, fmt.Errorf("%w: routing did not resolve a workflowId", ErrInvalidRequest)
 	}
+	if sourceSnapshot != nil && sourceSnapshot.RulePin != nil {
+		pin := sourceSnapshot.RulePin
+		if request.WorkflowID != pin.WorkflowID || request.WorkflowVersion != pin.WorkflowVersion || request.Profile != "" {
+			return statestore.RunProjection{}, fmt.Errorf("%w: source admission pins the workflow and mapping revision", ErrInvalidRequest)
+		}
+	}
 	project, err := s.store.Project(ctx, work.ProjectID)
 	if err != nil {
 		return statestore.RunProjection{}, err
@@ -572,6 +596,9 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	if len(issues) != 0 {
 		return statestore.RunProjection{}, issues
 	}
+	if sourceSnapshot != nil && sourceSnapshot.RulePin != nil && preview.Workflow.Digest != sourceSnapshot.RulePin.WorkflowDigest {
+		return statestore.RunProjection{}, fmt.Errorf("%w: admitted workflow content changed", ErrInvalidRequest)
+	}
 	preview, err = s.assessPreparation(ctx, request, work, project, routeContext, preview)
 	if err != nil {
 		return statestore.RunProjection{}, err
@@ -606,14 +633,18 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	attemptID := stableID("attempt_", runID+"\x00"+entryID)
 	logReference := strings.TrimPrefix(attemptID, "attempt_") + ".log"
 	events := make([]statestore.PendingEvent, 0, 8)
+	actor := statestore.Actor{Type: statestore.ActorUser, ID: "local-user"}
+	if request.intakeActor {
+		actor = statestore.Actor{Type: statestore.ActorSystem, ID: "tracker-intake"}
+	}
 	for _, previous := range preparationRuns {
-		events = append(events, pendingEvent("run.cancelled", statestore.AggregateRun, previous.RunID, previous.ResourceVersion, runID, "preparation-superseded:"+runID+":"+previous.RunID, statestore.ActorUser, "local-user", now, map[string]any{"reason": "superseded_preparation", "replacementRunId": runID}))
+		events = append(events, pendingEvent("run.cancelled", statestore.AggregateRun, previous.RunID, previous.ResourceVersion, runID, "preparation-superseded:"+runID+":"+previous.RunID, actor.Type, actor.ID, now, map[string]any{"reason": "superseded_preparation", "replacementRunId": runID}))
 	}
 	if start && work.Status == statestore.WorkItemOpen {
 		events = append(events, pendingEvent("work.started", statestore.AggregateWork, work.WorkItemID, work.ResourceVersion, runID, "work-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}))
 	}
 	events = append(events,
-		pendingEvent("run.created", statestore.AggregateRun, runID, 0, runID, idempotencyKey, statestore.ActorUser, "local-user", now, map[string]any{
+		pendingEvent("run.created", statestore.AggregateRun, runID, 0, runID, idempotencyKey, actor.Type, actor.ID, now, map[string]any{
 			"workItemId": work.WorkItemID, "workflowId": preview.Workflow.Name, "workflowVersion": preview.Workflow.Version, "priority": work.Priority,
 		}),
 		pendingEvent("run.route_frozen", statestore.AggregateRun, runID, 1, runID, "route-frozen:"+runID, statestore.ActorSystem, "daemon", now, map[string]any{
@@ -644,7 +675,7 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 		}
 		return value, s.completeCreateCommand(ctx, scope, idempotencyKey, value, committed)
 	}
-	events = append(events, pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, statestore.ActorUser, "local-user", now, map[string]any{}))
+	events = append(events, pendingEvent("run.started", statestore.AggregateRun, runID, 2, runID, "run-start:"+runID, actor.Type, actor.ID, now, map[string]any{}))
 	if requiresInputs {
 		message := inputRequirementValidationErrors(preview.Route.InputRequirements).Error()
 		if assessment != nil {

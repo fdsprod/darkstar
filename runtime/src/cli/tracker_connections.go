@@ -15,6 +15,9 @@ import (
 )
 
 func runTracker(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "mapping" {
+		return runTrackerMapping(args[1:], jsonOutput, stdout, stderr)
+	}
 	command := "darkstar tracker"
 	if len(args) < 2 {
 		return workArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected tracker credential store <ref> --stdin or tracker connection <add-linear|add-github-token|add-github-cli|list|show|health|destinations>"))

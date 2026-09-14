@@ -384,9 +384,11 @@ func runDaemon(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 
 type daemonAPIService struct {
 	trackerConnectionManager *trackerConnectionManager
+	trackerMapping           *daemonTrackerMapping
 	backlog                  *backlogService
 	backlogCancel            context.CancelFunc
 	backlogDone              chan struct{}
+	trackerIntakeCursors     map[string]string
 	server                   *localapi.Server
 	paths                    platformport.Paths
 	projectRoot              string
@@ -581,6 +583,11 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		return err
 	}
 	if err := service.configureBacklog(); err != nil {
+		_ = database.Close()
+		service.database = nil
+		return err
+	}
+	if err := service.configureTrackerMapping(workflowCatalog); err != nil {
 		_ = database.Close()
 		service.database = nil
 		return err

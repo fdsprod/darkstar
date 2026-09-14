@@ -49,7 +49,11 @@ func approvedRunSource(ctx context.Context, query rowQueryer, work, observation 
 			return statestore.RunSourceSnapshot{}, backlogFailure(ports.FailureConflict, "source ticket moved outside its approved scope")
 		}
 	}
-	return statestore.RunSourceSnapshot{WorkID: work, AdmissionID: admission.ID, ObservationID: observation, LineageRevision: lineage.Revision, BindingRevision: lineage.BindingRevision, Ref: lineage.Ref, Pin: pin, Ticket: current.Observation.Ticket, ApprovedAt: admission.ApprovedAt}, nil
+	rulePin, err := readSourceRulePin(ctx, query, admission.ID)
+	if err != nil {
+		return statestore.RunSourceSnapshot{}, err
+	}
+	return statestore.RunSourceSnapshot{WorkID: work, AdmissionID: admission.ID, ObservationID: observation, LineageRevision: lineage.Revision, BindingRevision: lineage.BindingRevision, Ref: lineage.Ref, Pin: pin, Ticket: current.Observation.Ticket, ApprovedAt: admission.ApprovedAt, RulePin: rulePin}, nil
 }
 
 func (d *Database) ApprovedRunSource(ctx context.Context, work, observation string) (statestore.RunSourceSnapshot, error) {

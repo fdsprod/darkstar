@@ -284,6 +284,17 @@ func (d *Database) AdmitSourceTicket(ctx context.Context, request statestore.Sou
 	if err := insertAdmission(ctx, tx, value, request.IdempotencyKey, request.RequestDigest); err != nil {
 		return value, err
 	}
+	if err := persistSourceRulePin(ctx, tx, value, request.RulePin); err != nil {
+		return value, err
+	}
+	if request.IntakeCursor != nil {
+		if err := sourceWorkSettled(ctx, tx, lineage.WorkID, ""); err != nil {
+			return value, err
+		}
+		if err := saveSourceIntakeCursor(ctx, tx, *request.IntakeCursor); err != nil {
+			return value, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return value, err
 	}

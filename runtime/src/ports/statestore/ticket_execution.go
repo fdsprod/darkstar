@@ -26,13 +26,45 @@ type SourceLineage struct {
 	CreatedAt                    time.Time
 }
 
-// TicketAdmission records an explicit human approval of one exact observation,
-// not a provider business-state transition or authority for an external effect.
+// TicketAdmission records admission of one exact observation by a human or an
+// activated, pinned intake rule. Neither grants checkpoint or external authority.
 type TicketAdmission struct {
 	ID, WorkID, ProjectID, ObservationID string
 	LineageRevision, BindingRevision     uint64
 	ApprovedAt                           time.Time
 	Actor                                string
+}
+
+// SourceRulePin retains the exact mapping and workflow selected by admission.
+// It is immutable evidence, rather than a second editable configuration.
+type SourceRulePin struct {
+	RuleSetID       string          `json:"ruleSetId"`
+	Revision        uint64          `json:"revision"`
+	RuleID          string          `json:"ruleId"`
+	Rules           json.RawMessage `json:"rules"`
+	WorkflowID      string          `json:"workflowId"`
+	WorkflowVersion string          `json:"workflowVersion"`
+	WorkflowDigest  string          `json:"workflowDigest"`
+	ReadinessPolicy string          `json:"readinessPolicy"`
+	AdmissionMode   string          `json:"admissionMode"`
+}
+
+type SourceIntakeCursorMutation struct {
+	Identity       string
+	ExpectedDigest string
+	Cursor         json.RawMessage
+}
+
+type SourceIntakeCursorStore interface {
+	SourceIntakeCursor(context.Context, string) (json.RawMessage, error)
+	SaveSourceIntakeCursor(context.Context, SourceIntakeCursorMutation) error
+}
+
+// SourceAdmissionReceipts reads immutable command and rule evidence without
+// reinterpreting it using the project's latest source or mapping selection.
+type SourceAdmissionReceipts interface {
+	ReplayTicketAdmission(context.Context, string, string) (TicketAdmission, error)
+	TicketAdmissionRulePin(context.Context, string) (*SourceRulePin, error)
 }
 
 type SourceAdmissionMutation struct {
@@ -44,7 +76,9 @@ type SourceAdmissionMutation struct {
 	ApprovedAt                                        time.Time
 	ObservedNotBefore                                 time.Time
 	// NewWork is a daemon-created event, used only if no local work exists yet.
-	NewWork PendingEvent
+	NewWork      PendingEvent
+	RulePin      *SourceRulePin
+	IntakeCursor *SourceIntakeCursorMutation
 }
 
 type SourceRebindMutation struct {
@@ -69,6 +103,7 @@ type RunSourceSnapshot struct {
 	Ticket          json.RawMessage   `json:"ticket"`
 	ApprovedAt      time.Time         `json:"approvedAt"`
 	CapturedAt      time.Time         `json:"capturedAt"`
+	RulePin         *SourceRulePin    `json:"rulePin,omitempty"`
 }
 
 type SourceCheckOutcome interface{ isSourceCheckOutcome() }

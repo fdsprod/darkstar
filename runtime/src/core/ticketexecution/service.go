@@ -36,6 +36,7 @@ type Options struct {
 	Now               func() time.Time
 	Workspaces        workspace.Provisioner
 	MaxObservationAge time.Duration
+	Rules             RuleResolver
 }
 
 type Service struct {
@@ -106,8 +107,19 @@ func New(store Store, resolver backlog.Resolver, options Options) (*Service, err
 }
 
 func (s *Service) Admit(ctx context.Context, request AdmissionRequest, key string) (Result, error) {
+	return s.admit(ctx, request, key, "local-user", nil, nil)
+}
+
+func (s *Service) admit(ctx context.Context, request AdmissionRequest, key, actor string, selectedPin *statestore.SourceRulePin, cursor *statestore.SourceIntakeCursorMutation) (Result, error) {
 	if request.ProjectID == "" || request.BindingRevision == 0 || request.ObservationID == "" || !validKey(key) {
 		return Result{}, fail(ports.FailureInvalidRequest, "source admission requires exact project, binding, observation and idempotency key")
+	}
+	requestDigest := digest(struct {
+		Action  string
+		Request AdmissionRequest
+	}{"admit", request})
+	if replayed, found, err := s.replayAdmission(ctx, key, requestDigest); found {
+		return replayed, err
 	}
 	observation, err := s.store.BacklogObservation(ctx, request.ObservationID)
 	if err != nil {
@@ -120,6 +132,19 @@ func (s *Service) Admit(ctx context.Context, request AdmissionRequest, key strin
 	routing := statestore.WorkRoutingIntent{Mode: statestore.WorkRoutingAutomatic}
 	if request.RoutingIntent != nil {
 		routing = *request.RoutingIntent
+	}
+	rulePin := selectedPin
+	if rulePin == nil {
+		rulePin, cursor, err = s.resolveAdmissionRule(ctx, request, ticket)
+		if err != nil {
+			return Result{}, err
+		}
+	}
+	if rulePin != nil {
+		if request.RoutingIntent != nil && (routing.WorkflowID != rulePin.WorkflowID || routing.WorkflowVersion != rulePin.WorkflowVersion || routing.EntryNodeID != "" || len(routing.TerminalNodeIDs) != 0) {
+			return Result{}, fail(ports.FailureConflict, "an intake rule pins its workflow; use a separately reviewed mapping to change it")
+		}
+		routing = statestore.WorkRoutingIntent{Mode: statestore.WorkRoutingOverride, WorkflowID: rulePin.WorkflowID, WorkflowVersion: rulePin.WorkflowVersion}
 	}
 	if (routing.Mode != statestore.WorkRoutingAutomatic && routing.Mode != statestore.WorkRoutingOverride) || (routing.Mode == statestore.WorkRoutingOverride && routing.WorkflowID == "") || (routing.Mode == statestore.WorkRoutingAutomatic && (routing.WorkflowID != "" || routing.WorkflowVersion != "" || routing.EntryNodeID != "" || len(routing.TerminalNodeIDs) > 0)) {
 		return Result{}, fail(ports.FailureInvalidRequest, "source admission routing intent is invalid")
@@ -136,12 +161,13 @@ func (s *Service) Admit(ctx context.Context, request AdmissionRequest, key strin
 	if err != nil {
 		return Result{}, err
 	}
-	mutation := statestore.SourceAdmissionMutation{ProjectID: request.ProjectID, BindingRevision: request.BindingRevision, ObservationID: request.ObservationID, WorkID: work, IdempotencyKey: key, RequestDigest: digest(struct {
-		Action  string
-		Request AdmissionRequest
-	}{"admit", request}), AdmissionID: identity.Deterministic("operation_", "source-approval\x00"+key), Actor: "local-user", ApprovedAt: now, ObservedNotBefore: now.Add(-s.options.MaxObservationAge),
+	mutation := statestore.SourceAdmissionMutation{ProjectID: request.ProjectID, BindingRevision: request.BindingRevision, ObservationID: request.ObservationID, WorkID: work, IdempotencyKey: key, RequestDigest: requestDigest, AdmissionID: identity.Deterministic("operation_", "source-approval\x00"+key), Actor: actor, ApprovedAt: now, ObservedNotBefore: now.Add(-s.options.MaxObservationAge), RulePin: rulePin,
 		NewWork: statestore.PendingEvent{SchemaVersion: 1, ID: identity.Deterministic("event_", "source-admission\x00"+key), AggregateType: statestore.AggregateWork, AggregateID: work, Kind: "work.created", OccurredAt: now, CorrelationID: work, CommandID: "source-admission:" + key, Actor: statestore.Actor{Type: statestore.ActorUser, ID: "local-user"}, Data: data, Metadata: json.RawMessage(`{}`)},
 	}
+	if actor != "local-user" {
+		mutation.NewWork.Actor = statestore.Actor{Type: statestore.ActorSystem, ID: actor}
+	}
+	mutation.IntakeCursor = cursor
 	admission, err := s.store.AdmitSourceTicket(ctx, mutation)
 	if err != nil {
 		return Result{}, err
@@ -153,11 +179,19 @@ func (s *Service) Approve(ctx context.Context, work, observation, key string) (R
 	if !validKey(key) || observation == "" {
 		return Result{}, fail(ports.FailureInvalidRequest, "source approval requires exact observation and idempotency key")
 	}
+	requestDigest := digest(struct{ Action, WorkID, ObservationID string }{"approve", work, observation})
+	if replayed, found, err := s.replayAdmission(ctx, key, requestDigest); found {
+		return replayed, err
+	}
 	lineage, err := s.store.WorkTicketLineage(ctx, work)
 	if err != nil {
 		return Result{}, err
 	}
-	request := statestore.SourceAdmissionMutation{ProjectID: lineage.ProjectID, BindingRevision: lineage.BindingRevision, ExistingWorkID: work, WorkID: work, ObservationID: observation, IdempotencyKey: key, RequestDigest: digest(struct{ Action, WorkID, ObservationID string }{"approve", work, observation}), AdmissionID: identity.Deterministic("operation_", "source-approval\x00"+key), Actor: "local-user", ApprovedAt: s.options.Now().UTC(), ObservedNotBefore: s.options.Now().UTC().Add(-s.options.MaxObservationAge)}
+	pin, cursor, err := s.ruleForApproval(ctx, lineage, observation)
+	if err != nil {
+		return Result{}, err
+	}
+	request := statestore.SourceAdmissionMutation{ProjectID: lineage.ProjectID, BindingRevision: lineage.BindingRevision, ExistingWorkID: work, WorkID: work, ObservationID: observation, IdempotencyKey: key, RequestDigest: requestDigest, AdmissionID: identity.Deterministic("operation_", "source-approval\x00"+key), Actor: "local-user", ApprovedAt: s.options.Now().UTC(), ObservedNotBefore: s.options.Now().UTC().Add(-s.options.MaxObservationAge), RulePin: pin, IntakeCursor: cursor}
 	admission, err := s.store.AdmitSourceTicket(ctx, request)
 	if err != nil {
 		return Result{}, err

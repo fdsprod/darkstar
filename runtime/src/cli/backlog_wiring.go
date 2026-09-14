@@ -89,6 +89,7 @@ func (service *daemonAPIService) startBacklogPolling(parent context.Context) {
 					project := projects[(offset+count)%len(projects)]
 					if project.Status == statestore.ProjectActive {
 						_, _ = service.backlog.Poll(ctx, project.ProjectID)
+						service.evaluateTrackerIntake(ctx, project.ProjectID)
 					}
 					if ctx.Err() != nil {
 						return

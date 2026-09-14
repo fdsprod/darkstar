@@ -3,13 +3,27 @@
 
 export interface components {
   schemas: {
+    "TrackerWorkflowPin": { "id": string; "version": string; "digest": string; };
+    "TrackerMappingEvent": { "workflow": components["schemas"]["TrackerWorkflowPin"]; "milestoneId": string; };
+    "TrackerMappingRequest": { "schemaVersion": 1; "rules": {  }; "observationId"?: string; "event"?: components["schemas"]["TrackerMappingEvent"]; };
+    "TrackerMappingActivation": { "schemaVersion": 1; "revision": number; "expectedActiveRevision": number; "observationId"?: string; };
+    "TrackerMappingRevision": { "revision": number; "bindingRevision": number; "rules": {  }; "createdAt": string; };
+    "TrackerMappingHistory": { "schemaVersion": 1; "activeRevision": number; "revisions": Array<components["schemas"]["TrackerMappingRevision"]>; };
+    "TrackerBoardColumn": { "id": string; "name": string; "statusIds": Array<string>; };
+    "TrackerBoardAction": { "id": string; "name": string; "targetStateId": string; "availability": "available" | "unavailable"; "reason"?: string; "automation": Array<string>; "requiredFields": Array<string>; };
+    "TrackerBoard": { "schemaVersion": 1; "activeRevision": number; "columns": Array<components["schemas"]["TrackerBoardColumn"]>; "unknownGroup": components["schemas"]["TrackerBoardColumn"]; "actions": { [key: string]: Array<components["schemas"]["TrackerBoardAction"]>; }; "reason"?: string; };
+    "TrackerBoardTransition": { "schemaVersion": 1; "observationId": string; "expectedBindingRevision": number; "expectedMappingRevision": number; "transitionId": string; };
+    "TrackerMappingDiscovery": {  };
+    "TrackerMappingPreview": {  };
+    "TrackerBoardTransitionResult": {  };
     "FrozenSourceNamespace": { "Provider": string; "Host": string; "TenantID": string; "ScopeID": string; };
     "FrozenSourceRef": { "Namespace": components["schemas"]["FrozenSourceNamespace"]; "ID": string; };
     "FrozenSourceScope": { "Namespace": components["schemas"]["FrozenSourceNamespace"]; "ContainerID": string; };
     "FrozenSourceNamedID": { "ID": string; "Name": string; };
     "FrozenSourcePin": { "ContractVersion": string; "AdapterID": string; "AdapterVersion": string; "InstallationID": string; "AccountID": string; "BindingRevision": string; "ConfigRevision": string; "ConfigDigest": string; "CapabilitiesDigest": string; };
     "FrozenSourceTicket": { "version": "darkstar.ticket-observation/v1"; "ref": components["schemas"]["FrozenSourceRef"]; "revision": string; "key": string; "url": string; "title": string; "description": string; "businessState": { "state": "known"; "value": components["schemas"]["FrozenSourceNamedID"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "businessStateReason": { "state": "known"; "value": components["schemas"]["FrozenSourceNamedID"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "issueType": { "state": "known"; "value": components["schemas"]["FrozenSourceNamedID"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "sprint": { "state": "known"; "value": Array<components["schemas"]["FrozenSourceNamedID"]>; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "assignees": { "state": "known"; "value": Array<components["schemas"]["FrozenSourceNamedID"]>; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "labels": { "state": "known"; "value": Array<components["schemas"]["FrozenSourceNamedID"]>; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "priority": { "state": "known"; "value": components["schemas"]["FrozenSourceNamedID"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "relationships": { "state": "known"; "value": Array<{ "Kind": "child_of" | "depends_on"; "Target": components["schemas"]["FrozenSourceRef"]; }>; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "archived": { "state": "known"; "value": boolean; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "updatedAt": { "state": "known"; "value": string; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "placement": { "state": "known"; "value": components["schemas"]["FrozenSourceScope"]; } | { "state": "unknown"; "reason": string; } | { "state": "unsupported"; "reason": string; }; "freshness": { "state": "fresh"; "observedAt": string; "revision": string; } | { "state": "stale"; "lastObservedAt": string; "reason": string; } | { "state": "never_observed"; "reason": string; }; "evidenceRef": string; };
-    "RunSourceSnapshot": { "runId": string; "workItemId": string; "admissionId": string; "observationId": string; "lineageRevision": number; "bindingRevision": number; "ref": components["schemas"]["FrozenSourceRef"]; "pin": components["schemas"]["FrozenSourcePin"]; "ticket": components["schemas"]["FrozenSourceTicket"]; "approvedAt": string; "capturedAt": string; };
+    "RunSourceSnapshot": { "runId": string; "workItemId": string; "admissionId": string; "observationId": string; "lineageRevision": number; "bindingRevision": number; "ref": components["schemas"]["FrozenSourceRef"]; "pin": components["schemas"]["FrozenSourcePin"]; "ticket": components["schemas"]["FrozenSourceTicket"]; "approvedAt": string; "capturedAt": string; "rulePin"?: components["schemas"]["SourceRulePin"]; };
+    "SourceRulePin": { "ruleSetId": string; "revision": number; "ruleId": string; "rules": {  }; "workflowId": string; "workflowVersion": string; "workflowDigest": string; "readinessPolicy": string; "admissionMode": "manual" | "automatic"; };
     "SourceTicketObservation": { "observationId": string; "ref": components["schemas"]["BacklogTicketRef"]; "revision": string; "title": string; "description": string; "key": string; "url": string; "businessState": components["schemas"]["BacklogNamedObservation"]; "observedAt": string; "evidenceRef": string; };
     "SourceLineage": { "workItemId": string; "projectId": string; "ticketKey": string; "revision": number; "bindingRevision": number; "ref": components["schemas"]["BacklogTicketRef"]; "origin": "admitted" | "native" | "legacy_native"; "createdAt": string; };
     "TicketAdmission": { "id": string; "workItemId": string; "projectId": string; "observationId": string; "lineageRevision": number; "bindingRevision": number; "approvedAt": string; "actor": string; };
@@ -300,6 +314,13 @@ export interface components {
 }
 
 export interface ApiOperations {
+    "getTrackerMappingHistory": { method: "GET"; path: "/api/v1/projects/{projectId}/tracker-mapping"; response: components["schemas"]["TrackerMappingHistory"]; body: never; };
+    "saveTrackerMapping": { method: "POST"; path: "/api/v1/projects/{projectId}/tracker-mapping"; response: components["schemas"]["TrackerMappingRevision"]; body: components["schemas"]["TrackerMappingRequest"]; };
+    "discoverTrackerMapping": { method: "GET"; path: "/api/v1/projects/{projectId}/tracker-mapping/discovery"; response: components["schemas"]["TrackerMappingDiscovery"]; body: never; };
+    "activateTrackerMapping": { method: "POST"; path: "/api/v1/projects/{projectId}/tracker-mapping/activate"; response: components["schemas"]["TrackerMappingHistory"]; body: components["schemas"]["TrackerMappingActivation"]; };
+    "previewTrackerMapping": { method: "POST"; path: "/api/v1/projects/{projectId}/tracker-mapping/preview"; response: components["schemas"]["TrackerMappingPreview"]; body: components["schemas"]["TrackerMappingRequest"]; };
+    "getTrackerBoard": { method: "GET"; path: "/api/v1/projects/{projectId}/tracker-board"; response: components["schemas"]["TrackerBoard"]; body: never; };
+    "transitionTrackerBoardTicket": { method: "POST"; path: "/api/v1/projects/{projectId}/tracker-board/transition"; response: components["schemas"]["TrackerBoardTransitionResult"]; body: components["schemas"]["TrackerBoardTransition"]; };
     "listWorkSourceViews": { method: "GET"; path: "/api/v1/work-items/source-views"; response: components["schemas"]["WorkSourceViews"]; body: never; };
     "getWorkSourceView": { method: "GET"; path: "/api/v1/work-items/{workId}/source"; response: components["schemas"]["WorkSourceView"]; body: never; };
     "refreshWorkSource": { method: "POST"; path: "/api/v1/work-items/{workId}/source/refresh"; response: components["schemas"]["WorkSourceView"]; body: never; };
@@ -443,6 +464,13 @@ export interface ApiOperations {
 export type ApiOperationId = keyof ApiOperations;
 
 export const operationDefinitions: Record<ApiOperationId, { method: string; path: string }> = {
+  "getTrackerMappingHistory": { method: "GET", path: "/api/v1/projects/{projectId}/tracker-mapping" },
+  "saveTrackerMapping": { method: "POST", path: "/api/v1/projects/{projectId}/tracker-mapping" },
+  "discoverTrackerMapping": { method: "GET", path: "/api/v1/projects/{projectId}/tracker-mapping/discovery" },
+  "activateTrackerMapping": { method: "POST", path: "/api/v1/projects/{projectId}/tracker-mapping/activate" },
+  "previewTrackerMapping": { method: "POST", path: "/api/v1/projects/{projectId}/tracker-mapping/preview" },
+  "getTrackerBoard": { method: "GET", path: "/api/v1/projects/{projectId}/tracker-board" },
+  "transitionTrackerBoardTicket": { method: "POST", path: "/api/v1/projects/{projectId}/tracker-board/transition" },
   "listWorkSourceViews": { method: "GET", path: "/api/v1/work-items/source-views" },
   "getWorkSourceView": { method: "GET", path: "/api/v1/work-items/{workId}/source" },
   "refreshWorkSource": { method: "POST", path: "/api/v1/work-items/{workId}/source/refresh" },

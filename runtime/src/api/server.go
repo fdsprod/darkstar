@@ -62,6 +62,7 @@ type Server struct {
 	trackerConnections TrackerConnectionService
 	backlog            BacklogService
 	ticketExecution    TicketExecutionService
+	trackerMapping     TrackerMappingService
 	workLifecycle      WorkLifecycleService
 	artifacts          ArtifactService
 	approvals          ApprovalService

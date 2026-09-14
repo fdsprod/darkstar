@@ -78,6 +78,9 @@ func applySourceWork(work *statestore.WorkItemProjection, snapshot statestore.Ru
 		return err
 	}
 	work.Title, work.Details, work.SourceHash = ticket.Title, ticket.Description, digest
+	if pin := snapshot.RulePin; pin != nil {
+		work.RoutingIntent = statestore.WorkRoutingIntent{Mode: statestore.WorkRoutingOverride, WorkflowID: pin.WorkflowID, WorkflowVersion: pin.WorkflowVersion}
+	}
 	evidence := make([]string, 0, len(work.Evidence)+1)
 	seen := map[string]bool{}
 	for _, reference := range append(append([]string(nil), work.Evidence...), ticket.EvidenceRef) {
