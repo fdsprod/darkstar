@@ -207,7 +207,7 @@ func TestAdaptersReportFinalInputCapabilities(t *testing.T) {
 	sort.Strings(names)
 	want := []string{
 		"app_server", "artifact_text_input", "explicit_skill_input", "interactions", "local_image_input",
-		"resume", "structured_output", "text_input", "workspace_write",
+		"resume", "scoped_read_filesystem", "structured_output", "text_input", "workspace_write",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("App Server capabilities = %#v, want %#v", names, want)
@@ -225,7 +225,7 @@ func TestAdaptersReportFinalInputCapabilities(t *testing.T) {
 			t.Errorf("exec capability %s is not available", name)
 		}
 	}
-	for _, name := range []string{"explicit_skill_input", "interactions", "local_image_input", "workspace_write"} {
+	for _, name := range []string{"explicit_skill_input", "interactions", "local_image_input", "scoped_read_filesystem", "workspace_write"} {
 		if _, unavailable := execManifest.Features[name].(providerport.UnavailableCapability); !unavailable {
 			t.Errorf("exec capability %s is not unavailable", name)
 		}

@@ -24,6 +24,7 @@ import (
 	"darkstar/src/adapters/contentprocessor/commonimage"
 	"darkstar/src/adapters/provider/codex"
 	gitadapter "darkstar/src/adapters/repository/git"
+	snapshotgit "darkstar/src/adapters/repositorysnapshot/git"
 	routeartifacts "darkstar/src/adapters/routeadvisor/artifacts"
 	routeadvice "darkstar/src/adapters/routeadvisor/reasoning"
 	"darkstar/src/adapters/statestore/sqlite"
@@ -42,6 +43,7 @@ import (
 	"darkstar/src/core/lateevidence"
 	"darkstar/src/core/preparation"
 	"darkstar/src/core/recovery"
+	"darkstar/src/core/repositoryscope"
 	"darkstar/src/core/runexecution"
 	"darkstar/src/core/runexport"
 	"darkstar/src/core/workflow"
@@ -106,6 +108,8 @@ Project commands:
   project repository add <project-id> <path> --role <read_only|implementation> --revision <n> [--membership-revision <n>] --label <label> [--settings-file <json-file>] [--idempotency-key <key>] [--json]
   project repository update <project-id> <repository-id> --role <read_only|implementation> --revision <n> --membership-revision <n> --label <label> [--settings-file <json-file>] [--idempotency-key <key>] [--json]
   project repository remove <project-id> <repository-id> --revision <n> --membership-revision <n> [--idempotency-key <key>] [--json]
+  project scope prepare <project-id> --repositories-file <json-file> [--idempotency-key <key>] [--json]
+  project scope show <scope-id> [--json]
 
 Work commands:
   work create <outcome> [--project <project-id>] [--details <text>] [--evidence <ref>] [--routing <automatic|override>] [--workflow <name>] [--workflow-version <version>] [--entry-node <id>] [--terminal-node <id>] [--priority <n>] [--idempotency-key <key>] [--json]
@@ -584,6 +588,18 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	providerWiring.repositoryStore = database
 	providerWiring.leaseStore = database
 	providerWiring.daemonInstanceID = state.InstanceID
+	snapshotExporter, err := snapshotgit.New(filepath.Join(service.paths.Data, "repository-snapshots"), snapshotgit.Limits{})
+	if err != nil {
+		return fmt.Errorf("configure repository snapshots: %w", err)
+	}
+	repositoryScopes, err := repositoryscope.New(database, snapshotExporter)
+	if err != nil {
+		return err
+	}
+	repositoryScopes.SetConfigurationResolver(providerWiring.resolveRepositoryConfiguration)
+	if err := service.server.SetRepositoryScopes(repositoryScopes); err != nil {
+		return err
+	}
 	if err := work.ReconcileWorkspaces(ctx); err != nil {
 		_ = database.Close()
 		service.database = nil

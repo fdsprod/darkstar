@@ -103,6 +103,12 @@ export class DarkstarApiClient {
   getProjectRepositories(projectId: string, signal?: AbortSignal) {
     return this.operation("getProjectRepositories", { path: { projectId }, signal });
   }
+  prepareInvestigationScope(body: Schemas["PrepareInvestigationScopeRequest"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("prepareInvestigationScope", { body, idempotencyKey, signal });
+  }
+  getInvestigationScope(scopeId: string, signal?: AbortSignal) {
+    return this.operation("getInvestigationScope", { path: { scopeId }, signal });
+  }
   attachProjectRepository(projectId: string, resourceVersion: number, body: Schemas["AttachRepositoryRequest"], idempotencyKey: string, signal?: AbortSignal) {
     return this.operation("attachProjectRepository", { path: { projectId }, body, resourceVersion, idempotencyKey, signal });
   }

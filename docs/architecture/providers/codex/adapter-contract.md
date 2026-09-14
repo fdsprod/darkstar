@@ -66,6 +66,31 @@ A provider-neutral attempt request contains:
 The adapter must not infer broader permissions from the prompt, inherited Codex
 configuration, a workflow approval, or a previous attempt.
 
+### Frozen snapshot read confinement
+
+`AttemptRequest.Filesystem` and `ResumeRequest.Filesystem` carry an optional
+`ScopedReadRequirement`: canonical `ReadRoots` plus the frozen scope,
+configuration, and evidence SHA-256 digests. Its digest binds the whole read
+ceiling. Empty roots grant no filesystem reads; absence preserves the legacy
+access contract. Recovery must retain the requirement and capability fingerprint;
+it cannot convert a scoped attempt into a legacy attempt.
+
+The versioned `scoped_read_filesystem` capability means the provider enforces
+reads only within these immutable roots and denies writes, including native and
+hosted tools. A read-only sandbox prevents writes but does not establish this
+read ceiling. The installed Codex App Server read-only sandbox has no read-root
+allowlist; `runtimeWorkspaceRoots` supplies metadata, not confinement. Native
+App Server, exec fallback, and the TypeScript bridge therefore advertise this
+capability as unavailable and reject scoped start/resume requests before provider
+dispatch. Their capability fingerprints include this contract revision.
+
+The shared provider validator checks required capability version and frozen
+identity. Its hosted-read path helper rejects paths outside the selected roots
+and symbolic-link traversal; this check alone is not a process sandbox or a
+race-safe reader. A future adapter must supply actual enforcement before it may
+advertise support. Unsupported scoped work remains blocked with a provider
+selection diagnostic, rather than broadening access to live repositories.
+
 ### Prepared image and skill inputs
 
 The App Server adapter advertises separate `local_image_input` and

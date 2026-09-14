@@ -89,11 +89,19 @@
       "version": "v1alpha1"
     },
     {
+      "file": "investigation-scope-v1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/investigation-scope-v1.schema.json",
+      "name": "investigation-scope-v1",
+      "sha256": "d5a5dccf569e9d6f321cabfe31c75394a3ecd6858e5eb239bfa5c2844bc272f9",
+      "version": "unversioned"
+    },
+    {
       "file": "openapi-v1alpha1.json",
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "65a13256059e8a0f6829e897755ac967fad9d148182b8a2f963afc705fc8f90f",
+      "sha256": "db4a6a51c848e881456500a09b180940a0663e414e13c3a4587019781f9ded7d",
       "version": "v1alpha1"
     },
     {

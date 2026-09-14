@@ -73,33 +73,7 @@ func (w *daemonProviderWiring) resolveRepositoryResources(ctx context.Context, d
 		if err != nil {
 			return nil, err
 		}
-		projectConfig, err := w.repositoryStore.ProjectRepositoryConfiguration(ctx, project.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-		defaults := statestore.RepositorySettings{ConfigurationRoot: member.Repository.Root, WorktreeBase: ".darkstar/worktrees"}
-		defaultReference := "repository-defaults"
-		if w.configuration != nil {
-			scope, err := config.ProjectMutationScope(project.ProjectID)
-			if err != nil {
-				return nil, err
-			}
-			state, err := w.configuration.State(ctx, scope)
-			if err != nil {
-				return nil, err
-			}
-			for _, setting := range state.Effective {
-				if setting.Key == "workspace.baseRef" {
-					defaults.BaseRef, _ = setting.Value.Value().(string)
-					defaultReference += "; workspace.baseRef=" + setting.Source.Scope().String() + ":" + setting.Source.Reference()
-				}
-			}
-		}
-		resolved, err := config.ResolveRepositorySettings(
-			config.RepositorySettingsLayer{Scope: config.ScopeDefault, Reference: defaultReference, Settings: defaults},
-			config.RepositorySettingsLayer{Scope: config.ScopeProject, Reference: fmt.Sprintf("%s@%d", project.ProjectID, project.ResourceVersion), Settings: projectConfig.Defaults},
-			config.RepositorySettingsLayer{Scope: config.ScopeMembership, Reference: fmt.Sprintf("%s/%s@%d", project.ProjectID, member.Repository.RepositoryID, member.Membership.Revision), Settings: member.Membership.Settings},
-		)
+		resolved, err := w.resolveRepositoryConfiguration(ctx, project, member)
 		if err != nil {
 			return nil, err
 		}
@@ -110,6 +84,36 @@ func (w *daemonProviderWiring) resolveRepositoryResources(ctx context.Context, d
 		}
 	}
 	return values, nil
+}
+
+func (w *daemonProviderWiring) resolveRepositoryConfiguration(ctx context.Context, project statestore.ProjectProjection, member statestore.ProjectRepository) (config.ResolvedRepositorySettings, error) {
+	projectConfig, err := w.repositoryStore.ProjectRepositoryConfiguration(ctx, project.ProjectID)
+	if err != nil {
+		return config.ResolvedRepositorySettings{}, err
+	}
+	defaults := statestore.RepositorySettings{ConfigurationRoot: member.Repository.Root, WorktreeBase: ".darkstar/worktrees"}
+	defaultReference := "repository-defaults"
+	if w.configuration != nil {
+		scope, err := config.ProjectMutationScope(project.ProjectID)
+		if err != nil {
+			return config.ResolvedRepositorySettings{}, err
+		}
+		state, err := w.configuration.State(ctx, scope)
+		if err != nil {
+			return config.ResolvedRepositorySettings{}, err
+		}
+		for _, setting := range state.Effective {
+			if setting.Key == "workspace.baseRef" {
+				defaults.BaseRef, _ = setting.Value.Value().(string)
+				defaultReference += "; workspace.baseRef=" + setting.Source.Scope().String() + ":" + setting.Source.Reference()
+			}
+		}
+	}
+	return config.ResolveRepositorySettings(
+		config.RepositorySettingsLayer{Scope: config.ScopeDefault, Reference: defaultReference, Settings: defaults},
+		config.RepositorySettingsLayer{Scope: config.ScopeProject, Reference: fmt.Sprintf("%s@%d", project.ProjectID, project.ResourceVersion), Settings: projectConfig.Defaults},
+		config.RepositorySettingsLayer{Scope: config.ScopeMembership, Reference: fmt.Sprintf("%s/%s@%d", project.ProjectID, member.Repository.RepositoryID, member.Membership.Revision), Settings: member.Membership.Settings},
+	)
 }
 
 func (w *daemonProviderWiring) verifyRepositoryBinding(ctx context.Context, project statestore.ProjectProjection, binding *nodes.RepositoryBinding, writer bool) error {

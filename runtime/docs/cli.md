@@ -6,6 +6,10 @@ published API version, send the bearer token only in the `Authorization` header,
 and call the versioned loopback API. They do not reimplement server validation,
 state transitions, authorization, or other business rules.
 
+`darkstar project scope prepare|show` manages immutable committed-source
+[repository investigation scopes](investigation-scopes.md), including explicit
+zero-repository scopes and provider access limitations.
+
 `darkstar api status` exercises this boundary. It discovers a running daemon or
 idempotently autostarts one, authenticates `GET /api/v1/`, validates the response
 version, and reports readiness. Lifecycle inspection is intentionally different:

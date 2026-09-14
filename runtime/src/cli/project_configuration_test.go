@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"darkstar/src/core/configmutation"
+	"darkstar/src/core/repositoryscope"
 	platformport "darkstar/src/ports/platform"
+	"darkstar/src/ports/statestore"
 )
 
 func TestPlanningProjectConfigurationUsesItsOwnFileThroughDaemon(t *testing.T) {
@@ -43,5 +45,23 @@ func TestPlanningProjectConfigurationUsesItsOwnFileThroughDaemon(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".darkstar", "config.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("planning project mutated daemon-root configuration: %v", err)
+	}
+	selectionFile := filepath.Join(root, "repositories.json")
+	if err := os.WriteFile(selectionFile, []byte(`[]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var scope repositoryscope.View
+	runCLIJSON(t, []string{"project", "scope", "prepare", project.ProjectID, "--repositories-file", selectionFile, "--idempotency-key", "planning-zero-scope", "--json"}, &struct {
+		Result *repositoryscope.View `json:"result"`
+	}{Result: &scope})
+	if scope.Scope.Mode != statestore.InvestigationScopeNone || scope.Preparation.Status != statestore.RepositoryScopeReady {
+		t.Fatalf("zero-code scope was not ready: %#v", scope)
+	}
+	var read repositoryscope.View
+	runCLIJSON(t, []string{"project", "scope", "show", scope.Scope.ScopeID, "--json"}, &struct {
+		Result *repositoryscope.View `json:"result"`
+	}{Result: &read})
+	if read.Scope.Digest != scope.Scope.Digest {
+		t.Fatal("CLI scope query did not preserve the prepared snapshot")
 	}
 }

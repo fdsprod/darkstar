@@ -362,20 +362,21 @@ func (adapter *ExecAdapter) Capabilities(ctx context.Context) (providerport.Capa
 		return providerport.CapabilityManifest{}, classifyAdapterError(err)
 	}
 	features := map[string]providerport.Capability{
-		"artifact_text_input":  providerport.AvailableCapability{Version: "v1"},
-		"exec_json":            providerport.AvailableCapability{Version: version, Metadata: map[string]string{"transport": execTransport, "fallback": "true"}},
-		"explicit_skill_input": providerport.UnavailableCapability{Reason: "exec JSONL cannot supply an explicit native skill input"},
-		"interactions":         providerport.UnavailableCapability{Reason: "exec JSONL has no bidirectional interaction bridge"},
-		"local_image_input":    providerport.UnavailableCapability{Reason: "bounded exec fallback does not supply local image inputs"},
-		"resume":               providerport.AvailableCapability{Version: "session-id"},
-		"structured_output":    providerport.AvailableCapability{Version: "json-schema"},
-		"text_input":           providerport.AvailableCapability{Version: "v1"},
-		"workspace_write":      providerport.UnavailableCapability{Reason: "bounded exec fallback is read-only"},
+		providerport.CapabilityScopedReadFilesystem: providerport.UnavailableCapability{Reason: providerport.ScopedReadUnavailableReason},
+		"artifact_text_input":                       providerport.AvailableCapability{Version: "v1"},
+		"exec_json":                                 providerport.AvailableCapability{Version: version, Metadata: map[string]string{"transport": execTransport, "fallback": "true"}},
+		"explicit_skill_input":                      providerport.UnavailableCapability{Reason: "exec JSONL cannot supply an explicit native skill input"},
+		"interactions":                              providerport.UnavailableCapability{Reason: "exec JSONL has no bidirectional interaction bridge"},
+		"local_image_input":                         providerport.UnavailableCapability{Reason: "bounded exec fallback does not supply local image inputs"},
+		"resume":                                    providerport.AvailableCapability{Version: "session-id"},
+		"structured_output":                         providerport.AvailableCapability{Version: "json-schema"},
+		"text_input":                                providerport.AvailableCapability{Version: "v1"},
+		"workspace_write":                           providerport.UnavailableCapability{Reason: "bounded exec fallback is read-only"},
 	}
 	if !adapter.supports(version) {
 		features["exec_json"] = providerport.UnavailableCapability{Reason: "exact Codex CLI version has not passed exec probes"}
 	}
-	digest := sha256.Sum256([]byte("artifact_text_input=v1|exec_json=" + version + "|explicit_skill_input=none|interactions=none|local_image_input=none|resume=session-id|structured_output=json-schema|text_input=v1|workspace_write=none"))
+	digest := sha256.Sum256([]byte("artifact_text_input=v1|exec_json=" + version + "|explicit_skill_input=none|interactions=none|local_image_input=none|resume=session-id|scoped_read_filesystem=unavailable-v1|structured_output=json-schema|text_input=v1|workspace_write=none"))
 	return providerport.CapabilityManifest{Provider: providerName, Fingerprint: hex.EncodeToString(digest[:]), Features: features, ObservedAt: adapter.clock().UTC()}, nil
 }
 
@@ -424,6 +425,9 @@ func (adapter *ExecAdapter) supports(version string) bool {
 }
 
 func (adapter *ExecAdapter) StartAttempt(ctx context.Context, request providerport.AttemptRequest) (providerport.AttemptHandle, error) {
+	if err := rejectScopedReads(request.Filesystem); err != nil {
+		return providerport.AttemptHandle{}, err
+	}
 	normalized, validator, err := validateAttemptRequest(request)
 	if err != nil {
 		return providerport.AttemptHandle{}, err
@@ -460,6 +464,9 @@ func validateExecEligibility(request providerport.AttemptRequest) error {
 }
 
 func (adapter *ExecAdapter) ResumeAttempt(ctx context.Context, request providerport.ResumeRequest) (providerport.AttemptHandle, error) {
+	if err := rejectScopedReads(request.Filesystem); err != nil {
+		return providerport.AttemptHandle{}, err
+	}
 	if err := validateResumeRequest(request); err != nil {
 		return providerport.AttemptHandle{}, err
 	}

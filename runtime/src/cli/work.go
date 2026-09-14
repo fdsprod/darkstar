@@ -35,6 +35,8 @@ func runProject(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	}
 	command := "darkstar project " + args[0]
 	switch args[0] {
+	case "scope":
+		return runRepositoryScope(args[1:], jsonOutput, stdout, stderr)
 	case "create", "list-v2", "show-v2", "discover", "defaults", "repository":
 		return runProjectRepositories(args, jsonOutput, stdout, stderr)
 	case "add", "register":

@@ -56,10 +56,11 @@ type attemptBinding struct {
 	schema  json.RawMessage
 }
 type Adapter struct {
-	config   Config
-	mu       sync.Mutex
-	client   *session
-	bindings map[string]attemptBinding
+	config                    Config
+	mu                        sync.Mutex
+	client                    *session
+	bindings                  map[string]attemptBinding
+	wireCapabilityFingerprint string
 }
 
 func New(config Config) (*Adapter, error) {
@@ -151,7 +152,41 @@ func (a *Adapter) Capabilities(ctx context.Context) (provider.CapabilityManifest
 			return provider.CapabilityManifest{}, errors.New("invalid provider capability state")
 		}
 	}
+	// The current host has no native read-confinement boundary. A plugin's
+	// self-report cannot grant enforcement that the host cannot verify.
+	result.Features[provider.CapabilityScopedReadFilesystem] = provider.UnavailableCapability{Reason: provider.ScopedReadUnavailableReason}
+	result.Fingerprint = hostCapabilityFingerprint(wire.Fingerprint)
+	a.mu.Lock()
+	a.wireCapabilityFingerprint = wire.Fingerprint
+	a.mu.Unlock()
 	return result, nil
+}
+
+func hostCapabilityFingerprint(wire string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(wire+"\x00typescript-provider-host/scoped-read-unavailable/v1")))
+}
+
+// The daemon freezes the effective host contract. Translate only a matching
+// frozen fingerprint to the underlying plugin contract at the bridge boundary.
+func (a *Adapter) pluginCapabilityFingerprint(ctx context.Context, frozen string) (string, error) {
+	if frozen == "" {
+		return "", nil
+	}
+	a.mu.Lock()
+	wire := a.wireCapabilityFingerprint
+	a.mu.Unlock()
+	if wire == "" {
+		if _, err := a.Capabilities(ctx); err != nil {
+			return "", err
+		}
+		a.mu.Lock()
+		wire = a.wireCapabilityFingerprint
+		a.mu.Unlock()
+	}
+	if frozen != hostCapabilityFingerprint(wire) {
+		return "", errors.New("provider capability fingerprint changed after attempt preparation")
+	}
+	return wire, nil
 }
 func (a *Adapter) prepare(ctx context.Context, id string, handler provider.ToolHandler, tools []provider.ToolDefinition, schema json.RawMessage) error {
 	if id == "" {
@@ -190,6 +225,14 @@ func (a *Adapter) prepare(ctx context.Context, id string, handler provider.ToolH
 	return nil
 }
 func (a *Adapter) StartAttempt(ctx context.Context, r provider.AttemptRequest) (provider.AttemptHandle, error) {
+	if err := provider.ValidateFilesystemRequirement(r.Filesystem, provider.CapabilityManifest{}); err != nil {
+		return provider.AttemptHandle{}, err
+	}
+	fingerprint, err := a.pluginCapabilityFingerprint(ctx, r.CapabilityFingerprint)
+	if err != nil {
+		return provider.AttemptHandle{}, err
+	}
+	r.CapabilityFingerprint = fingerprint
 	if err := a.prepare(ctx, r.AttemptID, r.ToolHandler, r.DynamicTools, r.OutputSchema); err != nil {
 		return provider.AttemptHandle{}, err
 	}
@@ -199,7 +242,7 @@ func (a *Adapter) StartAttempt(ctx context.Context, r provider.AttemptRequest) (
 		ToolBackedOutputs bool
 	}{r, backed}
 	var h provider.AttemptHandle
-	err := a.call(ctx, "provider.start", input, &h)
+	err = a.call(ctx, "provider.start", input, &h)
 	if err == nil {
 		err = a.validateHandle(h, r.AttemptID)
 	}
@@ -209,6 +252,14 @@ func (a *Adapter) StartAttempt(ctx context.Context, r provider.AttemptRequest) (
 	return h, err
 }
 func (a *Adapter) ResumeAttempt(ctx context.Context, r provider.ResumeRequest) (provider.AttemptHandle, error) {
+	if err := provider.ValidateFilesystemRequirement(r.Filesystem, provider.CapabilityManifest{}); err != nil {
+		return provider.AttemptHandle{}, err
+	}
+	fingerprint, err := a.pluginCapabilityFingerprint(ctx, r.CapabilityFingerprint)
+	if err != nil {
+		return provider.AttemptHandle{}, err
+	}
+	r.CapabilityFingerprint = fingerprint
 	if err := a.prepare(ctx, r.AttemptID, r.ToolHandler, r.DynamicTools, nil); err != nil {
 		return provider.AttemptHandle{}, err
 	}
@@ -218,7 +269,7 @@ func (a *Adapter) ResumeAttempt(ctx context.Context, r provider.ResumeRequest) (
 		ToolBackedOutputs bool
 	}{r, backed}
 	var h provider.AttemptHandle
-	err := a.call(ctx, "provider.resume", input, &h)
+	err = a.call(ctx, "provider.resume", input, &h)
 	if err == nil {
 		err = a.validateHandle(h, r.AttemptID)
 	}

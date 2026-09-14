@@ -1,4 +1,25 @@
 import { createInterface } from 'node:readline';
+/** Frozen read ceiling shared by provider start and resume. Empty roots deny all
+ * filesystem reads; absent/null preserves legacy access semantics. A provider
+ * may advertise scoped_read_filesystem v1 only with actual read confinement. */
+export interface ScopedReadRequirement {
+  ReadRoots: string[];
+  ScopeDigest: string;
+  ConfigurationDigest: string;
+  EvidenceDigest: string;
+}
+export interface ProviderFilesystemRequest {
+  Filesystem?: ScopedReadRequirement | null;
+  CapabilityFingerprint?: string;
+}
+
+/** Use before spawning a provider or dispatching tools in unsupported adapters. */
+export function rejectUnsupportedScopedReads(request: ProviderFilesystemRequest): void {
+  if (request.Filesystem != null) {
+    throw new Error('scoped filesystem reads are unsupported: this provider cannot enforce frozen snapshot read roots. Select a provider with scoped_read_filesystem v1 support.');
+  }
+}
+
 export interface ProviderHost {
   call(method: string, params: unknown): Promise<any>;
 }

@@ -58,6 +58,7 @@ type Server struct {
 	agents             AgentService
 	inputs             InputRequestService
 	work               WorkService
+	repositoryScopes   RepositoryScopeService
 	nativeTickets      NativeTicketService
 	trackerConnections TrackerConnectionService
 	backlog            BacklogService
@@ -558,6 +559,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/tracker/") {
 		s.serveTrackerConnections(response, request, requestID)
+		return
+	}
+	if path.Clean(request.URL.Path) == "/api/v1/investigation-scopes" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/investigation-scopes/") {
+		s.serveRepositoryScopes(response, request, requestID)
 		return
 	}
 	if path.Clean(request.URL.Path) == "/api/v1/projects-v2" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/projects-v2/") {

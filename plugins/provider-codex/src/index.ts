@@ -2,13 +2,13 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, realpath, lstat } from 'node:fs/promises';
 import { isAbsolute, relative, sep, resolve, basename } from 'node:path';
-import { serveProvider, type ProviderHost, type ProviderPlugin } from '../../../packages/plugin-sdk/src/provider';
+import { serveProvider, rejectUnsupportedScopedReads, type ProviderHost, type ProviderPlugin } from '../../../packages/plugin-sdk/src/provider';
 type Value = Record<string, any>;
 const hash = (value: string) => {
   return createHash('sha256').update(value).digest('hex');
 };
 const versions = ['0.151.0-alpha.7.1', '0.151.0-alpha.7.2', '0.153.4'];
-const fingerprint = hash('app_server=v2|artifact_text_input=v1|explicit_skill_input=v2|interactions=json-rpc|local_image_input=v2|resume=thread-id|structured_output=json-schema|text_input=v1|workspace_write=sandbox');
+const fingerprint = hash('app_server=v2|artifact_text_input=v1|explicit_skill_input=v2|interactions=json-rpc|local_image_input=v2|resume=thread-id|scoped_read_filesystem=unavailable-v1|structured_output=json-schema|text_input=v1|workspace_write=sandbox');
 const now = () => {
   return new Date().toISOString();
 };
@@ -444,6 +444,10 @@ class CodexProvider implements ProviderPlugin {
   }
   private capabilities() {
     const features: Record<string, Value> = {};
+    features.scoped_read_filesystem = {
+      Kind: 'unavailable',
+      Reason: 'Codex cannot enforce filesystem reads limited to frozen snapshot roots. Select a provider with scoped_read_filesystem v1 support; read-only sandbox mode and workspace root metadata do not provide read confinement.'
+    };
     for (const [id, version] of Object.entries({
       app_server: 'v2',
       artifact_text_input: 'v1',
@@ -558,6 +562,10 @@ class CodexProvider implements ProviderPlugin {
     return result;
   }
   private async start(request: Value, host: ProviderHost, resume: boolean) {
+    rejectUnsupportedScopedReads(request);
+    if (request.CapabilityFingerprint && request.CapabilityFingerprint !== fingerprint) {
+      throw new Error('Capability fingerprint changed');
+    }
     if (!request.AttemptID || !request.IdempotencyKey) {
       throw new Error('Attempt and idempotency key are required');
     }

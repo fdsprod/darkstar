@@ -161,6 +161,9 @@ type UserInputRequest struct {
 
 // AttemptRequest freezes everything an adapter may use for a new attempt.
 type AttemptRequest struct {
+	// Filesystem is nil only for the legacy access contract. A nonnil value
+	// requires enforced scoped reads; Access and AdditionalRoots cannot replace it.
+	Filesystem            *ScopedReadRequirement `json:"Filesystem,omitempty"`
 	DynamicTools          []ToolDefinition
 	ToolHandler           ToolHandler `json:"-"`
 	AttemptID             string
@@ -245,15 +248,17 @@ type AttemptHandle struct {
 }
 
 type ResumeRequest struct {
-	DynamicTools     []ToolDefinition
-	ToolHandler      ToolHandler `json:"-"`
-	AttemptID        string
-	IdempotencyKey   string
-	ProviderThreadID string
-	ProviderTurnID   string
-	LastSequence     uint64
-	ContextDigest    string
-	WorkspaceDigest  string
+	Filesystem            *ScopedReadRequirement `json:"Filesystem,omitempty"`
+	CapabilityFingerprint string                 `json:"CapabilityFingerprint,omitempty"`
+	DynamicTools          []ToolDefinition
+	ToolHandler           ToolHandler `json:"-"`
+	AttemptID             string
+	IdempotencyKey        string
+	ProviderThreadID      string
+	ProviderTurnID        string
+	LastSequence          uint64
+	ContextDigest         string
+	WorkspaceDigest       string
 }
 
 type EventRequest struct {

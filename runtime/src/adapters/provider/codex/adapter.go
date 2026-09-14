@@ -413,6 +413,7 @@ func (adapter *Adapter) Capabilities(ctx context.Context) (providerport.Capabili
 
 func appServerCapabilityManifest(observedAt time.Time) providerport.CapabilityManifest {
 	features := map[string]providerport.Capability{
+		providerport.CapabilityScopedReadFilesystem: providerport.UnavailableCapability{Reason: providerport.ScopedReadUnavailableReason},
 		"app_server":          providerport.AvailableCapability{Version: "v2"},
 		"artifact_text_input": providerport.AvailableCapability{Version: "v1"},
 		"text_input":          providerport.AvailableCapability{Version: "v1"},
@@ -427,7 +428,7 @@ func appServerCapabilityManifest(observedAt time.Time) providerport.CapabilityMa
 			"inputType": "skill", "locator": "bounded-local-SKILL.md",
 		}},
 	}
-	fingerprintSource := "app_server=v2|artifact_text_input=v1|explicit_skill_input=v2|interactions=json-rpc|local_image_input=v2|resume=thread-id|structured_output=json-schema|text_input=v1|workspace_write=sandbox"
+	fingerprintSource := "app_server=v2|artifact_text_input=v1|explicit_skill_input=v2|interactions=json-rpc|local_image_input=v2|resume=thread-id|scoped_read_filesystem=unavailable-v1|structured_output=json-schema|text_input=v1|workspace_write=sandbox"
 	digest := sha256.Sum256([]byte(fingerprintSource))
 	return providerport.CapabilityManifest{
 		Provider:    providerName,
@@ -438,6 +439,9 @@ func appServerCapabilityManifest(observedAt time.Time) providerport.CapabilityMa
 }
 
 func (adapter *Adapter) StartAttempt(ctx context.Context, request providerport.AttemptRequest) (providerport.AttemptHandle, error) {
+	if err := rejectScopedReads(request.Filesystem); err != nil {
+		return providerport.AttemptHandle{}, err
+	}
 	normalized, schema, err := validateAttemptRequest(request)
 	if err != nil {
 		return providerport.AttemptHandle{}, err
@@ -548,6 +552,9 @@ func (adapter *Adapter) startAttempt(ctx context.Context, state *codexAttempt, r
 }
 
 func (adapter *Adapter) ResumeAttempt(ctx context.Context, request providerport.ResumeRequest) (providerport.AttemptHandle, error) {
+	if err := rejectScopedReads(request.Filesystem); err != nil {
+		return providerport.AttemptHandle{}, err
+	}
 	if err := validateResumeRequest(request); err != nil {
 		return providerport.AttemptHandle{}, err
 	}

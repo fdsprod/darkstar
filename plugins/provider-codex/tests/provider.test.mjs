@@ -14,7 +14,7 @@ const source = (await readFile(resolve(root, 'plugins/provider-codex/src/index.t
 const { code } = await transform(sdk + '\n' + source, { loader: 'ts', format: 'esm', target: 'node20' });
 const fixture = resolve(root, 'plugins/provider-codex/tests/app-server-fixture.mjs');
 
-async function session(t, mode = 'success') {
+async function session(t, mode = 'success', executable = process.execPath) {
   const dir = await mkdtemp(resolve(tmpdir(), 'darkstar-ts-provider-'));
   const bundle = resolve(dir, 'provider.mjs'); await writeFile(bundle, code);
   const child = spawn(process.execPath, [bundle], { stdio: 'pipe', windowsHide: true });
@@ -39,12 +39,22 @@ async function session(t, mode = 'success') {
   });
   function call(method, params = {}) { const id = `request-${++sequence}`; return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); send({ type: 'request', id, method, params }); }); }
   t.after(async () => { await call('provider.shutdown'); child.stdin.end(); await new Promise(done => child.once('exit', done)); assert.equal(stderr, ''); await rm(dir, { recursive: true, force: true }); });
-  await call('provider.configure', { Executable: process.execPath, Arguments: [fixture, mode], ProjectRoot: dir });
+  await call('provider.configure', { Executable: executable, Arguments: [fixture, mode], ProjectRoot: dir });
   const request = { AttemptID: 'attempt-1', RunID: 'run-1', NodeID: 'node-1', IdempotencyKey: 'start-1', Workspace: dir,
     Access: 'read_only', Network: 'denied', CommandPolicy: 'ask', FilePolicy: 'ask', ToolPolicy: 'ask', Prompt: 'Scoped task only',
     OutputSchema: { type: 'object' }, DynamicTools: [], Inputs: [], Timeout: 0, CancellationGrace: 1e9 };
   return { call, request, calls, evidence };
 }
+
+test('scoped reads reject start and resume before provider dispatch or host tools', async t => {
+  const s = await session(t, 'success', resolve(root, 'this-executable-must-never-start'));
+  const capability = (await s.call('provider.capabilities')).Features.scoped_read_filesystem;
+  assert.equal(capability.Kind, 'unavailable');
+  for (const method of ['provider.start', 'provider.resume']) {
+    await assert.rejects(s.call(method, { ...s.request, Filesystem: { ReadRoots: [], ScopeDigest: 'a'.repeat(64), ConfigurationDigest: 'b'.repeat(64), EvidenceDigest: 'c'.repeat(64) } }), /scoped filesystem reads are unsupported/);
+  }
+  assert.deepEqual(s.calls, []);
+});
 
 test('TypeScript connector owns RPC mapping, normalization, evidence, usage, result and idempotent start', async t => {
   const s = await session(t);

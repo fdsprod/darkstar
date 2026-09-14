@@ -87,6 +87,13 @@ func TestBuiltinProviderLifecycleThroughGenericBridge(t *testing.T) {
 	if _, ok := capabilities.Features["resume"].(provider.AvailableCapability); !ok {
 		t.Fatal("missing resume")
 	}
+	if capabilities.Fingerprint == adapter.wireCapabilityFingerprint || capabilities.Fingerprint != hostCapabilityFingerprint(adapter.wireCapabilityFingerprint) {
+		t.Fatal("effective fingerprint does not bind the host confinement policy")
+	}
+	if _, ok := capabilities.Features[provider.CapabilityScopedReadFilesystem].(provider.UnavailableCapability); !ok {
+		t.Fatal("host reported unenforced scoped reads as available")
+	}
+	request.CapabilityFingerprint = capabilities.Fingerprint
 	handle, err := adapter.StartAttempt(ctx, request)
 	if err != nil {
 		t.Fatal(err)
