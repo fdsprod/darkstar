@@ -40,6 +40,10 @@ func ReduceProject(current *statestore.ProjectProjection, event statestore.Event
 	}
 	next := *current
 	switch event.Kind {
+	case "project.repository_set", "project.repository_removed", "project.repository_defaults_updated":
+		if current.Status != statestore.ProjectActive {
+			return statestore.ProjectProjection{}, true, invalidTransition("project", current.ProjectID, string(current.Status), event.Kind)
+		}
 	case "project.archived":
 		if current.Status != statestore.ProjectActive {
 			return statestore.ProjectProjection{}, true, invalidTransition("project", current.ProjectID, string(current.Status), event.Kind)

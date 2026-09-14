@@ -96,7 +96,14 @@ func (w *daemonProviderWiring) buildScopedAttempt(ctx context.Context, request r
 	if err != nil {
 		return provider.AttemptRequest{}, err
 	}
-	return buildWorkflowAttemptRequestWithNodes(ctx, request, w.projectRoot, fingerprint, engine)
+	if w.repositories == nil {
+		return buildWorkflowAttemptRequestWithNodes(ctx, request, w.projectRoot, fingerprint, engine)
+	}
+	root, err := w.attemptRepositoryRoot(ctx, request)
+	if err != nil {
+		return provider.AttemptRequest{}, err
+	}
+	return buildAuthorizedWorkflowAttempt(ctx, request, root, fingerprint, engine)
 }
 func (w *daemonProviderWiring) pluginProvider(request runexecution.ProviderRequest) (provider.Provider, error) {
 	if w.providerPluginErr != nil {

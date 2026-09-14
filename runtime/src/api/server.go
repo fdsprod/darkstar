@@ -560,6 +560,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		s.serveTrackerConnections(response, request, requestID)
 		return
 	}
+	if path.Clean(request.URL.Path) == "/api/v1/projects-v2" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/projects-v2/") {
+		s.serveProjectRepositories(response, request, requestID)
+		return
+	}
 	if path.Clean(request.URL.Path) == "/api/v1/projects" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/projects/") {
 		s.serveProjects(response, request, requestID)
 		return

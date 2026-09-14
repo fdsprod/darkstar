@@ -72,6 +72,10 @@ func TestRunPrepareAndLaunchUseDurableReadyAPI(t *testing.T) {
 	if runs.create.Preparation == nil || runs.create.Preparation.Answers["goal"] != "Implement the reviewed design" || string(runs.create.Preparation.RunInputs["request"]) != `{"approved":true}` || len(runs.create.Preparation.Evidence) != 1 || runs.create.Preparation.Evidence[0] != "docs/plan.md" || runs.create.WorkflowID != "" {
 		t.Fatalf("preparation inputs lost: %#v", runs.create)
 	}
+	runCLIJSON(t, []string{"run", "prepare", run.WorkItemID, "--repositories-json", `{"repository":"repository_00000000000000000000000000"}`, "--json"}, &prepared)
+	if runs.create.RepositorySelections["repository"] != "repository_00000000000000000000000000" {
+		t.Fatalf("explicit repository selection lost: %#v", runs.create)
+	}
 	digest := strings.Repeat("a", 64)
 	runCLIJSON(t, []string{"run", "launch", run.RunID, "--if-match", "7", "--confirm-assessment", digest, "--json"}, &launched)
 	if runs.control.ConfirmationDigest != digest {
@@ -98,6 +102,14 @@ func TestParseRunPrepareAndLaunchRejectAmbiguousArguments(t *testing.T) {
 	}
 	if _, _, _, _, err := parseRunLaunch([]string{"run_00000000000000000000000000", "--if-match", "0"}); err == nil {
 		t.Fatal("launch accepted zero revision")
+	}
+	for _, value := range []string{`null`, `[]`, `{"repository":""}`, `{"bad input":"repository_id"}`, `{"repository":12}`} {
+		if _, _, err := parseRunPrepare([]string{workID, "--repositories-json", value}); err == nil {
+			t.Fatalf("accepted invalid repository selections %s", value)
+		}
+	}
+	if _, _, err := parseRunPrepare([]string{workID, "--repositories-json", `{}`, "--repositories-json", `{}`}); err == nil {
+		t.Fatal("accepted duplicate repository selection arguments")
 	}
 }
 

@@ -524,7 +524,6 @@ func leaseMatchesRequest(lease statestore.Lease, request statestore.AcquireLease
 	return lease.ScopeKind == request.ScopeKind && lease.ScopeID == request.ScopeID &&
 		lease.HolderAttemptID == request.HolderAttemptID && lease.DaemonInstanceID == request.DaemonInstanceID &&
 		lease.HostBootID == request.HostBootID && lease.FencingToken == request.ExpectedFencingToken+1 &&
-		lease.ExpiresAt.Sub(lease.AcquiredAt) == normalizeLeaseDuration(request.Duration) &&
 		bytes.Equal(lease.ProcessIdentity, rawNullableJSON(processIdentity))
 }
 

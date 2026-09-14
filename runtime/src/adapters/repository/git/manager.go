@@ -441,11 +441,11 @@ func (manager *Manager) discover(ctx context.Context, path string) (repository.I
 	if err != nil {
 		return repository.Identity{}, failure(ports.FailureUnavailable, "Git common directory cannot be resolved", false, nil)
 	}
-	root, err := canonicalExistingPath(strings.TrimSpace(string(rootResult.stdout)))
+	root, err := canonicalRepositoryPath(strings.TrimSpace(string(rootResult.stdout)))
 	if err != nil {
 		return repository.Identity{}, failure(ports.FailureUnavailable, "repository root cannot be canonicalized", false, nil)
 	}
-	common, err := canonicalExistingPath(strings.TrimSpace(string(commonResult.stdout)))
+	common, err := canonicalRepositoryPath(strings.TrimSpace(string(commonResult.stdout)))
 	if err != nil {
 		return repository.Identity{}, failure(ports.FailureUnavailable, "Git common directory cannot be canonicalized", false, nil)
 	}
@@ -763,6 +763,20 @@ func canonicalExistingPath(path string) (string, error) {
 		// EvalSymlinks for ordinary directories. The absolute cleaned spelling is
 		// still stable enough for DS-112; boundary/reparse denial belongs to DS-190.
 		return filepath.Clean(absolute), nil
+	}
+	return filepath.Clean(evaluated), nil
+}
+
+// Registry identity must never split one physical repository when resolving an
+// alias fails. Ordinary worktree display paths retain their legacy behavior.
+func canonicalRepositoryPath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	evaluated, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", err
 	}
 	return filepath.Clean(evaluated), nil
 }

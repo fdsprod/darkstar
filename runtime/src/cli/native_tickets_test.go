@@ -30,10 +30,7 @@ func TestNativeTicketCLIUsesDaemonCapabilitiesAndStableRevision(t *testing.T) {
 	t.Cleanup(func() {
 		_ = service.Close()
 	})
-	var project statestore.ProjectProjection
-	runCLIJSON(t, []string{"project", "add", root, "--name", "Native", "--idempotency-key", "native-cli-project", "--json"}, &struct {
-		Result *statestore.ProjectProjection `json:"result"`
-	}{Result: &project})
+	project := createPlanningCLIProject(t, "Native", "native-cli-project")
 	var work statestore.WorkItemProjection
 	runCLIJSON(t, []string{"work", "create", "Native title", "--project", project.ProjectID, "--idempotency-key", "native-cli-create", "--json"}, &struct {
 		Result *statestore.WorkItemProjection `json:"result"`

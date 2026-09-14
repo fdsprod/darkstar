@@ -2,8 +2,10 @@ package nodes
 
 import (
 	"context"
+	"darkstar/src/core/config"
 	"darkstar/src/core/workflow"
 	"darkstar/src/ports/nodeextension"
+	"darkstar/src/ports/statestore"
 	"encoding/json"
 	"time"
 
@@ -12,20 +14,32 @@ import (
 
 // Workspace preserves the existing durable workspace record and wire format.
 type Workspace struct {
-	ID         string `json:"id"`
-	RunID      string `json:"runId"`
-	ProjectID  string `json:"projectId"`
-	Repository string `json:"repository"`
-	Path       string `json:"path"`
-	Branch     string `json:"branch"`
-	HeadSHA    string `json:"headSha,omitempty"`
-	BaseSHA    string `json:"baseSha"`
-	BaseRef    string `json:"baseRef"`
-	Mode       string `json:"mode"`
+	Binding    *RepositoryBinding `json:"repositoryBinding,omitempty"`
+	ID         string             `json:"id"`
+	RunID      string             `json:"runId"`
+	ProjectID  string             `json:"projectId"`
+	Repository string             `json:"repository"`
+	Path       string             `json:"path"`
+	Branch     string             `json:"branch"`
+	HeadSHA    string             `json:"headSha,omitempty"`
+	BaseSHA    string             `json:"baseSha"`
+	BaseRef    string             `json:"baseRef"`
+	Mode       string             `json:"mode"`
 }
 
 // WorkspaceIdentity is daemon execution metadata, never agent task content.
-type WorkspaceIdentity struct{ RunID, NodeID, ProjectID, SourceHash, WorkItemID, Root string }
+type WorkspaceIdentity struct {
+	RunID, NodeID, ProjectID, SourceHash, WorkItemID, Root string
+	Binding                                                *RepositoryBinding
+}
+
+// RepositoryBinding freezes admission authority and resolved settings. Historical
+// membership revisions remain valid when the current membership changes.
+type RepositoryBinding struct {
+	Repository         statestore.RepositoryRecord       `json:"repository"`
+	MembershipRevision uint64                            `json:"membershipRevision"`
+	Configuration      config.ResolvedRepositorySettings `json:"configuration"`
+}
 
 type WorkspaceStore interface {
 	Load(context.Context, string) (Workspace, error)

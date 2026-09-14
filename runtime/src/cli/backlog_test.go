@@ -31,10 +31,7 @@ func TestBacklogCLIRefreshOnlyLoadsObservations(t *testing.T) {
 	t.Cleanup(func() {
 		_ = service.Close()
 	})
-	var project statestore.ProjectProjection
-	runCLIJSON(t, []string{"project", "add", root, "--name", "Backlog", "--idempotency-key", "backlog-cli-project", "--json"}, &struct {
-		Result *statestore.ProjectProjection `json:"result"`
-	}{Result: &project})
+	project := createPlanningCLIProject(t, "Backlog", "backlog-cli-project")
 	var work statestore.WorkItemProjection
 	runCLIJSON(t, []string{"work", "create", "Backlog title", "--project", project.ProjectID, "--idempotency-key", "backlog-cli-create", "--json"}, &struct {
 		Result *statestore.WorkItemProjection `json:"result"`

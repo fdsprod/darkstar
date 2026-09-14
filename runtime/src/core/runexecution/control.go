@@ -254,6 +254,9 @@ func (s *Service) Pause(ctx context.Context, request ControlRequest) (statestore
 	if _, err := s.controlRun(ctx, request, action, statestore.RunQueued, statestore.RunRunning); err != nil {
 		return statestore.RunProjection{}, s.finishControlFailure(ctx, action, request.IdempotencyKey, err)
 	}
+	if err := s.prepareRepositoryPause(ctx, request.RunID, request.IdempotencyKey); err != nil {
+		return statestore.RunProjection{}, err
+	}
 	s.quiesceRun(ctx, request.RunID, false, request.IdempotencyKey)
 	run, err := s.controlRun(ctx, request, action, statestore.RunQueued, statestore.RunRunning)
 	if err != nil {
@@ -490,6 +493,9 @@ func (s *Service) Cancel(ctx context.Context, request ControlRequest) (statestor
 	const action, eventKind = "cancel", "run.cancelled"
 	replayed, done, err := s.beginControl(ctx, action, eventKind, request, map[string]any{})
 	if err != nil || done {
+		if err == nil && done {
+			err = s.reconcileRepositoryCancellation(ctx, request.RunID)
+		}
 		return replayed, err
 	}
 	allowed := []statestore.RunStatus{statestore.RunDraft, statestore.RunReady, statestore.RunQueued, statestore.RunRunning, statestore.RunWaiting, statestore.RunBlocked, statestore.RunFailed, statestore.RunReconcileRequired}
@@ -579,6 +585,9 @@ func (s *Service) Cancel(ctx context.Context, request ControlRequest) (statestor
 	events = append(events, controlEvent(finalEventKind, run, request, map[string]any{"reason": map[bool]string{true: "provider_cancellation_unconfirmed", false: "user"}[reconcileRequired]}, now))
 	committed, err := s.store.Append(ctx, events...)
 	if err != nil {
+		return statestore.RunProjection{}, err
+	}
+	if err := s.reconcileRepositoryCancellation(ctx, request.RunID); err != nil {
 		return statestore.RunProjection{}, err
 	}
 	value, err := s.store.Run(ctx, request.RunID)

@@ -55,13 +55,14 @@ type StartRequest struct {
 
 // CreateRequest starts one work-backed run from an exact installed workflow.
 type CreateRequest struct {
-	WorkItemID          string            `json:"workItemId"`
-	SourceObservationID string            `json:"sourceObservationId,omitempty"`
-	WorkflowID          string            `json:"workflowId"`
-	WorkflowVersion     string            `json:"workflowVersion"`
-	Profile             string            `json:"profile,omitempty"`
-	Preparation         *PreparationInput `json:"preparation,omitempty"`
-	intakeActor         bool
+	WorkItemID           string                         `json:"workItemId"`
+	SourceObservationID  string                         `json:"sourceObservationId,omitempty"`
+	WorkflowID           string                         `json:"workflowId"`
+	WorkflowVersion      string                         `json:"workflowVersion"`
+	Profile              string                         `json:"profile,omitempty"`
+	RepositorySelections map[workflow.Identifier]string `json:"repositorySelections,omitempty"`
+	Preparation          *PreparationInput              `json:"preparation,omitempty"`
+	intakeActor          bool
 }
 
 type PreparationInput struct {
@@ -560,6 +561,17 @@ func (s *Service) createWorkflowRun(ctx context.Context, request CreateRequest, 
 	routeContext, err := derivedRouteContext(ctx, planner, request, work, project, sourceSnapshot)
 	if err != nil {
 		return statestore.RunProjection{}, err
+	}
+	if resolver, ok := s.requestBuilder.(interface {
+		ResolveWorkflowRepositories(context.Context, string, string, statestore.ProjectProjection, map[workflow.Identifier]string) (map[workflow.Identifier]json.RawMessage, error)
+	}); ok {
+		values, resolveErr := resolver.ResolveWorkflowRepositories(ctx, request.WorkflowID, request.WorkflowVersion, project, request.RepositorySelections)
+		if resolveErr != nil {
+			return statestore.RunProjection{}, fmt.Errorf("%w: repository selection: %w", ErrInvalidRequest, resolveErr)
+		}
+		for id, value := range values {
+			routeContext.RunInputs[id] = value
+		}
 	}
 	if resolver, ok := s.requestBuilder.(interface {
 		ResolveWorkflowConfig(context.Context, string, string, string) (map[workflow.Identifier]json.RawMessage, error)
@@ -1557,6 +1569,13 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 	var startRequest provider.AttemptRequest
 	var adapter provider.Provider
 	var dispatchContext AttemptRequestContext
+	var releaseWriter func(bool) error
+	writerSettled := true
+	defer func() {
+		if releaseWriter != nil {
+			_ = releaseWriter(writerSettled)
+		}
+	}()
 	if attempt.Scenario == ScenarioWorkflow {
 		var contextErr error
 		dispatchContext, contextErr = s.workflowAttemptContext(ctx, attempt, run)
@@ -1567,13 +1586,31 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 			return
 		}
 
+		s.mu.Lock()
+		writerBuilder := s.requestBuilder
+		s.mu.Unlock()
+		if coordinator, ok := writerBuilder.(interface {
+			AcquireWorkflowWrite(context.Context, AttemptRequestContext) (context.Context, func(bool) error, error)
+		}); ok {
+			ctx, releaseWriter, err = coordinator.AcquireWorkflowWrite(ctx, dispatchContext)
+			if err != nil {
+				if ctx.Err() == nil {
+					s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "REPOSITORY_WRITE_UNAVAILABLE", err)
+				}
+				return
+			}
+			writerSettled = !resume
+		}
 		handler, lookupErr := nodes.Lookup(dispatchContext.Node)
 		if lookupErr != nil {
 			s.failAttemptWithCode(attempt.AttemptID, attempt.RunID, "WORKFLOW_DISPATCH_UNAVAILABLE", lookupErr)
 			return
 		}
 		if _, builtin := handler.(nodes.DeterministicHandler); builtin {
+			writerSettled = false
 			s.executeBuiltinWorkflowAttempt(ctx, attempt, dispatchContext)
+			finished, readErr := s.store.Attempt(context.WithoutCancel(ctx), attempt.AttemptID)
+			writerSettled = readErr == nil && finished.Status == statestore.AttemptSucceeded
 			return
 		}
 		s.mu.Lock()
@@ -1644,6 +1681,7 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 	active.adapter = adapter
 	s.mu.Unlock()
 	var handle provider.AttemptHandle
+	writerSettled = false
 	if resume {
 		handle, err = adapter.ResumeAttempt(ctx, provider.ResumeRequest{
 			DynamicTools: startRequest.DynamicTools, ToolHandler: startRequest.ToolHandler,
@@ -1787,6 +1825,10 @@ func (s *Service) execute(ctx context.Context, active *worker, attempt statestor
 			s.failAttempt(current.AttemptID, current.RunID, err)
 		}
 		return
+	}
+	switch result.(type) {
+	case provider.SucceededResult, provider.FailedResult, provider.CancelledResult:
+		writerSettled = true
 	}
 	if ctx.Err() == nil {
 		s.completeAttempt(ctx, current.AttemptID, current.RunID, result)

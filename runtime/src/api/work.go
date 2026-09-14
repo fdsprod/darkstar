@@ -414,6 +414,18 @@ func writeWorkNotFound(response http.ResponseWriter, requestID, kind string) {
 }
 
 func writeWorkError(response http.ResponseWriter, requestID string, err error) {
+	if errors.Is(err, workmanagement.ErrUnsupportedCardinality) {
+		writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "PROJECT_CARDINALITY_UNSUPPORTED", Message: err.Error(), RequestID: requestID})
+		return
+	}
+	if errors.Is(err, workmanagement.ErrRepositoryRevision) {
+		writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "REPOSITORY_REVISION_CONFLICT", Message: err.Error(), RequestID: requestID})
+		return
+	}
+	if errors.Is(err, workmanagement.ErrRepositorySelection) {
+		writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "REPOSITORY_SELECTION_REQUIRED", Message: err.Error(), RequestID: requestID})
+		return
+	}
 	if errors.Is(err, statestore.ErrNotFound) {
 		writeWorkNotFound(response, requestID, "resource")
 		return

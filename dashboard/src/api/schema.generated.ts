@@ -120,6 +120,17 @@ export interface components {
     "ConfigurationRestoreRequest": { "scope": { "type": "user"; } | { "type": "project"; "projectId": string; }; "expectedRevision": string; };
     "ConfigurationSecretWriteRequest": { "name": string; "value": string; "expectedRevision": string; };
     "ConfigurationSecretReceipt": { "schemaVersion": 1; "name": string; "revision": string; "restart": "none" | "daemon"; "replayed": boolean; };
+    "RepositorySettings": { "configurationRoot"?: string; "baseRef"?: string; "worktreeBase"?: string; "validationProfiles"?: { [key: string]: Array<string>; } | null; "pathScope"?: Array<string> | null; "delivery"?: { "remote"?: string; "targetBranch"?: string; }; };
+    "RepositoryRecord": { "id": string; "root": string; "commonGitDir": string; "identityKey": string; "createdAt": string; };
+    "RepositoryMembership": { "projectId": string; "repositoryId": string; "revision": number; "label": string; "role": "read_only" | "implementation"; "settings": { "configurationRoot"?: string; "baseRef"?: string; "worktreeBase"?: string; "validationProfiles"?: { [key: string]: Array<string>; } | null; "pathScope"?: Array<string> | null; "delivery"?: { "remote"?: string; "targetBranch"?: string; }; }; "updatedAt": string; "status": "active"; } | { "projectId": string; "repositoryId": string; "revision": number; "label": string; "role": "read_only" | "implementation"; "settings": { "configurationRoot"?: string; "baseRef"?: string; "worktreeBase"?: string; "validationProfiles"?: { [key: string]: Array<string>; } | null; "pathScope"?: Array<string> | null; "delivery"?: { "remote"?: string; "targetBranch"?: string; }; }; "updatedAt": string; "status": "removed"; "removal": { "actor": { "type": "user" | "system" | "provider" | "external"; "id": string; }; "removedAt": string; }; };
+    "RepositoryMigration": { "state": "ready"; "evidenceRef"?: string; } | { "state": "legacy_unresolved"; "evidenceRef": string; "reason": string; };
+    "ProjectRepository": { "repository": components["schemas"]["RepositoryRecord"]; "membership": components["schemas"]["RepositoryMembership"]; };
+    "ProjectRepositoriesView": { "schemaVersion": 2; "project": components["schemas"]["Project"]; "repositories": Array<components["schemas"]["ProjectRepository"]>; "defaults": components["schemas"]["RepositorySettings"]; "migration": components["schemas"]["RepositoryMigration"]; };
+    "CreateProjectV2Request": { "name": string; "defaults"?: components["schemas"]["RepositorySettings"]; };
+    "ProjectDefaultsRequest": { "defaults": components["schemas"]["RepositorySettings"]; };
+    "AttachRepositoryRequest": { "repositoryPath": string; "label": string; "role": "read_only" | "implementation"; "settings"?: components["schemas"]["RepositorySettings"]; "expectedMembershipRevision": number; };
+    "UpdateRepositoryMembershipRequest": { "label": string; "role": "read_only" | "implementation"; "settings"?: components["schemas"]["RepositorySettings"]; "expectedMembershipRevision": number; };
+    "RemoveRepositoryMembershipRequest": { "expectedMembershipRevision": number; };
     "ProjectRegistration": { "name": string; "source": string; };
     "Project": { "id": string; "name": string; "sourceHash": string; "status": "active" | "archived"; "resourceVersion": number; "lastGlobalPosition": number; "createdAt": string; "updatedAt": string; };
     "ProjectView": { "schemaVersion": 1; "project": components["schemas"]["Project"]; "workItems": Array<components["schemas"]["WorkItem"]>; };
@@ -274,7 +285,7 @@ export interface components {
     "PreparationInputSnapshot": { "work": components["schemas"]["WorkItem"]; "project": components["schemas"]["Project"]; "workflow": components["schemas"]["WorkflowDocument"]; "workflowDigest": string; "policy": components["schemas"]["PreparationPolicy"]; "context": components["schemas"]["PreparationContext"]; "answers": { [key: string]: string; } | null; "evidence": Array<components["schemas"]["PreparationEvidence"]> | null; "override"?: { "from"?: string; "until"?: Array<string> | null; }; };
     "PreparationAlternative": { "entry": string; "nodeCount": number; "rationale": string; "validation": Array<components["schemas"]["WorkflowValidationIssue"]> | null; "missing": Array<components["schemas"]["FrozenRouteInputRequirement"]> | null; "terminals": Array<string>; };
     "RoutePreparationAssessment": { "schemaVersion": 1; "input": components["schemas"]["PreparationInputSnapshot"]; "inputDigest": string; "advice": components["schemas"]["PreparationAdvice"]; "route": components["schemas"]["FrozenRoute"]; "rationale": string; "questions": Array<components["schemas"]["PreparationQuestion"]> | null; "confirmationReasons": Array<string> | null; "alternatives": Array<components["schemas"]["PreparationAlternative"]> | null; "digest": string; };
-    "CreateRunRequest": { "workItemId": string; "workflowId"?: string; "workflowVersion"?: string; "profile"?: string; "preparation"?: components["schemas"]["RunPreparationInput"]; "sourceObservationId"?: string; };
+    "CreateRunRequest": { "workItemId": string; "workflowId"?: string; "workflowVersion"?: string; "profile"?: string; "preparation"?: components["schemas"]["RunPreparationInput"]; "sourceObservationId"?: string; "repositorySelections"?: { [key: string]: string; }; };
     "StartFakeRunRequest": { "scenario": "fake-success" | "fake-restart"; };
     "RetryRunRequest": { "nodeId"?: string; };
     "ContinueRunRequest": { "until": string; };
@@ -371,6 +382,15 @@ export interface ApiOperations {
     "applyConfigurationMutation": { method: "POST"; path: "/api/v1/configuration/apply"; response: components["schemas"]["ConfigurationApplyResult"]; body: components["schemas"]["ConfigurationMutationRequest"]; };
     "restoreConfiguration": { method: "POST"; path: "/api/v1/configuration/restore"; response: components["schemas"]["ConfigurationApplyResult"]; body: components["schemas"]["ConfigurationRestoreRequest"]; };
     "writeConfigurationSecret": { method: "POST"; path: "/api/v1/configuration/secrets"; response: components["schemas"]["ConfigurationSecretReceipt"]; body: components["schemas"]["ConfigurationSecretWriteRequest"]; };
+    "listProjectsV2": { method: "GET"; path: "/api/v1/projects-v2"; response: Array<components["schemas"]["ProjectRepositoriesView"]>; body: never; };
+    "createProjectV2": { method: "POST"; path: "/api/v1/projects-v2"; response: components["schemas"]["ProjectRepositoriesView"]; body: components["schemas"]["CreateProjectV2Request"]; };
+    "discoverProjects": { method: "GET"; path: "/api/v1/projects-v2/discover"; response: Array<components["schemas"]["ProjectRepositoriesView"]>; body: never; };
+    "getProjectRepositories": { method: "GET"; path: "/api/v1/projects-v2/{projectId}"; response: components["schemas"]["ProjectRepositoriesView"]; body: never; };
+    "updateProjectDefaults": { method: "PUT"; path: "/api/v1/projects-v2/{projectId}/defaults"; response: components["schemas"]["ProjectRepositoriesView"]; body: components["schemas"]["ProjectDefaultsRequest"]; };
+    "listProjectRepositories": { method: "GET"; path: "/api/v1/projects-v2/{projectId}/repositories"; response: components["schemas"]["ProjectRepositoriesView"]; body: never; };
+    "attachProjectRepository": { method: "POST"; path: "/api/v1/projects-v2/{projectId}/repositories"; response: components["schemas"]["ProjectRepositoriesView"]; body: components["schemas"]["AttachRepositoryRequest"]; };
+    "updateProjectRepository": { method: "PUT"; path: "/api/v1/projects-v2/{projectId}/repositories/{repositoryId}"; response: components["schemas"]["ProjectRepositoriesView"]; body: components["schemas"]["UpdateRepositoryMembershipRequest"]; };
+    "removeProjectRepository": { method: "DELETE"; path: "/api/v1/projects-v2/{projectId}/repositories/{repositoryId}"; response: components["schemas"]["ProjectRepositoriesView"]; body: components["schemas"]["RemoveRepositoryMembershipRequest"]; };
     "listProjects": { method: "GET"; path: "/api/v1/projects"; response: Array<components["schemas"]["Project"]>; body: never; };
     "registerProject": { method: "POST"; path: "/api/v1/projects"; response: components["schemas"]["Project"]; body: components["schemas"]["ProjectRegistration"]; };
     "getProject": { method: "GET"; path: "/api/v1/projects/{projectId}"; response: components["schemas"]["ProjectView"]; body: never; };
@@ -521,6 +541,15 @@ export const operationDefinitions: Record<ApiOperationId, { method: string; path
   "applyConfigurationMutation": { method: "POST", path: "/api/v1/configuration/apply" },
   "restoreConfiguration": { method: "POST", path: "/api/v1/configuration/restore" },
   "writeConfigurationSecret": { method: "POST", path: "/api/v1/configuration/secrets" },
+  "listProjectsV2": { method: "GET", path: "/api/v1/projects-v2" },
+  "createProjectV2": { method: "POST", path: "/api/v1/projects-v2" },
+  "discoverProjects": { method: "GET", path: "/api/v1/projects-v2/discover" },
+  "getProjectRepositories": { method: "GET", path: "/api/v1/projects-v2/{projectId}" },
+  "updateProjectDefaults": { method: "PUT", path: "/api/v1/projects-v2/{projectId}/defaults" },
+  "listProjectRepositories": { method: "GET", path: "/api/v1/projects-v2/{projectId}/repositories" },
+  "attachProjectRepository": { method: "POST", path: "/api/v1/projects-v2/{projectId}/repositories" },
+  "updateProjectRepository": { method: "PUT", path: "/api/v1/projects-v2/{projectId}/repositories/{repositoryId}" },
+  "removeProjectRepository": { method: "DELETE", path: "/api/v1/projects-v2/{projectId}/repositories/{repositoryId}" },
   "listProjects": { method: "GET", path: "/api/v1/projects" },
   "registerProject": { method: "POST", path: "/api/v1/projects" },
   "getProject": { method: "GET", path: "/api/v1/projects/{projectId}" },

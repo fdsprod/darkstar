@@ -12,6 +12,7 @@ import (
 
 	"darkstar/src/core/identity"
 	"darkstar/src/ports"
+	"darkstar/src/ports/repository"
 	"darkstar/src/ports/statestore"
 	"darkstar/src/ports/workspace"
 )
@@ -72,9 +73,10 @@ type WorkView struct {
 
 // Service owns project and work-item public commands.
 type Service struct {
-	store      statestore.Store
-	now        func() time.Time
-	workspaces workspace.Provisioner
+	store        statestore.Store
+	now          func() time.Time
+	workspaces   workspace.Provisioner
+	repositories repository.Manager
 }
 
 // NewWithWorkspaces provisions private storage before a work command succeeds.
@@ -149,10 +151,12 @@ func (s *Service) RegisterProject(ctx context.Context, request ProjectRegistrati
 	projectID := identity.Deterministic("project_", projectRegisterScope+"\x00"+idempotencyKey)
 	if reused {
 		value, getErr := s.store.Project(ctx, projectID)
-		if getErr != nil {
-			return statestore.ProjectProjection{}, ErrCommandInProgress
+		if getErr == nil {
+			return value, s.complete(ctx, projectRegisterScope, idempotencyKey, httpCreated, value, nil)
 		}
-		return value, s.complete(ctx, projectRegisterScope, idempotencyKey, httpCreated, value, nil)
+		if !errors.Is(getErr, statestore.ErrNotFound) {
+			return statestore.ProjectProjection{}, getErr
+		}
 	}
 
 	sourceHash := digest(request.Source)
@@ -162,14 +166,35 @@ func (s *Service) RegisterProject(ctx context.Context, request ProjectRegistrati
 	}
 	for _, value := range projects {
 		if value.SourceHash == sourceHash {
+			if s.repositories != nil {
+				if err := s.MigrateLegacyRepositories(ctx, []string{request.Source}); err != nil {
+					return statestore.ProjectProjection{}, err
+				}
+				value, err = s.store.Project(ctx, value.ProjectID)
+				if err != nil {
+					return statestore.ProjectProjection{}, err
+				}
+			}
 			return value, s.complete(ctx, projectRegisterScope, idempotencyKey, httpOK, value, nil)
 		}
 	}
 
 	now := s.now().UTC().Round(0)
-	events, err := s.store.Append(ctx, pendingEvent("project.created", statestore.AggregateProject, projectID, projectID, idempotencyKey, now, map[string]any{
+	created := pendingEvent("project.created", statestore.AggregateProject, projectID, projectID, idempotencyKey, now, map[string]any{
 		"name": request.Name, "sourceHash": sourceHash,
-	}))
+	})
+	pending := []statestore.PendingEvent{created}
+	if s.repositories != nil {
+		record, resolveErr := s.resolveRegistration(ctx, "", request.Source)
+		if resolveErr != nil {
+			return statestore.ProjectProjection{}, resolveErr
+		}
+		membership := statestore.RepositoryMembership{ProjectID: projectID, RepositoryID: record.RepositoryID, Revision: 1, Label: request.Name, Role: statestore.RepositoryImplementation, Status: statestore.MembershipActive, UpdatedAt: now}
+		memberEvent := pendingEvent("project.repository_set", statestore.AggregateProject, projectID, projectID, repositoryCommandID("projects.register.repository", idempotencyKey), now, map[string]any{"repository": record, "membership": membership, "legacyEvidence": "registration:" + sourceHash})
+		memberEvent.ExpectedRevision = 1
+		pending = append(pending, memberEvent)
+	}
+	events, err := s.store.Append(ctx, pending...)
 	if err != nil {
 		return statestore.ProjectProjection{}, err
 	}
@@ -182,13 +207,25 @@ func (s *Service) RegisterProject(ctx context.Context, request ProjectRegistrati
 
 // Projects returns the deterministic project list projection.
 func (s *Service) Projects(ctx context.Context) ([]statestore.ProjectProjection, error) {
-	return s.store.Projects(ctx)
+	projects, err := s.store.Projects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, project := range projects {
+		if err := s.validateLegacyCardinality(ctx, project.ProjectID); err != nil {
+			return nil, err
+		}
+	}
+	return projects, nil
 }
 
 // Project returns one project and its work items.
 func (s *Service) Project(ctx context.Context, projectID string) (ProjectView, error) {
 	project, err := s.store.Project(ctx, projectID)
 	if err != nil {
+		return ProjectView{}, err
+	}
+	if err := s.validateLegacyCardinality(ctx, projectID); err != nil {
 		return ProjectView{}, err
 	}
 	workItems, err := s.store.WorkItemsForProject(ctx, projectID)

@@ -93,7 +93,7 @@
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "919dd00f3726322584f4723b4df5ad7cd6a20ef293982d0ad724b2400a2c60d5",
+      "sha256": "65a13256059e8a0f6829e897755ac967fad9d148182b8a2f963afc705fc8f90f",
       "version": "v1alpha1"
     },
     {
@@ -111,6 +111,14 @@
       "name": "provider-v1alpha1",
       "sha256": "c65e8504f0a4080e623458b4abc424ce406a2c4b4a8355953f92ac4badb22595",
       "version": "v1alpha1"
+    },
+    {
+      "file": "repository-membership-v2.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/repository-membership-v2.schema.json",
+      "name": "repository-membership-v2",
+      "sha256": "a1b4df003dc7b1cec09e17c355ff5baa5bf44f3889a40fe52324462ecf798633",
+      "version": "unversioned"
     },
     {
       "file": "route-patch-v1alpha1.schema.json",

@@ -41,7 +41,7 @@ restart impact. Machine JSON is the same versioned contract returned by HTTP.
 The durable Ready lifecycle has explicit CLI/API parity:
 
 ```text
-darkstar run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile> | --entry-node <node> --terminal-node <node>...] [--answers-json <object>] [--inputs-json <object>] [--evidence <reference>]...
+darkstar run prepare <work-id> [--workflow <name>] [--version <version>] [--profile <profile> | --entry-node <node> --terminal-node <node>...] [--answers-json <object>] [--inputs-json <object>] [--repositories-json <object>] [--evidence <reference>]...
 darkstar run launch <run-id> --if-match <version> [--confirm-assessment <digest>]
 ```
 
@@ -55,6 +55,21 @@ revision through `POST /api/v1/runs/{runId}/start`; its required `--if-match`
 value prevents a stale terminal or automation from starting a superseded run, and
 `--confirm-assessment` binds an explicit confirmation to the displayed assessment digest.
 Both commands accept `--idempotency-key` for safe retries.
+
+For a project with several repositories, explicitly select the repository for
+each declared workflow repository input during preparation. Both `run prepare`
+and `run start` accept `--repositories-json`:
+
+```text
+darkstar run prepare <work-id> --repositories-json '{"repository":"repository_00000000000000000000000000"}'
+```
+
+The API equivalent is `"repositorySelections":{"repository":"<repository-id>"}`
+in `CreateRunRequest`. Keys are workflow input names; values are repository IDs
+from `project repository list`. The daemon verifies active membership and freezes
+the selection. Omission preserves implicit selection only for an unambiguous
+single-repository project. This option does not modify the workflow definition
+or grant write access beyond the declared node and membership role.
 
 The compatibility command `darkstar run start <work-id> --workflow <name>
 --version <version>` performs the former create-and-start request through
@@ -151,6 +166,45 @@ file. With `--json`, stdout contains the run ID, absolute output path, and byte
 size while the bundle remains at the requested path.
 
 ## Project and work commands
+
+Projects can also exist without a repository or share several repositories.
+These commands use the `schemaVersion: 2` project representation at
+`/api/v1/projects-v2`; authentication and transport negotiation remain API v1.
+
+```text
+darkstar project create "New product" [--defaults-file defaults.json]
+darkstar project list-v2
+darkstar project show-v2 <project-id>
+darkstar project discover <repository-path>
+darkstar project defaults <project-id> --defaults-file defaults.json --revision <project-version>
+darkstar project repository list <project-id>
+darkstar project repository add <project-id> <path> --label Code --role implementation --revision <project-version>
+darkstar project repository update <project-id> <repository-id> --label Code --role read_only --revision <project-version> --membership-revision <revision>
+darkstar project repository remove <project-id> <repository-id> --revision <project-version> --membership-revision <revision>
+```
+
+All accept `--json`; mutations accept `--idempotency-key`. Membership add/update
+require `--label` and also accept `--settings-file`. Settings are replaced as a complete
+membership override, with omitted fields inheriting defaults. Supported fields
+are `configurationRoot`, `baseRef`, `worktreeBase`, `validationProfiles`,
+`pathScope`, and `delivery` (`remote`, `targetBranch`). Empty lists are explicit
+values. Project defaults use the same settings shape. Tracker selection remains
+a separate command.
+
+Use the project `resourceVersion` from the last response as `--revision` and the
+membership's `revision` as `--membership-revision`. A first attachment has
+membership revision zero; re-adding a removed pair requires its last revision.
+Conflicts require reading the current view before resubmitting with a new
+idempotency key. Removing membership retains repository files and history; the
+list includes removed membership records. Discovery returns all matching
+projects and never chooses one from path order. Membership roles describe
+eligibility; they do not authorize an agent or select a run's repository scope.
+
+Legacy `project add/register`, `list`, and `show` retain their original response
+shape. Legacy project reads report `PROJECT_CARDINALITY_UNSUPPORTED` for new
+zero-repository or multiple-repository projects; use `list-v2`/`show-v2` to read
+them. Legacy unresolved registrations remain readable with migration evidence
+shown in the v2 view.
 
 Project and work commands use the same authenticated daemon boundary as other
 stateful commands:

@@ -35,6 +35,8 @@ func runProject(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	}
 	command := "darkstar project " + args[0]
 	switch args[0] {
+	case "create", "list-v2", "show-v2", "discover", "defaults", "repository":
+		return runProjectRepositories(args, jsonOutput, stdout, stderr)
 	case "add", "register":
 		registration, key, err := parseProjectRegistration(args[1:])
 		if err != nil {
@@ -491,12 +493,13 @@ func parseWorkList(args []string) (string, error) {
 }
 
 func selectOnlyActiveProject(ctx context.Context, session *clientapi.Session) (string, error) {
-	var projects []statestore.ProjectProjection
-	if err := session.DoJSON(ctx, http.MethodGet, "projects", nil, &projects); err != nil {
+	var projects []workmanagement.ProjectRepositoriesView
+	if err := session.DoJSON(ctx, http.MethodGet, "projects-v2", nil, &projects); err != nil {
 		return "", err
 	}
 	active := make([]statestore.ProjectProjection, 0, len(projects))
-	for _, project := range projects {
+	for _, view := range projects {
+		project := view.Project
 		if project.Status == statestore.ProjectActive {
 			active = append(active, project)
 		}

@@ -105,6 +105,9 @@ func (s *Session) readInput(ctx context.Context, callID string, raw json.RawMess
 	if !ok {
 		return nil, errors.New("input is not connected")
 	}
+	if declaration, declared := s.Node.Fields().Inputs[args.ID]; declared {
+		return ProjectInput(declaration.ValueType(), value)
+	}
 	return value, nil
 }
 

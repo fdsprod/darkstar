@@ -65,11 +65,23 @@ func (w *daemonProviderWiring) resolveDeliveryWorkspace(ctx context.Context, r r
 	if err = json.Unmarshal([]byte(encoded), &p); err != nil {
 		return p, err
 	}
-	if err = w.authorizeWorkspaceProject(r); err != nil {
-		return p, err
-	}
-	if p.ID != ref.ID || filepath.Base(p.ID) != p.ID || p.RunID != r.Run.RunID || p.ProjectID != r.Project.ProjectID || filepath.Clean(p.Repository) != filepath.Clean(w.projectRoot) {
+	if p.ID != ref.ID || filepath.Base(p.ID) != p.ID || p.RunID != r.Run.RunID || p.ProjectID != r.Project.ProjectID {
 		return p, errors.New("prepared workspace belongs to another repository")
+	}
+	if p.Binding != nil {
+		if err = w.verifyRepositoryBinding(ctx, r.Project, p.Binding, true); err != nil {
+			return p, err
+		}
+		if filepath.Clean(p.Repository) != filepath.Clean(p.Binding.Repository.Root) {
+			return p, errors.New("prepared workspace differs from its frozen repository")
+		}
+	} else {
+		if err = w.authorizeWorkspaceProject(r); err != nil {
+			return p, err
+		}
+		if filepath.Clean(p.Repository) != filepath.Clean(w.projectRoot) {
+			return p, errors.New("prepared workspace belongs to another repository")
+		}
 	}
 	manager, err := gitadapter.New("")
 	if err != nil {
@@ -77,7 +89,7 @@ func (w *daemonProviderWiring) resolveDeliveryWorkspace(ctx context.Context, r r
 	}
 	legacyPath := filepath.Join(filepath.Dir(w.toolDatabase), "worktrees", p.ID)
 	if p.Mode == "new_worktree" && filepath.Clean(p.Path) == legacyPath {
-		destination := filepath.Join(w.projectRoot, ".darkstar", "worktrees", p.ID)
+		destination := filepath.Join(p.Repository, ".darkstar", "worktrees", p.ID)
 		// Both absolute locations are derived from the authorized repository and
 		// this run's durable workspace record, never from agent output paths.
 		if err = manager.RelocateWorktree(ctx, p.Repository, p.Path, destination, p.Branch, p.BaseSHA); err != nil {
@@ -161,15 +173,27 @@ func (s workspaceNodeServices) Create(ctx context.Context, p nodes.Workspace) (n
 	if err != nil {
 		return p, err
 	}
+	if p.Binding != nil {
+		if _, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS work_item_repository_bindings(work_item_id TEXT PRIMARY KEY,repository_id TEXT NOT NULL)`); err != nil {
+			return p, err
+		}
+		if _, err = db.ExecContext(ctx, `INSERT OR IGNORE INTO work_item_repository_bindings(work_item_id,repository_id) VALUES(?,?)`, s.request.WorkItem.WorkItemID, p.Binding.Repository.RepositoryID); err != nil {
+			return p, err
+		}
+		var repositoryID string
+		if err = db.QueryRowContext(ctx, `SELECT repository_id FROM work_item_repository_bindings WHERE work_item_id=?`, s.request.WorkItem.WorkItemID).Scan(&repositoryID); err != nil {
+			return p, err
+		}
+		if repositoryID != p.Binding.Repository.RepositoryID {
+			return p, errors.New("work item is already bound to another implementation repository")
+		}
+	}
 	if _, err = db.ExecContext(ctx, "INSERT OR IGNORE INTO workflow_workspaces(id,run_id,record) VALUES(?,?,?)", p.ID, p.RunID, string(raw)); err != nil {
 		return p, err
 	}
 	return s.Load(ctx, p.ID)
 }
 func (w *daemonProviderWiring) ExecuteWorkspaceNode(ctx context.Context, r runexecution.AttemptRequestContext) (json.RawMessage, error) {
-	if err := w.authorizeWorkspaceProject(r); err != nil {
-		return nil, err
-	}
 	handler, err := nodes.Lookup(r.Node)
 	if err != nil {
 		return nil, err
@@ -188,7 +212,19 @@ func (w *daemonProviderWiring) ExecuteWorkspaceNode(ctx context.Context, r runex
 		Commands:   nodeprocess.Runner{Environment: w.environment, OutputLimit: 65536},
 	}
 	if preparation, ok := r.Node.(workflow.WorkspacePrepareNode); ok {
+		binding, err := w.resourceRepository(ctx, r, r.NodeInputs[preparation.Executor.RepositoryInput], true)
+		if err != nil {
+			return nil, err
+		}
+		if binding != nil {
+			services.Workspaces.Identity.Binding = binding
+			services.Workspaces.Identity.Root = binding.Repository.Root
+			services.Workspaces.DefaultBaseRef = binding.Configuration.Settings.BaseRef
+		}
 		if plan, ok := preparation.Executor.Checkout.(workflow.NewWorktree); ok && plan.BaseRef == "project_default" {
+			if binding != nil {
+				return w.executeWorkspaceHandler(ctx, r, handler, services)
+			}
 			if w.configuration == nil {
 				return nil, errors.New("project configuration unavailable")
 			}
@@ -207,6 +243,10 @@ func (w *daemonProviderWiring) ExecuteWorkspaceNode(ctx context.Context, r runex
 			}
 		}
 	}
+	return w.executeWorkspaceHandler(ctx, r, handler, services)
+}
+
+func (w *daemonProviderWiring) executeWorkspaceHandler(ctx context.Context, r runexecution.AttemptRequestContext, handler nodes.Handler, services nodes.BuiltinServices) (json.RawMessage, error) {
 	engine, err := w.pinnedNodeEngine(r)
 	if err != nil {
 		return nil, err
@@ -218,10 +258,11 @@ func (w *daemonProviderWiring) ExecuteWorkspaceNode(ctx context.Context, r runex
 }
 
 func (w *daemonProviderWiring) ExecuteCommandNode(ctx context.Context, r runexecution.AttemptRequestContext) (json.RawMessage, error) {
-	if err := w.authorizeWorkspaceProject(r); err != nil {
+	root, err := w.attemptRepositoryRoot(ctx, r)
+	if err != nil {
 		return nil, err
 	}
-	services := nodes.BuiltinServices{Commands: w.NodeCommandRunner(), LegacyCommand: nodes.LegacyCommandScope{WorkflowID: r.Workflow.Version.Name, NodeID: r.Attempt.NodeID, Workspace: w.projectRoot}}
+	services := nodes.BuiltinServices{Commands: w.NodeCommandRunner(), LegacyCommand: nodes.LegacyCommandScope{WorkflowID: r.Workflow.Version.Name, NodeID: r.Attempt.NodeID, Workspace: root}}
 	engine, err := w.pinnedNodeEngine(r)
 	if err != nil {
 		return nil, err
@@ -241,8 +282,12 @@ func (w *daemonProviderWiring) NodeCommandRunner() nodes.CommandRunner {
 }
 
 func (w *daemonProviderWiring) ExecuteExtensionNode(ctx context.Context, request runexecution.AttemptRequestContext) (json.RawMessage, error) {
-	if err := w.authorizeWorkspaceProject(request); err != nil {
-		return nil, err
+	if w.repositories == nil {
+		if err := w.authorizeWorkspaceProject(request); err != nil {
+			return nil, err
+		}
+	} else if request.Project.Status != statestore.ProjectActive {
+		return nil, errors.New("extension requires an active project")
 	}
 	handler, err := nodes.Lookup(request.Node)
 	if err != nil {

@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/repository-membership-v2.schema.json",
+  "title": "Version 2 project repository membership representations",
+  "$defs": {
+    "RepositorySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "configurationRoot": {
+          "type": "string"
+        },
+        "baseRef": {
+          "type": "string"
+        },
+        "worktreeBase": {
+          "type": "string"
+        },
+        "validationProfiles": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "pathScope": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "delivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "remote": {
+              "type": "string"
+            },
+            "targetBranch": {
+              "type": "string"
+            }
+          },
+          "required": []
+        }
+      },
+      "required": []
+    },
+    "RepositoryRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root": {
+          "type": "string"
+        },
+        "commonGitDir": {
+          "type": "string"
+        },
+        "identityKey": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "root",
+        "commonGitDir",
+        "identityKey",
+        "createdAt"
+      ]
+    },
+    "RepositoryMembership": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "enum": [
+                "read_only",
+                "implementation"
+              ]
+            },
+            "settings": {
+              "$ref": "#/$defs/RepositorySettings"
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "status": {
+              "const": "active"
+            }
+          },
+          "required": [
+            "projectId",
+            "repositoryId",
+            "revision",
+            "label",
+            "role",
+            "settings",
+            "updatedAt",
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "enum": [
+                "read_only",
+                "implementation"
+              ]
+            },
+            "settings": {
+              "$ref": "#/$defs/RepositorySettings"
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "status": {
+              "const": "removed"
+            },
+            "removal": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "actor": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "user",
+                        "system",
+                        "provider",
+                        "external"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ]
+                },
+                "removedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "actor",
+                "removedAt"
+              ]
+            }
+          },
+          "required": [
+            "projectId",
+            "repositoryId",
+            "revision",
+            "label",
+            "role",
+            "settings",
+            "updatedAt",
+            "status",
+            "removal"
+          ]
+        }
+      ]
+    },
+    "RepositoryMigration": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "const": "ready"
+            },
+            "evidenceRef": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "const": "legacy_unresolved"
+            },
+            "evidenceRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "state",
+            "evidenceRef",
+            "reason"
+          ]
+        }
+      ]
+    }
+  }
+}

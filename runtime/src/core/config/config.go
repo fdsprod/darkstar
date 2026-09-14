@@ -18,8 +18,11 @@ type Scope uint8
 
 const (
 	ScopeDefault Scope = iota + 1
+	ScopeSystem
 	ScopeUser
+	ScopeRepository
 	ScopeProject
+	ScopeMembership
 	ScopeRun
 	ScopeCLI
 )
@@ -28,10 +31,16 @@ func (s Scope) String() string {
 	switch s {
 	case ScopeDefault:
 		return "default"
+	case ScopeSystem:
+		return "system"
 	case ScopeUser:
 		return "user"
+	case ScopeRepository:
+		return "repository"
 	case ScopeProject:
 		return "project"
+	case ScopeMembership:
+		return "membership"
 	case ScopeRun:
 		return "run"
 	case ScopeCLI:

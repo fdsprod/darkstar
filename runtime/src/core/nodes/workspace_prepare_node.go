@@ -28,8 +28,9 @@ func PrepareWorkspace(ctx context.Context, repositoryInput json.RawMessage, chec
 	services := BuiltinServices{Workspaces: workspaces}
 	identity := services.Workspaces.Identity
 	var source struct {
-		ProjectID  string `json:"projectId"`
-		SourceHash string `json:"sourceHash"`
+		ProjectID  string             `json:"projectId"`
+		SourceHash string             `json:"sourceHash"`
+		Binding    *RepositoryBinding `json:"repositoryBinding,omitempty"`
 	}
 	if err := json.Unmarshal(repositoryInput, &source); err != nil {
 		return nil, err
@@ -37,11 +38,14 @@ func PrepareWorkspace(ctx context.Context, repositoryInput json.RawMessage, chec
 	if source.ProjectID != identity.ProjectID || source.SourceHash != identity.SourceHash {
 		return nil, errors.New("connect the run's repository resource to Prepare workspace")
 	}
+	if identity.Binding != nil && (source.Binding == nil || source.Binding.Repository.RepositoryID != identity.Binding.Repository.RepositoryID || source.Binding.MembershipRevision != identity.Binding.MembershipRevision || source.Binding.Configuration.Digest != identity.Binding.Configuration.Digest) {
+		return nil, errors.New("repository resource differs from the frozen membership")
+	}
 	id := fmt.Sprintf("workspace_%x", sha256.Sum256([]byte(identity.RunID+"\x00"+identity.NodeID)))
 	p, err := services.Workspaces.Store.Load(ctx, id)
 	manager := services.Workspaces.Repository
 	if errors.Is(err, ErrWorkspaceNotFound) {
-		p = Workspace{ID: id, RunID: identity.RunID, ProjectID: identity.ProjectID, Repository: filepath.Clean(identity.Root), Path: filepath.Clean(identity.Root)}
+		p = Workspace{Binding: identity.Binding, ID: id, RunID: identity.RunID, ProjectID: identity.ProjectID, Repository: filepath.Clean(identity.Root), Path: filepath.Clean(identity.Root)}
 		switch plan := checkout.(type) {
 		case workflow.CurrentCheckout:
 			p.Mode = "current_checkout"
@@ -61,6 +65,9 @@ func PrepareWorkspace(ctx context.Context, repositoryInput json.RawMessage, chec
 			// ownership record remains in the daemon database. Existing records
 			// retain their original path across retries.
 			p.Path = filepath.Join(identity.Root, ".darkstar", "worktrees", id)
+			if identity.Binding != nil && identity.Binding.Configuration.Settings.WorktreeBase != "" {
+				p.Path = filepath.Join(identity.Binding.Configuration.Settings.WorktreeBase, id)
+			}
 		default:
 			return nil, errors.New("choose a supported checkout mode")
 		}

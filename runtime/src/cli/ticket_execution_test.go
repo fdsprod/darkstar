@@ -31,10 +31,7 @@ func TestTicketExecutionCLIApprovesCachedVersionWithoutScheduling(t *testing.T) 
 	t.Cleanup(func() {
 		_ = service.Close()
 	})
-	var project statestore.ProjectProjection
-	runCLIJSON(t, []string{"project", "add", root, "--name", "Admission", "--idempotency-key", "admission-cli-project", "--json"}, &struct {
-		Result *statestore.ProjectProjection `json:"result"`
-	}{Result: &project})
+	project := createPlanningCLIProject(t, "Admission", "admission-cli-project")
 	var work statestore.WorkItemProjection
 	runCLIJSON(t, []string{"work", "create", "Source version", "--project", project.ProjectID, "--idempotency-key", "admission-cli-create", "--json"}, &struct {
 		Result *statestore.WorkItemProjection `json:"result"`

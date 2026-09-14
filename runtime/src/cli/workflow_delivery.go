@@ -86,9 +86,6 @@ type workflowDeliveryServices struct {
 }
 
 func (w *daemonProviderWiring) ExecuteDeliveryNode(ctx context.Context, r runexecution.AttemptRequestContext) (json.RawMessage, error) {
-	if err := w.authorizeWorkspaceProject(r); err != nil {
-		return nil, err
-	}
 	services := nodes.BuiltinServices{Delivery: workflowDeliveryServices{w, r}}
 	engine, err := w.pinnedNodeEngine(r)
 	if err != nil {

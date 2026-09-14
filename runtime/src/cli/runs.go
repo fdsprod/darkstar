@@ -61,6 +61,15 @@ func parseWorkRun(args []string, action string) (runexecution.CreateRequest, str
 		}
 		value := args[index+1]
 		switch args[index] {
+		case "--repositories-json":
+			if request.RepositorySelections != nil || json.Unmarshal([]byte(value), &request.RepositorySelections) != nil || request.RepositorySelections == nil {
+				return runexecution.CreateRequest{}, "", errors.New("--repositories-json requires one JSON object of workflow repository input names to repository IDs")
+			}
+			for name, repositoryID := range request.RepositorySelections {
+				if !runNodePattern.MatchString(string(name)) || strings.TrimSpace(repositoryID) != repositoryID || repositoryID == "" {
+					return runexecution.CreateRequest{}, "", errors.New("--repositories-json requires valid workflow input names and nonempty repository IDs")
+				}
+			}
 		case "--source-observation":
 			if request.SourceObservationID != "" || strings.TrimSpace(value) != value {
 				return runexecution.CreateRequest{}, "", errors.New("--source-observation requires one exact approved observation ID")

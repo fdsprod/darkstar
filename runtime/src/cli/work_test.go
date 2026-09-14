@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -17,6 +18,9 @@ import (
 
 func TestProjectAndWorkCLICommandsUseStableMachineResults(t *testing.T) {
 	root := t.TempDir()
+	if output, err := exec.Command("git", "init", "--initial-branch=main", root).CombinedOutput(); err != nil {
+		t.Fatalf("initialize registered repository: %v: %s", err, output)
+	}
 	paths := platformport.Paths{Config: filepath.Join(root, "config"), Data: filepath.Join(root, "data"), Cache: filepath.Join(root, "cache"), Logs: filepath.Join(root, "logs"), Runtime: filepath.Join(root, "runtime")}
 	for _, directory := range []string{paths.Config, paths.Data, paths.Cache, paths.Logs, paths.Runtime} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {

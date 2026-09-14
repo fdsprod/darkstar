@@ -39,10 +39,7 @@ func mappingCLIFixture(t *testing.T) (*daemonAPIService, string, statestore.Proj
 	t.Cleanup(func() {
 		_ = service.Close()
 	})
-	var project statestore.ProjectProjection
-	runCLIJSON(t, []string{"project", "add", root, "--name", "Mappings", "--idempotency-key", "mapping-project", "--json"}, &struct {
-		Result *statestore.ProjectProjection `json:"result"`
-	}{Result: &project})
+	project := createPlanningCLIProject(t, "Mappings", "mapping-project")
 	var work statestore.WorkItemProjection
 	runCLIJSON(t, []string{"work", "create", "Mapped native ticket", "--project", project.ProjectID, "--idempotency-key", "mapping-ticket", "--json"}, &struct {
 		Result *statestore.WorkItemProjection `json:"result"`

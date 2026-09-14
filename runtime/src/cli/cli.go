@@ -23,6 +23,7 @@ import (
 	"darkstar/src/adapters/contentprocessor/common"
 	"darkstar/src/adapters/contentprocessor/commonimage"
 	"darkstar/src/adapters/provider/codex"
+	gitadapter "darkstar/src/adapters/repository/git"
 	routeartifacts "darkstar/src/adapters/routeadvisor/artifacts"
 	routeadvice "darkstar/src/adapters/routeadvisor/reasoning"
 	"darkstar/src/adapters/statestore/sqlite"
@@ -96,6 +97,15 @@ Project commands:
   project add|register [path] [--name <name>] [--idempotency-key <key>] [--json]
   project list [--json]
   project show <project-id> [--json]
+  project create <name> [--defaults-file <json-file>] [--idempotency-key <key>] [--json]
+  project list-v2 [--json]
+  project show-v2 <project-id> [--json]
+  project discover <repository-path> [--json]
+  project defaults <project-id> --defaults-file <json-file> --revision <n> [--idempotency-key <key>] [--json]
+  project repository list <project-id> [--json]
+  project repository add <project-id> <path> --role <read_only|implementation> --revision <n> [--membership-revision <n>] --label <label> [--settings-file <json-file>] [--idempotency-key <key>] [--json]
+  project repository update <project-id> <repository-id> --role <read_only|implementation> --revision <n> --membership-revision <n> --label <label> [--settings-file <json-file>] [--idempotency-key <key>] [--json]
+  project repository remove <project-id> <repository-id> --revision <n> --membership-revision <n> [--idempotency-key <key>] [--json]
 
 Work commands:
   work create <outcome> [--project <project-id>] [--details <text>] [--evidence <ref>] [--routing <automatic|override>] [--workflow <name>] [--workflow-version <version>] [--entry-node <id>] [--terminal-node <id>] [--priority <n>] [--idempotency-key <key>] [--json]
@@ -129,9 +139,9 @@ Work commands:
   work transition apply <work-id> --to <state> --if-match <version> [--workflow <name> --version <version>] [--profile <profile>] [--confirm] [--idempotency-key <key>] [--json]
 
 Run commands:
-  run prepare <work-id> [--source-observation <approved-observation-id>] [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--idempotency-key <key>] [--json]
+  run prepare <work-id> [--source-observation <approved-observation-id>] [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--repositories-json <object>] [--idempotency-key <key>] [--json]
   run launch <run-id> --if-match <version> [--confirm-assessment <digest>] [--idempotency-key <key>] [--json]
-  run start <work-id> [--source-observation <approved-observation-id>] [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--idempotency-key <key>] [--json]
+  run start <work-id> [--source-observation <approved-observation-id>] [--workflow <name>] [--version <version>] [--profile <profile>] [--answers-json <object>] [--inputs-json <object>] [--repositories-json <object>] [--idempotency-key <key>] [--json]
   run start --scenario <fake-success|fake-restart> [--idempotency-key <key>] [--json]
   run list [--limit <n>] [--after <run-id>] [--json]
   run show <run-id> [--json]
@@ -562,6 +572,18 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
+	repositoryManager, err := gitadapter.New("")
+	if err != nil {
+		return err
+	}
+	work.ConfigureRepositoryManager(repositoryManager)
+	if err := work.MigrateLegacyRepositories(ctx, []string{service.projectRoot}); err != nil {
+		return fmt.Errorf("migrate project repository coordinates: %w", err)
+	}
+	providerWiring.repositories = work
+	providerWiring.repositoryStore = database
+	providerWiring.leaseStore = database
+	providerWiring.daemonInstanceID = state.InstanceID
 	if err := work.ReconcileWorkspaces(ctx); err != nil {
 		_ = database.Close()
 		service.database = nil

@@ -649,6 +649,9 @@ func (d *Database) RebuildProjections(ctx context.Context) (err error) {
 	if closeErr != nil {
 		return fmt.Errorf("close replay events: %w", closeErr)
 	}
+	if err = clearRepositoryProjections(ctx, tx); err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM point_dependencies; DELETE FROM attempt_projection; DELETE FROM point_projection; DELETE FROM story_projection; DELETE FROM work_item_projection; DELETE FROM project_projection; DELETE FROM run_projection; DELETE FROM node_projection; DELETE FROM approval_projection; DELETE FROM readiness_assessment_projection; DELETE FROM input_request_projection; DELETE FROM provider_permission_projection; DELETE FROM projection_checkpoints`); err != nil {
 		return fmt.Errorf("clear projections: %w", err)
 	}
@@ -882,7 +885,10 @@ func applyProjection(ctx context.Context, tx *sql.Tx, event statestore.Event) er
 		if err != nil || !applies {
 			return err
 		}
-		return writeProjectProjection(ctx, tx, next)
+		if err := writeProjectProjection(ctx, tx, next); err != nil {
+			return err
+		}
+		return applyRepositoryProjection(ctx, tx, event)
 	case statestore.AggregateWork:
 		current, err := readWorkItemProjection(ctx, tx, event.AggregateID)
 		var existing *statestore.WorkItemProjection

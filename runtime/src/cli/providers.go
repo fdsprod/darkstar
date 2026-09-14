@@ -50,6 +50,10 @@ type daemonProviderWiring struct {
 	pluginProvidersMu    sync.Mutex
 	pluginProviders      map[string]*providerts.Adapter
 	workspaces           workspace.Manager
+	repositories         repositoryResolver
+	repositoryStore      statestore.RepositoryStore
+	leaseStore           statestore.Store
+	daemonInstanceID     string
 	pluginArtifacts      pluginworkspace.Artifacts
 	resourcePlugin       *workflowtools.ResourcePlugin
 	pluginErr            error
@@ -267,6 +271,10 @@ func buildWorkflowAttemptRequestWithNodes(ctx context.Context, request runexecut
 	if workspace == "." || !filepath.IsAbs(workspace) || request.Project.Status != statestore.ProjectActive || request.Project.SourceHash != workspaceDigest {
 		return providerport.AttemptRequest{}, fmt.Errorf("workflow project %q is not authorized for daemon workspace %q", request.Project.ProjectID, workspace)
 	}
+	return buildAuthorizedWorkflowAttempt(ctx, request, workspace, capabilityFingerprint, engine)
+}
+
+func buildAuthorizedWorkflowAttempt(ctx context.Context, request runexecution.AttemptRequestContext, workspace, capabilityFingerprint string, engine *nodets.Engine) (providerport.AttemptRequest, error) {
 	request.NodeInputs = agentNodeInputs(request)
 	fields := request.Node.Fields()
 
@@ -376,6 +384,10 @@ func buildWorkflowAttemptRequestWithNodes(ctx context.Context, request runexecut
 	sort.Strings(inputIDs)
 	for _, id := range inputIDs {
 		value := request.NodeInputs[workflow.Identifier(id)]
+		value, err = workflowtools.ProjectInput(fields.Inputs[workflow.Identifier(id)].ValueType(), value)
+		if err != nil {
+			return providerport.AttemptRequest{}, fmt.Errorf("project input %s: %w", id, err)
+		}
 		inputText := "Connected input " + id + ":\n" + string(value)
 		digest := sha256.Sum256([]byte(inputText))
 		providerInputs = append(providerInputs, providerport.Input{
