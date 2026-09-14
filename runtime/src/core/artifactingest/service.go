@@ -35,7 +35,7 @@ type CapabilityResolver interface {
 // Request is one logical immutable ingestion. SourceKind is a closed choice;
 // source-specific helpers populate it for files, pastes, and stdin.
 type Request struct {
-	GeneratedBy *artifactregistry.AttemptProvenance
+	GeneratedBy artifactregistry.Provenance
 
 	ArtifactID              string
 	ExpectedPreviousVersion *uint64
@@ -127,9 +127,10 @@ func (s *Service) Ingest(ctx context.Context, request Request) (Result, error) {
 	}
 	var provenance artifactregistry.Provenance = artifactregistry.OperationProvenance{OperationID: request.OperationID}
 	if request.GeneratedBy != nil {
-		origin := *request.GeneratedBy
-		origin.OperationID = request.OperationID
-		provenance = origin
+		provenance, err = generatedProvenance(request.GeneratedBy, request.OperationID)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	artifact, created, err := s.registry.Register(ctx, artifactregistry.RegisterRequest{
 		ArtifactID: request.ArtifactID, ExpectedPreviousVersion: request.ExpectedPreviousVersion, IdempotencyKey: request.IdempotencyKey,
@@ -233,7 +234,7 @@ func normalizeRequest(request Request) (Request, error) {
 			return request, errors.New("supplied content cannot name a generating attempt")
 		}
 	case artifactregistry.SourceGenerated:
-		if request.GeneratedBy == nil || request.GeneratedBy.RunID == "" || request.GeneratedBy.NodeID == "" || request.GeneratedBy.AttemptID == "" {
+		if _, err := generatedProvenance(request.GeneratedBy, request.OperationID); err != nil {
 			return request, errors.New("generated content requires an exact producing attempt")
 		}
 	default:
@@ -316,4 +317,28 @@ func cloneMetadata(value map[string]string) map[string]string {
 		result[key] = entry
 	}
 	return result
+}
+
+func generatedProvenance(value artifactregistry.Provenance, operationID string) (artifactregistry.Provenance, error) {
+	switch origin := value.(type) {
+	case *artifactregistry.AttemptProvenance:
+		if origin != nil {
+			return generatedProvenance(*origin, operationID)
+		}
+	case artifactregistry.AttemptProvenance:
+		if origin.RunID != "" && origin.NodeID != "" && origin.AttemptID != "" {
+			origin.OperationID = operationID
+			return origin, nil
+		}
+	case *artifactregistry.InvestigationProvenance:
+		if origin != nil {
+			return generatedProvenance(*origin, operationID)
+		}
+	case artifactregistry.InvestigationProvenance:
+		if origin.CollectionID != "" && origin.UnitID != "" && origin.AttemptID != "" {
+			origin.OperationID = operationID
+			return origin, nil
+		}
+	}
+	return nil, errors.New("generated content requires an exact producing attempt")
 }

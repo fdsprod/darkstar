@@ -96,6 +96,25 @@ func (value AttemptProvenance) MarshalJSON() ([]byte, error) {
 	}{Origin: "attempt", wire: wire(value)})
 }
 
+// InvestigationProvenance names a bounded investigation attempt independently
+// of workflow execution. It never borrows a workflow run or node identity.
+type InvestigationProvenance struct {
+	CollectionID string      `json:"collectionId"`
+	UnitID       string      `json:"unitId"`
+	AttemptID    string      `json:"attemptId"`
+	OperationID  string      `json:"operationId"`
+	Source       *VersionRef `json:"source,omitempty"`
+}
+
+func (InvestigationProvenance) isProvenance() {}
+func (value InvestigationProvenance) MarshalJSON() ([]byte, error) {
+	type wire InvestigationProvenance
+	return json.Marshal(struct {
+		Origin string `json:"origin"`
+		wire
+	}{Origin: "investigation_attempt", wire: wire(value)})
+}
+
 // Producer fingerprints the component that supplied or generated the version.
 type Producer struct {
 	Name    string `json:"name"`
@@ -197,6 +216,15 @@ func (value *ArtifactVersion) UnmarshalJSON(content []byte) error {
 			return err
 		}
 		provenance = AttemptProvenance{RunID: candidate.RunID, NodeID: candidate.NodeID, AttemptID: candidate.AttemptID, OperationID: candidate.OperationID, Source: candidate.Source}
+	case "investigation_attempt":
+		var candidate struct {
+			Origin string `json:"origin"`
+			InvestigationProvenance
+		}
+		if err := decodeProvenance(decoded.Provenance, &candidate); err != nil {
+			return err
+		}
+		provenance = candidate.InvestigationProvenance
 	default:
 		return fmt.Errorf("unsupported artifact provenance origin %q", discriminator.Origin)
 	}

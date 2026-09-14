@@ -27,9 +27,6 @@ func (s *Service) BindAttempt(ctx context.Context, scopeID, attemptID string, re
 	if err != nil {
 		return AttemptView{}, err
 	}
-	if view.Preparation.Status != statestore.RepositoryScopeReady {
-		return AttemptView{}, ErrScopeUnavailable
-	}
 	result := AttemptView{Repositories: make([]statestore.FrozenRepositoryScopeEntry, 0, len(ids)), Evidence: make([]statestore.RepositoryScopeEvidence, 0, len(ids))}
 	for _, id := range ids {
 		found := false

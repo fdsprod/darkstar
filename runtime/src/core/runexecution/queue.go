@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"sync"
 	"time"
 
 	"darkstar/src/core/workflow"
@@ -22,6 +23,26 @@ func (s *Service) EnableQueue(limit func() (int, error)) error {
 	}
 	s.queueEnabled, s.queueLimit = true, limit
 	return nil
+}
+
+// SetSharedAdmission connects other daemon-owned collections to the same
+// capacity decision. Configure it before recovery or queue workers start.
+func (s *Service) SetSharedAdmission(lock sync.Locker, externalUsage func(context.Context) (int, error)) error {
+	if lock == nil || externalUsage == nil {
+		return errors.New("shared admission requires a lock and durable external usage")
+	}
+	s.sharedAdmission = lock
+	s.externalCapacity = externalUsage
+	return nil
+}
+
+// OccupiedRunSlots includes live workers even while a waiting/terminal state
+// is being recorded. Callers hold the shared admission lock during admission.
+func (s *Service) OccupiedRunSlots(ctx context.Context) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	active, err := s.occupiedRunsLocked(ctx)
+	return len(active), err
 }
 
 func (s *Service) StartQueue() {
@@ -51,20 +72,35 @@ func (s *Service) hasRunCapacityLocked(ctx context.Context, runID string) (bool,
 	if err != nil {
 		return false, err
 	}
+	active, err := s.occupiedRunsLocked(ctx)
+	if err != nil {
+		return false, err
+	}
+	other := 0
+	if s.externalCapacity != nil {
+		other, err = s.externalCapacity(ctx)
+		if err != nil || other < 0 {
+			return false, errors.Join(err, errors.New("read shared scheduler capacity"))
+		}
+	}
+	return active[runID] || len(active)+other < limit, nil
+}
+
+func (s *Service) occupiedRunsLocked(ctx context.Context) (map[string]bool, error) {
 	active := map[string]bool{}
 	for _, worker := range s.workers {
 		active[worker.attempt.RunID] = true
 	}
 	runs, err := s.store.Runs(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	for _, run := range runs {
 		if run.Status == statestore.RunRunning {
 			active[run.RunID] = true
 		}
 	}
-	return active[runID] || len(active) < limit, nil
+	return active, nil
 }
 
 // DispatchQueue admits oldest work first within priority. The run version and

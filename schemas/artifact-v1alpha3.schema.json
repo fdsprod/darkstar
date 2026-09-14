@@ -1,0 +1,408 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/artifact-v1alpha3.schema.json",
+  "title": "Artifact read views with investigation provenance",
+  "description": "Versioned artifact read representation for /api/v1/artifacts-v2. Preserves canonical artifact identity and history while supporting daemon investigation attempts independently of workflow runs.",
+  "$ref": "#/$defs/ArtifactView",
+  "$defs": {
+    "ArtifactView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact",
+        "freshness",
+        "representations"
+      ],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/Artifact"
+        },
+        "freshness": {
+          "enum": [
+            "current",
+            "potentially_stale",
+            "invalidated"
+          ]
+        },
+        "representations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ArtifactRepresentation"
+          }
+        }
+      }
+    },
+    "Artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "version",
+        "sourceKind",
+        "sourceName",
+        "blobDigest",
+        "size",
+        "declaredMediaType",
+        "detectedMediaType",
+        "locator",
+        "sensitivity",
+        "trust",
+        "creator",
+        "status",
+        "producer",
+        "roles",
+        "tags",
+        "metadata",
+        "provenance",
+        "createdAt"
+      ],
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "pattern": "^artifact_"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sourceKind": {
+          "enum": [
+            "file",
+            "paste",
+            "stdin",
+            "generated",
+            "external"
+          ]
+        },
+        "sourceName": {
+          "type": "string"
+        },
+        "blobDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "declaredMediaType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "detectedMediaType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sensitivity": {
+          "enum": [
+            "unknown",
+            "public",
+            "internal",
+            "sensitive",
+            "secret"
+          ]
+        },
+        "trust": {
+          "const": "untrusted"
+        },
+        "creator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "stored",
+            "stored_uninspectable",
+            "quarantined"
+          ]
+        },
+        "producer": {
+          "$ref": "#/$defs/ArtifactProducer"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/ArtifactProvenance"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ArtifactProducer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ArtifactProvenance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "origin",
+            "operationId"
+          ],
+          "properties": {
+            "origin": {
+              "const": "operation"
+            },
+            "operationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "$ref": "#/$defs/ArtifactVersionRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "origin",
+            "runId",
+            "nodeId",
+            "attemptId",
+            "operationId"
+          ],
+          "properties": {
+            "origin": {
+              "const": "attempt"
+            },
+            "runId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "attemptId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "operationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "$ref": "#/$defs/ArtifactVersionRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "origin": {
+              "const": "investigation_attempt"
+            },
+            "collectionId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "unitId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "attemptId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "source": {
+              "$ref": "#/$defs/ArtifactVersionRef"
+            }
+          },
+          "required": [
+            "origin",
+            "collectionId",
+            "unitId",
+            "attemptId",
+            "operationId"
+          ]
+        }
+      ]
+    },
+    "ArtifactVersionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "version"
+      ],
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "pattern": "^artifact_"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ArtifactRepresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "representationId",
+        "artifact",
+        "representationKind",
+        "processor",
+        "mediaType",
+        "locator",
+        "digest",
+        "size",
+        "tokenEstimate",
+        "truncated",
+        "disclosure",
+        "diagnostics",
+        "metadata",
+        "createdAt"
+      ],
+      "properties": {
+        "representationId": {
+          "type": "string",
+          "pattern": "^representation_"
+        },
+        "artifact": {
+          "$ref": "#/$defs/ArtifactVersionRef"
+        },
+        "representationKind": {
+          "enum": [
+            "text",
+            "structured",
+            "table",
+            "image",
+            "preview",
+            "descriptor"
+          ]
+        },
+        "processor": {
+          "$ref": "#/$defs/ContentProcessorDescriptor"
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokenEstimate": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "disclosure": {
+          "enum": [
+            "raw",
+            "redacted",
+            "withheld"
+          ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ContentProcessorDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "mediaTypes"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

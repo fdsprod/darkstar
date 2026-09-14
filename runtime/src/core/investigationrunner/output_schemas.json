@@ -1,0 +1,415 @@
+{
+  "repository": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "schemaVersion": {
+        "const": 1
+      },
+      "repositoryId": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      },
+      "commitSha": {
+        "type": "string",
+        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+      },
+      "quality": {
+        "enum": [
+          "complete",
+          "partial",
+          "missing"
+        ]
+      },
+      "summary": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      },
+      "codeReferences": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "commitSha": {
+              "type": "string",
+              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "blobSha": {
+              "type": "string",
+              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+            },
+            "startLine": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endLine": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "repositoryId",
+            "commitSha",
+            "path",
+            "blobSha",
+            "startLine",
+            "endLine"
+          ]
+        },
+        "maxItems": 256
+      },
+      "affectedInterfaces": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      },
+      "reusablePatterns": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      },
+      "constraints": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      },
+      "risks": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      },
+      "unresolvedQuestions": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      },
+      "limitations": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "repositoryId",
+      "commitSha",
+      "quality",
+      "summary",
+      "codeReferences",
+      "affectedInterfaces",
+      "reusablePatterns",
+      "constraints",
+      "risks",
+      "unresolvedQuestions",
+      "limitations"
+    ],
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "quality": {
+              "const": "complete"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "codeReferences": {
+              "minItems": 1
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "quality": {
+              "const": "missing"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "codeReferences": {
+              "maxItems": 0
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "quality": {
+              "enum": [
+                "partial",
+                "missing"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "limitations": {
+              "minItems": 1
+            }
+          }
+        }
+      }
+    ]
+  },
+  "synthesis": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "schemaVersion": {
+        "const": 1
+      },
+      "quality": {
+        "enum": [
+          "complete",
+          "partial",
+          "missing"
+        ]
+      },
+      "evidenceStatus": {
+        "enum": [
+          "repository_evidence",
+          "no_repository_evidence"
+        ]
+      },
+      "summary": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      },
+      "findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "artifactId": {
+              "type": "string",
+              "pattern": "^artifact_.+$"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "repositoryId",
+            "artifactId",
+            "version",
+            "digest"
+          ]
+        },
+        "maxItems": 32
+      },
+      "missing": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          },
+          "required": [
+            "repositoryId",
+            "reason"
+          ]
+        },
+        "maxItems": 32
+      },
+      "crossRepositoryImplications": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      },
+      "constraints": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      },
+      "risks": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      },
+      "unresolvedQuestions": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      },
+      "limitations": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 32768
+        }
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "quality",
+      "evidenceStatus",
+      "summary",
+      "findings",
+      "missing",
+      "crossRepositoryImplications",
+      "constraints",
+      "risks",
+      "unresolvedQuestions",
+      "limitations"
+    ],
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "evidenceStatus": {
+              "const": "repository_evidence"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "findings": {
+              "minItems": 1
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "findings": {
+              "maxItems": 0
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "quality": {
+              "enum": [
+                "partial",
+                "missing"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "limitations": {
+              "minItems": 1
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "missing": {
+              "minItems": 1
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "quality": {
+              "enum": [
+                "partial",
+                "missing"
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

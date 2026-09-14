@@ -59,6 +59,7 @@ type Server struct {
 	inputs             InputRequestService
 	work               WorkService
 	repositoryScopes   RepositoryScopeService
+	investigations     InvestigationService
 	nativeTickets      NativeTicketService
 	trackerConnections TrackerConnectionService
 	backlog            BacklogService
@@ -565,6 +566,10 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		s.serveRepositoryScopes(response, request, requestID)
 		return
 	}
+	if path.Clean(request.URL.Path) == "/api/v1/investigations" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/investigations/") {
+		s.serveInvestigations(response, request, requestID)
+		return
+	}
 	if path.Clean(request.URL.Path) == "/api/v1/projects-v2" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/projects-v2/") {
 		s.serveProjectRepositories(response, request, requestID)
 		return
@@ -577,7 +582,8 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		s.serveWorkItems(response, request, requestID)
 		return
 	}
-	if path.Clean(request.URL.Path) == "/api/v1/artifacts" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifacts/") ||
+	if path.Clean(request.URL.Path) == "/api/v1/artifacts-v2" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifacts-v2/") ||
+		path.Clean(request.URL.Path) == "/api/v1/artifacts" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifacts/") ||
 		path.Clean(request.URL.Path) == "/api/v1/artifact-bindings" || strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/artifact-bindings/") ||
 		strings.HasPrefix(path.Clean(request.URL.Path), "/api/v1/representations/") {
 		s.serveArtifacts(response, request, requestID)

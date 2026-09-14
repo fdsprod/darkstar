@@ -99,8 +99,11 @@ func runArtifact(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 			return writeClientError(stdout, stderr, jsonOutput, command, err)
 		}
 		return writeArtifactResult(result, "Detached "+result.BindingID+".", false, jsonOutput, stdout, stderr, command)
-	case "list":
+	case "list", "list-v2":
 		endpoint := "artifacts"
+		if args[0] == "list-v2" {
+			endpoint = "artifacts-v2"
+		}
 		if len(args) == 3 && args[1] == "--target" {
 			target, err := parseArtifactTarget(args[2])
 			if err != nil {
@@ -119,7 +122,7 @@ func runArtifact(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 			_, _ = fmt.Fprintf(&human, "%s@%d %s %s\n", value.Artifact.ArtifactID, value.Artifact.Version, value.Artifact.DetectedMediaType, value.Freshness)
 		}
 		return writeArtifactResult(result, strings.TrimSuffix(human.String(), "\n"), false, jsonOutput, stdout, stderr, command)
-	case "show", "extract", "lint", "representations":
+	case "show", "show-v2", "content-v2", "extract", "lint", "representations":
 		if len(args) != 2 {
 			return artifactArgumentError(stdout, stderr, jsonOutput, command, errors.New("expected artifact "+args[0]+" <artifact-id>@<version>"))
 		}
@@ -253,13 +256,31 @@ func parseArtifactDiff(args []string) (artifactops.DiffInput, error) {
 
 func runArtifactReferenceCommand(ctx context.Context, session *clientapi.Session, verb string, reference artifactregistry.VersionRef, jsonOutput bool, stdout, stderr io.Writer, command string) int {
 	base := "artifacts/" + url.PathEscape(reference.ArtifactID)
+	if verb == "show-v2" || verb == "content-v2" {
+		base = "artifacts-v2/" + url.PathEscape(reference.ArtifactID)
+	}
 	switch verb {
-	case "show":
+	case "show", "show-v2":
 		var result artifactops.ArtifactView
 		if err := session.DoJSON(ctx, http.MethodGet, fmt.Sprintf("%s?version=%d", base, reference.Version), nil, &result); err != nil {
 			return writeClientError(stdout, stderr, jsonOutput, command, err)
 		}
 		return writeArtifactResult(result, fmt.Sprintf("%s@%d %s %s.", result.Artifact.ArtifactID, result.Artifact.Version, result.Artifact.DetectedMediaType, result.Freshness), false, jsonOutput, stdout, stderr, command)
+	case "content-v2":
+		content, err := session.DownloadArtifact(ctx, fmt.Sprintf("%s/content?version=%d", base, reference.Version))
+		if err != nil {
+			return writeClientError(stdout, stderr, jsonOutput, command, err)
+		}
+		if jsonOutput {
+			return writeArtifactResult(struct {
+				Artifact artifactregistry.VersionRef `json:"artifact"`
+				Content  []byte                      `json:"contentBase64"`
+			}{reference, content}, "", false, true, stdout, stderr, command)
+		}
+		if _, err := stdout.Write(content); err != nil {
+			return writeCommandError(stdout, stderr, false, command, "OUTPUT_FAILED", err.Error(), false, ExitInvariantViolation)
+		}
+		return int(ExitSuccess)
 	case "extract":
 		var result artifactderive.Result
 		if err := session.DoJSON(ctx, http.MethodPost, fmt.Sprintf("%s/extract?version=%d", base, reference.Version), nil, &result, clientHeader("Idempotency-Key", newIdempotencyKey())); err != nil {

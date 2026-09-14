@@ -282,6 +282,7 @@ type stubArtifactService struct {
 	representationMeta  artifactops.Content
 	representationErr   error
 	showValue           artifactops.ArtifactView
+	listValue           []artifactops.ArtifactView
 	diffInput           artifactops.DiffInput
 	diffValue           artifactops.VersionDiff
 	diffErr             error
@@ -306,14 +307,21 @@ func (*stubArtifactService) Detach(context.Context, string, string) (artifactbin
 
 func (service *stubArtifactService) List(_ context.Context, input artifactops.ListInput) ([]artifactops.ArtifactView, error) {
 	service.listInput = input
+	if service.listValue != nil {
+		return service.listValue, nil
+	}
 	return []artifactops.ArtifactView{}, nil
 }
 
-func (service *stubArtifactService) Show(context.Context, string, uint64) (artifactops.ArtifactView, error) {
+func (service *stubArtifactService) Show(_ context.Context, id string, version uint64) (artifactops.ArtifactView, error) {
 	if service.showValue.Artifact.ArtifactID != "" {
-		return service.showValue, nil
+		value := service.showValue
+		if value.Artifact.Provenance == nil {
+			value.Artifact.Provenance = artifactregistry.OperationProvenance{OperationID: "operation_fixture"}
+		}
+		return value, nil
 	}
-	return artifactops.ArtifactView{}, errors.New("not implemented")
+	return artifactops.ArtifactView{Artifact: artifactregistry.ArtifactVersion{ArtifactID: id, Version: version, Provenance: artifactregistry.OperationProvenance{OperationID: "operation_fixture"}}}, nil
 }
 
 func (*stubArtifactService) Representations(context.Context, artifactregistry.VersionRef) ([]representationregistry.Representation, error) {
@@ -362,3 +370,54 @@ func (service *stubArtifactService) RepresentationContent(context.Context, strin
 }
 
 var _ ArtifactService = (*stubArtifactService)(nil)
+
+func TestArtifactVersionedReadsPreserveInvestigationOrigin(t *testing.T) {
+	legacy := artifactops.ArtifactView{Artifact: artifactregistry.ArtifactVersion{ArtifactID: "artifact_legacy", Version: 1, Provenance: artifactregistry.OperationProvenance{OperationID: "operation_legacy"}}}
+	investigation := artifactops.ArtifactView{Artifact: artifactregistry.ArtifactVersion{ArtifactID: "artifact_findings", Version: 1, Provenance: artifactregistry.InvestigationProvenance{CollectionID: "investigation_one", UnitID: "investigation_unit_one", AttemptID: "attempt_one", OperationID: "operation_one"}}}
+	service := &stubArtifactService{listValue: []artifactops.ArtifactView{legacy, investigation}, showValue: investigation, originalBytes: []byte("{}"), originalMeta: artifactops.Content{Digest: strings.Repeat("a", 64), Size: 2}}
+	server, endpoint := startArtifactTestServer(t, service)
+	defer closeTestServer(t, server)
+	for _, test := range []struct {
+		path  string
+		count int
+	}{{"artifacts", 1}, {"artifacts-v2", 2}} {
+		response := get(t, endpoint.BaseURL()+"/api/v1/"+test.path, endpoint.AuthorizationHeader())
+		var value []artifactops.ArtifactView
+		decodeJSON(t, response, &value)
+		_ = response.Body.Close()
+		if len(value) != test.count {
+			t.Fatalf("%s returned %d artifacts", test.path, len(value))
+		}
+	}
+	for _, suffix := range []string{"?version=1", "/content?version=1"} {
+		response := get(t, endpoint.BaseURL()+"/api/v1/artifacts/artifact_findings"+suffix, endpoint.AuthorizationHeader())
+		assertAPIError(t, response, http.StatusConflict, "ARTIFACT_REPRESENTATION_UNSUPPORTED")
+		_ = response.Body.Close()
+	}
+	response := get(t, endpoint.BaseURL()+"/api/v1/artifacts-v2/artifact_findings?version=1", endpoint.AuthorizationHeader())
+	var value artifactops.ArtifactView
+	decodeJSON(t, response, &value)
+	_ = response.Body.Close()
+	origin, ok := value.Artifact.Provenance.(artifactregistry.InvestigationProvenance)
+	if !ok || origin.CollectionID != "investigation_one" || origin.UnitID != "investigation_unit_one" {
+		t.Fatalf("exact investigation provenance lost: %#v", value.Artifact.Provenance)
+	}
+	response = get(t, endpoint.BaseURL()+"/api/v1/artifacts-v2/artifact_findings/content?version=1", endpoint.AuthorizationHeader())
+	content, err := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if err != nil || response.StatusCode != http.StatusOK || string(content) != "{}" || response.Header.Get("X-Darkstar-Content-Digest") != "sha256="+strings.Repeat("a", 64) {
+		t.Fatalf("versioned content: status=%d bytes=%q error=%v", response.StatusCode, content, err)
+	}
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint.BaseURL()+"/api/v1/artifacts/artifact_findings/revisions", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", endpoint.AuthorizationHeader())
+	request.Header.Set("If-Match", `"1"`)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAPIError(t, response, http.StatusConflict, "ARTIFACT_REPRESENTATION_UNSUPPORTED")
+	_ = response.Body.Close()
+}

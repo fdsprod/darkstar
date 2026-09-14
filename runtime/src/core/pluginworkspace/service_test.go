@@ -101,7 +101,8 @@ func TestPublicationUsesBoundAttemptAndWorkItemAndCanReconcileAttachment(t *test
 	if _, err := s.Call(ctx, "workspace.publish_artifact", raw); err != nil {
 		t.Fatal(err)
 	}
-	if a.keys[0] != a.keys[1] || a.inputs[0].GeneratedBy.AttemptID != "attempt_one" || a.bindings[1].Target.ID != "work_one" || a.bindings[1].Target.Kind != artifactbinding.TargetWork {
+	provenance, validOrigin := a.inputs[0].GeneratedBy.(*artifactregistry.AttemptProvenance)
+	if !validOrigin || a.keys[0] != a.keys[1] || provenance.AttemptID != "attempt_one" || a.bindings[1].Target.ID != "work_one" || a.bindings[1].Target.Kind != artifactbinding.TargetWork {
 		t.Fatal("publication lost retry identity or ownership")
 	}
 	if w.grant != (workspace.Grant{WorkItemID: "work_one", PluginID: "test/files", AttemptID: "attempt_one"}) {

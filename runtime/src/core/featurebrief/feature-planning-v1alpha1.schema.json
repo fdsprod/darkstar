@@ -1,0 +1,1215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/feature-planning-v1alpha1.schema.json",
+  "title": "DARKSTAR feature planning v1alpha1",
+  "description": "Closed planning content and separate publication links/handoff observations. Requires semantic validation against exact referenced artifact revisions; observations do not authorize transitions.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/featureBrief"
+    },
+    {
+      "$ref": "#/$defs/storyBacklog"
+    },
+    {
+      "$ref": "#/$defs/storyLinks"
+    },
+    {
+      "$ref": "#/$defs/handoffObservation"
+    }
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "version",
+        "sha256"
+      ],
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "included",
+        "excluded"
+      ],
+      "properties": {
+        "included": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "excluded": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "artifact",
+        "locator",
+        "finding"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "artifact": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "finding": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "question",
+        "evidenceKeys",
+        "state"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "evidenceKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "state": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "blocking"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "open"
+                },
+                "blocking": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "resolution",
+                "evidenceKeys"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "resolved"
+                },
+                "resolution": {
+                  "$ref": "#/$defs/text"
+                },
+                "evidenceKeys": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "#/$defs/key"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "reason"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "withdrawn"
+                },
+                "reason": {
+                  "$ref": "#/$defs/text"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "outcome",
+        "acceptanceCriteria",
+        "evidenceKeys"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "outcome": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "acceptanceCriteria": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "evidenceKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryId",
+        "membershipRevision"
+      ],
+      "properties": {
+        "repositoryId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "membershipRevision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "repositoryImpact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unknown"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "rationale"
+          ],
+          "properties": {
+            "kind": {
+              "const": "none"
+            },
+            "rationale": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repositoryIds"
+          ],
+          "properties": {
+            "kind": {
+              "const": "repositories"
+            },
+            "repositoryIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          }
+        }
+      ]
+    },
+    "keyMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceId",
+        "key"
+      ],
+      "properties": {
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        }
+      }
+    },
+    "lineage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "initial"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "previous"
+          ],
+          "properties": {
+            "kind": {
+              "const": "revision"
+            },
+            "previous": {
+              "$ref": "#/$defs/artifactRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "source",
+            "sourceSchema",
+            "keyMappings",
+            "notes"
+          ],
+          "properties": {
+            "kind": {
+              "const": "migration"
+            },
+            "source": {
+              "$ref": "#/$defs/artifactRef"
+            },
+            "sourceSchema": {
+              "const": "planning-artifact-v1alpha1"
+            },
+            "keyMappings": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/keyMapping"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          }
+        }
+      ]
+    },
+    "storyLifecycle": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "active"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "retired"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason",
+            "replacementKeys"
+          ],
+          "properties": {
+            "kind": {
+              "const": "split"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "replacementKeys": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+              },
+              "minItems": 2,
+              "uniqueItems": true
+            }
+          }
+        }
+      ]
+    },
+    "story": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "title",
+        "outcome",
+        "acceptanceCriteria",
+        "scope",
+        "requirementKeys",
+        "repositoryImpact",
+        "dependencies",
+        "evidenceKeys",
+        "decisionKeys",
+        "lifecycle"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "outcome": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "acceptanceCriteria": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "requirementKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "repositoryImpact": {
+          "$ref": "#/$defs/repositoryImpact"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "evidenceKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "decisionKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/storyLifecycle"
+        }
+      }
+    },
+    "featureBrief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactType",
+        "schemaVersion",
+        "projectId",
+        "featureKey",
+        "lineage",
+        "title",
+        "problem",
+        "users",
+        "outcomes",
+        "scope",
+        "requirements",
+        "repositories",
+        "evidence",
+        "decisions"
+      ],
+      "properties": {
+        "artifactType": {
+          "const": "feature_brief"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "featureKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "lineage": {
+          "$ref": "#/$defs/lineage"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "problem": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "requirements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/requirement"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "repositories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/repository"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/decision"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      }
+    },
+    "storyBacklog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactType",
+        "schemaVersion",
+        "projectId",
+        "featureKey",
+        "lineage",
+        "brief",
+        "stories",
+        "evidence",
+        "decisions"
+      ],
+      "properties": {
+        "artifactType": {
+          "const": "story_backlog"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "featureKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "lineage": {
+          "$ref": "#/$defs/lineage"
+        },
+        "brief": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "stories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/story"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/decision"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      }
+    },
+    "destination": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "connectorId",
+            "accountId",
+            "workspaceId",
+            "teamId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "linear"
+            },
+            "connectorId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "accountId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "workspaceId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "teamId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "connectorId",
+            "accountId",
+            "host",
+            "repositoryId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "github_issues"
+            },
+            "connectorId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "accountId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        }
+      ]
+    },
+    "storyLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storyKey",
+        "ticketId",
+        "url",
+        "observedRevision",
+        "evidence"
+      ],
+      "properties": {
+        "storyKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "ticketId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://[^\\s]+$"
+        },
+        "observedRevision": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "evidence": {
+          "$ref": "#/$defs/artifactRef"
+        }
+      }
+    },
+    "storyLinks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactType",
+        "schemaVersion",
+        "projectId",
+        "featureKey",
+        "backlog",
+        "destination",
+        "destinationBindingRevision",
+        "links"
+      ],
+      "properties": {
+        "artifactType": {
+          "const": "story_links"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "featureKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "backlog": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "destination": {
+          "$ref": "#/$defs/destination"
+        },
+        "destinationBindingRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/storyLink"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "milestone": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "approvalId",
+            "backlog"
+          ],
+          "properties": {
+            "kind": {
+              "const": "plan_approved"
+            },
+            "approvalId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "backlog": {
+              "$ref": "#/$defs/artifactRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repositoryId",
+            "commit",
+            "validationProfile"
+          ],
+          "properties": {
+            "kind": {
+              "const": "tests_passed"
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "commit": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "validationProfile": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repositoryId",
+            "pullRequestId",
+            "commit"
+          ],
+          "properties": {
+            "kind": {
+              "const": "pull_request_accepted"
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "pullRequestId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "commit": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "environment",
+            "releaseId",
+            "commit"
+          ],
+          "properties": {
+            "kind": {
+              "const": "deployed"
+            },
+            "environment": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "releaseId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "commit": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repositoryId",
+            "commit",
+            "validationProfile"
+          ],
+          "properties": {
+            "kind": {
+              "const": "implementation_validated"
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "commit": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "validationProfile": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repositoryId",
+            "pullRequestId",
+            "commit"
+          ],
+          "properties": {
+            "kind": {
+              "const": "pull_request_created"
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "pullRequestId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "commit": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        }
+      ]
+    },
+    "authority": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "operationId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "daemon"
+            },
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "connectorId",
+            "accountId",
+            "nativeObservationId",
+            "nativeRevision"
+          ],
+          "properties": {
+            "kind": {
+              "const": "external"
+            },
+            "connectorId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "accountId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "nativeObservationId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "nativeRevision": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "actorId",
+            "decisionId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "human"
+            },
+            "actorId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "decisionId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          }
+        }
+      ]
+    },
+    "handoffObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactType",
+        "schemaVersion",
+        "projectId",
+        "featureKey",
+        "backlog",
+        "storyKeys",
+        "milestone",
+        "authority",
+        "observedAt",
+        "evidence"
+      ],
+      "properties": {
+        "artifactType": {
+          "const": "handoff_observation"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "featureKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "backlog": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "storyKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "milestone": {
+          "$ref": "#/$defs/milestone"
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifactRef"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -299,6 +300,15 @@ func (session *Session) DoJSON(ctx context.Context, method, resource string, req
 
 // Download sends one authenticated request for a finite binary resource.
 func (session *Session) Download(ctx context.Context, resource string) ([]byte, error) {
+	return session.download(ctx, resource, "application/zip")
+}
+
+// DownloadArtifact reads exact immutable bytes and verifies the daemon digest.
+func (session *Session) DownloadArtifact(ctx context.Context, resource string) ([]byte, error) {
+	return session.download(ctx, resource, "application/octet-stream")
+}
+
+func (session *Session) download(ctx context.Context, resource, mediaType string) ([]byte, error) {
 	resourceURL, err := session.resourceURL(resource)
 	if err != nil {
 		return nil, &Failure{Kind: FailureProtocol, Op: "build API request", Err: err}
@@ -308,7 +318,7 @@ func (session *Session) Download(ctx context.Context, resource string) ([]byte, 
 		return nil, &Failure{Kind: FailureProtocol, Op: "build API request", Err: err}
 	}
 	request.Header.Set("Authorization", session.endpoint.AuthorizationHeader())
-	request.Header.Set("Accept", "application/zip")
+	request.Header.Set("Accept", mediaType)
 	response, err := session.client.http.Do(request)
 	if err != nil {
 		return nil, &Failure{Kind: FailureUnavailable, Op: "call daemon API", Err: err}
@@ -335,8 +345,11 @@ func (session *Session) Download(ctx context.Context, resource string) ([]byte, 
 		problem.HTTPStatus = response.StatusCode
 		return nil, &problem
 	}
-	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/zip") {
+	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, mediaType) {
 		return nil, &Failure{Kind: FailureProtocol, Op: "validate daemon API response", Err: fmt.Errorf("unexpected Content-Type %q", contentType)}
+	}
+	if mediaType == "application/octet-stream" && response.Header.Get("X-Darkstar-Content-Digest") != fmt.Sprintf("sha256=%x", sha256.Sum256(content)) {
+		return nil, &Failure{Kind: FailureProtocol, Op: "verify artifact bytes", Err: errors.New("artifact content digest does not match the exact response bytes")}
 	}
 	return content, nil
 }

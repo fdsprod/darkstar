@@ -1,0 +1,1162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkstar.local/schemas/investigation-v1.schema.json",
+  "title": "Bounded repository investigation collections and validated findings",
+  "description": "Daemon-owned collection execution, immutable task/scope/provider identity, retained attempts, validated findings, and synthesis. Schema validation is followed by exact artifact, repository revision, code path/line, and missing-evidence semantic validation.",
+  "$ref": "#/$defs/InvestigationView",
+  "$defs": {
+    "ArtifactReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "pattern": "^artifact_.+$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "artifactId",
+        "version",
+        "sha256"
+      ]
+    },
+    "ArtifactVersionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "pattern": "^artifact_.+$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "artifactId",
+        "version"
+      ]
+    },
+    "TaskInput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S",
+              "maxLength": 131072
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "feature_brief"
+            },
+            "featureBrief": {
+              "$ref": "#/$defs/ArtifactReference"
+            }
+          },
+          "required": [
+            "kind",
+            "featureBrief"
+          ]
+        }
+      ]
+    },
+    "FrozenTask": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "content": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "task": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "task"
+              ]
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "kind",
+            "content",
+            "digest"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "feature_brief"
+            },
+            "content": {
+              "$ref": "feature-planning-v1alpha1.schema.json#/$defs/featureBrief"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "source": {
+              "$ref": "#/$defs/ArtifactReference"
+            }
+          },
+          "required": [
+            "kind",
+            "content",
+            "digest",
+            "source"
+          ]
+        }
+      ]
+    },
+    "PrepareInvestigationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scopeId": {
+          "type": "string",
+          "pattern": "^scope_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "task": {
+          "$ref": "#/$defs/TaskInput"
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8,
+          "default": 2,
+          "description": "Zero or omission selects the daemon default of 2; persisted concurrency is 1 to 8."
+        }
+      },
+      "required": [
+        "scopeId",
+        "task"
+      ]
+    },
+    "InvestigationControlRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    },
+    "ProviderSelection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "capabilityFingerprint"
+          ],
+          "properties": {
+            "provider": {
+              "const": "daemon"
+            },
+            "capabilityFingerprint": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "not": {
+                "const": "daemon"
+              }
+            },
+            "extension": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "id",
+                "version",
+                "digest"
+              ]
+            },
+            "capabilityFingerprint": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "provider",
+            "extension",
+            "capabilityFingerprint"
+          ]
+        }
+      ]
+    },
+    "CodeReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repositoryId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "commitSha": {
+          "type": "string",
+          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "blobSha": {
+          "type": "string",
+          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "repositoryId",
+        "commitSha",
+        "path",
+        "blobSha",
+        "startLine",
+        "endLine"
+      ]
+    },
+    "RepositoryFindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "repositoryId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "commitSha": {
+          "type": "string",
+          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+        },
+        "quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "missing"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "codeReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CodeReference"
+          },
+          "maxItems": 256
+        },
+        "affectedInterfaces": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        },
+        "reusablePatterns": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        },
+        "risks": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        },
+        "unresolvedQuestions": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repositoryId",
+        "commitSha",
+        "quality",
+        "summary",
+        "codeReferences",
+        "affectedInterfaces",
+        "reusablePatterns",
+        "constraints",
+        "risks",
+        "unresolvedQuestions",
+        "limitations"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "quality": {
+                "const": "complete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "codeReferences": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "quality": {
+                "const": "missing"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "codeReferences": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "quality": {
+                "enum": [
+                  "partial",
+                  "missing"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "limitations": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "FindingReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repositoryId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "artifactId": {
+          "type": "string",
+          "pattern": "^artifact_.+$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "repositoryId",
+        "artifactId",
+        "version",
+        "digest"
+      ]
+    },
+    "MissingRepository": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repositoryId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "repositoryId",
+        "reason"
+      ]
+    },
+    "InvestigationSynthesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "missing"
+          ]
+        },
+        "evidenceStatus": {
+          "enum": [
+            "repository_evidence",
+            "no_repository_evidence"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FindingReference"
+          },
+          "maxItems": 32
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MissingRepository"
+          },
+          "maxItems": 32
+        },
+        "crossRepositoryImplications": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        },
+        "risks": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        },
+        "unresolvedQuestions": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 32768
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "quality",
+        "evidenceStatus",
+        "summary",
+        "findings",
+        "missing",
+        "crossRepositoryImplications",
+        "constraints",
+        "risks",
+        "unresolvedQuestions",
+        "limitations"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "evidenceStatus": {
+                "const": "repository_evidence"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "findings": {
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "findings": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "quality": {
+                "enum": [
+                  "partial",
+                  "missing"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "limitations": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "missing": {
+                "minItems": 1
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "quality": {
+                "enum": [
+                  "partial",
+                  "missing"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "InvestigationOutput": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RepositoryFindings"
+        },
+        {
+          "$ref": "#/$defs/InvestigationSynthesis"
+        }
+      ]
+    },
+    "UnitResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "repository"
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "quality": {
+              "enum": [
+                "complete",
+                "partial",
+                "missing"
+              ]
+            },
+            "findings": {
+              "$ref": "#/$defs/RepositoryFindings"
+            },
+            "artifact": {
+              "$ref": "#/$defs/ArtifactVersionRef"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "kind",
+            "repositoryId",
+            "quality",
+            "findings",
+            "artifact",
+            "digest"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "synthesis"
+            },
+            "quality": {
+              "enum": [
+                "complete",
+                "partial",
+                "missing"
+              ]
+            },
+            "findings": {
+              "$ref": "#/$defs/InvestigationSynthesis"
+            },
+            "artifact": {
+              "$ref": "#/$defs/ArtifactVersionRef"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "kind",
+            "quality",
+            "findings",
+            "artifact",
+            "digest"
+          ]
+        }
+      ]
+    },
+    "InvestigationUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^investigation_unit_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "collectionId": {
+          "type": "string",
+          "pattern": "^investigation_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "kind": {
+          "enum": [
+            "repository",
+            "synthesis"
+          ]
+        },
+        "repositoryId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "uncertain",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "currentAttemptId": {
+          "type": "string",
+          "pattern": "^attempt_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "result": {
+          "$ref": "#/$defs/UnitResult"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "id",
+        "collectionId",
+        "kind",
+        "status"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "repository"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "repositoryId"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "repositoryId"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "result",
+              "currentAttemptId"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "running",
+                  "uncertain"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "currentAttemptId"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "failed",
+                  "cancelled",
+                  "uncertain"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        }
+      ]
+    },
+    "ProviderHandle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "AttemptID": {
+          "type": "string",
+          "pattern": "^attempt_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "Provider": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "ProviderThreadID": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "ProviderTurnID": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "ProcessOwnerID": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "AttemptID",
+        "Provider",
+        "ProviderThreadID",
+        "ProviderTurnID",
+        "ProcessOwnerID"
+      ]
+    },
+    "InvestigationAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^attempt_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "collectionId": {
+          "type": "string",
+          "pattern": "^investigation_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "unitId": {
+          "type": "string",
+          "pattern": "^investigation_unit_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "running",
+            "uncertain",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "leaseExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "capabilityFingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "contextDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "handle": {
+          "$ref": "#/$defs/ProviderHandle"
+        },
+        "lastSequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "submission": {
+          "$ref": "#/$defs/InvestigationOutput"
+        },
+        "result": {
+          "$ref": "#/$defs/UnitResult"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "collectionId",
+        "unitId",
+        "number",
+        "state",
+        "ownerId",
+        "leaseExpiresAt",
+        "lastSequence",
+        "createdAt",
+        "updatedAt"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "succeeded"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "result"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "uncertain",
+                  "failed",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        }
+      ]
+    },
+    "InvestigationCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^investigation_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "projectId": {
+          "type": "string",
+          "pattern": "^project_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "scopeId": {
+          "type": "string",
+          "pattern": "^scope_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "scopeDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "task": {
+          "$ref": "#/$defs/FrozenTask"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderSelection"
+        },
+        "repositoryIds": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "requestDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "enum": [
+            "prepared",
+            "running",
+            "cancelling",
+            "succeeded",
+            "partial",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "id",
+        "projectId",
+        "scopeId",
+        "scopeDigest",
+        "task",
+        "provider",
+        "repositoryIds",
+        "concurrency",
+        "requestDigest",
+        "createdAt",
+        "status",
+        "revision",
+        "updatedAt"
+      ]
+    },
+    "InvestigationView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "collection": {
+          "$ref": "#/$defs/InvestigationCollection"
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InvestigationUnit"
+          },
+          "maxItems": 33
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InvestigationAttempt"
+          }
+        },
+        "schedulerError": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Current local scheduler availability failure, separate from persisted collection outcome."
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "collection",
+        "units",
+        "attempts"
+      ]
+    }
+  }
+}

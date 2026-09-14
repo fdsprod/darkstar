@@ -10,6 +10,10 @@ state transitions, authorization, or other business rules.
 [repository investigation scopes](investigation-scopes.md), including explicit
 zero-repository scopes and provider access limitations.
 
+`darkstar investigation prepare|show|start|retry|cancel` manages bounded
+[repository investigations](investigations.md). Preparation freezes an exact
+scope and task; execution controls require an explicit collection revision.
+
 `darkstar api status` exercises this boundary. It discovers a running daemon or
 idempotently autostarts one, authenticates `GET /api/v1/`, validates the response
 version, and reports readiness. Lifecycle inspection is intentionally different:

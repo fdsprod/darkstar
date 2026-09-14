@@ -63,12 +63,21 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 		s.serveRepresentationContent(response, request, requestID, service, segments[3:])
 		return
 	}
-	if segments[2] != "artifacts" {
+	version2 := segments[2] == "artifacts-v2"
+	if segments[2] != "artifacts" && !version2 {
 		writeArtifactError(response, requestID, errors.New("invalid artifact route"))
 		return
 	}
+	if version2 && request.Method != http.MethodGet && request.Method != http.MethodHead {
+		writeArtifactMethod(response, requestID, "GET, HEAD")
+		return
+	}
+	if version2 && len(segments) > 4 && (len(segments) != 5 || segments[4] != "content") {
+		writeArtifactError(response, requestID, artifactregistry.ErrNotFound)
+		return
+	}
 	if len(segments) == 3 {
-		s.serveArtifactCollection(response, request, requestID, service)
+		s.serveArtifactCollection(response, request, requestID, service, version2)
 		return
 	}
 	artifactID := segments[3]
@@ -89,6 +98,10 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 		value, err := service.Show(request.Context(), artifactID, version)
 		if err != nil {
 			writeArtifactError(response, requestID, err)
+			return
+		}
+		if !version2 && !legacyArtifactOrigin(value.Artifact.Provenance) {
+			writeArtifactVersionRequired(response, requestID, artifactID)
 			return
 		}
 		writeJSON(response, http.StatusOK, value)
@@ -113,6 +126,9 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 			writeArtifactError(response, requestID, err)
 			return
 		}
+		if !version2 && !allowLegacyArtifact(response, request, requestID, service, artifactID, version) {
+			return
+		}
 		content, err := service.OriginalContent(request.Context(), artifactregistry.VersionRef{ArtifactID: artifactID, Version: version})
 		if err != nil {
 			writeArtifactError(response, requestID, err)
@@ -127,6 +143,9 @@ func (s *Server) serveArtifacts(response http.ResponseWriter, request *http.Requ
 		baseVersion, err := parseIfMatch(request.Header.Get("If-Match"))
 		if err != nil {
 			writeArtifactError(response, requestID, err)
+			return
+		}
+		if !allowLegacyArtifact(response, request, requestID, service, artifactID, baseVersion) {
 			return
 		}
 		var input artifactops.IngestInput
@@ -355,7 +374,7 @@ func safeArtifactFileName(value string) string {
 	return value
 }
 
-func (s *Server) serveArtifactCollection(response http.ResponseWriter, request *http.Request, requestID string, service ArtifactService) {
+func (s *Server) serveArtifactCollection(response http.ResponseWriter, request *http.Request, requestID string, service ArtifactService, version2 bool) {
 	switch request.Method {
 	case http.MethodPost:
 		var input artifactops.IngestInput
@@ -391,10 +410,46 @@ func (s *Server) serveArtifactCollection(response http.ResponseWriter, request *
 			writeArtifactError(response, requestID, err)
 			return
 		}
+		if !version2 {
+			legacy := make([]artifactops.ArtifactView, 0, len(value))
+			for _, artifact := range value {
+				if legacyArtifactOrigin(artifact.Artifact.Provenance) {
+					legacy = append(legacy, artifact)
+				}
+			}
+			value = legacy
+			response.Header().Set("Link", `</api/v1/artifacts-v2>; rel="alternate"`)
+		}
 		writeJSON(response, http.StatusOK, value)
 	default:
 		writeArtifactMethod(response, requestID, "GET, HEAD, POST")
 	}
+}
+
+func legacyArtifactOrigin(provenance artifactregistry.Provenance) bool {
+	switch provenance.(type) {
+	case artifactregistry.OperationProvenance, artifactregistry.AttemptProvenance:
+		return true
+	default:
+		return false
+	}
+}
+
+func allowLegacyArtifact(response http.ResponseWriter, request *http.Request, requestID string, service ArtifactService, artifactID string, version uint64) bool {
+	view, err := service.Show(request.Context(), artifactID, version)
+	if err != nil {
+		writeArtifactError(response, requestID, err)
+		return false
+	}
+	if !legacyArtifactOrigin(view.Artifact.Provenance) {
+		writeArtifactVersionRequired(response, requestID, artifactID)
+		return false
+	}
+	return true
+}
+
+func writeArtifactVersionRequired(response http.ResponseWriter, requestID, artifactID string) {
+	writeAPIError(response, http.StatusConflict, apiError{SchemaVersion: 1, Code: "ARTIFACT_REPRESENTATION_UNSUPPORTED", Message: "This artifact has investigation provenance. Read it through /api/v1/artifacts-v2/" + url.PathEscape(artifactID) + " with its exact version. Investigation artifact editing is not available through legacy routes.", RequestID: requestID})
 }
 
 func (s *Server) serveArtifactBindings(response http.ResponseWriter, request *http.Request, requestID string, service ArtifactService, remainder []string) {

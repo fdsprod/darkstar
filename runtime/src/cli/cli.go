@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
 	"darkstar/src/adapters/artifactstore/folder"
@@ -40,6 +41,7 @@ import (
 	"darkstar/src/core/configmutation"
 	"darkstar/src/core/contentlibrary"
 	"darkstar/src/core/health"
+	"darkstar/src/core/investigation"
 	"darkstar/src/core/lateevidence"
 	"darkstar/src/core/preparation"
 	"darkstar/src/core/recovery"
@@ -76,6 +78,7 @@ Commands:
   doctor     Report subsystem readiness and remediation codes
   help       Show this help
   input      List, inspect, answer, and retry provider input requests
+  investigation Prepare, execute, and inspect repository investigations
   review     Inspect and continue checkpoint review sessions
   project    Register, list, and inspect projects
   run        Prepare, start, inspect, control, watch, and export runs
@@ -322,6 +325,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runProject(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "input":
 		return runInput(cleanArgs[1:], jsonOutput, stdout, stderr)
+	case "investigation":
+		return runInvestigation(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "review":
 		return runReview(cleanArgs[1:], jsonOutput, stdout, stderr)
 	case "run":
@@ -409,12 +414,19 @@ type daemonAPIService struct {
 	defaultWorkflowDirectory string
 	database                 *sqlite.Database
 	executions               *runexecution.Service
+	investigations           *investigation.Service
+	investigationCancel      context.CancelFunc
+	investigationDone        chan error
+	investigationAdmission   sync.Mutex
 	workspaces               *workspacefolder.Folder
 	providerWiring           *daemonProviderWiring
 }
 
 func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) (startErr error) {
 	defer func() {
+		if startErr != nil {
+			_ = service.stopInvestigations()
+		}
 		if startErr != nil && service.providerWiring != nil {
 			service.providerWiring.closePluginProviders()
 		}
@@ -724,6 +736,9 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 	}); err != nil {
 		return closeArtifactSetup(err)
 	}
+	if err := executions.SetSharedAdmission(&service.investigationAdmission, database.ActiveInvestigationSlots); err != nil {
+		return closeArtifactSetup(err)
+	}
 
 	if err := service.server.SetRuns(executions); err != nil {
 		_ = executions.Close()
@@ -818,7 +833,11 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.executions = nil
 		return err
 	}
+	if err := service.configureInvestigations(ctx, state.InstanceID, repositoryScopes, snapshotExporter, artifacts); err != nil {
+		return closeArtifactSetup(err)
+	}
 	if err := service.server.Start(ctx, state.Process.PID, state.Process.StartedAt); err != nil {
+		_ = service.stopInvestigations()
 		_ = executions.Close()
 		_ = database.Close()
 		service.database = nil
@@ -851,6 +870,7 @@ func (service *daemonAPIService) workflowDirectories() ([]workflowfilesystem.Dir
 
 func (service *daemonAPIService) Close() error {
 	service.stopBacklogPolling()
+	investigationErr := service.stopInvestigations()
 	var executionErr error
 	if service.executions != nil {
 		executionErr = service.executions.Close()
@@ -871,7 +891,7 @@ func (service *daemonAPIService) Close() error {
 		workspaceErr = service.workspaces.Close()
 		service.workspaces = nil
 	}
-	return errors.Join(executionErr, serverErr, databaseErr, workspaceErr)
+	return errors.Join(investigationErr, executionErr, serverErr, databaseErr, workspaceErr)
 }
 
 type daemonRunEvent struct {

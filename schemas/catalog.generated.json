@@ -25,6 +25,14 @@
       "version": "v1alpha2"
     },
     {
+      "file": "artifact-v1alpha3.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/artifact-v1alpha3.schema.json",
+      "name": "artifact-v1alpha3",
+      "sha256": "762afb8c586ea4f5da8e7a41eebaa3819c95a987680c046a9e0392baebb23ac9",
+      "version": "v1alpha3"
+    },
+    {
       "file": "builtin-skills-v1alpha1.schema.json",
       "format": "json-schema-2020-12",
       "id": "https://darkstar.local/schemas/builtin-skills-v1alpha1.schema.json",
@@ -97,11 +105,19 @@
       "version": "unversioned"
     },
     {
+      "file": "investigation-v1.schema.json",
+      "format": "json-schema-2020-12",
+      "id": "https://darkstar.local/schemas/investigation-v1.schema.json",
+      "name": "investigation-v1",
+      "sha256": "e6e2a032879a74144314de7ac4be16f67a0a2fe5165a8c20c62f247e2f789f99",
+      "version": "unversioned"
+    },
+    {
       "file": "openapi-v1alpha1.json",
       "format": "openapi-3.1",
       "id": null,
       "name": "openapi-v1alpha1",
-      "sha256": "db4a6a51c848e881456500a09b180940a0663e414e13c3a4587019781f9ded7d",
+      "sha256": "d23432602490637f00e0e6b6dd7fc89a7464fd99394ccfcef6a79c1192666b74",
       "version": "v1alpha1"
     },
     {

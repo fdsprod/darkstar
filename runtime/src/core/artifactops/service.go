@@ -41,7 +41,7 @@ var ErrDiffStorage = errors.New("artifact diff storage verification failed")
 var errDiffUnsupported = errors.New("artifact representation is not supported for text diff")
 
 type IngestInput struct {
-	GeneratedBy *artifactregistry.AttemptProvenance `json:"-"`
+	GeneratedBy artifactregistry.Provenance `json:"-"`
 
 	ArtifactID  string                       `json:"artifactId,omitempty"`
 	SourceKind  artifactregistry.SourceKind  `json:"sourceKind"`

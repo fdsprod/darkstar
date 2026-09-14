@@ -10,6 +10,7 @@ import (
 
 func TestArtifactVersionJSONRoundTripPreservesClosedProvenance(t *testing.T) {
 	for _, provenance := range []Provenance{
+		InvestigationProvenance{CollectionID: "investigation_one", UnitID: "unit_one", AttemptID: "attempt_one", OperationID: "operation_three"},
 		OperationProvenance{OperationID: "operation_one", Source: &VersionRef{ArtifactID: "artifact_source", Version: 2}},
 		AttemptProvenance{RunID: "run_one", NodeID: "design", AttemptID: "attempt_one", OperationID: "operation_two"},
 	} {

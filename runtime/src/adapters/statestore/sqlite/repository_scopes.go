@@ -299,11 +299,7 @@ func (d *Database) BindRepositoryScopeAttempt(ctx context.Context, binding state
 	if err = readScopeJSON(ctx, tx, `SELECT record_json FROM repository_scopes WHERE scope_id=?`, binding.ScopeID, &scope); err != nil {
 		return binding, err
 	}
-	preparation, err := readScopePreparation(ctx, tx, binding.ScopeID)
-	if err != nil {
-		return binding, err
-	}
-	if preparation.Status != statestore.RepositoryScopeReady || binding.ScopeDigest != scope.Digest {
+	if binding.ScopeDigest != scope.Digest {
 		return binding, statestore.ErrRepositoryScopeConflict
 	}
 	evidence := make([]statestore.RepositoryScopeEvidence, 0, len(binding.RepositoryIDs))

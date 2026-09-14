@@ -23,8 +23,8 @@ var (
 const artifactVersionSelect = `SELECT artifact_id, version, idempotency_key, source_kind, source_name,
 	blob_digest, size, declared_media_type, detected_media_type, locator, sensitivity, creator, status,
 	producer_name, producer_version, roles_json, tags_json, metadata_json, origin_kind, operation_id,
-	run_id, node_id, attempt_id, source_artifact_id, source_artifact_version, created_at
-	FROM artifact_versions`
+	run_id, node_id, attempt_id, source_artifact_id, source_artifact_version, created_at, collection_id, unit_id, investigation_attempt_id
+	FROM (SELECT a.*, i.collection_id, i.unit_id, i.attempt_id AS investigation_attempt_id FROM artifact_versions a LEFT JOIN investigation_artifact_provenance i ON i.artifact_id = a.artifact_id AND i.version = a.version)`
 
 // Register allocates the next immutable version for an artifact. The
 // idempotency key is scoped to the stable artifact identity.
@@ -85,6 +85,12 @@ func (d *Database) Register(ctx context.Context, request artifactregistry.Regist
 		formatTime(normalized.CreatedAt), normalized.ArtifactID)
 	if err != nil {
 		return artifactregistry.ArtifactVersion{}, false, fmt.Errorf("insert artifact version: %w", err)
+	}
+	if origin, ok := normalized.Provenance.(artifactregistry.InvestigationProvenance); ok {
+		_, err = tx.ExecContext(ctx, `INSERT INTO investigation_artifact_provenance(artifact_id,version,collection_id,unit_id,attempt_id) SELECT artifact_id,version,?,?,? FROM artifact_versions WHERE artifact_id=? AND idempotency_key=?`, origin.CollectionID, origin.UnitID, origin.AttemptID, normalized.ArtifactID, normalized.IdempotencyKey)
+		if err != nil {
+			return artifactregistry.ArtifactVersion{}, false, fmt.Errorf("insert investigation artifact provenance: %w", err)
+		}
 	}
 	created, _, err := scanArtifactVersion(tx.QueryRowContext(ctx,
 		artifactVersionSelect+` WHERE artifact_id = ? AND idempotency_key = ?`, normalized.ArtifactID, normalized.IdempotencyKey))
@@ -201,6 +207,8 @@ func normalizeArtifactRequest(request artifactregistry.RegisterRequest) (artifac
 		request.Provenance = *provenance
 	case *artifactregistry.AttemptProvenance:
 		request.Provenance = *provenance
+	case *artifactregistry.InvestigationProvenance:
+		request.Provenance = *provenance
 	}
 	roles, err := canonicalLabels("role", request.Roles)
 	if err != nil {
@@ -265,8 +273,18 @@ func validateProvenance(value artifactregistry.Provenance) error {
 			return errors.New("attempt provenance requires run, node, and attempt identity")
 		}
 		operationID, source = origin.OperationID, origin.Source
+	case artifactregistry.InvestigationProvenance:
+		if strings.TrimSpace(origin.CollectionID) == "" || strings.TrimSpace(origin.UnitID) == "" || strings.TrimSpace(origin.AttemptID) == "" {
+			return errors.New("investigation provenance requires collection, unit, and attempt identity")
+		}
+		operationID, source = origin.OperationID, origin.Source
+	case *artifactregistry.InvestigationProvenance:
+		if origin == nil {
+			return errors.New("investigation provenance must not be nil")
+		}
+		return validateProvenance(*origin)
 	default:
-		return errors.New("artifact provenance must be an operation or attempt origin")
+		return errors.New("artifact provenance must be an operation, workflow attempt, or investigation attempt origin")
 	}
 	if strings.TrimSpace(operationID) == "" {
 		return errors.New("artifact provenance requires an operation ID")
@@ -308,6 +326,11 @@ func provenanceColumns(value artifactregistry.Provenance) (string, string, any, 
 	var origin, operationID string
 	var runID, nodeID, attemptID, sourceArtifactID, sourceVersion any
 	switch provenance := value.(type) {
+	case artifactregistry.InvestigationProvenance:
+		origin, operationID = "operation", provenance.OperationID
+		if provenance.Source != nil {
+			sourceArtifactID, sourceVersion = provenance.Source.ArtifactID, provenance.Source.Version
+		}
 	case artifactregistry.OperationProvenance:
 		origin, operationID = "operation", provenance.OperationID
 		if provenance.Source != nil {
@@ -337,13 +360,13 @@ func provenanceColumns(value artifactregistry.Provenance) (string, string, any, 
 func scanArtifactVersion(row rowScanner) (artifactregistry.ArtifactVersion, string, error) {
 	var value artifactregistry.ArtifactVersion
 	var idempotencyKey, rolesJSON, tagsJSON, metadataJSON, origin, operationID, createdAt string
-	var runID, nodeID, attemptID, sourceArtifactID sql.NullString
+	var runID, nodeID, attemptID, sourceArtifactID, collectionID, unitID, investigationAttemptID sql.NullString
 	var sourceVersion sql.NullInt64
 	if err := row.Scan(&value.ArtifactID, &value.Version, &idempotencyKey, &value.SourceKind, &value.SourceName,
 		&value.BlobDigest, &value.Size, &value.DeclaredMediaType, &value.DetectedMediaType, &value.Locator,
 		&value.Sensitivity, &value.Creator, &value.Status, &value.Producer.Name, &value.Producer.Version,
 		&rolesJSON, &tagsJSON, &metadataJSON, &origin, &operationID, &runID, &nodeID, &attemptID,
-		&sourceArtifactID, &sourceVersion, &createdAt); err != nil {
+		&sourceArtifactID, &sourceVersion, &createdAt, &collectionID, &unitID, &investigationAttemptID); err != nil {
 		return artifactregistry.ArtifactVersion{}, "", err
 	}
 	if err := json.Unmarshal([]byte(rolesJSON), &value.Roles); err != nil {
@@ -368,6 +391,12 @@ func scanArtifactVersion(row rowScanner) (artifactregistry.ArtifactVersion, stri
 		}
 	default:
 		return artifactregistry.ArtifactVersion{}, "", fmt.Errorf("unknown artifact origin %q", origin)
+	}
+	if collectionID.Valid {
+		if origin != "operation" || !unitID.Valid || !investigationAttemptID.Valid {
+			return artifactregistry.ArtifactVersion{}, "", errors.New("invalid investigation artifact subtype")
+		}
+		value.Provenance = artifactregistry.InvestigationProvenance{CollectionID: collectionID.String, UnitID: unitID.String, AttemptID: investigationAttemptID.String, OperationID: operationID, Source: source}
 	}
 	value.Trust = "untrusted"
 	parsed, err := parseTime(createdAt)

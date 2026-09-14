@@ -3,10 +3,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { investigationOutputSchemas } from "./investigation-output-schemas.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const schemasDirectory = resolve(repositoryRoot, "schemas");
 const catalogPath = resolve(schemasDirectory, "catalog.generated.json");
+const investigationOutputPath = resolve(repositoryRoot, "runtime/src/core/investigationrunner/output_schemas.json");
 const contractPattern = /(?:\.schema\.json|openapi-[^.]+\.json)$/;
 const httpMethods = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
 
@@ -526,6 +528,7 @@ function main(argv) {
   if (command === "generate") {
     const output = canonicalJson(createCatalog(contracts));
     writeFileSync(catalogPath, output);
+    writeFileSync(investigationOutputPath, investigationOutputSchemas(contracts.get("investigation-v1.schema.json").document));
     console.log(`Generated ${relative(repositoryRoot, catalogPath)} for ${contracts.size} contracts.`);
     return;
   }
@@ -533,6 +536,7 @@ function main(argv) {
     const errors = validateContracts(contracts);
     const catalog = checkCatalog(contracts);
     if (!catalog.matches) errors.push("schemas/catalog.generated.json is stale; run: node scripts/schema-tool.mjs generate");
+    if (!existsSync(investigationOutputPath) || readFileSync(investigationOutputPath, "utf8") !== investigationOutputSchemas(contracts.get("investigation-v1.schema.json").document)) errors.push("investigation provider output schemas are stale; run: node scripts/schema-tool.mjs generate");
     if (errors.length) throw new Error(errors.join("\n"));
     console.log(`Validated ${contracts.size} contracts and deterministic catalog.`);
     return;

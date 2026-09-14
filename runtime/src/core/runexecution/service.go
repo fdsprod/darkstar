@@ -291,6 +291,8 @@ type Service struct {
 	wait                      sync.WaitGroup
 	queueEnabled              bool
 	queueLimit                func() (int, error)
+	sharedAdmission           sync.Locker
+	externalCapacity          func(context.Context) (int, error)
 	queueMu                   sync.Mutex
 	checkpointMu              sync.Mutex
 	runEventMu                sync.Mutex
@@ -1500,6 +1502,10 @@ func validateBuiltAttemptRequest(request provider.AttemptRequest, attempt states
 }
 
 func (s *Service) launch(attempt statestore.AttemptProjection) error {
+	if s.sharedAdmission != nil {
+		s.sharedAdmission.Lock()
+		defer s.sharedAdmission.Unlock()
+	}
 	runForDeletion, readErr := s.store.Run(s.ctx, attempt.RunID)
 	if readErr != nil {
 		return readErr

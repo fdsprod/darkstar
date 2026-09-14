@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkCatalog, compareContracts, loadContracts, validateContracts } from "../scripts/schema-tool.mjs";
+import { investigationOutputSchemas } from "../scripts/investigation-output-schemas.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -161,6 +162,11 @@ test("provider events publish the normalized adapter vocabulary", () => {
 test("artifact provenance and context order have one source of truth", () => {
   const schema = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha2.schema.json"), "utf8"));
   assert.deepEqual(schema.$defs.provenance.oneOf.map((variant) => variant.properties.origin.const), ["attempt", "operation"]);
+  const latest = JSON.parse(readFileSync(resolve(root, "schemas", "artifact-v1alpha3.schema.json"), "utf8"));
+  const investigation = latest.$defs.ArtifactProvenance.oneOf.find((variant) => variant.properties.origin.const === "investigation_attempt");
+  assert.deepEqual(investigation.required, ["origin", "collectionId", "unitId", "attemptId", "operationId"]);
+  assert.equal(investigation.properties.runId, undefined);
+  assert.equal(investigation.properties.nodeId, undefined);
   for (const field of ["version", "producer", "roles", "tags", "metadata"])
     assert.ok(schema.$defs.artifact.properties[field], `artifact is missing ${field}`);
   assert.equal(schema.$defs.contextEntry.properties.order, undefined);
@@ -168,6 +174,30 @@ test("artifact provenance and context order have one source of truth", () => {
   assert.ok(schema.$defs.contextEntry.properties.artifactVersion);
   for (const field of ["instructions", "schemas", "permissions", "workspace", "capabilities", "reservedTokens"])
     assert.ok(schema.$defs.contextManifest.properties[field], `context manifest is missing ${field}`);
+});
+
+test("embedded investigation output validation exactly matches canonical public contracts", () => {
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas/investigation-v1.schema.json"), "utf8"));
+  const expected = investigationOutputSchemas(schema);
+  assert.equal(readFileSync(resolve(root, "runtime/src/core/investigationrunner/output_schemas.json"), "utf8"), expected);
+  assert.equal(expected.includes('"$ref"'), false);
+});
+
+test("investigation commands separate preparation and control without public unit-result submission", () => {
+  const api = JSON.parse(readFileSync(resolve(root, "schemas", "openapi-v1alpha1.json"), "utf8"));
+  assert.equal(api.paths["/api/v1/investigations"].post.operationId, "prepareInvestigation");
+  for (const action of ["start", "retry", "cancel"]) {
+    const command = api.paths[`/api/v1/investigations/{investigationId}/${action}`].post;
+    assert.equal(command.operationId, `${action}Investigation`);
+    assert.deepEqual(command.parameters.slice(1).map(parameter => parameter.$ref), ["#/components/parameters/IdempotencyKey", "#/components/parameters/IfMatch"]);
+    assert.equal(command.requestBody.content["application/json"].schema.$ref, "#/components/schemas/InvestigationControlRequest");
+  }
+  assert.equal(api.paths["/api/v1/investigations/{investigationId}/results"], undefined);
+  const schema = JSON.parse(readFileSync(resolve(root, "schemas", "investigation-v1.schema.json"), "utf8"));
+  assert.deepEqual(schema.$defs.TaskInput.oneOf.map(variant => variant.properties.kind.const), ["text", "feature_brief"]);
+  assert.deepEqual(schema.$defs.ArtifactReference.required, ["artifactId", "version", "sha256"]);
+  assert.equal(schema.$defs.PrepareInvestigationRequest.properties.provider, undefined);
+  assert.deepEqual(schema.$defs.InvestigationControlRequest.properties, {});
 });
 
 test("late-evidence impact uses closed coverage and proposal variants", () => {

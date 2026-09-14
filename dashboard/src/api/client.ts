@@ -109,6 +109,21 @@ export class DarkstarApiClient {
   getInvestigationScope(scopeId: string, signal?: AbortSignal) {
     return this.operation("getInvestigationScope", { path: { scopeId }, signal });
   }
+  prepareInvestigation(body: Schemas["PrepareInvestigationRequest"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("prepareInvestigation", { body, idempotencyKey, signal });
+  }
+  getInvestigation(investigationId: string, signal?: AbortSignal) {
+    return this.operation("getInvestigation", { path: { investigationId }, signal });
+  }
+  startInvestigation(investigationId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("startInvestigation", { path: { investigationId }, body: {}, resourceVersion, idempotencyKey, signal });
+  }
+  retryInvestigation(investigationId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("retryInvestigation", { path: { investigationId }, body: {}, resourceVersion, idempotencyKey, signal });
+  }
+  cancelInvestigation(investigationId: string, resourceVersion: number, idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("cancelInvestigation", { path: { investigationId }, body: {}, resourceVersion, idempotencyKey, signal });
+  }
   attachProjectRepository(projectId: string, resourceVersion: number, body: Schemas["AttachRepositoryRequest"], idempotencyKey: string, signal?: AbortSignal) {
     return this.operation("attachProjectRepository", { path: { projectId }, body, resourceVersion, idempotencyKey, signal });
   }
@@ -223,6 +238,9 @@ export class DarkstarApiClient {
   lintArtifact(artifactId: string, version: number, signal?: AbortSignal) { return this.operation("lintArtifact", { path: { artifactId }, query: { version }, signal }); }
   assessArtifactImpact(artifactId: string, version: number, body: Schemas["ArtifactImpactRequest"], signal?: AbortSignal) { return this.operation("assessArtifactImpact", { path: { artifactId }, query: { version }, body, signal }); }
   readArtifactContent(artifactId: string, version: number, signal?: AbortSignal) { return this.readArtifactBlob(`/api/v1/artifacts/${encodeURIComponent(artifactId)}/content?version=${version}`, signal); }
+  listArtifactsV2(targetKind?: Schemas["ArtifactTargetKind"], targetId?: string, signal?: AbortSignal) { return this.operation("listArtifactsV2", { query: { targetKind, targetId }, signal }); }
+  getArtifactV2(artifactId: string, version?: number, signal?: AbortSignal) { return this.operation("getArtifactV2", { path: { artifactId }, query: { version }, signal }); }
+  readArtifactContentV2(artifactId: string, version: number, signal?: AbortSignal) { return this.readArtifactBlob(`/api/v1/artifacts-v2/${encodeURIComponent(artifactId)}/content?version=${version}`, signal); }
   readRepresentationContent(representationId: string, signal?: AbortSignal) { return this.readArtifactBlob(`/api/v1/representations/${encodeURIComponent(representationId)}/content`, signal); }
   listCheckpoints(query: { class?: "workflow_checkpoint"; runId?: string; status?: "pending" | "approved" | "changes_requested" | "rejected" | "denied" | "cancelled" | "expired" } = {}, signal?: AbortSignal) { return this.operation("listCheckpoints", { query, signal }); }
   listAttention(query: { kind?: Schemas["AttentionKind"]; itemId?: string; projectId?: string; workItemId?: string; runId?: string; limit?: number; cursor?: string } = {}, signal?: AbortSignal) { return this.operation("getAttentionV2", { query, signal }); }
