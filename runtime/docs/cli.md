@@ -206,6 +206,14 @@ zero-repository or multiple-repository projects; use `list-v2`/`show-v2` to read
 them. Legacy unresolved registrations remain readable with migration evidence
 shown in the v2 view.
 
+`configuration state`, `preview`, `set`, `unset`, and `restore` accept these
+project IDs through `--project`, including projects with no repositories.
+Independent projects keep their configuration at
+`<DARKSTAR data>/projects/<project-id>/configuration/config.yaml`, with separate
+recovery history. Membership changes do not move this file. The registered
+legacy daemon project retains its existing `.darkstar/config.yaml`; user
+configuration and secrets remain installation settings.
+
 Project and work commands use the same authenticated daemon boundary as other
 stateful commands:
 

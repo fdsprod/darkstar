@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -23,7 +24,7 @@ import (
 const absentRevisionSeed = "darkstar:configuration:absent:v1"
 
 type Store struct {
-	mu                sync.Mutex
+	mu                *sync.Mutex
 	userPath          string
 	projectPath       string
 	secretPath        string
@@ -36,7 +37,20 @@ func New(locations configuration.FileLocations, dataDirectory string) (*Store, e
 			return nil, fmt.Errorf("%s path must be absolute: %q", label, value)
 		}
 	}
-	return &Store{userPath: filepath.Clean(locations.UserConfig), projectPath: filepath.Clean(locations.ProjectConfig), secretPath: filepath.Clean(locations.UserSecrets), recoveryDirectory: filepath.Join(filepath.Clean(dataDirectory), "configuration-recovery")}, nil
+	return &Store{mu: &sync.Mutex{}, userPath: filepath.Clean(locations.UserConfig), projectPath: filepath.Clean(locations.ProjectConfig), secretPath: filepath.Clean(locations.UserSecrets), recoveryDirectory: filepath.Join(filepath.Clean(dataDirectory), "configuration-recovery")}, nil
+}
+
+var configurationProjectID = regexp.MustCompile(`^project_[0-9A-HJKMNP-TV-Z]{26}$`)
+
+// ForProject keeps v2 product configuration independent of repository paths.
+// All views share the mutex, so compare-and-swap and shared user reads remain
+// coordinated without a mutable "currently selected project" on the store.
+func (s *Store) ForProject(projectID string) (configurationstore.Store, error) {
+	if !configurationProjectID.MatchString(projectID) {
+		return nil, fmt.Errorf("%w: invalid project configuration identity", configurationstore.ErrPathBoundary)
+	}
+	root := filepath.Join(filepath.Dir(s.recoveryDirectory), "projects", projectID, "configuration")
+	return &Store{mu: s.mu, userPath: s.userPath, secretPath: s.secretPath, projectPath: filepath.Join(root, "config.yaml"), recoveryDirectory: filepath.Join(root, "recovery")}, nil
 }
 
 func (s *Store) Snapshot(ctx context.Context, target configurationstore.Target) (configurationstore.Snapshot, error) {

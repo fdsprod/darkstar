@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { installEmptyControlPlane } from "./acceptance.fixtures";
+import { installEmptyControlPlane, projectRepositoryView } from "./acceptance.fixtures";
 
 async function installBacklog(page: Page) {
   await installEmptyControlPlane(page);
@@ -25,7 +25,7 @@ async function installBacklog(page: Page) {
       effects.push(new URL(request.url()).pathname);
     }
   });
-  await page.route("**/api/v1/projects", (route) => route.fulfill({ json: [{ id: "project_1", name: "Factory", status: "active", resourceVersion: 1, lastGlobalPosition: 1, createdAt: now, updatedAt: now }] }));
+  await page.route("**/api/v1/projects-v2", (route) => route.fulfill({ json: [projectRepositoryView({ id: "project_1", name: "Factory", status: "active", resourceVersion: 1, lastGlobalPosition: 1, createdAt: now, updatedAt: now })] }));
   await page.route("**/api/v1/projects/project_1/backlog?**", (route) => route.fulfill({ json: view }));
   await page.route("**/api/v1/projects/project_1/tickets?**", (route) => route.fulfill({ json: { schemaVersion: 1, tickets: [], nextCursor: "" } }));
   await page.route("**/api/v1/tracker/connections", (route) => route.fulfill({ json: { schemaVersion: 1, connections: [] } }));

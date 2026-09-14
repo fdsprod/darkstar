@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { installEmptyControlPlane } from "./acceptance.fixtures";
+import { installEmptyControlPlane, projectRepositoryView } from "./acceptance.fixtures";
 
 async function installTickets(page: Page, editable = true) {
   await installEmptyControlPlane(page);
@@ -15,7 +15,7 @@ async function installTickets(page: Page, editable = true) {
       effects.push(new URL(request.url()).pathname);
     }
   });
-  await page.route("**/api/v1/projects", (route) => route.fulfill({ json: [project] }));
+  await page.route("**/api/v1/projects-v2", (route) => route.fulfill({ json: [projectRepositoryView(project)] }));
   await page.route("**/api/v1/projects/project_1/tickets?**", (route) => route.fulfill({ json: { schemaVersion: 1, tickets: [ticket], nextCursor: "" } }));
   await page.route("**/api/v1/projects/project_1/tickets/ticket_1", (route) => route.fulfill({ json: detail() }));
   await page.route("**/api/v1/projects/project_1/tickets/ticket_1/edit", (route) => {

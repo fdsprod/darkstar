@@ -90,7 +90,31 @@ export class DarkstarApiClient {
   applyConfigurationMutation(body: Schemas["ConfigurationMutationRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("applyConfigurationMutation", { body, idempotencyKey, signal }); }
   restoreConfiguration(body: Schemas["ConfigurationRestoreRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("restoreConfiguration", { body, idempotencyKey, signal }); }
   writeConfigurationSecret(body: Schemas["ConfigurationSecretWriteRequest"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("writeConfigurationSecret", { body, idempotencyKey, signal }); }
-  listProjects(signal?: AbortSignal) { return this.operation("listProjects", { signal }); }
+  async listProjects(signal?: AbortSignal) {
+    const projects = await this.listProjectRepositories(signal);
+    return projects.map((value) => value.project);
+  }
+  listProjectRepositories(signal?: AbortSignal) {
+    return this.operation("listProjectsV2", { signal });
+  }
+  createProject(body: Schemas["CreateProjectV2Request"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("createProjectV2", { body, idempotencyKey, signal });
+  }
+  getProjectRepositories(projectId: string, signal?: AbortSignal) {
+    return this.operation("getProjectRepositories", { path: { projectId }, signal });
+  }
+  attachProjectRepository(projectId: string, resourceVersion: number, body: Schemas["AttachRepositoryRequest"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("attachProjectRepository", { path: { projectId }, body, resourceVersion, idempotencyKey, signal });
+  }
+  updateProjectRepository(projectId: string, repositoryId: string, resourceVersion: number, body: Schemas["UpdateRepositoryMembershipRequest"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("updateProjectRepository", { path: { projectId, repositoryId }, body, resourceVersion, idempotencyKey, signal });
+  }
+  removeProjectRepository(projectId: string, repositoryId: string, resourceVersion: number, body: Schemas["RemoveRepositoryMembershipRequest"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("removeProjectRepository", { path: { projectId, repositoryId }, body, resourceVersion, idempotencyKey, signal });
+  }
+  updateProjectRepositoryDefaults(projectId: string, resourceVersion: number, body: Schemas["ProjectDefaultsRequest"], idempotencyKey: string, signal?: AbortSignal) {
+    return this.operation("updateProjectDefaults", { path: { projectId }, body, resourceVersion, idempotencyKey, signal });
+  }
   registerProject(body: Schemas["ProjectRegistration"], idempotencyKey: string, signal?: AbortSignal) { return this.operation("registerProject", { body, idempotencyKey, signal }); }
   getProject(projectId: string, signal?: AbortSignal) { return this.operation("getProject", { path: { projectId }, signal }); }
   getProjectBacklog(projectId: string, query: { limit?: number; cursor?: string; includePrevious?: boolean } = {}, signal?: AbortSignal) {

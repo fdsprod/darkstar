@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { installEmptyControlPlane } from "./acceptance.fixtures";
+import { installEmptyControlPlane, projectRepositoryView } from "./acceptance.fixtures";
 
 async function installTrackerBoard(page: Page) {
   await installEmptyControlPlane(page);
@@ -20,7 +20,7 @@ async function installTrackerBoard(page: Page) {
   const actions = { "obs-one": [{ id: "accept", name: "Accept result", targetStateId: "accepted", availability: "available", reason: "", automation: ["Automatic repair workflow may be admitted"], requiredFields: [] }] };
   const rules = { version: "darkstar.tracker-rules/v1alpha1", id: "project-mapping", revision: 1, scope: { projectId: "project_1", bindingRevision: 1, pin: {}, source: {} }, intake: [], outbound: [], display: { groups: columns.map((column) => ({ id: column.id, name: column.name, stateIds: column.statusIds })), unknownGroup: { id: "unknown", name: "Unmapped", stateIds: [] } } };
   const history = { schemaVersion: 1, activeRevision: 1, revisions: [{ revision: 1, bindingRevision: 1, rules, createdAt: now }] };
-  await page.route("**/api/v1/projects", (route) => route.fulfill({ json: [{ id: "project_1", name: "Factory", status: "active", resourceVersion: 1, lastGlobalPosition: 1, createdAt: now, updatedAt: now }] }));
+  await page.route("**/api/v1/projects-v2", (route) => route.fulfill({ json: [projectRepositoryView({ id: "project_1", name: "Factory", status: "active", resourceVersion: 1, lastGlobalPosition: 1, createdAt: now, updatedAt: now })] }));
   await page.route("**/api/v1/projects/project_1/backlog?**", (route) => route.fulfill({ json: { schemaVersion: 1, binding, query, refresh: { phase: "failed", lastSuccessAt: now, error: { message: "Partial refresh: retained tickets remain visible" } }, tickets, nextCursor: "", includePrevious: false } }));
   await page.route("**/api/v1/work-items/source-views?**", (route) => route.fulfill({ json: { schemaVersion: 1, items: [] } }));
   await page.route("**/api/v1/projects/project_1/tracker-board", (route) => route.fulfill({ json: { schemaVersion: 1, columns, actions, activeRevision: 1 } }));

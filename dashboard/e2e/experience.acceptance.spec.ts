@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { installEmptyControlPlane } from "./acceptance.fixtures";
+import { installEmptyControlPlane, projectRepositoryView } from "./acceptance.fixtures";
 
 test.beforeEach(async ({ page }) => installEmptyControlPlane(page));
 
@@ -11,7 +11,7 @@ test("Board exposes safe create, filtering, drag status, and keyboard or touch l
   const targets = ["backlog", "ready", "running", "waiting", "blocked", "review", "failed", "done"].map((target) => ({ target, availability: target === "ready" ? "enabled" : "disabled", disabledReasons: target === "ready" ? [] : [target === "backlog" ? "current_state" : "unsupported_target"], confirmation: "none" }));
   const plan = { schemaVersion: 1, workItemId: work.id, state: "backlog", resourceVersion: 1, targets };
   let transitions = 0;
-  await page.route("**/api/v1/projects", (route) => route.fulfill({ json: [project] }));
+  await page.route("**/api/v1/projects-v2", (route) => route.fulfill({ json: [projectRepositoryView(project)] }));
   await page.route("**/api/v1/work-items", (route) => route.fulfill({ json: [work] }));
   await page.route("**/api/v1/work-items/work_1/transition-plan**", (route) => route.fulfill({ json: plan }));
   await page.route("**/api/v1/work-items/work_1/transitions", (route) => { transitions += 1; return route.fulfill({ json: { schemaVersion: 1, target: "ready", effect: "run_prepared", before: plan, after: { ...plan, state: "ready", resourceVersion: 2 } } }); });
@@ -32,7 +32,7 @@ test("Board exposes safe create, filtering, drag status, and keyboard or touch l
 
 test("minimal Create Work defaults to automatic routing and keeps advanced override progressive", async ({ page }) => {
   const now = "2026-09-07T12:00:00Z";
-  await page.route("**/api/v1/projects", (route) => route.fulfill({ json: [{ id: "project_1", name: "Darkstar", sourceHash: "a".repeat(64), status: "active", resourceVersion: 1, lastGlobalPosition: 1, createdAt: now, updatedAt: now }] }));
+  await page.route("**/api/v1/projects-v2", (route) => route.fulfill({ json: [projectRepositoryView({ id: "project_1", name: "Darkstar", sourceHash: "a".repeat(64), status: "active", resourceVersion: 1, lastGlobalPosition: 1, createdAt: now, updatedAt: now })] }));
   await page.goto("/board?create=1");
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "Create requested outcome" })).toBeVisible();
@@ -50,7 +50,7 @@ test("workflow authoring surfaces the canvas editor and chat, and opens drafts w
   // Authoring is canvas-only: the editor and the authoring chat are its surfaces.
   await expect(page.getByRole("region", { name: "Workflow editor" })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Workflow chat" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Select a workflow" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No workflow selected" })).toBeVisible();
   await page.getByRole("button", { name: "New workflow", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New workflow draft" });
   await expect(dialog.getByLabel("Workflow name")).toHaveValue("workflow/new-workflow");
@@ -81,7 +81,7 @@ test("Checkpoints exposes all five classes, document workspace semantics, and ex
 });
 
 test("loading, reconnect, empty, partial failure, stale, and cancellation states remain explicit", async ({ page }) => {
-  await page.route("**/api/v1/projects", async (route) => { await new Promise((resolve) => setTimeout(resolve, 250)); await route.fulfill({ json: [] }); });
+  await page.route("**/api/v1/projects-v2", async (route) => { await new Promise((resolve) => setTimeout(resolve, 250)); await route.fulfill({ json: [] }); });
   await page.goto("/board");
   await expect(page.getByText("Loading authoritative state")).toBeVisible();
   await expect(page.getByText(/reconnecting|paused|connecting/i).first()).toBeVisible();

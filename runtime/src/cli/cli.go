@@ -531,7 +531,7 @@ func (service *daemonAPIService) Start(ctx context.Context, state daemon.State) 
 		service.database = nil
 		return err
 	}
-	configurationMutations, err := configmutation.New(configurationFiles, database, service.projectRoot)
+	configurationMutations, err := configmutation.NewWithProjectStores(configurationFiles, database, service.projectRoot, configurationFiles)
 	if err != nil {
 		_ = database.Close()
 		service.database = nil

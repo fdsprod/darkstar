@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { installEmptyControlPlane } from './acceptance.fixtures';
+import { installEmptyControlPlane, projectRepositoryView } from './acceptance.fixtures';
 
 async function board(page: import('@playwright/test').Page) {
  await installEmptyControlPlane(page);
@@ -10,7 +10,7 @@ async function board(page: import('@playwright/test').Page) {
  let moves=0, deletes=0;
  const columns=['backlog','ready','running','waiting','blocked','review','failed','done'];
  const plan=()=>({schemaVersion:1,workItemId:work.id,resourceVersion:3,state:'running',targets:columns.map(target=>({target,availability:!work.deletion && target==='waiting'?'enabled':'disabled',disabledReasons:target==='waiting'&&!work.deletion?[]:['unsupported_target'],confirmation:'none'}))});
- await page.route('**/api/v1/projects',r=>r.fulfill({json:[project]}));
+ await page.route('**/api/v1/projects-v2',r=>r.fulfill({json: [projectRepositoryView(project)]}));
  await page.route('**/api/v1/work-items?**',r=>r.fulfill({json:[work]}));
  await page.route('**/api/v1/work-items',r=>r.fulfill({json:work.deletion==='deleted'?[]:[work]}));
  await page.route('**/api/v1/runs?**',r=>r.fulfill({json:{items:[run],pageInfo:{nextCursor:null}}}));

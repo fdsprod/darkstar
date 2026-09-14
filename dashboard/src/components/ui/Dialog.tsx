@@ -1,4 +1,4 @@
-import { useEffect, useRef, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, type FormEvent, type ReactNode, type RefObject } from "react";
 
 export interface ModalDialogProps {
   open: boolean;
@@ -7,6 +7,7 @@ export interface ModalDialogProps {
   className?: string;
   /** Blocks Escape and the backdrop while a submission is in flight. */
   busy?: boolean;
+  initialFocusRef?: RefObject<HTMLElement | null>;
   onClose(): void;
   children: ReactNode;
 }
@@ -14,14 +15,17 @@ export interface ModalDialogProps {
 // `<dialog>` needs an imperative call to reach the top layer, so the element is
 // driven from the `open` prop. No API, router, or app state is involved, which
 // keeps the dialog previewable on its own.
-export function ModalDialog({ open, labelledBy, describedBy, className = "", busy = false, onClose, children }: ModalDialogProps) {
+export function ModalDialog({ open, labelledBy, describedBy, className = "", busy = false, initialFocusRef, onClose, children }: ModalDialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      initialFocusRef?.current?.focus();
+    }
     if (!open && dialog.open) dialog.close();
-  }, [open]);
+  }, [open, initialFocusRef]);
   return <dialog
     ref={ref}
     className={`work-dialog ${className}`.trim()}

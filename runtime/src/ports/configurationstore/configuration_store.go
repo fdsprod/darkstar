@@ -52,3 +52,9 @@ type Store interface {
 	Restore(context.Context, Target, string) (Snapshot, error)
 	PutSecret(context.Context, string, string, string) (SecretReceipt, error)
 }
+
+// ProjectStores resolves an isolated configuration file and recovery history by
+// immutable project identity. It never derives the destination from membership.
+type ProjectStores interface {
+	ForProject(string) (Store, error)
+}

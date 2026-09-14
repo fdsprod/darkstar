@@ -190,10 +190,12 @@ type AuditStore interface {
 }
 
 type Service struct {
-	files       configurationstore.Store
-	audit       AuditStore
-	projectRoot string
-	now         func() time.Time
+	files          configurationstore.Store
+	audit          AuditStore
+	projectRoot    string
+	projectStores  configurationstore.ProjectStores
+	boundProjectID string
+	now            func() time.Time
 }
 
 func New(files configurationstore.Store, audit AuditStore, projectRoot string) (*Service, error) {
@@ -211,6 +213,10 @@ func (s *Service) Catalog(context.Context) (config.Catalog, error) {
 }
 
 func (s *Service) State(ctx context.Context, scope config.MutationScope) (State, error) {
+	s, err := s.forScope(ctx, scope)
+	if err != nil {
+		return State{}, err
+	}
 	target, err := s.authorize(ctx, scope)
 	if err != nil {
 		return State{}, err
@@ -219,6 +225,10 @@ func (s *Service) State(ctx context.Context, scope config.MutationScope) (State,
 }
 
 func (s *Service) Preview(ctx context.Context, request MutationRequest) (Preview, error) {
+	s, err := s.forScope(ctx, request.Scope)
+	if err != nil {
+		return Preview{}, err
+	}
 	target, descriptor, mutation, err := s.validate(ctx, request)
 	if err != nil {
 		return Preview{}, err
@@ -239,6 +249,12 @@ func (s *Service) Preview(ctx context.Context, request MutationRequest) (Preview
 }
 
 func (s *Service) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, error) {
+	selected, err := s.forScope(ctx, request.Scope)
+	if err != nil {
+		s.rejected(ctx, request.IdempotencyKey, request.Scope, request.Key, "validation_failed")
+		return ApplyResult{}, err
+	}
+	s = selected
 	target, descriptor, mutation, err := s.validate(ctx, request.MutationRequest)
 	if err != nil {
 		s.rejected(ctx, request.IdempotencyKey, request.Scope, request.Key, "validation_failed")
@@ -287,6 +303,10 @@ func (s *Service) Apply(ctx context.Context, request ApplyRequest) (ApplyResult,
 }
 
 func (s *Service) Restore(ctx context.Context, request RestoreRequest) (ApplyResult, error) {
+	s, err := s.forScope(ctx, request.Scope)
+	if err != nil {
+		return ApplyResult{}, err
+	}
 	target, err := s.authorize(ctx, request.Scope)
 	if err != nil {
 		return ApplyResult{}, err
@@ -452,7 +472,7 @@ func (s *Service) authorize(ctx context.Context, scope config.MutationScope) (co
 		if err != nil {
 			return 0, err
 		}
-		if project.Status != statestore.ProjectActive || project.SourceHash != digest(s.projectRoot) {
+		if project.Status != statestore.ProjectActive || (project.SourceHash != digest(s.projectRoot) && s.boundProjectID != project.ProjectID) {
 			return 0, ErrProjectMismatch
 		}
 		return configurationstore.TargetProject, nil

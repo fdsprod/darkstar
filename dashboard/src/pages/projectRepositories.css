@@ -1,0 +1,45 @@
+.repository-management { margin-bottom: var(--space-6); }
+.repository-workspace { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: var(--space-5); margin-top: var(--space-4); align-items: start; }
+.repository-projects { display: grid; gap: var(--space-2); }
+.repository-project { display: grid; gap: 6px; width: 100%; padding: 14px; text-align: left; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
+.repository-project strong { overflow-wrap: anywhere; }
+.repository-project span { color: var(--text-secondary); font-size: var(--font-caption); }
+.repository-project:hover { background: var(--surface-hover); }
+.repository-project[aria-current="true"] { background: #122036; border-color: var(--accent); }
+.repository-detail { min-width: 0; display: grid; gap: var(--space-4); }
+.repository-detail-heading { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; justify-content: space-between; }
+.repository-detail-heading h3 { margin: 0; font-size: var(--font-section); }
+.repository-detail-heading p { margin: 5px 0 0; color: var(--text-secondary); }
+.repository-cards { display: grid; gap: var(--space-3); }
+.repository-card { min-width: 0; padding: var(--space-4); border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.repository-card header { display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: space-between; align-items: start; }
+.repository-card h4 { margin: 0; font-size: var(--font-body); }
+.repository-card header p { margin: 5px 0 0; color: var(--text-secondary); font-size: var(--font-caption); }
+.repository-role { display: inline-block; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-secondary); font-size: var(--font-caption); }
+.repository-role[data-role="implementation"] { color: #b8d2ff; background: #122036; border-color: #29486c; }
+.repository-location { overflow-wrap: anywhere; color: var(--text-secondary); line-height: 1.6; }
+.repository-inheritance { color: var(--text-secondary); font-size: var(--font-caption); line-height: 1.6; }
+.repository-card footer { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-4) 0; }
+.repository-card details, .repository-history { padding-top: var(--space-3); border-top: 1px solid var(--border); font-size: var(--font-caption); color: var(--text-secondary); }
+.repository-card summary, .repository-history summary, .repository-settings-fields summary { cursor: pointer; min-height: 28px; }
+.repository-card dl, .repository-history dl { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr); gap: 8px 16px; }
+.repository-card dd, .repository-history dd { margin: 0; overflow-wrap: anywhere; }
+.repository-history article { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) 0; }
+.repository-history article p { overflow-wrap: anywhere; }
+.repository-notice { padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--surface-raised); color: var(--text); line-height: 1.6; }
+.repository-editor { width: min(680px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; }
+.repository-editor-fields { display: grid; gap: var(--space-4); margin: 0; padding: 0; min-width: 0; border: 0; }
+.repository-editor-fields .field { min-width: 0; }
+.repository-editor-fields .field small { color: var(--text-secondary); line-height: 1.6; }
+.repository-settings-fields { border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.repository-settings-fields > .field { margin-top: var(--space-4); }
+.repository-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.repository-editor .async-panel { margin-top: var(--space-4); align-items: start; flex-wrap: wrap; }
+.repository-editor textarea { resize: vertical; min-height: 78px; }
+@media (max-width: 760px) {
+  .repository-workspace { grid-template-columns: 1fr; }
+  .repository-projects { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .repository-settings-grid { grid-template-columns: 1fr; }
+  .repository-management .settings-section-heading { flex-wrap: wrap; }
+  .repository-editor { max-height: calc(100dvh - 24px); }
+}

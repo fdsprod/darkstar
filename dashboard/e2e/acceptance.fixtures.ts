@@ -2,6 +2,10 @@ import type { Page } from "@playwright/test";
 
 const apiError = { code: "fixture_unavailable", message: "Acceptance fixture has no domain record for this request." };
 
+export function projectRepositoryView(project: object) {
+  return { schemaVersion: 2, project, repositories: [], defaults: {}, migration: { state: "ready" } };
+}
+
 export async function installEmptyControlPlane(page: Page) {
   await page.route("**/api/v1/events**", (route) => route.abort());
   await page.route("**/api/v1/**", async (route) => {
@@ -16,7 +20,7 @@ export async function installEmptyControlPlane(page: Page) {
 }
 
 function emptyResponse(path: string): unknown {
-  if (path === "/api/v1/projects" || path === "/api/v1/work-items" || path === "/api/v1/workflows" || path === "/api/v1/artifacts") return [];
+  if (path === "/api/v1/projects" || path === "/api/v1/projects-v2" || path === "/api/v1/work-items" || path === "/api/v1/workflows" || path === "/api/v1/artifacts") return [];
   if (path === "/api/v1/runs") return { items: [], pageInfo: { nextCursor: null } };
   if (path === "/api/v1/workflows/library") return { versions: [], drafts: [], archives: [] };
   if (path === "/api/v1/content-library") return { items: [] };
