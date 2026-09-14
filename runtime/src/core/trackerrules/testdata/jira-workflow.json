@@ -1,0 +1,82 @@
+{
+  "version": "darkstar.tracker-rules/v1alpha1",
+  "id": "implementation-intake",
+  "revision": 1,
+  "scope": {
+    "projectId": "project-1",
+    "bindingRevision": 1,
+    "pin": {
+      "ContractVersion": "darkstar.tracker/v1alpha1",
+      "AdapterID": "jira_fixture",
+      "AdapterVersion": "1",
+      "InstallationID": "installation-1",
+      "AccountID": "account-1",
+      "BindingRevision": "1",
+      "ConfigRevision": "1",
+      "ConfigDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "CapabilitiesDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "source": {
+      "Namespace": {
+        "Provider": "jira_fixture",
+        "Host": "fixture.local",
+        "TenantID": "tenant-1",
+        "ScopeID": "namespace-1"
+      },
+      "ContainerID": "team-1"
+    }
+  },
+  "intake": [
+    {
+      "id": "ready-for-dev",
+      "when": {
+        "fields": [
+          { "fieldId": "state", "values": ["ready"] },
+          { "fieldId": "issue_type", "values": ["story"] },
+          { "fieldId": "workflow", "values": ["story-workflow"] }
+        ],
+        "sprintIds": ["sprint-1"]
+      },
+      "action": {
+        "kind": "admit",
+        "workflow": {
+          "id": "implementation",
+          "version": "1.0.0",
+          "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "readinessPolicy": "require_approval",
+        "mode": "manual",
+        "repair": { "maxAdmissions": 2 }
+      }
+    }
+  ],
+  "outbound": [
+    {
+      "id": "handoff-to-test",
+      "when": { "fields": [] },
+      "milestone": {
+        "id": "implementation.validated_handoff",
+        "workflow": {
+          "id": "implementation",
+          "version": "1.0.0",
+          "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "evidenceTypes": ["validated_implementation", "approved_pr"]
+      },
+      "action": {
+        "kind": "transition",
+        "transitionId": "to-testing",
+        "fields": {
+          "resolution": { "kind": "ids", "value": ["implemented"] }
+        }
+      }
+    }
+  ],
+  "display": {
+    "groups": [
+      { "id": "todo", "name": "To do", "stateIds": ["backlog", "ready"] },
+      { "id": "external-testing", "name": "Awaiting external testing", "stateIds": ["testing"] }
+    ],
+    "unknownGroup": { "id": "unmapped", "name": "Unmapped", "stateIds": [] }
+  }
+}
