@@ -42,6 +42,13 @@ type NamedID struct {
 	ID, Name string
 }
 
+// FieldCatalog is a complete observed set of supported values for one source
+// field. Omitted fields are unavailable; labels never substitute for identity.
+type FieldCatalog struct {
+	Identity NamedID
+	Values   []NamedID
+}
+
 // Knowledge distinguishes absent values from incomplete reads and unsupported data.
 // Known[[]T] with an empty slice means observed none; unknown never means none.
 type Knowledge[T any] interface{ isKnowledge(T) }

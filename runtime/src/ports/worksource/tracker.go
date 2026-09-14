@@ -24,6 +24,12 @@ type TrackerBrowserV1 interface {
 	Browse(context.Context, BrowseTicketsRequest) (tracker.TicketPage, error)
 }
 
+// TrackerMetadataV1 discovers stable field IDs and readable labels independently
+// of ticket listing, including empty backlogs. It grants no writer capability.
+type TrackerMetadataV1 interface {
+	DiscoverFieldCatalog(context.Context, tracker.Pin) ([]tracker.FieldCatalog, error)
+}
+
 type BrowseTicketsRequest struct {
 	Pin   tracker.Pin
 	Scope tracker.Scope
